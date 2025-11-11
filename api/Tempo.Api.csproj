@@ -20,10 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Include FIT SDK source files -->
-    <Compile Include="../FitSDKRelease_21.171.00/cs/Dynastream/Utility/*.cs" />
-    <Compile Include="../FitSDKRelease_21.171.00/cs/Dynastream/Fit/*.cs" />
-    <Compile Include="../FitSDKRelease_21.171.00/cs/Dynastream/Fit/Profile/**/*.cs" />
+    <!-- FIT SDK source files are automatically included from Libraries/FitSDK/ -->
   </ItemGroup>
 
 </Project>
