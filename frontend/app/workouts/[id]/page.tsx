@@ -3,8 +3,19 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { getWorkout } from '@/lib/api';
 import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace } from '@/lib/format';
+
+// Dynamically import WorkoutMap to avoid SSR issues with Leaflet
+const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-96 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+      <p className="text-gray-500 dark:text-gray-400">Loading map...</p>
+    </div>
+  ),
+});
 
 export default function WorkoutDetailPage() {
   const params = useParams();
@@ -214,18 +225,13 @@ export default function WorkoutDetailPage() {
             </div>
           )}
 
-          {/* Route GeoJSON */}
+          {/* Route Map */}
           {data.route && (
             <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                Route (GeoJSON)
+                Route Map
               </h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Route data is available for future map visualization. Currently displayed as JSON for inspection.
-              </p>
-              <pre className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 p-4 rounded overflow-x-auto max-h-96 overflow-y-auto">
-                {JSON.stringify(data.route, null, 2)}
-              </pre>
+              <WorkoutMap key={data.id} route={data.route} workoutId={data.id} />
             </div>
           )}
         </div>
