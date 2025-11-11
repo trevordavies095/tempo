@@ -52,6 +52,27 @@ public static class WorkoutsEndpoints
                     ? (int)(parseResult.DurationSeconds / (parseResult.DistanceMeters / 1000.0))
                     : 0;
 
+                // Extract additional metrics from RawGpxData JSON
+                var calculated = new Dictionary<string, object>();
+                if (!string.IsNullOrEmpty(parseResult.RawGpxDataJson))
+                {
+                    try
+                    {
+                        var rawData = JsonSerializer.Deserialize<JsonElement>(parseResult.RawGpxDataJson);
+                        if (rawData.TryGetProperty("calculated", out var calculatedElement))
+                        {
+                            foreach (var prop in calculatedElement.EnumerateObject())
+                            {
+                                calculated[prop.Name] = prop.Value;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to parse RawGpxData JSON for additional metrics");
+                    }
+                }
+
                 // Create workout
                 // Ensure StartedAt is UTC (defensive conversion)
                 var startedAtUtc = parseResult.StartTime.Kind switch
@@ -69,9 +90,22 @@ public static class WorkoutsEndpoints
                     DistanceM = parseResult.DistanceMeters,
                     AvgPaceS = avgPaceS,
                     ElevGainM = parseResult.ElevationGainMeters,
+                    RawGpxData = parseResult.RawGpxDataJson,
                     Source = "apple_watch",
                     CreatedAt = DateTime.UtcNow
                 };
+
+                // Populate additional metrics from calculated data
+                if (calculated.TryGetValue("elevLossM", out var elevLoss) && elevLoss is JsonElement elevLossElem && elevLossElem.ValueKind == JsonValueKind.Number)
+                    workout.ElevLossM = elevLossElem.GetDouble();
+                if (calculated.TryGetValue("minElevM", out var minElev) && minElev is JsonElement minElevElem && minElevElem.ValueKind == JsonValueKind.Number)
+                    workout.MinElevM = minElevElem.GetDouble();
+                if (calculated.TryGetValue("maxElevM", out var maxElev) && maxElev is JsonElement maxElevElem && maxElevElem.ValueKind == JsonValueKind.Number)
+                    workout.MaxElevM = maxElevElem.GetDouble();
+                if (calculated.TryGetValue("maxSpeedMps", out var maxSpeed) && maxSpeed is JsonElement maxSpeedElem && maxSpeedElem.ValueKind == JsonValueKind.Number)
+                    workout.MaxSpeedMps = maxSpeedElem.GetDouble();
+                if (calculated.TryGetValue("avgSpeedMps", out var avgSpeed) && avgSpeed is JsonElement avgSpeedElem && avgSpeedElem.ValueKind == JsonValueKind.Number)
+                    workout.AvgSpeedMps = avgSpeedElem.GetDouble();
 
                 // Create route GeoJSON
                 var coordinates = parseResult.TrackPoints.Select(p => new[] { p.Longitude, p.Latitude }).ToList();
@@ -207,6 +241,20 @@ public static class WorkoutsEndpoints
                 distanceM = w.DistanceM,
                 avgPaceS = w.AvgPaceS,
                 elevGainM = w.ElevGainM,
+                elevLossM = w.ElevLossM,
+                minElevM = w.MinElevM,
+                maxElevM = w.MaxElevM,
+                maxSpeedMps = w.MaxSpeedMps,
+                avgSpeedMps = w.AvgSpeedMps,
+                movingTimeS = w.MovingTimeS,
+                maxHeartRateBpm = w.MaxHeartRateBpm,
+                avgHeartRateBpm = w.AvgHeartRateBpm,
+                minHeartRateBpm = w.MinHeartRateBpm,
+                maxCadenceRpm = w.MaxCadenceRpm,
+                avgCadenceRpm = w.AvgCadenceRpm,
+                maxPowerWatts = w.MaxPowerWatts,
+                avgPowerWatts = w.AvgPowerWatts,
+                calories = w.Calories,
                 runType = w.RunType,
                 source = w.Source,
                 name = w.Name,
@@ -372,6 +420,46 @@ public static class WorkoutsEndpoints
                 paceS = s.PaceS
             }).ToList();
 
+            // Parse raw data JSON if exists
+            object? rawGpxData = null;
+            if (!string.IsNullOrEmpty(workout.RawGpxData))
+            {
+                try
+                {
+                    rawGpxData = JsonSerializer.Deserialize<object>(workout.RawGpxData);
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning(ex, "Failed to parse RawGpxData JSON for workout {WorkoutId}", workout.Id);
+                }
+            }
+
+            object? rawFitData = null;
+            if (!string.IsNullOrEmpty(workout.RawFitData))
+            {
+                try
+                {
+                    rawFitData = JsonSerializer.Deserialize<object>(workout.RawFitData);
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning(ex, "Failed to parse RawFitData JSON for workout {WorkoutId}", workout.Id);
+                }
+            }
+
+            object? rawStravaData = null;
+            if (!string.IsNullOrEmpty(workout.RawStravaData))
+            {
+                try
+                {
+                    rawStravaData = JsonSerializer.Deserialize<object>(workout.RawStravaData);
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning(ex, "Failed to parse RawStravaData JSON for workout {WorkoutId}", workout.Id);
+                }
+            }
+
             return Results.Ok(new
             {
                 id = workout.Id,
@@ -380,11 +468,28 @@ public static class WorkoutsEndpoints
                 distanceM = workout.DistanceM,
                 avgPaceS = workout.AvgPaceS,
                 elevGainM = workout.ElevGainM,
+                elevLossM = workout.ElevLossM,
+                minElevM = workout.MinElevM,
+                maxElevM = workout.MaxElevM,
+                maxSpeedMps = workout.MaxSpeedMps,
+                avgSpeedMps = workout.AvgSpeedMps,
+                movingTimeS = workout.MovingTimeS,
+                maxHeartRateBpm = workout.MaxHeartRateBpm,
+                avgHeartRateBpm = workout.AvgHeartRateBpm,
+                minHeartRateBpm = workout.MinHeartRateBpm,
+                maxCadenceRpm = workout.MaxCadenceRpm,
+                avgCadenceRpm = workout.AvgCadenceRpm,
+                maxPowerWatts = workout.MaxPowerWatts,
+                avgPowerWatts = workout.AvgPowerWatts,
+                calories = workout.Calories,
                 runType = workout.RunType,
                 notes = workout.Notes,
                 source = workout.Source,
                 name = workout.Name,
                 weather = weather,
+                rawGpxData = rawGpxData,
+                rawFitData = rawFitData,
+                rawStravaData = rawStravaData,
                 createdAt = workout.CreatedAt,
                 route = routeGeoJson,
                 splits = splits
@@ -650,6 +755,45 @@ public static class WorkoutsEndpoints
                         }
                         var notes = notesParts.Count > 0 ? string.Join("\n\n", notesParts) : null;
 
+                        // Extract metrics from RawStravaData JSON
+                        var stravaData = new Dictionary<string, object>();
+                        if (!string.IsNullOrEmpty(activity.RawStravaDataJson))
+                        {
+                            try
+                            {
+                                var rawStrava = JsonSerializer.Deserialize<JsonElement>(activity.RawStravaDataJson);
+                                foreach (var prop in rawStrava.EnumerateObject())
+                                {
+                                    stravaData[prop.Name] = prop.Value;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.LogWarning(ex, "Failed to parse RawStravaData JSON for activity {ActivityId}", activity.ActivityId);
+                            }
+                        }
+
+                        // Extract metrics from GPX/FIT calculated data
+                        var calculated = new Dictionary<string, object>();
+                        if (parseResult != null && !string.IsNullOrEmpty(parseResult.RawGpxDataJson))
+                        {
+                            try
+                            {
+                                var rawGpx = JsonSerializer.Deserialize<JsonElement>(parseResult.RawGpxDataJson);
+                                if (rawGpx.TryGetProperty("calculated", out var calculatedElement))
+                                {
+                                    foreach (var prop in calculatedElement.EnumerateObject())
+                                    {
+                                        calculated[prop.Name] = prop.Value;
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.LogWarning(ex, "Failed to parse RawGpxData JSON for additional metrics");
+                            }
+                        }
+
                         // Create workout
                         var workout = new Workout
                         {
@@ -659,11 +803,88 @@ public static class WorkoutsEndpoints
                             DistanceM = distanceMeters,
                             AvgPaceS = avgPaceS,
                             ElevGainM = elevationGainMeters,
+                            RawGpxData = parseResult?.RawGpxDataJson,
+                            RawFitData = fitResult?.RawFitDataJson,
+                            RawStravaData = activity.RawStravaDataJson,
                             Source = "strava_import",
                             Name = !string.IsNullOrWhiteSpace(activity.ActivityName) ? activity.ActivityName : null,
                             Notes = notes,
                             CreatedAt = DateTime.UtcNow
                         };
+
+                        // Populate additional metrics from calculated data (GPX)
+                        if (calculated.TryGetValue("elevLossM", out var elevLoss) && elevLoss is JsonElement elevLossElem && elevLossElem.ValueKind == JsonValueKind.Number)
+                            workout.ElevLossM = elevLossElem.GetDouble();
+                        if (calculated.TryGetValue("minElevM", out var minElev) && minElev is JsonElement minElevElem && minElevElem.ValueKind == JsonValueKind.Number)
+                            workout.MinElevM = minElevElem.GetDouble();
+                        if (calculated.TryGetValue("maxElevM", out var maxElev) && maxElev is JsonElement maxElevElem && maxElevElem.ValueKind == JsonValueKind.Number)
+                            workout.MaxElevM = maxElevElem.GetDouble();
+                        if (calculated.TryGetValue("maxSpeedMps", out var maxSpeed) && maxSpeed is JsonElement maxSpeedElem && maxSpeedElem.ValueKind == JsonValueKind.Number)
+                            workout.MaxSpeedMps = maxSpeedElem.GetDouble();
+                        if (calculated.TryGetValue("avgSpeedMps", out var avgSpeed) && avgSpeed is JsonElement avgSpeedElem && avgSpeedElem.ValueKind == JsonValueKind.Number)
+                            workout.AvgSpeedMps = avgSpeedElem.GetDouble();
+
+                        // Populate metrics from FIT session data
+                        if (fitResult != null && !string.IsNullOrEmpty(fitResult.RawFitDataJson))
+                        {
+                            try
+                            {
+                                var rawFit = JsonSerializer.Deserialize<JsonElement>(fitResult.RawFitDataJson);
+                                if (rawFit.TryGetProperty("session", out var sessionElement))
+                                {
+                                    if (sessionElement.TryGetProperty("totalMovingTime", out var movingTime) && movingTime.ValueKind == JsonValueKind.Number)
+                                        workout.MovingTimeS = (int)Math.Round(movingTime.GetDouble());
+                                    if (sessionElement.TryGetProperty("maxHeartRate", out var maxHr) && maxHr.ValueKind == JsonValueKind.Number)
+                                        workout.MaxHeartRateBpm = (byte)maxHr.GetInt32();
+                                    if (sessionElement.TryGetProperty("avgHeartRate", out var avgHr) && avgHr.ValueKind == JsonValueKind.Number)
+                                        workout.AvgHeartRateBpm = (byte)avgHr.GetInt32();
+                                    if (sessionElement.TryGetProperty("minHeartRate", out var minHr) && minHr.ValueKind == JsonValueKind.Number)
+                                        workout.MinHeartRateBpm = (byte)minHr.GetInt32();
+                                    if (sessionElement.TryGetProperty("maxCadence", out var maxCad) && maxCad.ValueKind == JsonValueKind.Number)
+                                        workout.MaxCadenceRpm = (byte)maxCad.GetInt32();
+                                    if (sessionElement.TryGetProperty("avgCadence", out var avgCad) && avgCad.ValueKind == JsonValueKind.Number)
+                                        workout.AvgCadenceRpm = (byte)avgCad.GetInt32();
+                                    if (sessionElement.TryGetProperty("maxPower", out var maxPow) && maxPow.ValueKind == JsonValueKind.Number)
+                                        workout.MaxPowerWatts = (ushort)maxPow.GetInt32();
+                                    if (sessionElement.TryGetProperty("avgPower", out var avgPow) && avgPow.ValueKind == JsonValueKind.Number)
+                                        workout.AvgPowerWatts = (ushort)avgPow.GetInt32();
+                                    if (sessionElement.TryGetProperty("totalCalories", out var cals) && cals.ValueKind == JsonValueKind.Number)
+                                        workout.Calories = (ushort)cals.GetInt32();
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.LogWarning(ex, "Failed to extract metrics from RawFitData JSON");
+                            }
+                        }
+
+                        // Populate metrics from Strava CSV data
+                        if (stravaData.TryGetValue("movingTime", out var stravaMovingTime) && stravaMovingTime is JsonElement stravaMovingTimeElem && stravaMovingTimeElem.ValueKind == JsonValueKind.Number)
+                            workout.MovingTimeS = (int)Math.Round(stravaMovingTimeElem.GetDouble());
+                        if (stravaData.TryGetValue("maxHeartRate", out var stravaMaxHr) && stravaMaxHr is JsonElement stravaMaxHrElem && stravaMaxHrElem.ValueKind == JsonValueKind.Number)
+                            workout.MaxHeartRateBpm = (byte)stravaMaxHrElem.GetInt32();
+                        if (stravaData.TryGetValue("avgHeartRate", out var stravaAvgHr) && stravaAvgHr is JsonElement stravaAvgHrElem && stravaAvgHrElem.ValueKind == JsonValueKind.Number)
+                            workout.AvgHeartRateBpm = (byte)stravaAvgHrElem.GetInt32();
+                        if (stravaData.TryGetValue("maxCadence", out var stravaMaxCad) && stravaMaxCad is JsonElement stravaMaxCadElem && stravaMaxCadElem.ValueKind == JsonValueKind.Number)
+                            workout.MaxCadenceRpm = (byte)stravaMaxCadElem.GetInt32();
+                        if (stravaData.TryGetValue("avgCadence", out var stravaAvgCad) && stravaAvgCad is JsonElement stravaAvgCadElem && stravaAvgCadElem.ValueKind == JsonValueKind.Number)
+                            workout.AvgCadenceRpm = (byte)stravaAvgCadElem.GetInt32();
+                        if (stravaData.TryGetValue("maxWatts", out var stravaMaxWatts) && stravaMaxWatts is JsonElement stravaMaxWattsElem && stravaMaxWattsElem.ValueKind == JsonValueKind.Number)
+                            workout.MaxPowerWatts = (ushort)stravaMaxWattsElem.GetInt32();
+                        if (stravaData.TryGetValue("avgWatts", out var stravaAvgWatts) && stravaAvgWatts is JsonElement stravaAvgWattsElem && stravaAvgWattsElem.ValueKind == JsonValueKind.Number)
+                            workout.AvgPowerWatts = (ushort)stravaAvgWattsElem.GetInt32();
+                        if (stravaData.TryGetValue("calories", out var stravaCals) && stravaCals is JsonElement stravaCalsElem && stravaCalsElem.ValueKind == JsonValueKind.Number)
+                            workout.Calories = (ushort)stravaCalsElem.GetInt32();
+                        if (stravaData.TryGetValue("elevationLoss", out var stravaElevLoss) && stravaElevLoss is JsonElement stravaElevLossElem && stravaElevLossElem.ValueKind == JsonValueKind.Number)
+                            workout.ElevLossM = stravaElevLossElem.GetDouble();
+                        if (stravaData.TryGetValue("elevationLow", out var stravaMinElev) && stravaMinElev is JsonElement stravaMinElevElem && stravaMinElevElem.ValueKind == JsonValueKind.Number)
+                            workout.MinElevM = stravaMinElevElem.GetDouble();
+                        if (stravaData.TryGetValue("elevationHigh", out var stravaMaxElev) && stravaMaxElev is JsonElement stravaMaxElevElem && stravaMaxElevElem.ValueKind == JsonValueKind.Number)
+                            workout.MaxElevM = stravaMaxElevElem.GetDouble();
+                        if (stravaData.TryGetValue("maxSpeed", out var stravaMaxSpeed) && stravaMaxSpeed is JsonElement stravaMaxSpeedElem && stravaMaxSpeedElem.ValueKind == JsonValueKind.Number)
+                            workout.MaxSpeedMps = stravaMaxSpeedElem.GetDouble();
+                        if (stravaData.TryGetValue("avgSpeed", out var stravaAvgSpeed) && stravaAvgSpeed is JsonElement stravaAvgSpeedElem && stravaAvgSpeedElem.ValueKind == JsonValueKind.Number)
+                            workout.AvgSpeedMps = stravaAvgSpeedElem.GetDouble();
 
                         // Create route GeoJSON
                         var coordinates = trackPoints.Select(p => new[] { p.Longitude, p.Latitude }).ToList();

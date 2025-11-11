@@ -12,8 +12,8 @@ using Tempo.Api.Data;
 namespace Tempo.Api.Migrations
 {
     [DbContext(typeof(TempoDbContext))]
-    [Migration("20251111140553_AddWorkoutName")]
-    partial class AddWorkoutName
+    [Migration("20251111150526_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -31,7 +31,22 @@ namespace Tempo.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<byte?>("AvgCadenceRpm")
+                        .HasColumnType("smallint");
+
+                    b.Property<byte?>("AvgHeartRateBpm")
+                        .HasColumnType("smallint");
+
                     b.Property<int>("AvgPaceS")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("AvgPowerWatts")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("AvgSpeedMps")
+                        .HasColumnType("double precision");
+
+                    b.Property<int?>("Calories")
                         .HasColumnType("integer");
 
                     b.Property<DateTime>("CreatedAt")
@@ -46,12 +61,48 @@ namespace Tempo.Api.Migrations
                     b.Property<double?>("ElevGainM")
                         .HasColumnType("double precision");
 
+                    b.Property<double?>("ElevLossM")
+                        .HasColumnType("double precision");
+
+                    b.Property<byte?>("MaxCadenceRpm")
+                        .HasColumnType("smallint");
+
+                    b.Property<double?>("MaxElevM")
+                        .HasColumnType("double precision");
+
+                    b.Property<byte?>("MaxHeartRateBpm")
+                        .HasColumnType("smallint");
+
+                    b.Property<int?>("MaxPowerWatts")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("MaxSpeedMps")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("MinElevM")
+                        .HasColumnType("double precision");
+
+                    b.Property<byte?>("MinHeartRateBpm")
+                        .HasColumnType("smallint");
+
+                    b.Property<int?>("MovingTimeS")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Name")
                         .HasMaxLength(200)
                         .HasColumnType("text");
 
                     b.Property<string>("Notes")
                         .HasColumnType("text");
+
+                    b.Property<string>("RawFitData")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("RawGpxData")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("RawStravaData")
+                        .HasColumnType("jsonb");
 
                     b.Property<string>("RunType")
                         .HasMaxLength(50)
@@ -69,7 +120,27 @@ namespace Tempo.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RawFitData");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("RawFitData"), "gin");
+
+                    b.HasIndex("RawGpxData");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("RawGpxData"), "gin");
+
+                    b.HasIndex("RawStravaData");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("RawStravaData"), "gin");
+
+                    b.HasIndex("RunType");
+
+                    b.HasIndex("Source");
+
                     b.HasIndex("StartedAt");
+
+                    b.HasIndex("Weather");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Weather"), "gin");
 
                     b.HasIndex("StartedAt", "DistanceM", "DurationS");
 
@@ -165,6 +236,52 @@ namespace Tempo.Api.Migrations
                     b.ToTable("WorkoutSplits");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.WorkoutTimeSeries", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<byte?>("CadenceRpm")
+                        .HasColumnType("smallint");
+
+                    b.Property<double?>("DistanceM")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("ElapsedSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("ElevationM")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("GradePercent")
+                        .HasColumnType("double precision");
+
+                    b.Property<byte?>("HeartRateBpm")
+                        .HasColumnType("smallint");
+
+                    b.Property<int?>("PowerWatts")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("SpeedMps")
+                        .HasColumnType("double precision");
+
+                    b.Property<short?>("TemperatureC")
+                        .HasColumnType("smallint");
+
+                    b.Property<double?>("VerticalSpeedMps")
+                        .HasColumnType("double precision");
+
+                    b.Property<Guid>("WorkoutId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkoutId", "ElapsedSeconds");
+
+                    b.ToTable("WorkoutTimeSeries");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.WorkoutMedia", b =>
                 {
                     b.HasOne("Tempo.Api.Models.Workout", "Workout")
@@ -198,6 +315,17 @@ namespace Tempo.Api.Migrations
                     b.Navigation("Workout");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.WorkoutTimeSeries", b =>
+                {
+                    b.HasOne("Tempo.Api.Models.Workout", "Workout")
+                        .WithMany("TimeSeries")
+                        .HasForeignKey("WorkoutId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workout");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.Workout", b =>
                 {
                     b.Navigation("Media");
@@ -205,6 +333,8 @@ namespace Tempo.Api.Migrations
                     b.Navigation("Route");
 
                     b.Navigation("Splits");
+
+                    b.Navigation("TimeSeries");
                 });
 #pragma warning restore 612, 618
         }

@@ -13,6 +13,7 @@ public class TempoDbContext : DbContext
     public DbSet<WorkoutRoute> WorkoutRoutes { get; set; }
     public DbSet<WorkoutSplit> WorkoutSplits { get; set; }
     public DbSet<WorkoutMedia> WorkoutMedia { get; set; }
+    public DbSet<WorkoutTimeSeries> WorkoutTimeSeries { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -20,8 +21,21 @@ public class TempoDbContext : DbContext
 
         modelBuilder.Entity<Workout>(entity =>
         {
+            // Indexes for core stats (querying/filtering)
             entity.HasIndex(e => e.StartedAt);
-            entity.HasIndex(e => new { e.StartedAt, e.DistanceM, e.DurationS });
+            entity.HasIndex(e => new { e.StartedAt, e.DistanceM, e.DurationS }); // Duplicate detection
+            entity.HasIndex(e => e.Source);
+            entity.HasIndex(e => e.RunType);
+            
+            // GIN indexes for JSONB fields (enables efficient JSON queries)
+            entity.HasIndex(e => e.RawGpxData)
+                .HasMethod("gin");
+            entity.HasIndex(e => e.RawFitData)
+                .HasMethod("gin");
+            entity.HasIndex(e => e.RawStravaData)
+                .HasMethod("gin");
+            entity.HasIndex(e => e.Weather)
+                .HasMethod("gin");
         });
 
         modelBuilder.Entity<WorkoutRoute>(entity =>
@@ -50,6 +64,17 @@ public class TempoDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => e.WorkoutId);
+        });
+
+        modelBuilder.Entity<WorkoutTimeSeries>(entity =>
+        {
+            entity.HasOne(e => e.Workout)
+                .WithMany(e => e.TimeSeries)
+                .HasForeignKey(e => e.WorkoutId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Composite index for efficient time series queries
+            entity.HasIndex(e => new { e.WorkoutId, e.ElapsedSeconds });
         });
     }
 }

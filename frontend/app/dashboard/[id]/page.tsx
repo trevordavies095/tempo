@@ -140,6 +140,11 @@ export default function WorkoutDetailPage() {
               <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {formatDuration(data.durationS)}
               </div>
+              {data.movingTimeS !== null && data.movingTimeS !== data.durationS && (
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Moving: {formatDuration(data.movingTimeS)}
+                </div>
+              )}
             </div>
             <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
               <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Pace</div>
@@ -154,8 +159,105 @@ export default function WorkoutDetailPage() {
                   ? formatElevation(data.elevGainM)
                   : '—'}
               </div>
+              {data.elevLossM !== null && (
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Loss: {formatElevation(data.elevLossM)}
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Additional Stats */}
+          {(data.maxSpeedMps !== null || data.avgSpeedMps !== null || 
+            data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null ||
+            data.maxCadenceRpm !== null || data.avgCadenceRpm !== null ||
+            data.maxPowerWatts !== null || data.avgPowerWatts !== null ||
+            data.calories !== null) && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {data.maxSpeedMps !== null && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Speed</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {(data.maxSpeedMps * 3.6).toFixed(1)} km/h
+                  </div>
+                </div>
+              )}
+              {data.maxHeartRateBpm !== null && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Heart Rate</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {data.maxHeartRateBpm} bpm
+                  </div>
+                  {data.avgHeartRateBpm !== null && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Avg: {data.avgHeartRateBpm} bpm
+                    </div>
+                  )}
+                </div>
+              )}
+              {data.maxCadenceRpm !== null && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Cadence</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {data.maxCadenceRpm} rpm
+                  </div>
+                  {data.avgCadenceRpm !== null && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Avg: {data.avgCadenceRpm} rpm
+                    </div>
+                  )}
+                </div>
+              )}
+              {data.maxPowerWatts !== null && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Power</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {data.maxPowerWatts} W
+                  </div>
+                  {data.avgPowerWatts !== null && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Avg: {data.avgPowerWatts} W
+                    </div>
+                  )}
+                </div>
+              )}
+              {data.calories !== null && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Calories</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {data.calories}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Elevation Range */}
+          {(data.minElevM !== null || data.maxElevM !== null) && (
+            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                Elevation Profile
+              </h2>
+              <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {data.minElevM !== null && (
+                  <div>
+                    <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Min Elevation</dt>
+                    <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                      {formatElevation(data.minElevM)}
+                    </dd>
+                  </div>
+                )}
+                {data.maxElevM !== null && (
+                  <div>
+                    <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Max Elevation</dt>
+                    <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                      {formatElevation(data.maxElevM)}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
 
           {/* Additional Info */}
           <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">

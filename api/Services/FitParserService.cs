@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using System.IO.Compression;
+using System.Text.Json;
 using Tempo.Api.Services;
 using Dynastream.Fit;
 
@@ -16,6 +18,7 @@ public class FitParserService
         public double DistanceMeters { get; set; }
         public double? ElevationGainMeters { get; set; }
         public List<GpxParserService.GpxPoint> TrackPoints { get; set; } = new();
+        public string? RawFitDataJson { get; set; }  // JSON string for RawFitData field
     }
 
     public FitParseResult ParseFit(Stream fitStream)
@@ -42,6 +45,7 @@ public class FitParserService
             FitMessages messages = fitListener.FitMessages;
             var records = messages.RecordMesgs;
             var sessions = messages.SessionMesgs;
+            var deviceInfos = messages.DeviceInfoMesgs;
 
             // Extract data from SessionMesg if available (preferred source for summary data)
             SessionMesg? session = sessions.FirstOrDefault();
@@ -171,13 +175,17 @@ public class FitParserService
                 throw new InvalidOperationException("FIT file contains no GPS data and no distance information");
             }
 
+            // Build RawFitData JSON
+            var rawFitData = BuildRawFitData(session, deviceInfos, records.Count);
+
             return new FitParseResult
             {
                 StartTime = System.DateTime.SpecifyKind(startTime.Value, System.DateTimeKind.Utc),
                 DurationSeconds = durationSeconds,
                 DistanceMeters = totalDistance,
                 ElevationGainMeters = trackPoints.Count > 0 && elevationGain > 0 ? elevationGain : null,
-                TrackPoints = trackPoints
+                TrackPoints = trackPoints,
+                RawFitDataJson = rawFitData
             };
         }
         catch (FitException ex)
@@ -197,6 +205,115 @@ public class FitParserService
         gzipStream.CopyTo(memoryStream);
         memoryStream.Position = 0; // Reset to beginning for parsing
         return ParseFit(memoryStream);
+    }
+
+    private string? BuildRawFitData(SessionMesg? session, ReadOnlyCollection<DeviceInfoMesg> deviceInfos, int recordCount)
+    {
+        if (session == null)
+        {
+            return null;
+        }
+
+        var sessionData = new Dictionary<string, object?>();
+
+        // Extract all SessionMesg fields
+        if (session.GetTotalElapsedTime().HasValue)
+            sessionData["totalElapsedTime"] = session.GetTotalElapsedTime().Value;
+        if (session.GetTotalTimerTime().HasValue)
+            sessionData["totalTimerTime"] = session.GetTotalTimerTime().Value;
+        if (session.GetTotalMovingTime().HasValue)
+            sessionData["totalMovingTime"] = session.GetTotalMovingTime().Value;
+        if (session.GetTotalDistance().HasValue)
+            sessionData["totalDistance"] = session.GetTotalDistance().Value;
+        if (session.GetTotalCycles().HasValue)
+            sessionData["totalCycles"] = session.GetTotalCycles().Value;
+        if (session.GetTotalStrides().HasValue)
+            sessionData["totalStrides"] = session.GetTotalStrides().Value;
+        if (session.GetTotalStrokes().HasValue)
+            sessionData["totalStrokes"] = session.GetTotalStrokes().Value;
+        if (session.GetTotalCalories().HasValue)
+            sessionData["totalCalories"] = session.GetTotalCalories().Value;
+        if (session.GetTotalFatCalories().HasValue)
+            sessionData["totalFatCalories"] = session.GetTotalFatCalories().Value;
+        if (session.GetMaxSpeed().HasValue)
+            sessionData["maxSpeed"] = session.GetMaxSpeed().Value;
+        if (session.GetAvgSpeed().HasValue)
+            sessionData["avgSpeed"] = session.GetAvgSpeed().Value;
+        if (session.GetMaxHeartRate().HasValue)
+            sessionData["maxHeartRate"] = session.GetMaxHeartRate().Value;
+        if (session.GetAvgHeartRate().HasValue)
+            sessionData["avgHeartRate"] = session.GetAvgHeartRate().Value;
+        if (session.GetMinHeartRate().HasValue)
+            sessionData["minHeartRate"] = session.GetMinHeartRate().Value;
+        if (session.GetMaxCadence().HasValue)
+            sessionData["maxCadence"] = session.GetMaxCadence().Value;
+        if (session.GetMaxRunningCadence().HasValue)
+            sessionData["maxRunningCadence"] = session.GetMaxRunningCadence().Value;
+        if (session.GetAvgCadence().HasValue)
+            sessionData["avgCadence"] = session.GetAvgCadence().Value;
+        if (session.GetMaxPower().HasValue)
+            sessionData["maxPower"] = session.GetMaxPower().Value;
+        if (session.GetAvgPower().HasValue)
+            sessionData["avgPower"] = session.GetAvgPower().Value;
+        if (session.GetTotalAscent().HasValue)
+            sessionData["totalAscent"] = session.GetTotalAscent().Value;
+        if (session.GetTotalDescent().HasValue)
+            sessionData["totalDescent"] = session.GetTotalDescent().Value;
+        if (session.GetMaxAltitude().HasValue)
+            sessionData["maxAltitude"] = session.GetMaxAltitude().Value;
+        if (session.GetMinAltitude().HasValue)
+            sessionData["minAltitude"] = session.GetMinAltitude().Value;
+        if (session.GetMaxPosGrade().HasValue)
+            sessionData["maxPosGrade"] = session.GetMaxPosGrade().Value;
+        if (session.GetMaxNegGrade().HasValue)
+            sessionData["maxNegGrade"] = session.GetMaxNegGrade().Value;
+        if (session.GetMaxTemperature().HasValue)
+            sessionData["maxTemperature"] = session.GetMaxTemperature().Value;
+        if (session.GetMinTemperature().HasValue)
+            sessionData["minTemperature"] = session.GetMinTemperature().Value;
+        if (session.GetTotalTrainingEffect().HasValue)
+            sessionData["totalTrainingEffect"] = session.GetTotalTrainingEffect().Value;
+        if (session.GetTotalAnaerobicTrainingEffect().HasValue)
+            sessionData["totalAnaerobicTrainingEffect"] = session.GetTotalAnaerobicTrainingEffect().Value;
+        if (session.GetMaxPosVerticalSpeed().HasValue)
+            sessionData["maxPosVerticalSpeed"] = session.GetMaxPosVerticalSpeed().Value;
+        if (session.GetMaxNegVerticalSpeed().HasValue)
+            sessionData["maxNegVerticalSpeed"] = session.GetMaxNegVerticalSpeed().Value;
+        if (session.GetTotalWork().HasValue)
+            sessionData["totalWork"] = session.GetTotalWork().Value;
+        if (session.GetTotalGrit().HasValue)
+            sessionData["totalGrit"] = session.GetTotalGrit().Value;
+        if (session.GetAvgFlow().HasValue)
+            sessionData["avgFlow"] = session.GetAvgFlow().Value;
+
+        // Extract device info
+        var deviceData = new Dictionary<string, object?>();
+        var deviceInfo = deviceInfos.FirstOrDefault();
+        if (deviceInfo != null)
+        {
+            if (deviceInfo.GetManufacturer().HasValue)
+                deviceData["manufacturer"] = deviceInfo.GetManufacturer().Value;
+            if (deviceInfo.GetProduct().HasValue)
+                deviceData["product"] = deviceInfo.GetProduct().Value;
+            if (deviceInfo.GetSerialNumber().HasValue)
+                deviceData["serialNumber"] = deviceInfo.GetSerialNumber().Value;
+        }
+
+        var rawFitData = new
+        {
+            session = sessionData.Count > 0 ? sessionData : null,
+            device = deviceData.Count > 0 ? deviceData : null,
+            recordCount = recordCount,
+            hasTimeSeries = recordCount > 0,
+            source = "fit_import",
+            importedAt = System.DateTime.UtcNow.ToString("O")
+        };
+
+        return JsonSerializer.Serialize(rawFitData, new JsonSerializerOptions
+        {
+            WriteIndented = false,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        });
     }
 }
 
