@@ -69,6 +69,8 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 - `GET /workouts/{id}` - Get workout details including route GeoJSON (parsed from JSONB string) and splits (ordered by `Idx`). Returns 404 if not found. Includes weather JSON if available. Uses `.AsNoTracking()` for read-only query.
 - `GET /workouts/{id}/media` - List all media files for a workout. Returns array of media metadata (id, filename, mimeType, fileSizeBytes, caption, createdAt). Returns 404 if workout not found.
 - `GET /workouts/{id}/media/{mediaId}` - Serve media file. Returns file stream with appropriate MIME type and filename. Supports range requests (for video seeking). Returns 404 if workout or media not found, or if file missing on filesystem.
+- `GET /workouts/stats/weekly` - Get weekly statistics (daily miles for current week, Monday-Sunday). Accepts optional `timezoneOffsetMinutes` query parameter for timezone adjustment. Returns array of 7 values (Monday through Sunday) in miles.
+- `GET /workouts/stats/yearly` - Get yearly statistics (total miles for current year and previous year). Accepts optional `timezoneOffsetMinutes` query parameter. Returns current year and previous year totals in miles.
 - `GET /health` - Health check endpoint (mapped in `Program.cs`)
 
 **Configuration**:
@@ -89,14 +91,24 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 - `importBulkStravaExport(zipFile: File)` - POSTs ZIP file to `/workouts/import/bulk`, returns `BulkImportResponse` with success/error counts
 - `getWorkouts(params?: WorkoutsListParams)` - GETs paginated workout list from `/workouts` with query params, throws on 404 or other errors
 - `getWorkout(id: string)` - GETs workout details from `/workouts/{id}`, throws specific error for 404
+- `getWorkoutMedia(workoutId: string)` - GETs media list from `/workouts/{id}/media`, returns empty array on 404
+- `getWorkoutMediaUrl(workoutId: string, mediaId: string)` - Returns URL for serving media file
+- `getWeeklyStats(timezoneOffsetMinutes?: number)` - GETs weekly stats from `/workouts/stats/weekly`
+- `getYearlyStats(timezoneOffsetMinutes?: number)` - GETs yearly stats from `/workouts/stats/yearly`
 Uses `NEXT_PUBLIC_API_URL` environment variable (defaults to `http://localhost:5001`). All functions use CORS mode and throw on HTTP errors.
 
 **Components**: 
 - `FileUpload`: Handles single GPX file upload UI
 - `BulkImport`: Handles ZIP file bulk import UI
 - `WorkoutMap`: Leaflet-based map component for visualizing workout routes (client-side only, dynamically imported to avoid SSR issues)
-- `app/workouts/page.tsx`: Workout list page with pagination, filtering, and table view
-- `app/workouts/[id]/page.tsx`: Workout detail page with stats, splits table, route map, and notes
+- `WorkoutMediaGallery`: Displays media files (photos/videos) for a workout
+- `MediaModal`: Modal component for viewing media files in fullscreen
+- `WeeklyStatsWidget`: Displays weekly running statistics (daily miles)
+- `YearlyComparisonWidget`: Displays year-over-year comparison of total miles
+- `app/page.tsx`: Home page that redirects to `/dashboard` (if workouts exist) or `/import` (if empty)
+- `app/dashboard/page.tsx`: Workout list page with pagination, filtering, table view, and stats widgets
+- `app/dashboard/[id]/page.tsx`: Workout detail page with stats, splits table, route map, notes, and media gallery
+- `app/import/page.tsx`: Import page with single GPX upload and bulk Strava import options
 
 **Utilities**: `lib/format.ts` provides formatting helpers for distance, duration, pace, dates, and date-time.
 
@@ -145,7 +157,8 @@ The `test_data/` directory contains sample files for development:
 - **Single GPX import**: `POST /workouts/import` endpoint fully functional
 - **Bulk import**: `POST /workouts/import/bulk` - accepts Strava ZIP exports with `activities.csv` and processes GPX/.fit.gz files. Includes duplicate detection based on `(StartedAt, DistanceM, DurationS)`. Batch inserts workouts for performance. Automatically imports media files from Strava exports (parses Media column, copies files, creates database records).
 - **Workout browsing**: `GET /workouts` (list with pagination/filtering) and `GET /workouts/{id}` (detail) endpoints functional
-- **Frontend pages**: Workout list (`/workouts`) and detail (`/workouts/[id]`) pages fully implemented with TanStack Query
+- **Frontend pages**: Dashboard (`/dashboard`), workout detail (`/dashboard/[id]`), and import (`/import`) pages fully implemented with TanStack Query
+- **Stats endpoints**: `GET /workouts/stats/weekly` and `GET /workouts/stats/yearly` implemented for analytics widgets
 - **FIT file support**: Garmin FIT SDK (v21.171.00) embedded and compiled into backend for `.fit.gz` file parsing. Converts FIT coordinate format (semicircles) to degrees.
 - **Map visualization**: `WorkoutMap` component using Leaflet and OpenStreetMap tiles. Dynamically imported to avoid SSR issues. Displays route as polyline with auto-fit bounds.
 - **Media support**: `WorkoutMedia` model, `MediaService`, media storage on filesystem, `GET /workouts/{id}/media` (list) and `GET /workouts/{id}/media/{mediaId}` (serve file) endpoints. Media automatically imported during bulk Strava import.
@@ -153,7 +166,7 @@ The `test_data/` directory contains sample files for development:
 ### ❌ Not Yet Implemented
 - **Tests**: PRD mentions Vitest/Playwright for frontend and xUnit for backend, but no test infrastructure exists yet
 - **Weather API**: Open-Meteo integration planned (per PRD). Weather field exists in database but is not populated.
-- **Analytics endpoints**: `GET /analytics/summary` planned but not yet implemented (per PRD)
+- **Analytics endpoints**: Basic stats endpoints (`/workouts/stats/weekly` and `/workouts/stats/yearly`) are implemented. `GET /analytics/summary` (comprehensive analytics) planned but not yet implemented (per PRD)
 - **Workout editing**: `PATCH /workouts/{id}` endpoint planned but not implemented (per PRD)
 - **Media upload**: `POST /workouts/{id}/media` endpoint for manual media upload after GPX import (planned per PRD, not yet implemented)
 - **Media deletion**: `DELETE /workouts/{id}/media/{mediaId}` endpoint planned but not implemented (per PRD)

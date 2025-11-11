@@ -156,7 +156,7 @@ export default function WorkoutMap({ route, workoutId }: WorkoutMapProps) {
     <div
       ref={containerRef}
       className="w-full h-96 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700"
-      style={{ position: 'relative' }}
+      style={{ position: 'relative', isolation: 'isolate' }}
     />
   );
 }
