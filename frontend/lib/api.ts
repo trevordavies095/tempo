@@ -64,6 +64,15 @@ export interface WorkoutDetail {
   }>;
 }
 
+export interface WorkoutMedia {
+  id: string;
+  filename: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  caption: string | null;
+  createdAt: string;
+}
+
 export async function importGpxFile(file: File): Promise<WorkoutImportResponse> {
   const formData = new FormData();
   formData.append('file', file);
@@ -170,5 +179,38 @@ export async function importBulkStravaExport(zipFile: File): Promise<BulkImportR
   }
 
   return response.json();
+}
+
+export async function getWorkoutMedia(workoutId: string): Promise<WorkoutMedia[]> {
+  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  // If workout not found, return empty array (no media)
+  if (response.status === 404) {
+    console.log('[getWorkoutMedia] Workout not found (404) for workoutId:', workoutId);
+    return [];
+  }
+
+  if (!response.ok) {
+    console.error('[getWorkoutMedia] Error response:', response.status, response.statusText);
+    throw new Error(`Failed to fetch workout media: ${response.status}`);
+  }
+
+  const data = await response.json();
+  console.log('[getWorkoutMedia] Raw API response:', {
+    workoutId,
+    status: response.status,
+    data,
+    dataType: typeof data,
+    isArray: Array.isArray(data),
+    length: Array.isArray(data) ? data.length : 'N/A',
+  });
+  return data;
+}
+
+export function getWorkoutMediaUrl(workoutId: string, mediaId: string): string {
+  return `${API_BASE_URL}/workouts/${workoutId}/media/${mediaId}`;
 }
 

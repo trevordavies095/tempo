@@ -30,6 +30,7 @@ This project aims to replicate the *core running analytics* experience — impor
   - Weather conditions
   - Run type (easy, tempo, long, etc.)
   - Private notes/journal
+  - Media attachments (photos and videos)
 - View weekly and monthly performance trends.
 - Self-hostable with Docker.
 - 100% local data ownership (no cloud dependency).
@@ -65,8 +66,8 @@ A privacy-conscious runner who uses an Apple Watch and wants to track workouts l
 
 | # | Feature | Description | Priority |
 |---|----------|--------------|-----------|
-| F1 | **Manual GPX Import** | Users can upload single GPX files. System parses metadata (distance, time, GPS). | ⭐⭐⭐⭐ |
-| F2 | **Bulk Import (Strava Export)** | Accept ZIP folder of GPX/FIT files, batch-process them into database. | ⭐⭐⭐ |
+| F1 | **Manual GPX Import** | Users can upload single GPX files. System parses metadata (distance, time, GPS). Media files can be uploaded after import. | ⭐⭐⭐⭐ |
+| F2 | **Bulk Import (Strava Export)** | Accept ZIP folder of GPX/FIT files, batch-process them into database. Automatically imports associated media files from Strava export. | ⭐⭐⭐ |
 | F3 | **Map Visualization** | Display route via Leaflet + OpenStreetMap tiles. | ⭐⭐⭐⭐ |
 | F4 | **Workout Stats** | Distance, time, avg pace, elevation, date/time. | ⭐⭐⭐⭐ |
 | F5 | **Splits Calculation** | Calculate mile/km splits automatically. | ⭐⭐⭐⭐ |
@@ -76,6 +77,7 @@ A privacy-conscious runner who uses an Apple Watch and wants to track workouts l
 | F9 | **Analytics Dashboard** | Display charts for total mileage and avg pace trends. | ⭐⭐⭐ |
 | F10 | **Data Export/Backup** | JSON export of all workouts. | ⭐⭐⭐ |
 | F11 | **Self-Hosting** | Packaged Docker deployment with persistent storage volume. | ⭐⭐⭐⭐ |
+| F12 | **Media Attachments** | Attach photos and videos to workouts. Support automatic import from Strava exports and manual upload after GPX import. | ⭐⭐⭐ |
 
 ---
 
@@ -126,6 +128,10 @@ POST /workouts/import/bulk   → Upload ZIP (Strava export)
 GET /workouts                → List/filter workouts
 GET /workouts/{id}           → Retrieve workout details
 PATCH /workouts/{id}         → Update notes/run type
+POST /workouts/{id}/media    → Upload media files (multipart/form-data, accepts multiple files)
+GET /workouts/{id}/media     → List all media for a workout
+GET /workouts/{id}/media/{mediaId} → Retrieve/serve media file
+DELETE /workouts/{id}/media/{mediaId} → Delete media (removes file and database record)
 GET /analytics/summary       → Aggregate pace/distance
 GET /export/json             → Full JSON backup
 ```
@@ -161,11 +167,25 @@ GET /export/json             → Full JSON backup
 | duration_s | int | Split time |
 | pace_s | int | Pace per split |
 
+**workout_media**
+| Field | Type | Description |
+|--------|------|-------------|
+| id | UUID | Unique ID (primary key) |
+| workout_id | UUID | Foreign key to workouts (indexed) |
+| filename | text | Original filename from upload |
+| file_path | text | Filesystem path (relative to media root or absolute) |
+| mime_type | text | MIME type (e.g., "image/jpeg", "video/mp4") |
+| file_size_bytes | bigint | File size in bytes |
+| caption | text | Optional caption/description (nullable) |
+| created_at | timestamptz | Creation timestamp (default: now()) |
+
 ---
 
 ## 7. Import Pipeline
 
-1. User uploads a GPX file or ZIP of GPX/FIT files.  
+### Single GPX Import
+
+1. User uploads a GPX file.  
 2. Backend parses metadata (start time, elapsed, GPS track).  
 3. Computes:
    - Splits
@@ -174,8 +194,89 @@ GET /export/json             → Full JSON backup
 4. Queries **Open-Meteo** with coordinates + timestamp.  
 5. Saves all data to Postgres.  
 6. Returns summary + computed metrics to frontend.  
+7. User can optionally upload media files after import via `POST /workouts/{id}/media`.
 
-**Bulk import:** Processes files sequentially with duplicate detection by `(start_time, distance, duration)` checksum.
+### Bulk Import (Strava Export)
+
+1. User uploads a ZIP file containing Strava export (activities.csv + activity files).  
+2. Backend extracts ZIP to temporary directory.  
+3. Parses `activities.csv` to identify run activities and their associated files.  
+4. For each activity:
+   - Parses GPX/FIT file to extract metadata (start time, elapsed, GPS track)
+   - Computes splits, average pace, elevation gain
+   - Queries **Open-Meteo** with coordinates + timestamp
+   - Checks for duplicates using `(start_time, distance, duration)` checksum
+   - **Extracts media files:** Parses "Media" column from activities.csv (contains comma-separated media file paths)
+   - **Matches media files:** Locates media files from `media/` directory in ZIP export
+   - **Copies media files:** Saves media files to persistent filesystem storage (organized by workout ID)
+   - **Creates media records:** Creates `workout_media` database records with file paths, MIME types, and metadata
+   - Handles missing media files gracefully (skips if file not found or Media column is empty)
+5. Batch saves all workouts, routes, splits, and media records to Postgres.  
+6. Cleans up temporary directory.  
+7. Returns summary with counts and error details.
+
+**Media Import Details:**
+- Media column in activities.csv may contain comma-separated paths (e.g., "media/file1.jpg,media/file2.mp4")
+- Media files are stored in organized directory structure: `media/{workoutId}/{filename}`
+- Original filenames are preserved or unique names are generated to avoid conflicts
+- MIME types are detected from file extensions
+- File sizes are recorded for storage management
+
+---
+
+## 7.1. Media Storage Strategy
+
+### Storage Approach
+Media files are stored on the filesystem with database references. The database stores file paths, metadata, and relationships, while actual media files are stored in a configured directory on the server's filesystem.
+
+### Supported File Types
+
+**Images:**
+- JPG/JPEG
+- PNG
+- GIF
+- WEBP
+
+**Videos:**
+- MP4
+- MOV
+- AVI
+
+### File Size Limits
+- Recommended default: 50MB per file
+- Configurable via application settings
+- Validation enforced at upload time
+
+### File Organization
+Media files are organized in a hierarchical directory structure:
+```
+{mediaRoot}/
+  {workoutId}/
+    {filename1}.jpg
+    {filename2}.mp4
+    ...
+```
+
+This structure:
+- Groups media by workout for easy management
+- Simplifies cleanup when workouts are deleted
+- Supports efficient file serving
+- Allows for future organization enhancements
+
+### File Naming
+- Original filenames are preserved when possible
+- Unique names are generated if conflicts occur (e.g., using GUIDs or timestamps)
+- Database records maintain both original filename and actual file path
+
+### MIME Type Detection
+- MIME types are detected from file extensions during upload
+- Stored in database for proper content-type headers when serving files
+- Supports proper browser rendering of images and videos
+
+### Storage Configuration
+- Media root directory configurable via environment variable or appsettings
+- Should be included in Docker volume mounts for persistence
+- Consider backup strategy for media files alongside database backups
 
 ---
 
@@ -193,6 +294,15 @@ GET /export/json             → Full JSON backup
 - Frontend: Workout list view
 - Frontend: Workout detail view
 - Frontend: Navigation between views
+- Media attachments:
+  - Database model: `WorkoutMedia`
+  - `POST /workouts/{id}/media` - Upload media files endpoint
+  - `GET /workouts/{id}/media` - List media for workout endpoint
+  - `GET /workouts/{id}/media/{mediaId}` - Retrieve/serve media file endpoint
+  - `DELETE /workouts/{id}/media/{mediaId}` - Delete media endpoint
+  - Media import during Strava bulk import (parse Media column, copy files, create records)
+  - Frontend: Media upload component for post-import uploads
+  - Frontend: Media display on workout detail page (image preview, video playback)
 
 ### Backend Implementation Requirements
 

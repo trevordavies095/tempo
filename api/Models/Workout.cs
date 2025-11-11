@@ -41,5 +41,6 @@ public class Workout
     // Navigation properties
     public WorkoutRoute? Route { get; set; }
     public ICollection<WorkoutSplit> Splits { get; set; } = new List<WorkoutSplit>();
+    public ICollection<WorkoutMedia> Media { get; set; } = new List<WorkoutMedia>();
 }
 

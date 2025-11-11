@@ -38,4 +38,4 @@ logs/
 .env.*.local
 
 test_data/
-
+media/

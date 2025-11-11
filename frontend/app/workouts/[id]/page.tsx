@@ -1,11 +1,14 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { getWorkout } from '@/lib/api';
+import { getWorkout, getWorkoutMedia, type WorkoutMedia } from '@/lib/api';
 import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
+import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
+import { MediaModal } from '@/components/MediaModal';
 
 // Dynamically import WorkoutMap to avoid SSR issues with Leaflet
 const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
@@ -20,11 +23,43 @@ const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
 export default function WorkoutDetailPage() {
   const params = useParams();
   const id = params.id as string;
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState<number | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['workout', id],
     queryFn: () => getWorkout(id),
   });
+
+  const { data: media, isLoading: isLoadingMedia, isError: isMediaError } = useQuery({
+    queryKey: ['workout-media', id],
+    queryFn: () => getWorkoutMedia(id),
+    enabled: !!id, // Fetch media as soon as we have the workout ID
+    retry: false, // Don't retry on error - treat as no media
+  });
+
+  // Debug logging for media query
+  useEffect(() => {
+    console.log('[WorkoutDetailPage] Media query state:', {
+      isLoading: isLoadingMedia,
+      isError: isMediaError,
+      media: media,
+      mediaType: typeof media,
+      isArray: Array.isArray(media),
+      length: Array.isArray(media) ? media.length : 'N/A',
+      workoutId: id,
+    });
+  }, [media, isLoadingMedia, isMediaError, id]);
+
+  const handleMediaClick = (media: WorkoutMedia, index: number) => {
+    setSelectedMediaIndex(index);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedMediaIndex(null);
+  };
 
   if (isLoading) {
     return (
@@ -161,6 +196,12 @@ export default function WorkoutDetailPage() {
                 </dd>
               </div>
             )}
+            <WorkoutMediaGallery
+              workoutId={id}
+              media={isMediaError ? [] : media}
+              isLoading={isLoadingMedia}
+              onMediaClick={handleMediaClick}
+            />
           </div>
 
           {/* Splits Table */}
@@ -235,6 +276,17 @@ export default function WorkoutDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Media Modal */}
+        {media && media.length > 0 && selectedMediaIndex !== null && (
+          <MediaModal
+            media={media}
+            initialIndex={selectedMediaIndex}
+            workoutId={id}
+            isOpen={isModalOpen}
+            onClose={handleCloseModal}
+          />
+        )}
       </main>
     </div>
   );

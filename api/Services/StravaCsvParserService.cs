@@ -15,6 +15,7 @@ public class StravaCsvParserService
         public string ActivityDescription { get; set; } = string.Empty;
         public string Filename { get; set; } = string.Empty;
         public string? ActivityPrivateNote { get; set; }
+        public string? Media { get; set; }
     }
 
     public List<StravaActivityRecord> ParseActivitiesCsv(Stream csvStream)
@@ -63,6 +64,7 @@ public class StravaCsvParserService
             Map(m => m.ActivityDescription).Name("Activity Description");
             Map(m => m.Filename).Name("Filename");
             Map(m => m.ActivityPrivateNote).Name("Activity Private Note");
+            Map(m => m.Media).Name("Media").Optional();
         }
     }
 }

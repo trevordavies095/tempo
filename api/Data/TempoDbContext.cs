@@ -12,6 +12,7 @@ public class TempoDbContext : DbContext
     public DbSet<Workout> Workouts { get; set; }
     public DbSet<WorkoutRoute> WorkoutRoutes { get; set; }
     public DbSet<WorkoutSplit> WorkoutSplits { get; set; }
+    public DbSet<WorkoutMedia> WorkoutMedia { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,6 +40,16 @@ public class TempoDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => new { e.WorkoutId, e.Idx });
+        });
+
+        modelBuilder.Entity<WorkoutMedia>(entity =>
+        {
+            entity.HasOne(e => e.Workout)
+                .WithMany(e => e.Media)
+                .HasForeignKey(e => e.WorkoutId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.WorkoutId);
         });
     }
 }
