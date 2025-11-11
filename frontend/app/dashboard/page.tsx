@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
 import { formatDate, formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
 
-export default function WorkoutsPage() {
+export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
 
@@ -21,7 +21,7 @@ export default function WorkoutsPage() {
         <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
           <div className="w-full">
             <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Workouts
+              Dashboard
             </h1>
             <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
               Loading workouts...
@@ -38,7 +38,7 @@ export default function WorkoutsPage() {
         <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
           <div className="w-full">
             <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Workouts
+              Dashboard
             </h1>
             <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
               <p className="text-sm text-red-800 dark:text-red-200">
@@ -57,10 +57,10 @@ export default function WorkoutsPage() {
         <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
           <div className="w-full">
             <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Workouts
+              Dashboard
             </h1>
             <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
-              No workouts found. <Link href="/" className="text-blue-600 dark:text-blue-400 hover:underline">Import a GPX file</Link> to get started.
+              No workouts found. <Link href="/import" className="text-blue-600 dark:text-blue-400 hover:underline">Import a GPX file</Link> to get started.
             </p>
           </div>
         </main>
@@ -75,14 +75,14 @@ export default function WorkoutsPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                Workouts
+                Dashboard
               </h1>
               <p className="text-lg text-gray-600 dark:text-gray-400">
                 {data.totalCount} total workout{data.totalCount !== 1 ? 's' : ''}
               </p>
             </div>
             <Link
-              href="/"
+              href="/import"
               className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
             >
               ← Back to Import
@@ -128,7 +128,7 @@ export default function WorkoutsPage() {
                 >
                   <td className="py-3 px-4">
                     <Link
-                      href={`/workouts/${workout.id}`}
+                      href={`/dashboard/${workout.id}`}
                       className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
                     >
                       {formatDate(workout.startedAt)}

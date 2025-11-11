@@ -1,50 +1,47 @@
-import Link from 'next/link';
-import { FileUpload } from '@/components/FileUpload';
-import { BulkImport } from '@/components/BulkImport';
+'use client';
+
+import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { getWorkouts } from '@/lib/api';
 
 export default function Home() {
+  const router = useRouter();
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['workouts', 'count'],
+    queryFn: () => getWorkouts({ page: 1, pageSize: 1 }),
+  });
+
+  useEffect(() => {
+    if (data) {
+      if (data.totalCount > 0) {
+        router.push('/dashboard');
+      } else {
+        router.push('/import');
+      }
+    } else if (isError) {
+      // On error, redirect to import page as fallback
+      router.push('/import');
+    }
+  }, [data, isError, router]);
+
+  // Show loading state while checking
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-4xl flex-col items-center justify-start py-16 px-8">
         <div className="w-full mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                Tempo
-              </h1>
-              <p className="text-lg text-gray-600 dark:text-gray-400">
-                Self-hostable running tracker
-              </p>
-            </div>
-            <Link
-              href="/workouts"
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              View All Workouts
-            </Link>
+          <div>
+            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+              Tempo
+            </h1>
+            <p className="text-lg text-gray-600 dark:text-gray-400">
+              Self-hostable running tracker
+            </p>
           </div>
         </div>
-
-        <div className="w-full space-y-8">
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Import Single GPX Workout
-            </h2>
-            <FileUpload />
-          </div>
-
-          <div className="border-t border-gray-200 dark:border-gray-800 pt-8">
-            <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Bulk Import Strava Export
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Upload a ZIP file containing your Strava data export. The ZIP should include{' '}
-              <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-800 rounded">activities.csv</code>{' '}
-              and an <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-800 rounded">activities/</code>{' '}
-              folder with GPX or FIT files.
-            </p>
-            <BulkImport />
-          </div>
+        <div className="w-full text-center">
+          <p className="text-gray-600 dark:text-gray-400">Loading...</p>
         </div>
       </main>
     </div>

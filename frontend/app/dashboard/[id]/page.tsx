@@ -85,10 +85,10 @@ export default function WorkoutDetailPage() {
         <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
           <div className="w-full">
             <Link
-              href="/workouts"
+              href="/dashboard"
               className="text-blue-600 dark:text-blue-400 hover:underline mb-4 inline-block"
             >
-              ← Back to Workouts
+              ← Back to Dashboard
             </Link>
             <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
               Workout Details
@@ -113,10 +113,10 @@ export default function WorkoutDetailPage() {
       <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
         <div className="w-full mb-8">
           <Link
-            href="/workouts"
+            href="/dashboard"
             className="text-blue-600 dark:text-blue-400 hover:underline mb-4 inline-block"
           >
-            ← Back to Workouts
+            ← Back to Dashboard
           </Link>
           <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             Workout Details
