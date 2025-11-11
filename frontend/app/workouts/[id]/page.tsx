@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { getWorkout } from '@/lib/api';
-import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace } from '@/lib/format';
+import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
 
 // Dynamically import WorkoutMap to avoid SSR issues with Leaflet
 const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
@@ -116,7 +116,7 @@ export default function WorkoutDetailPage() {
               <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Elevation</div>
               <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {data.elevGainM !== null
-                  ? `${(data.elevGainM / 1000).toFixed(1)} km`
+                  ? formatElevation(data.elevGainM)
                   : '—'}
               </div>
             </div>

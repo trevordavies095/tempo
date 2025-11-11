@@ -51,20 +51,20 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 - `StravaCsvParserService`: Parses Strava export CSV files (`activities.csv`) to extract activity metadata and match files for bulk import. Filters for "Run" activity type only.
 
 **Key Implementation Details**:
-- GPX parsing uses XML namespaces (`http://www.topografix.com/GPX/1/1`)
-- Distance calculation: Haversine formula with Earth radius 6,371,000m
+- GPX parsing uses XML namespaces (`http://www.topografix.com/GPX/1/1`). Requires at least 2 track points. Extracts lat/lon, elevation (optional), and time (optional) from `<trkpt>` nodes.
+- Distance calculation: Haversine formula with Earth radius 6,371,000m, calculated between consecutive track points
 - Splits: Default 1000m (1km) segments, calculated from accumulated distance between track points using `GpxParserService.CalculateSplits()`
-- Routes stored as GeoJSON LineString in PostgreSQL JSONB column (as JSON string, parsed on retrieval)
+- Routes stored as GeoJSON LineString in PostgreSQL JSONB column (stored as JSON string, parsed on retrieval using `JsonSerializer.Deserialize<object>()`)
 - Weather data stored as JSONB string (Open-Meteo integration planned per PRD)
-- Duplicate detection: Uses database query with tolerance (1.0m distance, 1s duration) for bulk imports
-- DateTime handling: All `StartedAt` values are normalized to UTC in both import endpoints
-- Bulk import: Extracts ZIP to temp directory, processes all files, batch inserts, then cleans up temp directory
+- Duplicate detection: Exact match on `StartedAt`, tolerance of 1.0m for `DistanceM`, and 1s for `DurationS`. Uses database query before creating workout entity.
+- DateTime handling: All `StartedAt` values are normalized to UTC in both import endpoints using defensive conversion (handles UTC, Local, and Unspecified DateTimeKind)
+- Bulk import: Extracts ZIP to temp directory (using `Path.GetTempPath()` + GUID), processes all files sequentially, collects entities in lists, batch inserts with single `SaveChangesAsync()`, then cleans up temp directory in `finally` block
 
 **API Endpoints** (in `WorkoutsEndpoints`):
 - `POST /workouts/import` - Single GPX file import (multipart/form-data, file field named "file"). Validates `.gpx` extension. Returns workout summary with ID and metrics.
-- `POST /workouts/import/bulk` - Bulk import from Strava ZIP export (requires `activities.csv` in root and GPX/.fit.gz files). Supports duplicate detection based on `(StartedAt, DistanceM, DurationS)`. Processes files sequentially, batch inserts all workouts at the end. Returns summary with `totalProcessed`, `successful`, `skipped`, `errors`, and `errorDetails` array.
-- `GET /workouts` - List workouts with pagination and filtering (query params: page, pageSize, startDate, endDate, minDistanceM, maxDistanceM). Default pageSize is 20, max is 100. Returns 404 if page exceeds total pages. Uses `.AsNoTracking()` for read-only queries.
-- `GET /workouts/{id}` - Get workout details including route GeoJSON (parsed from JSONB string) and splits (ordered by `Idx`). Returns 404 if not found. Includes weather JSON if available.
+- `POST /workouts/import/bulk` - Bulk import from Strava ZIP export (requires `activities.csv` in root and GPX/.fit.gz files). Supports duplicate detection: exact match on `StartedAt`, tolerance of 1.0m for `DistanceM`, and 1s for `DurationS`. Processes files sequentially, collects all workouts/routes/splits, then batch inserts with single `SaveChangesAsync()`. Combines CSV metadata (ActivityName, ActivityDescription, ActivityPrivateNote) into Notes field. Returns summary with `totalProcessed`, `successful`, `skipped`, `errors`, and `errorDetails` array.
+- `GET /workouts` - List workouts with pagination and filtering (query params: page, pageSize, startDate, endDate, minDistanceM, maxDistanceM). Default pageSize is 20, max is 100. Returns 404 if page exceeds total pages. Uses `.Include()` to eager load Route and Splits for counting, then `.AsNoTracking()` after pagination for read-only performance.
+- `GET /workouts/{id}` - Get workout details including route GeoJSON (parsed from JSONB string) and splits (ordered by `Idx`). Returns 404 if not found. Includes weather JSON if available. Uses `.AsNoTracking()` for read-only query.
 - `GET /health` - Health check endpoint (mapped in `Program.cs`)
 
 **Configuration**:
@@ -125,7 +125,13 @@ Migrations are in `api/Migrations/`. The initial migration creates the three mai
 
 **⚠️ Important**: `Program.cs` calls `db.Database.EnsureCreated()` as a fallback, which may conflict with migrations in production. Consider removing `EnsureCreated()` in favor of migrations-only approach for production deployments.
 
-**FIT SDK Integration**: The FIT SDK C# source files are located in `api/Libraries/FitSDK/` and are automatically compiled into the project. The SDK handles parsing Garmin FIT files including compressed `.fit.gz` files. Coordinate conversion from semicircles (FIT format unit) to degrees is handled in `FitParserService` using the conversion factor `180.0 / 2^31`.
+**FIT SDK Integration**: The FIT SDK C# source files are located in `api/Libraries/FitSDK/` (version 21.171.00) and are automatically compiled into the project via `<Compile Include>` directives in `Tempo.Api.csproj`. The SDK handles parsing Garmin FIT files including compressed `.fit.gz` files. Coordinate conversion from semicircles (FIT format unit) to degrees is handled in `FitParserService` using the conversion factor `180.0 / 2^31`. The SDK is embedded directly in the repository (not a NuGet package).
+
+### Test Data
+
+The `test_data/` directory contains sample files for development:
+- `20251110.gpx` - Sample GPX file for testing single import
+- `strava_export/` - Sample Strava export ZIP structure with `activities.csv` and associated GPX/FIT files in subdirectories (`routes/`, `activities/`, etc.)
 
 ## Implementation Status
 

@@ -160,7 +160,7 @@ public class GpxParserService
         return degrees * Math.PI / 180.0;
     }
 
-    public List<WorkoutSplit> CalculateSplits(List<GpxPoint> trackPoints, double distanceMeters, int durationSeconds, double splitDistanceMeters = 1000.0)
+    public List<WorkoutSplit> CalculateSplits(List<GpxPoint> trackPoints, double distanceMeters, int durationSeconds, double splitDistanceMeters = 1609.344)
     {
         var splits = new List<WorkoutSplit>();
         var accumulatedDistance = 0.0;
@@ -192,6 +192,7 @@ public class GpxParserService
                     splitDuration = (int)((accumulatedDistance / distanceMeters) * durationSeconds);
                 }
 
+                // Calculate split pace in seconds per km (stored in metric)
                 var splitPace = splitDuration > 0 ? (int)(splitDuration / (accumulatedDistance / 1000.0)) : 0;
 
                 splits.Add(new WorkoutSplit

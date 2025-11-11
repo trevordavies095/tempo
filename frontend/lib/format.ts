@@ -1,11 +1,11 @@
 /**
- * Format distance from meters to kilometers
+ * Format distance from meters to miles
  * @param meters Distance in meters
- * @returns Formatted string like "10.5 km"
+ * @returns Formatted string like "6.5 mi"
  */
 export function formatDistance(meters: number): string {
-  const km = meters / 1000;
-  return `${km.toFixed(1)} km`;
+  const miles = meters / 1609.344;
+  return `${miles.toFixed(2)} mi`;
 }
 
 /**
@@ -25,14 +25,16 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * Format pace from seconds per kilometer to M:SS /km
- * @param secondsPerKm Pace in seconds per kilometer
- * @returns Formatted string like "5:30 /km"
+ * Format pace from seconds per km (stored in DB) to M:SS /mi (displayed in imperial)
+ * @param secondsPerKm Pace in seconds per kilometer (from database)
+ * @returns Formatted string like "8:30 /mi"
  */
 export function formatPace(secondsPerKm: number): string {
-  const minutes = Math.floor(secondsPerKm / 60);
-  const seconds = Math.floor(secondsPerKm % 60);
-  return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
+  // Convert from seconds/km to seconds/mile
+  const secondsPerMile = secondsPerKm * 1.609344;
+  const minutes = Math.floor(secondsPerMile / 60);
+  const seconds = Math.floor(secondsPerMile % 60);
+  return `${minutes}:${seconds.toString().padStart(2, '0')} /mi`;
 }
 
 /**
@@ -64,5 +66,15 @@ export function formatDateTime(dateString: string): string {
     minute: '2-digit',
     hour12: true,
   });
+}
+
+/**
+ * Format elevation from meters to feet
+ * @param meters Elevation in meters
+ * @returns Formatted string like "492 ft"
+ */
+export function formatElevation(meters: number): string {
+  const feet = meters * 3.28084;
+  return `${Math.round(feet)} ft`;
 }
 

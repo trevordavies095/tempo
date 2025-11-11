@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
-import { formatDate, formatDistance, formatDuration, formatPace } from '@/lib/format';
+import { formatDate, formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
 
 export default function WorkoutsPage() {
   const [page, setPage] = useState(1);
@@ -145,7 +145,7 @@ export default function WorkoutsPage() {
                   </td>
                   <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
                     {workout.elevGainM !== null
-                      ? `${(workout.elevGainM / 1000).toFixed(1)} km`
+                      ? formatElevation(workout.elevGainM)
                       : '—'}
                   </td>
                   <td className="py-3 px-4 text-gray-700 dark:text-gray-300">

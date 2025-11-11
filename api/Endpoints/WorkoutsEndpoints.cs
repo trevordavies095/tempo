@@ -47,7 +47,7 @@ public static class WorkoutsEndpoints
                     parseResult = gpxParser.ParseGpx(stream);
                 }
 
-                // Calculate average pace (seconds per km)
+                // Calculate average pace (seconds per km - stored in metric)
                 var avgPaceS = parseResult.DistanceMeters > 0 && parseResult.DurationSeconds > 0
                     ? (int)(parseResult.DurationSeconds / (parseResult.DistanceMeters / 1000.0))
                     : 0;
@@ -472,7 +472,7 @@ public static class WorkoutsEndpoints
                             continue;
                         }
 
-                        // Calculate average pace
+                        // Calculate average pace (seconds per km - stored in metric)
                         var avgPaceS = distanceMeters > 0 && durationSeconds > 0
                             ? (int)(durationSeconds / (distanceMeters / 1000.0))
                             : 0;
