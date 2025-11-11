@@ -1,0 +1,45 @@
+using Microsoft.EntityFrameworkCore;
+using Tempo.Api.Models;
+
+namespace Tempo.Api.Data;
+
+public class TempoDbContext : DbContext
+{
+    public TempoDbContext(DbContextOptions<TempoDbContext> options) : base(options)
+    {
+    }
+
+    public DbSet<Workout> Workouts { get; set; }
+    public DbSet<WorkoutRoute> WorkoutRoutes { get; set; }
+    public DbSet<WorkoutSplit> WorkoutSplits { get; set; }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<Workout>(entity =>
+        {
+            entity.HasIndex(e => e.StartedAt);
+            entity.HasIndex(e => new { e.StartedAt, e.DistanceM, e.DurationS });
+        });
+
+        modelBuilder.Entity<WorkoutRoute>(entity =>
+        {
+            entity.HasOne(e => e.Workout)
+                .WithOne(e => e.Route)
+                .HasForeignKey<WorkoutRoute>(e => e.WorkoutId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WorkoutSplit>(entity =>
+        {
+            entity.HasOne(e => e.Workout)
+                .WithMany(e => e.Splits)
+                .HasForeignKey(e => e.WorkoutId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.WorkoutId, e.Idx });
+        });
+    }
+}
+
