@@ -214,3 +214,58 @@ export function getWorkoutMediaUrl(workoutId: string, mediaId: string): string {
   return `${API_BASE_URL}/workouts/${workoutId}/media/${mediaId}`;
 }
 
+export interface WeeklyStatsResponse {
+  weekStart: string;
+  weekEnd: string;
+  dailyMiles: number[]; // [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+}
+
+export interface YearlyStatsResponse {
+  currentYear: number;
+  previousYear: number;
+  currentYearLabel: string;
+  previousYearLabel: string;
+}
+
+export async function getWeeklyStats(timezoneOffsetMinutes?: number): Promise<WeeklyStatsResponse> {
+  const searchParams = new URLSearchParams();
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/workouts/stats/weekly${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch weekly stats: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getYearlyStats(timezoneOffsetMinutes?: number): Promise<YearlyStatsResponse> {
+  const searchParams = new URLSearchParams();
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/workouts/stats/yearly${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch yearly stats: ${response.status}`);
+  }
+
+  return response.json();
+}
+

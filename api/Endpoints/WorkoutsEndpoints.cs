@@ -802,6 +802,132 @@ public static class WorkoutsEndpoints
         .Produces(500)
         .WithSummary("Bulk import Strava export")
         .WithDescription("Uploads and processes a ZIP file containing Strava export (activities.csv + activity files), importing all run activities with duplicate detection");
+
+        group.MapGet("/stats/weekly", async (
+            TempoDbContext db,
+            ILogger<Program> logger,
+            [FromQuery] int? timezoneOffsetMinutes = null) =>
+        {
+            // Get current week boundaries (Monday-Sunday) in the specified timezone
+            var now = DateTime.UtcNow;
+            if (timezoneOffsetMinutes.HasValue)
+            {
+                now = now.AddMinutes(-timezoneOffsetMinutes.Value);
+            }
+
+            // Calculate start of current week (Monday)
+            var daysSinceMonday = ((int)now.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+            var weekStart = now.Date.AddDays(-daysSinceMonday);
+            var weekEnd = weekStart.AddDays(7).AddTicks(-1);
+
+            // Convert back to UTC for database query
+            var weekStartUtc = timezoneOffsetMinutes.HasValue
+                ? DateTime.SpecifyKind(weekStart.AddMinutes(timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                : DateTime.SpecifyKind(weekStart, DateTimeKind.Utc);
+            var weekEndUtc = timezoneOffsetMinutes.HasValue
+                ? DateTime.SpecifyKind(weekEnd.AddMinutes(timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                : DateTime.SpecifyKind(weekEnd, DateTimeKind.Utc);
+
+            // Query workouts for the current week
+            var workouts = await db.Workouts
+                .Where(w => w.StartedAt >= weekStartUtc && w.StartedAt <= weekEndUtc)
+                .AsNoTracking()
+                .ToListAsync();
+
+            // Group by day of week and sum distances
+            // DayOfWeek enum: Sunday=0, Monday=1, ..., Saturday=6
+            // We want: Monday=0, Tuesday=1, ..., Sunday=6
+            var dailyTotals = new double[7]; // M T W T F S S
+
+            foreach (var workout in workouts)
+            {
+                // Convert UTC to local timezone
+                // timezoneOffsetMinutes is already negative (from -getTimezoneOffset()), so add it directly
+                var localTime = timezoneOffsetMinutes.HasValue
+                    ? workout.StartedAt.AddMinutes(timezoneOffsetMinutes.Value)
+                    : workout.StartedAt;
+
+                // Get day of week (0=Monday, 6=Sunday)
+                var dayOfWeek = ((int)localTime.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+                
+                // Convert meters to miles and add to daily total
+                var miles = workout.DistanceM / 1609.344;
+                dailyTotals[dayOfWeek] += miles;
+            }
+
+            return Results.Ok(new
+            {
+                weekStart = weekStart.ToString("yyyy-MM-dd"),
+                weekEnd = weekEnd.ToString("yyyy-MM-dd"),
+                dailyMiles = dailyTotals
+            });
+        })
+        .Produces(200)
+        .WithSummary("Get weekly stats")
+        .WithDescription("Returns daily miles for the current week (Monday-Sunday), grouped by day of week");
+
+        group.MapGet("/stats/yearly", async (
+            TempoDbContext db,
+            ILogger<Program> logger,
+            [FromQuery] int? timezoneOffsetMinutes = null) =>
+        {
+            // Get current year boundaries in the specified timezone
+            var now = DateTime.UtcNow;
+            if (timezoneOffsetMinutes.HasValue)
+            {
+                now = now.AddMinutes(-timezoneOffsetMinutes.Value);
+            }
+
+            var currentYear = now.Year;
+            var previousYear = currentYear - 1;
+
+            // Calculate year boundaries in local timezone
+            var currentYearStart = new DateTime(currentYear, 1, 1, 0, 0, 0);
+            var currentYearEnd = new DateTime(currentYear, 12, 31, 23, 59, 59, 999);
+            var previousYearStart = new DateTime(previousYear, 1, 1, 0, 0, 0);
+            var previousYearEnd = new DateTime(previousYear, 12, 31, 23, 59, 59, 999);
+
+            // Convert to UTC for database queries
+            var currentYearStartUtc = timezoneOffsetMinutes.HasValue
+                ? DateTime.SpecifyKind(currentYearStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                : DateTime.SpecifyKind(currentYearStart, DateTimeKind.Utc);
+            var currentYearEndUtc = timezoneOffsetMinutes.HasValue
+                ? DateTime.SpecifyKind(currentYearEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                : DateTime.SpecifyKind(currentYearEnd, DateTimeKind.Utc);
+            var previousYearStartUtc = timezoneOffsetMinutes.HasValue
+                ? DateTime.SpecifyKind(previousYearStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                : DateTime.SpecifyKind(previousYearStart, DateTimeKind.Utc);
+            var previousYearEndUtc = timezoneOffsetMinutes.HasValue
+                ? DateTime.SpecifyKind(previousYearEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                : DateTime.SpecifyKind(previousYearEnd, DateTimeKind.Utc);
+
+            // Query and sum distances for current year
+            var currentYearDistanceM = await db.Workouts
+                .Where(w => w.StartedAt >= currentYearStartUtc && w.StartedAt <= currentYearEndUtc)
+                .AsNoTracking()
+                .SumAsync(w => (double?)w.DistanceM) ?? 0.0;
+
+            // Query and sum distances for previous year
+            var previousYearDistanceM = await db.Workouts
+                .Where(w => w.StartedAt >= previousYearStartUtc && w.StartedAt <= previousYearEndUtc)
+                .AsNoTracking()
+                .SumAsync(w => (double?)w.DistanceM) ?? 0.0;
+
+            // Convert to miles
+            var currentYearMiles = currentYearDistanceM / 1609.344;
+            var previousYearMiles = previousYearDistanceM / 1609.344;
+
+            return Results.Ok(new
+            {
+                currentYear = currentYearMiles,
+                previousYear = previousYearMiles,
+                currentYearLabel = currentYear.ToString(),
+                previousYearLabel = previousYear.ToString()
+            });
+        })
+        .Produces(200)
+        .WithSummary("Get yearly stats")
+        .WithDescription("Returns total miles for the current year and previous year");
     }
 }
 

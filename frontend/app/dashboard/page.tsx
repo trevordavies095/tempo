@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
 import { formatDate, formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
+import WeeklyStatsWidget from '@/components/WeeklyStatsWidget';
+import YearlyComparisonWidget from '@/components/YearlyComparisonWidget';
 
 export default function DashboardPage() {
   const [page, setPage] = useState(1);
@@ -88,6 +90,11 @@ export default function DashboardPage() {
               ← Back to Import
             </Link>
           </div>
+        </div>
+
+        <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <WeeklyStatsWidget />
+          <YearlyComparisonWidget />
         </div>
 
         <div className="w-full overflow-x-auto">
