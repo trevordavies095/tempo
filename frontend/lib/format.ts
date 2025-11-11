@@ -78,3 +78,31 @@ export function formatElevation(meters: number): string {
   return `${Math.round(feet)} ft`;
 }
 
+/**
+ * Get workout display name, using time-based fallback if name is not provided
+ * @param name Workout name (nullable)
+ * @param startedAt ISO date string of workout start time
+ * @returns Workout name or time-based name (Morning Run, Afternoon Run, Evening Run, Night Run)
+ */
+export function getWorkoutDisplayName(name: string | null, startedAt: string): string {
+  // Return name if provided and not empty
+  if (name && name.trim().length > 0) {
+    return name;
+  }
+
+  // Determine time-based name from workout start time
+  const date = new Date(startedAt);
+  const hours = date.getHours();
+
+  if (hours >= 5 && hours < 12) {
+    return 'Morning Run';
+  } else if (hours >= 12 && hours < 17) {
+    return 'Afternoon Run';
+  } else if (hours >= 17 && hours < 21) {
+    return 'Evening Run';
+  } else {
+    // 21:00-4:59
+    return 'Night Run';
+  }
+}
+

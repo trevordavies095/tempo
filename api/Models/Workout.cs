@@ -30,6 +30,10 @@ public class Workout
     [Column(TypeName = "text")]
     public string? Notes { get; set; }
 
+    [MaxLength(200)]
+    [Column(TypeName = "text")]
+    public string? Name { get; set; }
+
     [MaxLength(50)]
     public string? Source { get; set; }
 

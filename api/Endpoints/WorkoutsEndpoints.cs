@@ -209,6 +209,7 @@ public static class WorkoutsEndpoints
                 elevGainM = w.ElevGainM,
                 runType = w.RunType,
                 source = w.Source,
+                name = w.Name,
                 hasRoute = w.Route != null,
                 splitsCount = w.Splits.Count
             }).ToList();
@@ -382,6 +383,7 @@ public static class WorkoutsEndpoints
                 runType = workout.RunType,
                 notes = workout.Notes,
                 source = workout.Source,
+                name = workout.Name,
                 weather = weather,
                 createdAt = workout.CreatedAt,
                 route = routeGeoJson,
@@ -636,12 +638,8 @@ public static class WorkoutsEndpoints
                             _ => DateTime.SpecifyKind(startTime, DateTimeKind.Utc)
                         };
 
-                        // Build notes from CSV metadata
+                        // Build notes from CSV metadata (excluding ActivityName, which goes to Name field)
                         var notesParts = new List<string>();
-                        if (!string.IsNullOrWhiteSpace(activity.ActivityName))
-                        {
-                            notesParts.Add(activity.ActivityName);
-                        }
                         if (!string.IsNullOrWhiteSpace(activity.ActivityDescription))
                         {
                             notesParts.Add(activity.ActivityDescription);
@@ -662,6 +660,7 @@ public static class WorkoutsEndpoints
                             AvgPaceS = avgPaceS,
                             ElevGainM = elevationGainMeters,
                             Source = "strava_import",
+                            Name = !string.IsNullOrWhiteSpace(activity.ActivityName) ? activity.ActivityName : null,
                             Notes = notes,
                             CreatedAt = DateTime.UtcNow
                         };

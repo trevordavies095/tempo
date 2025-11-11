@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { getWorkout, getWorkoutMedia, type WorkoutMedia } from '@/lib/api';
-import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
+import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
 import { MediaModal } from '@/components/MediaModal';
 
@@ -119,7 +119,7 @@ export default function WorkoutDetailPage() {
             ← Back to Dashboard
           </Link>
           <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            Workout Details
+            {getWorkoutDisplayName(data.name, data.startedAt)}
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-400">
             {formatDateTime(data.startedAt)}

@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Tempo.Api.Data;
@@ -89,57 +90,86 @@ app.MapWorkoutsEndpoints();
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
-// Ensure database is created and migrations are applied
+// Apply database migrations automatically on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-    db.Database.EnsureCreated();
     
-    // Ensure WorkoutMedia table exists (apply migration manually if needed)
+    // Handle migration state mismatch: if database was created with EnsureCreated(),
+    // it has tables but no __EFMigrationsHistory table. We need to fix this first.
     try
     {
-        // Mark InitialCreate as applied if needed
+        // Create __EFMigrationsHistory table if it doesn't exist
         db.Database.ExecuteSqlRaw(@"
-            INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") 
-            VALUES ('20251110232429_InitialCreate', '9.0.10') 
-            ON CONFLICT (""MigrationId"") DO NOTHING;
-        ");
-        
-        // Create WorkoutMedia table (IF NOT EXISTS handles case where it already exists)
-        db.Database.ExecuteSqlRaw(@"
-            CREATE TABLE IF NOT EXISTS ""WorkoutMedia"" (
-                ""Id"" uuid NOT NULL,
-                ""WorkoutId"" uuid NOT NULL,
-                ""Filename"" character varying(500) NOT NULL,
-                ""FilePath"" character varying(1000) NOT NULL,
-                ""MimeType"" character varying(100) NOT NULL,
-                ""FileSizeBytes"" bigint NOT NULL,
-                ""Caption"" text,
-                ""CreatedAt"" timestamp with time zone NOT NULL,
-                CONSTRAINT ""PK_WorkoutMedia"" PRIMARY KEY (""Id""),
-                CONSTRAINT ""FK_WorkoutMedia_Workouts_WorkoutId"" FOREIGN KEY (""WorkoutId"") 
-                    REFERENCES ""Workouts"" (""Id"") ON DELETE CASCADE
+            CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
+                ""MigrationId"" character varying(150) NOT NULL,
+                ""ProductVersion"" character varying(32) NOT NULL,
+                CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY (""MigrationId"")
             );
         ");
         
-        // Create index if it doesn't exist
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_WorkoutMedia_WorkoutId"" ON ""WorkoutMedia"" (""WorkoutId"");
-        ");
+        // Check if Workouts table exists (indicates InitialCreate was applied via EnsureCreated)
+        // Use connection to execute scalar query
+        var workoutsTableExists = false;
+        try
+        {
+            var connection = db.Database.GetDbConnection();
+            if (connection.State != ConnectionState.Open)
+                connection.Open();
+            
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT COUNT(*) FROM information_schema.tables 
+                WHERE table_schema = 'public' AND table_name = 'Workouts';
+            ";
+            var result = command.ExecuteScalar();
+            workoutsTableExists = Convert.ToInt32(result) > 0;
+        }
+        catch
+        {
+            workoutsTableExists = false;
+        }
         
-        // Mark AddWorkoutMedia migration as applied
-        db.Database.ExecuteSqlRaw(@"
-            INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") 
-            VALUES ('20251111023205_AddWorkoutMedia', '9.0.10') 
-            ON CONFLICT (""MigrationId"") DO NOTHING;
-        ");
+        // Check if InitialCreate migration is recorded
+        var initialCreateRecorded = false;
+        try
+        {
+            var connection = db.Database.GetDbConnection();
+            if (connection.State != ConnectionState.Open)
+                connection.Open();
+            
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT COUNT(*) FROM ""__EFMigrationsHistory""
+                WHERE ""MigrationId"" = '20251110232429_InitialCreate';
+            ";
+            var result = command.ExecuteScalar();
+            initialCreateRecorded = Convert.ToInt32(result) > 0;
+        }
+        catch
+        {
+            initialCreateRecorded = false;
+        }
         
-        Log.Information("WorkoutMedia table migration check completed");
+        // If tables exist but InitialCreate isn't recorded, mark it as applied
+        if (workoutsTableExists && !initialCreateRecorded)
+        {
+            db.Database.ExecuteSqlRaw(@"
+                INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") 
+                VALUES ('20251110232429_InitialCreate', '9.0.10')
+                ON CONFLICT (""MigrationId"") DO NOTHING;
+            ");
+            Log.Information("Marked InitialCreate migration as applied (tables existed from EnsureCreated)");
+        }
     }
     catch (Exception ex)
     {
-        Log.Error(ex, "Error applying WorkoutMedia migration - this may cause issues with media import");
+        Log.Warning(ex, "Error checking migration state - will attempt to migrate anyway");
     }
+    
+    // Now apply any pending migrations (like AddWorkoutMedia)
+    db.Database.Migrate();
+    Log.Information("Database migrations applied successfully");
 }
 
 app.Run();

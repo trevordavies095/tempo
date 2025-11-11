@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
-import { formatDate, formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
+import { formatDate, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
 import WeeklyStatsWidget from '@/components/WeeklyStatsWidget';
 import YearlyComparisonWidget from '@/components/YearlyComparisonWidget';
 
@@ -102,6 +102,9 @@ export default function DashboardPage() {
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-800">
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Workout Name
+                </th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
                   Date
                 </th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
@@ -122,9 +125,6 @@ export default function DashboardPage() {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
                   Splits
                 </th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Route
-                </th>
               </tr>
             </thead>
             <tbody>
@@ -138,8 +138,11 @@ export default function DashboardPage() {
                       href={`/dashboard/${workout.id}`}
                       className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
                     >
-                      {formatDate(workout.startedAt)}
+                      {getWorkoutDisplayName(workout.name, workout.startedAt)}
                     </Link>
+                  </td>
+                  <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
+                    {formatDate(workout.startedAt)}
                   </td>
                   <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
                     {formatDistance(workout.distanceM)}
@@ -160,9 +163,6 @@ export default function DashboardPage() {
                   </td>
                   <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
                     {workout.splitsCount}
-                  </td>
-                  <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                    {workout.hasRoute ? '✓' : '—'}
                   </td>
                 </tr>
               ))}
