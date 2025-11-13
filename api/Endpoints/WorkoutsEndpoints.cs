@@ -18,6 +18,7 @@ public static class WorkoutsEndpoints
             HttpRequest request,
             TempoDbContext db,
             GpxParserService gpxParser,
+            WeatherService weatherService,
             ILogger<Program> logger) =>
         {
             if (!request.HasFormContentType)
@@ -132,6 +133,31 @@ public static class WorkoutsEndpoints
                 foreach (var split in splits)
                 {
                     split.WorkoutId = workout.Id;
+                }
+
+                // Fetch weather data if GPS coordinates are available
+                if (parseResult.TrackPoints.Count > 0)
+                {
+                    var firstPoint = parseResult.TrackPoints[0];
+                    try
+                    {
+                        var weatherJson = await weatherService.GetWeatherForWorkoutAsync(
+                            rawStravaDataJson: null,
+                            rawFitDataJson: null,
+                            latitude: firstPoint.Latitude,
+                            longitude: firstPoint.Longitude,
+                            startTime: startedAtUtc
+                        );
+                        if (!string.IsNullOrEmpty(weatherJson))
+                        {
+                            workout.Weather = weatherJson;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to fetch weather data for workout");
+                        // Continue without weather - not a critical error
+                    }
                 }
 
                 // Save to database
@@ -370,6 +396,7 @@ public static class WorkoutsEndpoints
         group.MapGet("/{id:guid}", async (
             Guid id,
             TempoDbContext db,
+            WeatherService weatherService,
             ILogger<Program> logger) =>
         {
             var workout = await db.Workouts
@@ -397,13 +424,41 @@ public static class WorkoutsEndpoints
                 }
             }
 
-            // Parse weather JSON if exists
+            // Parse weather JSON if exists and normalize humidity values
             object? weather = null;
             if (!string.IsNullOrEmpty(workout.Weather))
             {
                 try
                 {
-                    weather = JsonSerializer.Deserialize<object>(workout.Weather);
+                    var weatherElement = JsonSerializer.Deserialize<JsonElement>(workout.Weather);
+                    var weatherDict = new Dictionary<string, object>();
+                    
+                    foreach (var prop in weatherElement.EnumerateObject())
+                    {
+                        var value = prop.Value.ValueKind switch
+                        {
+                            JsonValueKind.String => prop.Value.GetString() ?? (object)string.Empty,
+                            JsonValueKind.Number => prop.Value.GetDouble(),
+                            JsonValueKind.True => true,
+                            JsonValueKind.False => false,
+                            JsonValueKind.Null => null!,
+                            _ => prop.Value.GetRawText()
+                        };
+                        weatherDict[prop.Name] = value;
+                    }
+                    
+                    // Normalize humidity field names and values
+                    if (weatherDict.ContainsKey("relativeHumidity") && !weatherDict.ContainsKey("humidity"))
+                    {
+                        weatherDict["humidity"] = WeatherService.NormalizeHumidityValue(weatherDict["relativeHumidity"]);
+                        weatherDict.Remove("relativeHumidity");
+                    }
+                    else if (weatherDict.ContainsKey("humidity"))
+                    {
+                        weatherDict["humidity"] = WeatherService.NormalizeHumidityValue(weatherDict["humidity"]);
+                    }
+                    
+                    weather = weatherDict;
                 }
                 catch (JsonException ex)
                 {
@@ -507,6 +562,7 @@ public static class WorkoutsEndpoints
             StravaCsvParserService csvParser,
             FitParserService fitParser,
             MediaService mediaService,
+            WeatherService weatherService,
             ILogger<Program> logger) =>
         {
             if (!request.HasFormContentType)
@@ -911,6 +967,31 @@ public static class WorkoutsEndpoints
                         foreach (var split in splits)
                         {
                             split.WorkoutId = workout.Id;
+                        }
+
+                        // Fetch weather data - try Strava data first, then FIT data, then Open-Meteo
+                        if (trackPoints.Count > 0)
+                        {
+                            try
+                            {
+                                var firstPoint = trackPoints[0];
+                                var weatherJson = await weatherService.GetWeatherForWorkoutAsync(
+                                    rawStravaDataJson: activity.RawStravaDataJson,
+                                    rawFitDataJson: fitResult?.RawFitDataJson,
+                                    latitude: firstPoint.Latitude,
+                                    longitude: firstPoint.Longitude,
+                                    startTime: startedAtUtc
+                                );
+                                if (!string.IsNullOrEmpty(weatherJson))
+                                {
+                                    workout.Weather = weatherJson;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.LogWarning(ex, "Failed to fetch weather data for workout from {Filename}", activity.Filename);
+                                // Continue without weather - not a critical error
+                            }
                         }
 
                         workoutsToAdd.Add(workout);

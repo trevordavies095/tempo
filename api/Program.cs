@@ -42,6 +42,7 @@ builder.Services.AddScoped<GpxParserService>();
 builder.Services.AddScoped<StravaCsvParserService>();
 builder.Services.AddScoped<FitParserService>();
 builder.Services.AddScoped<MediaService>();
+builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage
 var mediaRootPath = builder.Configuration["MediaStorage:RootPath"] ?? "./media";

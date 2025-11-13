@@ -208,7 +208,7 @@ public class StravaCsvParserService
         }
         if (rawData.ContainsKey("Wind Bearing"))
         {
-            weather["windBearing"] = rawData["Wind Bearing"];
+            weather["windDirection"] = rawData["Wind Bearing"];
             hasWeather = true;
         }
         if (rawData.ContainsKey("Precipitation Intensity"))

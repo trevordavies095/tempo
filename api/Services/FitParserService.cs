@@ -52,6 +52,7 @@ public class FitParserService
             var records = messages.RecordMesgs;
             var sessions = messages.SessionMesgs;
             var deviceInfos = messages.DeviceInfoMesgs;
+            var weatherConditions = messages.WeatherConditionsMesgs;
 
             // Extract data from SessionMesg if available (preferred source for summary data)
             SessionMesg? session = sessions.FirstOrDefault();
@@ -169,7 +170,7 @@ public class FitParserService
             double? elevationGain = CalculateElevationGain(trackPoints);
 
             // Build RawFitData JSON
-            var rawFitData = BuildRawFitData(session, deviceInfos, records.Count);
+            var rawFitData = BuildRawFitData(session, deviceInfos, records.Count, weatherConditions);
 
             return new FitParseResult
             {
@@ -317,7 +318,7 @@ public class FitParserService
         return degrees * Math.PI / 180.0;
     }
 
-    private string? BuildRawFitData(SessionMesg? session, ReadOnlyCollection<DeviceInfoMesg> deviceInfos, int recordCount)
+    private string? BuildRawFitData(SessionMesg? session, ReadOnlyCollection<DeviceInfoMesg> deviceInfos, int recordCount, ReadOnlyCollection<WeatherConditionsMesg> weatherConditions)
     {
         if (session == null)
         {
@@ -409,10 +410,60 @@ public class FitParserService
                 deviceData["serialNumber"] = deviceInfo.GetSerialNumber().Value;
         }
 
+        // Extract weather data from WeatherConditionsMesg
+        Dictionary<string, object?>? weatherData = null;
+        var weatherCondition = weatherConditions.FirstOrDefault();
+        if (weatherCondition != null)
+        {
+            weatherData = new Dictionary<string, object?>();
+            
+            if (weatherCondition.GetWeatherReport().HasValue)
+                weatherData["weatherReport"] = weatherCondition.GetWeatherReport().Value.ToString();
+            if (weatherCondition.GetTemperature().HasValue)
+                weatherData["temperature"] = weatherCondition.GetTemperature().Value;
+            if (weatherCondition.GetCondition().HasValue)
+                weatherData["condition"] = weatherCondition.GetCondition().Value.ToString();
+            if (weatherCondition.GetWindDirection().HasValue)
+                weatherData["windDirection"] = weatherCondition.GetWindDirection().Value;
+            if (weatherCondition.GetWindSpeed().HasValue)
+                weatherData["windSpeed"] = weatherCondition.GetWindSpeed().Value;
+            if (weatherCondition.GetPrecipitationProbability().HasValue)
+                weatherData["precipitationProbability"] = weatherCondition.GetPrecipitationProbability().Value;
+            if (weatherCondition.GetTemperatureFeelsLike().HasValue)
+                weatherData["temperatureFeelsLike"] = weatherCondition.GetTemperatureFeelsLike().Value;
+            if (weatherCondition.GetRelativeHumidity().HasValue)
+                weatherData["relativeHumidity"] = weatherCondition.GetRelativeHumidity().Value;
+            var locationStr = weatherCondition.GetLocationAsString();
+            if (!string.IsNullOrEmpty(locationStr))
+                weatherData["location"] = locationStr;
+            try
+            {
+                var observedAtTime = weatherCondition.GetObservedAtTime();
+                // GetObservedAtTime() returns Dynastream.Fit.DateTime, convert to System.DateTime
+                if (observedAtTime != null)
+                    weatherData["observedAtTime"] = observedAtTime.GetDateTime().ToString("O");
+            }
+            catch
+            {
+                // ObservedAtTime may be null/invalid - skip it
+            }
+            if (weatherCondition.GetObservedLocationLat().HasValue)
+                weatherData["observedLocationLat"] = weatherCondition.GetObservedLocationLat().Value;
+            if (weatherCondition.GetObservedLocationLong().HasValue)
+                weatherData["observedLocationLong"] = weatherCondition.GetObservedLocationLong().Value;
+            if (weatherCondition.GetDayOfWeek().HasValue)
+                weatherData["dayOfWeek"] = weatherCondition.GetDayOfWeek().Value.ToString();
+            if (weatherCondition.GetHighTemperature().HasValue)
+                weatherData["highTemperature"] = weatherCondition.GetHighTemperature().Value;
+            if (weatherCondition.GetLowTemperature().HasValue)
+                weatherData["lowTemperature"] = weatherCondition.GetLowTemperature().Value;
+        }
+
         var rawFitData = new
         {
             session = sessionData.Count > 0 ? sessionData : null,
             device = deviceData.Count > 0 ? deviceData : null,
+            weather = weatherData?.Count > 0 ? weatherData : null,
             recordCount = recordCount,
             hasTimeSeries = recordCount > 0,
             source = "fit_import",

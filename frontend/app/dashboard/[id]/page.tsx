@@ -10,6 +10,7 @@ import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace,
 import { useSettings } from '@/lib/settings';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
 import { MediaModal } from '@/components/MediaModal';
+import { WeatherDisplay } from '@/components/WeatherDisplay';
 
 // Dynamically import WorkoutMap to avoid SSR issues with Leaflet
 const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
@@ -368,14 +369,7 @@ export default function WorkoutDetailPage() {
 
           {/* Weather Data */}
           {data.weather && (
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                Weather
-              </h2>
-              <pre className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 p-4 rounded overflow-x-auto">
-                {JSON.stringify(data.weather, null, 2)}
-              </pre>
-            </div>
+            <WeatherDisplay weather={data.weather} workoutStartTime={data.startedAt} />
           )}
 
           {/* Route Map */}
