@@ -302,3 +302,36 @@ export async function getYearlyStats(timezoneOffsetMinutes?: number): Promise<Ye
   return response.json();
 }
 
+export interface UpdateWorkoutRequest {
+  runType?: string | null;
+  notes?: string | null;
+}
+
+export interface UpdateWorkoutResponse {
+  id: string;
+  runType: string | null;
+  notes: string | null;
+}
+
+export async function updateWorkout(
+  id: string,
+  updates: UpdateWorkoutRequest
+): Promise<UpdateWorkoutResponse> {
+  const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+
+  if (response.status === 404) {
+    throw new Error('Workout not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update workout: ${response.status}`);
+  }
+
+  return response.json();
+}
+

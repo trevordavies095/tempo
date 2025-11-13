@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { getWorkout, getWorkoutMedia, type WorkoutMedia } from '@/lib/api';
+import { getWorkout, getWorkoutMedia, updateWorkout, type WorkoutMedia } from '@/lib/api';
 import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
@@ -27,7 +27,11 @@ export default function WorkoutDetailPage() {
   const id = params.id as string;
   const [selectedMediaIndex, setSelectedMediaIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditingRunType, setIsEditingRunType] = useState(false);
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState<string>('');
   const { unitPreference } = useSettings();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['workout', id],
@@ -40,6 +44,23 @@ export default function WorkoutDetailPage() {
     enabled: !!id, // Fetch media as soon as we have the workout ID
     retry: false, // Don't retry on error - treat as no media
   });
+
+  const updateWorkoutMutation = useMutation({
+    mutationFn: (updates: { runType?: string | null; notes?: string | null }) => updateWorkout(id, updates),
+    onSuccess: () => {
+      // Invalidate and refetch workout data
+      queryClient.invalidateQueries({ queryKey: ['workout', id] });
+      setIsEditingRunType(false);
+      setIsEditingNotes(false);
+    },
+  });
+
+  // Sync notesValue with data.notes when entering edit mode or data changes
+  useEffect(() => {
+    if (data && isEditingNotes) {
+      setNotesValue(data.notes || '');
+    }
+  }, [data, isEditingNotes]);
 
   // Debug logging for media query
   useEffect(() => {
@@ -62,6 +83,16 @@ export default function WorkoutDetailPage() {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedMediaIndex(null);
+  };
+
+  const handleSaveNotes = () => {
+    const trimmedNotes = notesValue.trim() || null;
+    updateWorkoutMutation.mutate({ notes: trimmedNotes });
+  };
+
+  const handleCancelNotes = () => {
+    setIsEditingNotes(false);
+    setNotesValue(data?.notes || '');
   };
 
   if (isLoading) {
@@ -279,7 +310,75 @@ export default function WorkoutDetailPage() {
               <div>
                 <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Run Type</dt>
                 <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                  {data.runType || '—'}
+                  {isEditingRunType ? (
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={data.runType || ''}
+                        onChange={(e) => {
+                          const newValue = e.target.value === '' ? null : e.target.value;
+                          updateWorkoutMutation.mutate({ runType: newValue });
+                        }}
+                        disabled={updateWorkoutMutation.isPending}
+                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        autoFocus
+                      >
+                        <option value="">None</option>
+                        <option value="Race">Race</option>
+                        <option value="Workout">Workout</option>
+                        <option value="Long Run">Long Run</option>
+                      </select>
+                      <button
+                        onClick={() => setIsEditingRunType(false)}
+                        className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        type="button"
+                        disabled={updateWorkoutMutation.isPending}
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditingRunType(true)}
+                      className="flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                      type="button"
+                    >
+                      <span>{data.runType || 'None'}</span>
+                      <svg
+                        className="w-4 h-4 opacity-50"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                  {updateWorkoutMutation.isPending && (
+                    <span className="ml-2 text-xs text-gray-500">Saving...</span>
+                  )}
+                  {updateWorkoutMutation.isError && (
+                    <span className="ml-2 text-xs text-red-600 dark:text-red-400">
+                      Error: {updateWorkoutMutation.error instanceof Error ? updateWorkoutMutation.error.message : 'Failed to update'}
+                    </span>
+                  )}
                 </dd>
               </div>
               <div>
@@ -301,14 +400,83 @@ export default function WorkoutDetailPage() {
                 </dd>
               </div>
             </dl>
-            {data.notes && (
-              <div className="mt-4">
-                <dt className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Notes</dt>
-                <dd className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
-                  {data.notes}
-                </dd>
-              </div>
-            )}
+            <div className="mt-4">
+              <dt className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Notes</dt>
+              <dd className="mt-1">
+                {isEditingNotes ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={notesValue}
+                      onChange={(e) => setNotesValue(e.target.value)}
+                      disabled={updateWorkoutMutation.isPending}
+                      placeholder="Add notes about this workout..."
+                      rows={4}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed resize-y"
+                      autoFocus
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSaveNotes}
+                        disabled={updateWorkoutMutation.isPending}
+                        className="px-3 py-1 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={handleCancelNotes}
+                        disabled={updateWorkoutMutation.isPending}
+                        className="px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      {updateWorkoutMutation.isPending && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Saving...</span>
+                      )}
+                      {updateWorkoutMutation.isError && (
+                        <span className="text-xs text-red-600 dark:text-red-400">
+                          Error: {updateWorkoutMutation.error instanceof Error ? updateWorkoutMutation.error.message : 'Failed to update'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setNotesValue(data.notes || '');
+                      setIsEditingNotes(true);
+                    }}
+                    className="flex items-start gap-2 w-full text-left hover:text-blue-600 dark:hover:text-blue-400 transition-colors group"
+                    type="button"
+                  >
+                    <div className="flex-1 min-w-0">
+                      {data.notes ? (
+                        <p className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+                          {data.notes}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+                          Add notes about this workout...
+                        </p>
+                      )}
+                    </div>
+                    <svg
+                      className="w-4 h-4 opacity-0 group-hover:opacity-50 mt-0.5 flex-shrink-0"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </dd>
+            </div>
             <WorkoutMediaGallery
               workoutId={id}
               media={isMediaError ? [] : media}

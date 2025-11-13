@@ -29,7 +29,7 @@ This project aims to replicate the *core running analytics* experience — impor
   - Elevation and splits
   - Weather conditions
   - Run type (easy, tempo, long, etc.)
-  - Private notes/journal
+  - Notes/journal
   - Media attachments (photos and videos)
 - View weekly and monthly performance trends.
 - Self-hostable with Docker.
@@ -73,7 +73,7 @@ A privacy-conscious runner who uses an Apple Watch and wants to track workouts l
 | F5 | **Splits Calculation** | Calculate mile/km splits automatically. | ⭐⭐⭐⭐ |
 | F6 | **Weather Integration** | Use Open-Meteo API (no key required) to fetch historical weather at GPS/time. | ⭐⭐⭐ |
 | F7 | **Run Type Tagging** | Assign a type (easy, tempo, long, race). | ⭐⭐⭐ |
-| F8 | **Private Notes** | Text field for comments and reflections. | ⭐⭐⭐ |
+| F8 | **Notes** | Text field for comments and reflections. | ⭐⭐⭐ |
 | F9 | **Analytics Dashboard** | Display charts for total mileage and avg pace trends. | ⭐⭐⭐ |
 | F10 | **Data Export/Backup** | JSON export of all workouts. | ⭐⭐⭐ |
 | F11 | **Self-Hosting** | Packaged Docker deployment with persistent storage volume. | ⭐⭐⭐⭐ |

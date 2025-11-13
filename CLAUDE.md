@@ -28,6 +28,15 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 - **Connection string**: `Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres` (configured in `api/appsettings.json`)
 - **Automatic migrations**: Migrations are automatically applied on API startup via `Program.cs` (handles migration state reconciliation)
 
+### Environment Variables
+
+**Frontend** (Next.js):
+- `NEXT_PUBLIC_API_URL` - Backend API URL (defaults to `http://localhost:5001`). Set in `.env.local` or `.env` file.
+
+**Backend** (ASP.NET Core):
+- Configuration via `appsettings.json` or `appsettings.{Environment}.json`
+- Connection strings, media storage paths, and other settings are configured in `appsettings.json`
+
 ## Architecture
 
 ### High-Level Structure
@@ -41,11 +50,11 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 
 **Data Layer**:
 - `TempoDbContext`: EF Core DbContext with four main entities
-- **Workout**: Core workout data (distance, duration, pace, elevation, notes, run type, weather JSONB)
+- **Workout**: Core workout data (distance, duration, pace, elevation, notes, run type, weather JSONB). RunType field is nullable string (max 50 chars) with valid values: "Race", "Workout", "Long Run", or null (None). Indexed for filtering.
 - **WorkoutRoute**: One-to-one relationship storing route as GeoJSON (LineString)
 - **WorkoutSplit**: One-to-many relationship storing calculated splits (1km segments by default)
 - **WorkoutMedia**: One-to-many relationship storing media file metadata (photos/videos). Fields: Id, WorkoutId, Filename, FilePath (filesystem path), MimeType, FileSizeBytes, Caption, CreatedAt. Files stored on filesystem in `{mediaRoot}/{workoutId}/` directory structure.
-- Indexes: `StartedAt` on Workout, composite index on `(StartedAt, DistanceM, DurationS)` for duplicate detection, `(WorkoutId, Idx)` on splits, `WorkoutId` on WorkoutMedia
+- Indexes: `StartedAt` on Workout, composite index on `(StartedAt, DistanceM, DurationS)` for duplicate detection, `(WorkoutId, Idx)` on splits, `WorkoutId` on WorkoutMedia, `RunType` on Workout
 
 **Services**:
 - `GpxParserService`: Parses GPX XML files, calculates distance using Haversine formula, computes elevation gain, and generates splits. Returns `GpxParseResult` with track points, timing, and metrics. Handles GPX 1.1 namespace (`http://www.topografix.com/GPX/1/1`).
@@ -68,6 +77,7 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 - `POST /workouts/import/bulk` - Bulk import from Strava ZIP export (requires `activities.csv` in root and GPX/.fit.gz files). Supports duplicate detection: exact match on `StartedAt`, tolerance of 1.0m for `DistanceM`, and 1s for `DurationS`. Processes files sequentially, collects all workouts/routes/splits/media, then batch inserts with single `SaveChangesAsync()`. Combines CSV metadata (ActivityName, ActivityDescription, ActivityPrivateNote) into Notes field. Automatically imports media files from Strava export: parses "Media" column (comma-separated paths), locates files in `media/` directory, copies to persistent storage via `MediaService`, creates `WorkoutMedia` records. Handles missing media gracefully. Returns summary with `totalProcessed`, `successful`, `skipped`, `errors`, and `errorDetails` array.
 - `GET /workouts` - List workouts with pagination and filtering (query params: page, pageSize, startDate, endDate, minDistanceM, maxDistanceM). Default pageSize is 20, max is 100. Returns 404 if page exceeds total pages. Uses `.Include()` to eager load Route and Splits for counting, then `.AsNoTracking()` after pagination for read-only performance.
 - `GET /workouts/{id}` - Get workout details including route GeoJSON (parsed from JSONB string) and splits (ordered by `Idx`). Returns 404 if not found. Includes weather JSON if available. Uses `.AsNoTracking()` for read-only query.
+- `PATCH /workouts/{id}` - Update workout RunType and/or Notes. Accepts JSON body with optional `runType` and `notes` fields. Validates `runType`: must be "Race", "Workout", "Long Run", or null. Only updates fields that are provided in the request body. Returns 404 if workout not found, 400 for invalid runType values. Uses `JsonDocument` to check which properties are provided.
 - `GET /workouts/{id}/media` - List all media files for a workout. Returns array of media metadata (id, filename, mimeType, fileSizeBytes, caption, createdAt). Returns 404 if workout not found.
 - `GET /workouts/{id}/media/{mediaId}` - Serve media file. Returns file stream with appropriate MIME type and filename. Supports range requests (for video seeking). Returns 404 if workout or media not found, or if file missing on filesystem.
 - `GET /workouts/stats/weekly` - Get weekly statistics (daily miles for current week, Monday-Sunday). Accepts optional `timezoneOffsetMinutes` query parameter for timezone adjustment. Returns array of 7 values (Monday through Sunday) in miles.
@@ -92,6 +102,7 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 - `importBulkStravaExport(zipFile: File)` - POSTs ZIP file to `/workouts/import/bulk`, returns `BulkImportResponse` with success/error counts
 - `getWorkouts(params?: WorkoutsListParams)` - GETs paginated workout list from `/workouts` with query params, throws on 404 or other errors
 - `getWorkout(id: string)` - GETs workout details from `/workouts/{id}`, throws specific error for 404
+- `updateWorkout(id: string, updates: UpdateWorkoutRequest)` - PATCHs workout updates to `/workouts/{id}`, updates `runType` and/or `notes`. Validates runType values: "Race", "Workout", "Long Run", or null.
 - `getWorkoutMedia(workoutId: string)` - GETs media list from `/workouts/{id}/media`, returns empty array on 404
 - `getWorkoutMediaUrl(workoutId: string, mediaId: string)` - Returns URL for serving media file
 - `getWeeklyStats(timezoneOffsetMinutes?: number)` - GETs weekly stats from `/workouts/stats/weekly`
@@ -108,7 +119,7 @@ Uses `NEXT_PUBLIC_API_URL` environment variable (defaults to `http://localhost:5
 - `YearlyComparisonWidget`: Displays year-over-year comparison of total miles
 - `app/page.tsx`: Home page that redirects to `/dashboard` (if workouts exist) or `/import` (if empty)
 - `app/dashboard/page.tsx`: Workout list page with pagination, filtering, table view, and stats widgets
-- `app/dashboard/[id]/page.tsx`: Workout detail page with stats, splits table, route map, notes, and media gallery
+- `app/dashboard/[id]/page.tsx`: Workout detail page with stats, splits table, route map, notes, and media gallery. Includes inline click-to-edit for RunType with dropdown (None, Race, Workout, Long Run). Uses TanStack Query `useMutation` for updates with auto-save on selection change.
 - `app/import/page.tsx`: Import page with single GPX upload and bulk Strava import options
 
 **Utilities**: `lib/format.ts` provides formatting helpers for distance, duration, pace, dates, and date-time.
@@ -150,6 +161,8 @@ Migrations are in `api/Migrations/`. The initial migration creates the main tabl
 
 **⚠️ Important**: The automatic migration logic in `Program.cs` handles edge cases where tables exist but migration history is missing. For production deployments, ensure migrations are properly tracked and consider removing the migration state reconciliation logic once the database is fully migrated.
 
+**Note**: The migration state reconciliation code in `Program.cs` has a hardcoded migration ID (`20251110232429_InitialCreate`) that may not match the actual initial migration filename. This is intentional for handling legacy databases created with `EnsureCreated()`, but if creating a fresh database, ensure the migration history is properly tracked from the start.
+
 **FIT SDK Integration**: The FIT SDK C# source files are located in `api/Libraries/FitSDK/` (version 21.171.00) and are automatically compiled into the project via `<Compile Include>` directives in `Tempo.Api.csproj`. The SDK handles parsing Garmin FIT files including compressed `.fit.gz` files. Coordinate conversion from semicircles (FIT format unit) to degrees is handled in `FitParserService` using the conversion factor `180.0 / 2^31`. The SDK is embedded directly in the repository (not a NuGet package).
 
 ### Test Data
@@ -169,12 +182,12 @@ The `test_data/` directory contains sample files for development:
 - **FIT file support**: Garmin FIT SDK (v21.171.00) embedded and compiled into backend for `.fit.gz` file parsing. Converts FIT coordinate format (semicircles) to degrees.
 - **Map visualization**: `WorkoutMap` component using Leaflet and OpenStreetMap tiles. Dynamically imported to avoid SSR issues. Displays route as polyline with auto-fit bounds.
 - **Media support**: `WorkoutMedia` model, `MediaService`, media storage on filesystem, `GET /workouts/{id}/media` (list) and `GET /workouts/{id}/media/{mediaId}` (serve file) endpoints. Media automatically imported during bulk Strava import.
+- **Run type tagging**: `PATCH /workouts/{id}` endpoint implemented for updating RunType and Notes. Frontend includes inline click-to-edit UI for RunType with options: None (default), Race, Workout, Long Run. Auto-saves on selection change using TanStack Query mutations.
 
 ### ❌ Not Yet Implemented
 - **Tests**: PRD mentions Vitest/Playwright for frontend and xUnit for backend, but no test infrastructure exists yet
 - **Weather API**: Open-Meteo integration planned (per PRD). Weather field exists in database but is not populated.
 - **Analytics endpoints**: Basic stats endpoints (`/workouts/stats/weekly` and `/workouts/stats/yearly`) are implemented. `GET /analytics/summary` (comprehensive analytics) planned but not yet implemented (per PRD)
-- **Workout editing**: `PATCH /workouts/{id}` endpoint planned but not implemented (per PRD)
 - **Media upload**: `POST /workouts/{id}/media` endpoint for manual media upload after GPX import (planned per PRD, not yet implemented)
 - **Media deletion**: `DELETE /workouts/{id}/media/{mediaId}` endpoint planned but not implemented (per PRD)
 - **Data export**: `GET /export/json` endpoint planned but not implemented (per PRD)
