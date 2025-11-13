@@ -7,6 +7,7 @@ import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { getWorkout, getWorkoutMedia, type WorkoutMedia } from '@/lib/api';
 import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
+import { useSettings } from '@/lib/settings';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
 import { MediaModal } from '@/components/MediaModal';
 
@@ -25,6 +26,7 @@ export default function WorkoutDetailPage() {
   const id = params.id as string;
   const [selectedMediaIndex, setSelectedMediaIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const { unitPreference } = useSettings();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['workout', id],
@@ -112,12 +114,20 @@ export default function WorkoutDetailPage() {
     <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
         <div className="w-full mb-8">
-          <Link
-            href="/dashboard"
-            className="text-blue-600 dark:text-blue-400 hover:underline mb-4 inline-block"
-          >
-            ← Back to Dashboard
-          </Link>
+          <div className="flex items-center justify-between mb-4">
+            <Link
+              href="/dashboard"
+              className="text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              ← Back to Dashboard
+            </Link>
+            <Link
+              href="/settings"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+            >
+              Settings
+            </Link>
+          </div>
           <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             {getWorkoutDisplayName(data.name, data.startedAt)}
           </h1>
@@ -132,7 +142,7 @@ export default function WorkoutDetailPage() {
             <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
               <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Distance</div>
               <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {formatDistance(data.distanceM)}
+                {formatDistance(data.distanceM, unitPreference)}
               </div>
             </div>
             <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
@@ -149,19 +159,19 @@ export default function WorkoutDetailPage() {
             <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
               <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Pace</div>
               <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {formatPace(data.avgPaceS)}
+                {formatPace(data.avgPaceS, unitPreference)}
               </div>
             </div>
             <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
               <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Elevation</div>
               <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {data.elevGainM !== null
-                  ? formatElevation(data.elevGainM)
+                  ? formatElevation(data.elevGainM, unitPreference)
                   : '—'}
               </div>
               {data.elevLossM !== null && (
                 <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Loss: {formatElevation(data.elevLossM)}
+                  Loss: {formatElevation(data.elevLossM, unitPreference)}
                 </div>
               )}
             </div>
@@ -243,7 +253,7 @@ export default function WorkoutDetailPage() {
                   <div>
                     <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Min Elevation</dt>
                     <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                      {formatElevation(data.minElevM)}
+                      {formatElevation(data.minElevM, unitPreference)}
                     </dd>
                   </div>
                 )}
@@ -251,7 +261,7 @@ export default function WorkoutDetailPage() {
                   <div>
                     <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Max Elevation</dt>
                     <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                      {formatElevation(data.maxElevM)}
+                      {formatElevation(data.maxElevM, unitPreference)}
                     </dd>
                   </div>
                 )}
@@ -340,13 +350,13 @@ export default function WorkoutDetailPage() {
                           {split.idx + 1}
                         </td>
                         <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                          {formatDistance(split.distanceM)}
+                          {formatDistance(split.distanceM, unitPreference)}
                         </td>
                         <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
                           {formatDuration(split.durationS)}
                         </td>
                         <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                          {formatPace(split.paceS)}
+                          {formatPace(split.paceS, unitPreference)}
                         </td>
                       </tr>
                     ))}

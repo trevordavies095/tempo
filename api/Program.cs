@@ -55,6 +55,13 @@ builder.Services.AddSingleton(new MediaStorageConfig
     MaxFileSizeBytes = builder.Configuration.GetValue<long>("MediaStorage:MaxFileSizeBytes", 52_428_800) // 50MB default
 });
 
+// Configure elevation calculation
+builder.Services.AddSingleton(new ElevationCalculationConfig
+{
+    NoiseThresholdMeters = builder.Configuration.GetValue<double>("ElevationCalculation:NoiseThresholdMeters", 2.0),
+    MinDistanceMeters = builder.Configuration.GetValue<double>("ElevationCalculation:MinDistanceMeters", 10.0)
+});
+
 // Configure form options for large file uploads (bulk import)
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
 {

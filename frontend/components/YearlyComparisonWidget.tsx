@@ -3,10 +3,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { getYearlyStats } from '@/lib/api';
 import { formatDistance } from '@/lib/format';
+import { useSettings } from '@/lib/settings';
 
 export default function YearlyComparisonWidget() {
   // Get timezone offset in minutes (negative for timezones ahead of UTC)
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
+  const { unitPreference } = useSettings();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['yearlyStats', timezoneOffsetMinutes],
@@ -61,7 +63,7 @@ export default function YearlyComparisonWidget() {
               {data.currentYearLabel}
             </span>
             <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-              {formatDistance(currentYearMeters)}
+              {formatDistance(currentYearMeters, unitPreference)}
             </span>
           </div>
         </div>
@@ -71,7 +73,7 @@ export default function YearlyComparisonWidget() {
               {data.previousYearLabel}
             </span>
             <span className="text-xl font-semibold text-gray-700 dark:text-gray-300">
-              {formatDistance(previousYearMeters)}
+              {formatDistance(previousYearMeters, unitPreference)}
             </span>
           </div>
         </div>

@@ -7,6 +7,12 @@ namespace Tempo.Api.Services;
 
 public class GpxParserService
 {
+    private readonly ElevationCalculationConfig _elevationConfig;
+
+    public GpxParserService(ElevationCalculationConfig elevationConfig)
+    {
+        _elevationConfig = elevationConfig;
+    }
     public class GpxParseResult
     {
         public DateTime StartTime { get; set; }
@@ -147,24 +153,8 @@ public class GpxParserService
             );
         }
 
-        // Calculate elevation gain
-        double? elevationGain = null;
-        if (trackPoints.Any(p => p.Elevation.HasValue))
-        {
-            elevationGain = 0.0;
-            double? lastElevation = null;
-            foreach (var point in trackPoints)
-            {
-                if (point.Elevation.HasValue && lastElevation.HasValue)
-                {
-                    var diff = point.Elevation.Value - lastElevation.Value;
-                    if (diff > 0)
-                        elevationGain += diff;
-                }
-                if (point.Elevation.HasValue)
-                    lastElevation = point.Elevation.Value;
-            }
-        }
+        // Calculate elevation gain with noise filtering
+        double? elevationGain = CalculateElevationGain(trackPoints);
 
         // Calculate duration
         var duration = 0;
@@ -215,6 +205,202 @@ public class GpxParserService
         };
     }
 
+    private double? CalculateElevationGain(List<GpxPoint> trackPoints)
+    {
+        if (!trackPoints.Any(p => p.Elevation.HasValue))
+        {
+            return null;
+        }
+
+        double totalElevationGain = 0.0;
+        double accumulatedElevationGain = 0.0;
+        double accumulatedElevationLoss = 0.0;
+        double accumulatedDistance = 0.0;
+        double? lastElevation = null;
+        GpxPoint? lastPoint = null;
+
+        foreach (var point in trackPoints)
+        {
+            if (!point.Elevation.HasValue)
+            {
+                // Skip points without elevation, but continue tracking distance
+                if (lastPoint != null)
+                {
+                    accumulatedDistance += HaversineDistance(
+                        lastPoint.Latitude,
+                        lastPoint.Longitude,
+                        point.Latitude,
+                        point.Longitude
+                    );
+                }
+                lastPoint = point;
+                continue;
+            }
+
+            double currentElevation = point.Elevation.Value;
+
+            if (lastElevation.HasValue && lastPoint != null)
+            {
+                // Calculate horizontal distance since last point
+                double segmentDistance = HaversineDistance(
+                    lastPoint.Latitude,
+                    lastPoint.Longitude,
+                    point.Latitude,
+                    point.Longitude
+                );
+                accumulatedDistance += segmentDistance;
+
+                // Calculate elevation change
+                double elevationDiff = currentElevation - lastElevation.Value;
+
+                if (elevationDiff > 0)
+                {
+                    // Gaining elevation
+                    if (accumulatedElevationLoss > 0)
+                    {
+                        // Direction changed from loss to gain
+                        // Process accumulated loss (we don't count loss, but reset it)
+                        accumulatedElevationLoss = 0.0;
+                        accumulatedDistance = 0.0;
+                    }
+                    accumulatedElevationGain += elevationDiff;
+                }
+                else if (elevationDiff < 0)
+                {
+                    // Losing elevation
+                    if (accumulatedElevationGain > 0)
+                    {
+                        // Direction changed from gain to loss
+                        // Check if accumulated gain should be counted
+                        if (accumulatedElevationGain >= _elevationConfig.NoiseThresholdMeters &&
+                            accumulatedDistance >= _elevationConfig.MinDistanceMeters)
+                        {
+                            totalElevationGain += accumulatedElevationGain;
+                        }
+                        // Reset accumulators
+                        accumulatedElevationGain = 0.0;
+                        accumulatedDistance = 0.0;
+                    }
+                    accumulatedElevationLoss += Math.Abs(elevationDiff);
+                }
+                // If elevationDiff == 0, we continue accumulating distance but don't change elevation accumulators
+            }
+
+            lastElevation = currentElevation;
+            lastPoint = point;
+        }
+
+        // Process any remaining accumulated elevation gain at the end
+        if (accumulatedElevationGain > 0)
+        {
+            if (accumulatedElevationGain >= _elevationConfig.NoiseThresholdMeters &&
+                accumulatedDistance >= _elevationConfig.MinDistanceMeters)
+            {
+                totalElevationGain += accumulatedElevationGain;
+            }
+        }
+
+        return totalElevationGain > 0 ? totalElevationGain : null;
+    }
+
+    private double CalculateElevationLoss(List<GpxPoint> trackPoints)
+    {
+        if (!trackPoints.Any(p => p.Elevation.HasValue))
+        {
+            return 0.0;
+        }
+
+        double totalElevationLoss = 0.0;
+        double accumulatedElevationGain = 0.0;
+        double accumulatedElevationLoss = 0.0;
+        double accumulatedDistance = 0.0;
+        double? lastElevation = null;
+        GpxPoint? lastPoint = null;
+
+        foreach (var point in trackPoints)
+        {
+            if (!point.Elevation.HasValue)
+            {
+                // Skip points without elevation, but continue tracking distance
+                if (lastPoint != null)
+                {
+                    accumulatedDistance += HaversineDistance(
+                        lastPoint.Latitude,
+                        lastPoint.Longitude,
+                        point.Latitude,
+                        point.Longitude
+                    );
+                }
+                lastPoint = point;
+                continue;
+            }
+
+            double currentElevation = point.Elevation.Value;
+
+            if (lastElevation.HasValue && lastPoint != null)
+            {
+                // Calculate horizontal distance since last point
+                double segmentDistance = HaversineDistance(
+                    lastPoint.Latitude,
+                    lastPoint.Longitude,
+                    point.Latitude,
+                    point.Longitude
+                );
+                accumulatedDistance += segmentDistance;
+
+                // Calculate elevation change
+                double elevationDiff = currentElevation - lastElevation.Value;
+
+                if (elevationDiff < 0)
+                {
+                    // Losing elevation
+                    if (accumulatedElevationGain > 0)
+                    {
+                        // Direction changed from gain to loss
+                        // Reset gain accumulator
+                        accumulatedElevationGain = 0.0;
+                        accumulatedDistance = 0.0;
+                    }
+                    accumulatedElevationLoss += Math.Abs(elevationDiff);
+                }
+                else if (elevationDiff > 0)
+                {
+                    // Gaining elevation
+                    if (accumulatedElevationLoss > 0)
+                    {
+                        // Direction changed from loss to gain
+                        // Check if accumulated loss should be counted
+                        if (accumulatedElevationLoss >= _elevationConfig.NoiseThresholdMeters &&
+                            accumulatedDistance >= _elevationConfig.MinDistanceMeters)
+                        {
+                            totalElevationLoss += accumulatedElevationLoss;
+                        }
+                        // Reset accumulators
+                        accumulatedElevationLoss = 0.0;
+                        accumulatedDistance = 0.0;
+                    }
+                    accumulatedElevationGain += elevationDiff;
+                }
+                // If elevationDiff == 0, we continue accumulating distance but don't change elevation accumulators
+            }
+
+            lastElevation = currentElevation;
+            lastPoint = point;
+        }
+
+        // Process any remaining accumulated elevation loss at the end
+        if (accumulatedElevationLoss > 0)
+        {
+            if (accumulatedElevationLoss >= _elevationConfig.NoiseThresholdMeters &&
+                accumulatedDistance >= _elevationConfig.MinDistanceMeters)
+            {
+                totalElevationLoss += accumulatedElevationLoss;
+            }
+        }
+
+        return totalElevationLoss;
+    }
+
     private Dictionary<string, object> CalculateAdditionalMetrics(List<GpxPoint> trackPoints, double totalDistance, int duration, double? elevationGain)
     {
         var calculated = new Dictionary<string, object>();
@@ -222,7 +408,7 @@ public class GpxParserService
         // Calculate max speed, min/max elevation, elevation loss
         double? minElev = null;
         double? maxElev = null;
-        double elevationLoss = 0.0;
+        double elevationLoss = CalculateElevationLoss(trackPoints);
         double maxSpeedMps = 0.0;
         double totalGrade = 0.0;
         double maxPosGrade = 0.0;
@@ -245,13 +431,6 @@ public class GpxParserService
             {
                 if (minElev == null || point.Elevation.Value < minElev) minElev = point.Elevation.Value;
                 if (maxElev == null || point.Elevation.Value > maxElev) maxElev = point.Elevation.Value;
-
-                if (lastElevation.HasValue)
-                {
-                    var diff = point.Elevation.Value - lastElevation.Value;
-                    if (diff < 0)
-                        elevationLoss += Math.Abs(diff);
-                }
                 lastElevation = point.Elevation.Value;
             }
 
@@ -328,10 +507,11 @@ public class GpxParserService
         return degrees * Math.PI / 180.0;
     }
 
-    public List<WorkoutSplit> CalculateSplits(List<GpxPoint> trackPoints, double distanceMeters, int durationSeconds, double splitDistanceMeters = 1609.344)
+    public List<WorkoutSplit> CalculateSplits(List<GpxPoint> trackPoints, double distanceMeters, int durationSeconds, double splitDistanceMeters = 1000.0)
     {
         var splits = new List<WorkoutSplit>();
         var accumulatedDistance = 0.0;
+        var splitStartDistance = 0.0;
         var splitStartIndex = 0;
         var splitIndex = 0;
 
@@ -346,8 +526,11 @@ public class GpxParserService
 
             accumulatedDistance += segmentDistance;
 
-            if (accumulatedDistance >= splitDistanceMeters)
+            if (accumulatedDistance - splitStartDistance >= splitDistanceMeters)
             {
+                // Calculate the actual split distance (not accumulated)
+                var splitDistance = accumulatedDistance - splitStartDistance;
+
                 // Calculate time for this split
                 var splitDuration = 0;
                 if (trackPoints[i].Time.HasValue && trackPoints[splitStartIndex].Time.HasValue)
@@ -357,31 +540,79 @@ public class GpxParserService
                 else
                 {
                     // Estimate based on proportion of total distance
-                    splitDuration = (int)((accumulatedDistance / distanceMeters) * durationSeconds);
+                    splitDuration = (int)((splitDistance / distanceMeters) * durationSeconds);
                 }
 
                 // Calculate split pace in seconds per km (stored in metric)
-                var splitPace = splitDuration > 0 ? (int)(splitDuration / (accumulatedDistance / 1000.0)) : 0;
+                var splitPace = splitDuration > 0 ? (int)(splitDuration / (splitDistance / 1000.0)) : 0;
 
                 splits.Add(new WorkoutSplit
                 {
                     Id = Guid.NewGuid(),
                     Idx = splitIndex++,
-                    DistanceM = accumulatedDistance,
+                    DistanceM = splitDistance, // Store actual split distance, not accumulated
                     DurationS = splitDuration,
                     PaceS = splitPace
                 });
 
-                accumulatedDistance = 0.0;
+                // Reset for next split
+                splitStartDistance = accumulatedDistance;
                 splitStartIndex = i;
             }
         }
 
-        // Add final partial split if there's remaining distance
-        if (accumulatedDistance > 0 && splits.Count > 0)
+        // Handle final partial split
+        var remainingDistance = accumulatedDistance - splitStartDistance;
+        if (remainingDistance > 0)
         {
-            var lastSplit = splits.Last();
-            lastSplit.DistanceM += accumulatedDistance;
+            // Create separate split if significant (>10% of split distance), otherwise merge into last split
+            if (remainingDistance >= splitDistanceMeters * 0.1 && splits.Count > 0)
+            {
+                // Calculate time for final partial split
+                var finalSplitDuration = 0;
+                if (trackPoints.Count > 1 && trackPoints[trackPoints.Count - 1].Time.HasValue && trackPoints[splitStartIndex].Time.HasValue)
+                {
+                    finalSplitDuration = (int)(trackPoints[trackPoints.Count - 1].Time!.Value - trackPoints[splitStartIndex].Time!.Value).TotalSeconds;
+                }
+                else
+                {
+                    // Estimate based on proportion
+                    finalSplitDuration = (int)((remainingDistance / distanceMeters) * durationSeconds);
+                }
+
+                var finalSplitPace = finalSplitDuration > 0 ? (int)(finalSplitDuration / (remainingDistance / 1000.0)) : 0;
+
+                splits.Add(new WorkoutSplit
+                {
+                    Id = Guid.NewGuid(),
+                    Idx = splitIndex,
+                    DistanceM = remainingDistance,
+                    DurationS = finalSplitDuration,
+                    PaceS = finalSplitPace
+                });
+            }
+            else if (splits.Count > 0)
+            {
+                // Merge small remainder into last split
+                var lastSplit = splits.Last();
+                var totalLastSplitDistance = lastSplit.DistanceM + remainingDistance;
+                
+                // Recalculate duration and pace for merged split
+                var mergedDuration = lastSplit.DurationS;
+                if (trackPoints.Count > 1 && trackPoints[trackPoints.Count - 1].Time.HasValue)
+                {
+                    // Find the start time of the last split
+                    var lastSplitStartTime = trackPoints[splitStartIndex].Time;
+                    if (lastSplitStartTime.HasValue && trackPoints[trackPoints.Count - 1].Time.HasValue)
+                    {
+                        mergedDuration = (int)(trackPoints[trackPoints.Count - 1].Time!.Value - lastSplitStartTime.Value).TotalSeconds;
+                    }
+                }
+
+                lastSplit.DistanceM = totalLastSplitDistance;
+                lastSplit.DurationS = mergedDuration;
+                lastSplit.PaceS = mergedDuration > 0 ? (int)(mergedDuration / (totalLastSplitDistance / 1000.0)) : lastSplit.PaceS;
+            }
         }
 
         return splits;

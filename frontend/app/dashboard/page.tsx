@@ -5,12 +5,14 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
 import { formatDate, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
+import { useSettings } from '@/lib/settings';
 import WeeklyStatsWidget from '@/components/WeeklyStatsWidget';
 import YearlyComparisonWidget from '@/components/YearlyComparisonWidget';
 
 export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
+  const { unitPreference } = useSettings();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['workouts', { page, pageSize }],
@@ -83,12 +85,20 @@ export default function DashboardPage() {
                 {data.totalCount} total workout{data.totalCount !== 1 ? 's' : ''}
               </p>
             </div>
-            <Link
-              href="/import"
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
-            >
-              ← Back to Import
-            </Link>
+            <div className="flex gap-4">
+              <Link
+                href="/settings"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+              >
+                Settings
+              </Link>
+              <Link
+                href="/import"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+              >
+                Import
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -145,17 +155,17 @@ export default function DashboardPage() {
                     {formatDate(workout.startedAt)}
                   </td>
                   <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                    {formatDistance(workout.distanceM)}
+                    {formatDistance(workout.distanceM, unitPreference)}
                   </td>
                   <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
                     {formatDuration(workout.durationS)}
                   </td>
                   <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                    {formatPace(workout.avgPaceS)}
+                    {formatPace(workout.avgPaceS, unitPreference)}
                   </td>
                   <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
                     {workout.elevGainM !== null
-                      ? formatElevation(workout.elevGainM)
+                      ? formatElevation(workout.elevGainM, unitPreference)
                       : '—'}
                   </td>
                   <td className="py-3 px-4 text-gray-700 dark:text-gray-300">

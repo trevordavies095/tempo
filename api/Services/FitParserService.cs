@@ -10,6 +10,12 @@ public class FitParserService
 {
     // Conversion factor: 180 degrees / 2^31 semicircles
     private const double SemicirclesToDegrees = 180.0 / 2147483648.0;
+    private readonly ElevationCalculationConfig _elevationConfig;
+
+    public FitParserService(ElevationCalculationConfig elevationConfig)
+    {
+        _elevationConfig = elevationConfig;
+    }
 
     public class FitParseResult
     {
@@ -64,8 +70,6 @@ public class FitParserService
             var trackPoints = new List<GpxParserService.GpxPoint>();
             System.DateTime? firstTimestamp = null;
             System.DateTime? lastTimestamp = null;
-            double? lastElevation = null;
-            double elevationGain = 0.0;
             double? lastDistance = null;
 
             foreach (var record in records)
@@ -120,20 +124,6 @@ public class FitParserService
                     trackPoints.Add(point);
                 }
 
-                // Calculate elevation gain
-                if (altitude.HasValue && lastElevation.HasValue)
-                {
-                    var diff = altitude.Value - lastElevation.Value;
-                    if (diff > 0)
-                    {
-                        elevationGain += diff;
-                    }
-                }
-                if (altitude.HasValue)
-                {
-                    lastElevation = altitude.Value;
-                }
-
                 // Track last distance for fallback calculation
                 if (distance.HasValue)
                 {
@@ -175,6 +165,9 @@ public class FitParserService
                 throw new InvalidOperationException("FIT file contains no GPS data and no distance information");
             }
 
+            // Calculate elevation gain with noise filtering
+            double? elevationGain = CalculateElevationGain(trackPoints);
+
             // Build RawFitData JSON
             var rawFitData = BuildRawFitData(session, deviceInfos, records.Count);
 
@@ -183,7 +176,7 @@ public class FitParserService
                 StartTime = System.DateTime.SpecifyKind(startTime.Value, System.DateTimeKind.Utc),
                 DurationSeconds = durationSeconds,
                 DistanceMeters = totalDistance,
-                ElevationGainMeters = trackPoints.Count > 0 && elevationGain > 0 ? elevationGain : null,
+                ElevationGainMeters = elevationGain,
                 TrackPoints = trackPoints,
                 RawFitDataJson = rawFitData
             };
@@ -205,6 +198,123 @@ public class FitParserService
         gzipStream.CopyTo(memoryStream);
         memoryStream.Position = 0; // Reset to beginning for parsing
         return ParseFit(memoryStream);
+    }
+
+    private double? CalculateElevationGain(List<GpxParserService.GpxPoint> trackPoints)
+    {
+        if (!trackPoints.Any(p => p.Elevation.HasValue))
+        {
+            return null;
+        }
+
+        double totalElevationGain = 0.0;
+        double accumulatedElevationGain = 0.0;
+        double accumulatedElevationLoss = 0.0;
+        double accumulatedDistance = 0.0;
+        double? lastElevation = null;
+        GpxParserService.GpxPoint? lastPoint = null;
+
+        foreach (var point in trackPoints)
+        {
+            if (!point.Elevation.HasValue)
+            {
+                // Skip points without elevation, but continue tracking distance
+                if (lastPoint != null)
+                {
+                    accumulatedDistance += HaversineDistance(
+                        lastPoint.Latitude,
+                        lastPoint.Longitude,
+                        point.Latitude,
+                        point.Longitude
+                    );
+                }
+                lastPoint = point;
+                continue;
+            }
+
+            double currentElevation = point.Elevation.Value;
+
+            if (lastElevation.HasValue && lastPoint != null)
+            {
+                // Calculate horizontal distance since last point
+                double segmentDistance = HaversineDistance(
+                    lastPoint.Latitude,
+                    lastPoint.Longitude,
+                    point.Latitude,
+                    point.Longitude
+                );
+                accumulatedDistance += segmentDistance;
+
+                // Calculate elevation change
+                double elevationDiff = currentElevation - lastElevation.Value;
+
+                if (elevationDiff > 0)
+                {
+                    // Gaining elevation
+                    if (accumulatedElevationLoss > 0)
+                    {
+                        // Direction changed from loss to gain
+                        // Process accumulated loss (we don't count loss, but reset it)
+                        accumulatedElevationLoss = 0.0;
+                        accumulatedDistance = 0.0;
+                    }
+                    accumulatedElevationGain += elevationDiff;
+                }
+                else if (elevationDiff < 0)
+                {
+                    // Losing elevation
+                    if (accumulatedElevationGain > 0)
+                    {
+                        // Direction changed from gain to loss
+                        // Check if accumulated gain should be counted
+                        if (accumulatedElevationGain >= _elevationConfig.NoiseThresholdMeters &&
+                            accumulatedDistance >= _elevationConfig.MinDistanceMeters)
+                        {
+                            totalElevationGain += accumulatedElevationGain;
+                        }
+                        // Reset accumulators
+                        accumulatedElevationGain = 0.0;
+                        accumulatedDistance = 0.0;
+                    }
+                    accumulatedElevationLoss += Math.Abs(elevationDiff);
+                }
+                // If elevationDiff == 0, we continue accumulating distance but don't change elevation accumulators
+            }
+
+            lastElevation = currentElevation;
+            lastPoint = point;
+        }
+
+        // Process any remaining accumulated elevation gain at the end
+        if (accumulatedElevationGain > 0)
+        {
+            if (accumulatedElevationGain >= _elevationConfig.NoiseThresholdMeters &&
+                accumulatedDistance >= _elevationConfig.MinDistanceMeters)
+            {
+                totalElevationGain += accumulatedElevationGain;
+            }
+        }
+
+        return totalElevationGain > 0 ? totalElevationGain : null;
+    }
+
+    private static double HaversineDistance(double lat1, double lon1, double lat2, double lon2)
+    {
+        const double R = 6371000; // Earth radius in meters
+        var dLat = ToRadians(lat2 - lat1);
+        var dLon = ToRadians(lon2 - lon1);
+
+        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                Math.Cos(ToRadians(lat1)) * Math.Cos(ToRadians(lat2)) *
+                Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return R * c;
+    }
+
+    private static double ToRadians(double degrees)
+    {
+        return degrees * Math.PI / 180.0;
     }
 
     private string? BuildRawFitData(SessionMesg? session, ReadOnlyCollection<DeviceInfoMesg> deviceInfos, int recordCount)

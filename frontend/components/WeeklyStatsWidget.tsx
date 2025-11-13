@@ -4,10 +4,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts';
 import { getWeeklyStats } from '@/lib/api';
+import { useSettings } from '@/lib/settings';
 
 export default function WeeklyStatsWidget() {
   // Get timezone offset in minutes (negative for timezones ahead of UTC)
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
+  const { unitPreference } = useSettings();
   
   // Detect dark mode
   const [isDark, setIsDark] = useState(false);
@@ -61,21 +63,30 @@ export default function WeeklyStatsWidget() {
     return null;
   }
 
+  // Convert miles to the preferred unit
+  // Backend returns miles, convert to km if metric is preferred
+  const convertMiles = (miles: number) => {
+    if (unitPreference === 'metric') {
+      return miles * 1.609344; // Convert to km
+    }
+    return miles;
+  };
+
   // Prepare data for chart: [M, T, W, T, F, S, S]
-  // Ensure all values are numbers
+  // Ensure all values are numbers and convert to preferred unit
   const chartData = [
-    { day: 'M', miles: Number(data.dailyMiles[0]) || 0 },
-    { day: 'T', miles: Number(data.dailyMiles[1]) || 0 },
-    { day: 'W', miles: Number(data.dailyMiles[2]) || 0 },
-    { day: 'T', miles: Number(data.dailyMiles[3]) || 0 },
-    { day: 'F', miles: Number(data.dailyMiles[4]) || 0 },
-    { day: 'S', miles: Number(data.dailyMiles[5]) || 0 },
-    { day: 'S', miles: Number(data.dailyMiles[6]) || 0 },
+    { day: 'M', value: convertMiles(Number(data.dailyMiles[0]) || 0) },
+    { day: 'T', value: convertMiles(Number(data.dailyMiles[1]) || 0) },
+    { day: 'W', value: convertMiles(Number(data.dailyMiles[2]) || 0) },
+    { day: 'T', value: convertMiles(Number(data.dailyMiles[3]) || 0) },
+    { day: 'F', value: convertMiles(Number(data.dailyMiles[4]) || 0) },
+    { day: 'S', value: convertMiles(Number(data.dailyMiles[5]) || 0) },
+    { day: 'S', value: convertMiles(Number(data.dailyMiles[6]) || 0) },
   ];
 
   // Calculate max value for Y-axis (round up to nearest whole number, minimum 1)
-  const maxMiles = Math.max(...chartData.map(d => d.miles), 0);
-  const yAxisMax = maxMiles === 0 ? 1 : Math.max(1, Math.ceil(maxMiles));
+  const maxValue = Math.max(...chartData.map(d => d.value), 0);
+  const yAxisMax = maxValue === 0 ? 1 : Math.max(1, Math.ceil(maxValue));
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
@@ -96,9 +107,10 @@ export default function WeeklyStatsWidget() {
               style={{ fontSize: '12px' }}
               width={40}
               allowDecimals={false}
+              label={{ value: unitPreference === 'metric' ? 'km' : 'mi', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: 'currentColor' } }}
             />
             <Bar
-              dataKey="miles"
+              dataKey="value"
               fill={isDark ? '#60a5fa' : '#3b82f6'}
               radius={[4, 4, 0, 0]}
               isAnimationActive={false}

@@ -1,11 +1,19 @@
+import type { UnitPreference } from './settings';
+
 /**
- * Format distance from meters to miles
+ * Format distance from meters to km or miles
  * @param meters Distance in meters
- * @returns Formatted string like "6.5 mi"
+ * @param unit Unit preference ('metric' or 'imperial'), defaults to 'metric'
+ * @returns Formatted string like "10.5 km" or "6.5 mi"
  */
-export function formatDistance(meters: number): string {
-  const miles = meters / 1609.344;
-  return `${miles.toFixed(2)} mi`;
+export function formatDistance(meters: number, unit: UnitPreference = 'metric'): string {
+  if (unit === 'imperial') {
+    const miles = meters / 1609.344;
+    return `${miles.toFixed(2)} mi`;
+  } else {
+    const km = meters / 1000;
+    return `${km.toFixed(2)} km`;
+  }
 }
 
 /**
@@ -25,16 +33,23 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * Format pace from seconds per km (stored in DB) to M:SS /mi (displayed in imperial)
+ * Format pace from seconds per km (stored in DB) to M:SS /km or /mi
  * @param secondsPerKm Pace in seconds per kilometer (from database)
- * @returns Formatted string like "8:30 /mi"
+ * @param unit Unit preference ('metric' or 'imperial'), defaults to 'metric'
+ * @returns Formatted string like "5:30 /km" or "8:30 /mi"
  */
-export function formatPace(secondsPerKm: number): string {
-  // Convert from seconds/km to seconds/mile
-  const secondsPerMile = secondsPerKm * 1.609344;
-  const minutes = Math.floor(secondsPerMile / 60);
-  const seconds = Math.floor(secondsPerMile % 60);
-  return `${minutes}:${seconds.toString().padStart(2, '0')} /mi`;
+export function formatPace(secondsPerKm: number, unit: UnitPreference = 'metric'): string {
+  if (unit === 'imperial') {
+    // Convert from seconds/km to seconds/mile
+    const secondsPerMile = secondsPerKm * 1.609344;
+    const minutes = Math.floor(secondsPerMile / 60);
+    const seconds = Math.floor(secondsPerMile % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')} /mi`;
+  } else {
+    const minutes = Math.floor(secondsPerKm / 60);
+    const seconds = Math.floor(secondsPerKm % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
+  }
 }
 
 /**
@@ -69,13 +84,18 @@ export function formatDateTime(dateString: string): string {
 }
 
 /**
- * Format elevation from meters to feet
+ * Format elevation from meters to feet or meters
  * @param meters Elevation in meters
- * @returns Formatted string like "492 ft"
+ * @param unit Unit preference ('metric' or 'imperial'), defaults to 'metric'
+ * @returns Formatted string like "150 m" or "492 ft"
  */
-export function formatElevation(meters: number): string {
-  const feet = meters * 3.28084;
-  return `${Math.round(feet)} ft`;
+export function formatElevation(meters: number, unit: UnitPreference = 'metric'): string {
+  if (unit === 'imperial') {
+    const feet = meters * 3.28084;
+    return `${Math.round(feet)} ft`;
+  } else {
+    return `${Math.round(meters)} m`;
+  }
 }
 
 /**
