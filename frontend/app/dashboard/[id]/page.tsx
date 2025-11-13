@@ -41,6 +41,7 @@ export default function WorkoutDetailPage() {
   const [isEditingRunType, setIsEditingRunType] = useState(false);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState<string>('');
+  const [hoveredSplitIdx, setHoveredSplitIdx] = useState<number | null>(null);
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
 
@@ -650,7 +651,9 @@ export default function WorkoutDetailPage() {
                         {data.splits.map((split) => (
                           <tr
                             key={`split-${split.idx}`}
-                            className="border-b border-gray-100 dark:border-gray-900"
+                            className="border-b border-gray-100 dark:border-gray-900 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                            onMouseEnter={() => setHoveredSplitIdx(split.idx)}
+                            onMouseLeave={() => setHoveredSplitIdx(null)}
                           >
                             <td className="py-2 px-3 text-xs text-gray-700 dark:text-gray-300">
                               {split.idx + 1}
@@ -678,7 +681,13 @@ export default function WorkoutDetailPage() {
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
                     Route Map
                   </h2>
-                  <WorkoutMap key={data.id} route={data.route} workoutId={data.id} />
+                  <WorkoutMap 
+                    key={data.id} 
+                    route={data.route} 
+                    workoutId={data.id}
+                    splits={data.splits}
+                    hoveredSplitIdx={hoveredSplitIdx}
+                  />
                 </div>
               )}
             </div>
