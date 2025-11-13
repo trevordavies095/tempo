@@ -106,7 +106,7 @@ export interface WorkoutMedia {
   createdAt: string;
 }
 
-export async function importGpxFile(file: File): Promise<WorkoutImportResponse> {
+export async function importWorkoutFile(file: File): Promise<WorkoutImportResponse> {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -118,7 +118,7 @@ export async function importGpxFile(file: File): Promise<WorkoutImportResponse> 
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to import GPX file' }));
+    const error = await response.json().catch(() => ({ error: 'Failed to import workout file' }));
     throw new Error(error.error || `HTTP error! status: ${response.status}`);
   }
 
@@ -394,5 +394,22 @@ export async function updateWorkout(
   }
 
   return response.json();
+}
+
+export async function deleteWorkout(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
+    method: 'DELETE',
+    mode: 'cors',
+    credentials: 'omit',
+  });
+
+  if (response.status === 404) {
+    throw new Error('Workout not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to delete workout: ${response.status}`);
+  }
 }
 

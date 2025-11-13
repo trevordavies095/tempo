@@ -161,7 +161,7 @@ Migrations are in `api/Migrations/`. The initial migration creates the main tabl
 
 **⚠️ Important**: The automatic migration logic in `Program.cs` handles edge cases where tables exist but migration history is missing. For production deployments, ensure migrations are properly tracked and consider removing the migration state reconciliation logic once the database is fully migrated.
 
-**Note**: The migration state reconciliation code in `Program.cs` has a hardcoded migration ID (`20251110232429_InitialCreate`) that may not match the actual initial migration filename. This is intentional for handling legacy databases created with `EnsureCreated()`, but if creating a fresh database, ensure the migration history is properly tracked from the start.
+**Note**: The migration state reconciliation code in `Program.cs` has a hardcoded migration ID (`20251110232429_InitialCreate`) that does not match the actual initial migration filename (`20251111150526_InitialCreate`). This is intentional for handling legacy databases created with `EnsureCreated()`, but if creating a fresh database, ensure the migration history is properly tracked from the start. If updating this logic, use the actual migration filename from `api/Migrations/`.
 
 **FIT SDK Integration**: The FIT SDK C# source files are located in `api/Libraries/FitSDK/` (version 21.171.00) and are automatically compiled into the project via `<Compile Include>` directives in `Tempo.Api.csproj`. The SDK handles parsing Garmin FIT files including compressed `.fit.gz` files. Coordinate conversion from semicircles (FIT format unit) to degrees is handled in `FitParserService` using the conversion factor `180.0 / 2^31`. The SDK is embedded directly in the repository (not a NuGet package).
 

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Tempo.Api.Models;
 
 namespace Tempo.Api.Services;
@@ -130,6 +131,70 @@ public class MediaService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error copying media file: {FilePath}", sourceFilePath);
+            return null;
+        }
+    }
+
+    public WorkoutMedia? UploadMediaFile(
+        IFormFile file,
+        Guid workoutId,
+        string? caption = null)
+    {
+        try
+        {
+            // Validate file is provided
+            if (file == null || file.Length == 0)
+            {
+                _logger.LogWarning("No file provided for upload");
+                return null;
+            }
+
+            var originalFilename = file.FileName;
+
+            // Validate file type
+            if (!IsSupportedFileType(originalFilename))
+            {
+                _logger.LogWarning("Unsupported media file type: {FileName}", originalFilename);
+                return null;
+            }
+
+            // Validate file size
+            if (!ValidateFileSize(file.Length))
+            {
+                _logger.LogWarning("Media file exceeds size limit: {FileName} ({Size} bytes)", 
+                    originalFilename, file.Length);
+                return null;
+            }
+
+            // Generate destination path
+            var destinationPath = GenerateFilePath(workoutId, originalFilename);
+            var mimeType = GetMimeType(originalFilename);
+
+            // Save file from stream
+            using (var fileStream = new FileStream(destinationPath, FileMode.Create))
+            {
+                file.CopyTo(fileStream);
+            }
+
+            _logger.LogInformation("Uploaded media file: {FileName} -> {Destination}", 
+                originalFilename, destinationPath);
+
+            // Create WorkoutMedia record
+            return new WorkoutMedia
+            {
+                Id = Guid.NewGuid(),
+                WorkoutId = workoutId,
+                Filename = originalFilename,
+                FilePath = destinationPath,
+                MimeType = mimeType,
+                FileSizeBytes = file.Length,
+                Caption = caption,
+                CreatedAt = DateTime.UtcNow
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error uploading media file: {FileName}", file?.FileName);
             return null;
         }
     }

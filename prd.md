@@ -74,10 +74,9 @@ A privacy-conscious runner who uses an Apple Watch and wants to track workouts l
 | F6 | **Weather Integration** | Use Open-Meteo API (no key required) to fetch historical weather at GPS/time. | ⭐⭐⭐ |
 | F7 | **Run Type Tagging** | Assign a type (easy, tempo, long, race). | ⭐⭐⭐ |
 | F8 | **Notes** | Text field for comments and reflections. | ⭐⭐⭐ |
-| F9 | **Analytics Dashboard** | Display charts for total mileage and avg pace trends. | ⭐⭐⭐ |
-| F10 | **Data Export/Backup** | JSON export of all workouts. | ⭐⭐⭐ |
+| F9 | **Media Attachments** | Attach photos and videos to workouts. Support automatic import from Strava exports and manual upload after GPX import. | ⭐⭐⭐ |
+| F10 | **UI Cleanup & UX Review** | Review current UX flow and revise. Review workout detail page and simplify/revise. Focus on information hierarchy, visual organization, and consistent design patterns across pages. | ⭐⭐⭐ |
 | F11 | **Self-Hosting** | Packaged Docker deployment with persistent storage volume. | ⭐⭐⭐⭐ |
-| F12 | **Media Attachments** | Attach photos and videos to workouts. Support automatic import from Strava exports and manual upload after GPX import. | ⭐⭐⭐ |
 
 ---
 
@@ -122,6 +121,8 @@ docker-compose.yml  → Brings up all services
 ```
 
 ### API Endpoints (v1)
+
+**MVP Endpoints:**
 ```
 POST /workouts/import        → Upload GPX file
 POST /workouts/import/bulk   → Upload ZIP (Strava export)
@@ -132,8 +133,12 @@ POST /workouts/{id}/media    → Upload media files (multipart/form-data, accept
 GET /workouts/{id}/media     → List all media for a workout
 GET /workouts/{id}/media/{mediaId} → Retrieve/serve media file
 DELETE /workouts/{id}/media/{mediaId} → Delete media (removes file and database record)
-GET /analytics/summary       → Aggregate pace/distance
-GET /export/json             → Full JSON backup
+```
+
+**Post-1.0 Endpoints:**
+```
+GET /analytics/summary       → Aggregate pace/distance (deferred to post-1.0)
+GET /export/json             → Full JSON backup (deferred to post-1.0)
 ```
 
 ### Data Model (Postgres)
@@ -288,7 +293,7 @@ This structure:
 - Database models: `Workout`, `WorkoutRoute`, `WorkoutSplit`
 - Frontend: File upload component
 
-❌ **Not Yet Implemented:**
+❌ **Not Yet Implemented (MVP):**
 - `GET /workouts` - List workouts endpoint
 - `GET /workouts/{id}` - Get workout details endpoint
 - Frontend: Workout list view
@@ -303,6 +308,11 @@ This structure:
   - Media import during Strava bulk import (parse Media column, copy files, create records)
   - Frontend: Media upload component for post-import uploads
   - Frontend: Media display on workout detail page (image preview, video playback)
+- **F10: UI Cleanup & UX Review** - Review current UX flow and revise. Review workout detail page and simplify/revise. Focus on information hierarchy, visual organization, and consistent design patterns across pages.
+
+⏸️ **Deferred to Post-1.0:**
+- **F9 (formerly): Analytics Dashboard** - Display charts for total mileage and avg pace trends (`GET /analytics/summary` endpoint)
+- **F10 (formerly): Data Export/Backup** - JSON export of all workouts (`GET /export/json` endpoint)
 
 ### Backend Implementation Requirements
 
@@ -660,6 +670,15 @@ export function formatDate(dateString: string): string;
 ---
 
 ## 9. Future Considerations
+
+### Post-1.0 Features
+
+| Feature | Description |
+|----------|--------------|
+| **Analytics Dashboard** | Display charts for total mileage and avg pace trends. Includes `GET /analytics/summary` endpoint for aggregate pace/distance analytics. |
+| **Data Export/Backup** | JSON export of all workouts. Includes `GET /export/json` endpoint for full data backup functionality. |
+
+### Other Future Considerations
 
 | Feature | Description |
 |----------|--------------|

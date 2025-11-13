@@ -36,7 +36,7 @@ export default function ImportPage() {
         <div className="w-full space-y-8">
           <div>
             <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Import Single GPX Workout
+              Import Single Workout
             </h2>
             <FileUpload />
           </div>

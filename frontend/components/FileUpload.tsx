@@ -2,14 +2,14 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
-import { importGpxFile } from '@/lib/api';
+import { importWorkoutFile } from '@/lib/api';
 
 export function FileUpload() {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const mutation = useMutation({
-    mutationFn: importGpxFile,
+    mutationFn: importWorkoutFile,
     onSuccess: (data) => {
       alert(`Workout imported successfully!\nDistance: ${(data.distanceM / 1000).toFixed(2)} km\nDuration: ${Math.floor(data.durationS / 60)}:${(data.durationS % 60).toString().padStart(2, '0')}`);
       setSelectedFile(null);
@@ -37,10 +37,11 @@ export function FileUpload() {
 
       if (e.dataTransfer.files && e.dataTransfer.files[0]) {
         const file = e.dataTransfer.files[0];
-        if (file.name.endsWith('.gpx')) {
+        const fileName = file.name.toLowerCase();
+        if (fileName.endsWith('.gpx') || fileName.endsWith('.fit') || fileName.endsWith('.fit.gz')) {
           setSelectedFile(file);
         } else {
-          alert('Please upload a GPX file');
+          alert('Please upload a GPX or FIT file');
         }
       }
     },
@@ -50,10 +51,11 @@ export function FileUpload() {
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.name.endsWith('.gpx')) {
+      const fileName = file.name.toLowerCase();
+      if (fileName.endsWith('.gpx') || fileName.endsWith('.fit') || fileName.endsWith('.fit.gz')) {
         setSelectedFile(file);
       } else {
-        alert('Please upload a GPX file');
+        alert('Please upload a GPX or FIT file');
       }
     }
   }, []);
@@ -85,7 +87,7 @@ export function FileUpload() {
           <input
             type="file"
             id="file-upload"
-            accept=".gpx"
+            accept=".gpx,.fit,.fit.gz"
             onChange={handleFileInput}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
@@ -106,7 +108,7 @@ export function FileUpload() {
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
               <span className="font-semibold">Click to upload</span> or drag and drop
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-500">GPX files only</p>
+            <p className="text-xs text-gray-500 dark:text-gray-500">GPX or FIT files</p>
             {selectedFile && (
               <p className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
                 Selected: {selectedFile.name}

@@ -18,6 +18,7 @@ public static class WorkoutsEndpoints
             HttpRequest request,
             TempoDbContext db,
             GpxParserService gpxParser,
+            FitParserService fitParser,
             WeatherService weatherService,
             ILogger<Program> logger) =>
         {
@@ -34,32 +35,97 @@ public static class WorkoutsEndpoints
                 return Results.BadRequest(new { error = "No file uploaded" });
             }
 
-            if (!file.FileName.EndsWith(".gpx", StringComparison.OrdinalIgnoreCase))
+            // Validate file extension
+            var fileName = file.FileName.ToLowerInvariant();
+            bool isGpx = fileName.EndsWith(".gpx");
+            bool isFit = fileName.EndsWith(".fit");
+            bool isFitGz = fileName.EndsWith(".fit.gz");
+
+            if (!isGpx && !isFit && !isFitGz)
             {
-                return Results.BadRequest(new { error = "File must be a GPX file" });
+                return Results.BadRequest(new { error = "File must be a GPX or FIT file (.gpx, .fit, or .fit.gz)" });
             }
 
             try
             {
-                // Parse GPX file
-                GpxParserService.GpxParseResult parseResult;
+                // Parse file based on type
+                GpxParserService.GpxParseResult? parseResult = null;
+                FitParserService.FitParseResult? fitResult = null;
+
                 using (var stream = file.OpenReadStream())
                 {
-                    parseResult = gpxParser.ParseGpx(stream);
+                    if (isGpx)
+                    {
+                        parseResult = gpxParser.ParseGpx(stream);
+                    }
+                    else if (isFitGz)
+                    {
+                        try
+                        {
+                            fitResult = fitParser.ParseGzippedFit(stream);
+                        }
+                        catch (NotSupportedException ex)
+                        {
+                            return Results.BadRequest(new { error = ex.Message });
+                        }
+                    }
+                    else if (isFit)
+                    {
+                        try
+                        {
+                            fitResult = fitParser.ParseFit(stream);
+                        }
+                        catch (NotSupportedException ex)
+                        {
+                            return Results.BadRequest(new { error = ex.Message });
+                        }
+                    }
+                }
+
+                // Use GPX result or convert FIT result
+                DateTime startTime;
+                int durationSeconds;
+                double distanceMeters;
+                double? elevationGainMeters;
+                List<GpxParserService.GpxPoint> trackPoints;
+                string? rawGpxDataJson = null;
+                string? rawFitDataJson = null;
+
+                if (parseResult != null)
+                {
+                    startTime = parseResult.StartTime;
+                    durationSeconds = parseResult.DurationSeconds;
+                    distanceMeters = parseResult.DistanceMeters;
+                    elevationGainMeters = parseResult.ElevationGainMeters;
+                    trackPoints = parseResult.TrackPoints;
+                    rawGpxDataJson = parseResult.RawGpxDataJson;
+                }
+                else if (fitResult != null)
+                {
+                    startTime = fitResult.StartTime;
+                    durationSeconds = fitResult.DurationSeconds;
+                    distanceMeters = fitResult.DistanceMeters;
+                    elevationGainMeters = fitResult.ElevationGainMeters;
+                    trackPoints = fitResult.TrackPoints;
+                    rawFitDataJson = fitResult.RawFitDataJson;
+                }
+                else
+                {
+                    return Results.BadRequest(new { error = "Failed to parse file" });
                 }
 
                 // Calculate average pace (seconds per km - stored in metric)
-                var avgPaceS = parseResult.DistanceMeters > 0 && parseResult.DurationSeconds > 0
-                    ? (int)(parseResult.DurationSeconds / (parseResult.DistanceMeters / 1000.0))
+                var avgPaceS = distanceMeters > 0 && durationSeconds > 0
+                    ? (int)(durationSeconds / (distanceMeters / 1000.0))
                     : 0;
 
-                // Extract additional metrics from RawGpxData JSON
+                // Extract additional metrics from RawGpxData JSON (for GPX files)
                 var calculated = new Dictionary<string, object>();
-                if (!string.IsNullOrEmpty(parseResult.RawGpxDataJson))
+                if (!string.IsNullOrEmpty(rawGpxDataJson))
                 {
                     try
                     {
-                        var rawData = JsonSerializer.Deserialize<JsonElement>(parseResult.RawGpxDataJson);
+                        var rawData = JsonSerializer.Deserialize<JsonElement>(rawGpxDataJson);
                         if (rawData.TryGetProperty("calculated", out var calculatedElement))
                         {
                             foreach (var prop in calculatedElement.EnumerateObject())
@@ -76,27 +142,28 @@ public static class WorkoutsEndpoints
 
                 // Create workout
                 // Ensure StartedAt is UTC (defensive conversion)
-                var startedAtUtc = parseResult.StartTime.Kind switch
+                var startedAtUtc = startTime.Kind switch
                 {
-                    DateTimeKind.Utc => parseResult.StartTime,
-                    DateTimeKind.Local => parseResult.StartTime.ToUniversalTime(),
-                    _ => DateTime.SpecifyKind(parseResult.StartTime, DateTimeKind.Utc)
+                    DateTimeKind.Utc => startTime,
+                    DateTimeKind.Local => startTime.ToUniversalTime(),
+                    _ => DateTime.SpecifyKind(startTime, DateTimeKind.Utc)
                 };
 
                 var workout = new Workout
                 {
                     Id = Guid.NewGuid(),
                     StartedAt = startedAtUtc,
-                    DurationS = parseResult.DurationSeconds,
-                    DistanceM = parseResult.DistanceMeters,
+                    DurationS = durationSeconds,
+                    DistanceM = distanceMeters,
                     AvgPaceS = avgPaceS,
-                    ElevGainM = parseResult.ElevationGainMeters,
-                    RawGpxData = parseResult.RawGpxDataJson,
-                    Source = "apple_watch",
+                    ElevGainM = elevationGainMeters,
+                    RawGpxData = rawGpxDataJson,
+                    RawFitData = rawFitDataJson,
+                    Source = isGpx ? "apple_watch" : "fit_import",
                     CreatedAt = DateTime.UtcNow
                 };
 
-                // Populate additional metrics from calculated data
+                // Populate additional metrics from calculated data (GPX)
                 if (calculated.TryGetValue("elevLossM", out var elevLoss) && elevLoss is JsonElement elevLossElem && elevLossElem.ValueKind == JsonValueKind.Number)
                     workout.ElevLossM = elevLossElem.GetDouble();
                 if (calculated.TryGetValue("minElevM", out var minElev) && minElev is JsonElement minElevElem && minElevElem.ValueKind == JsonValueKind.Number)
@@ -108,8 +175,42 @@ public static class WorkoutsEndpoints
                 if (calculated.TryGetValue("avgSpeedMps", out var avgSpeed) && avgSpeed is JsonElement avgSpeedElem && avgSpeedElem.ValueKind == JsonValueKind.Number)
                     workout.AvgSpeedMps = avgSpeedElem.GetDouble();
 
+                // Populate metrics from FIT session data
+                if (fitResult != null && !string.IsNullOrEmpty(rawFitDataJson))
+                {
+                    try
+                    {
+                        var rawFit = JsonSerializer.Deserialize<JsonElement>(rawFitDataJson);
+                        if (rawFit.TryGetProperty("session", out var sessionElement))
+                        {
+                            if (sessionElement.TryGetProperty("totalMovingTime", out var movingTime) && movingTime.ValueKind == JsonValueKind.Number)
+                                workout.MovingTimeS = (int)Math.Round(movingTime.GetDouble());
+                            if (sessionElement.TryGetProperty("maxHeartRate", out var maxHr) && maxHr.ValueKind == JsonValueKind.Number)
+                                workout.MaxHeartRateBpm = (byte)maxHr.GetInt32();
+                            if (sessionElement.TryGetProperty("avgHeartRate", out var avgHr) && avgHr.ValueKind == JsonValueKind.Number)
+                                workout.AvgHeartRateBpm = (byte)avgHr.GetInt32();
+                            if (sessionElement.TryGetProperty("minHeartRate", out var minHr) && minHr.ValueKind == JsonValueKind.Number)
+                                workout.MinHeartRateBpm = (byte)minHr.GetInt32();
+                            if (sessionElement.TryGetProperty("maxCadence", out var maxCad) && maxCad.ValueKind == JsonValueKind.Number)
+                                workout.MaxCadenceRpm = (byte)maxCad.GetInt32();
+                            if (sessionElement.TryGetProperty("avgCadence", out var avgCad) && avgCad.ValueKind == JsonValueKind.Number)
+                                workout.AvgCadenceRpm = (byte)avgCad.GetInt32();
+                            if (sessionElement.TryGetProperty("maxPower", out var maxPow) && maxPow.ValueKind == JsonValueKind.Number)
+                                workout.MaxPowerWatts = (ushort)maxPow.GetInt32();
+                            if (sessionElement.TryGetProperty("avgPower", out var avgPow) && avgPow.ValueKind == JsonValueKind.Number)
+                                workout.AvgPowerWatts = (ushort)avgPow.GetInt32();
+                            if (sessionElement.TryGetProperty("totalCalories", out var cals) && cals.ValueKind == JsonValueKind.Number)
+                                workout.Calories = (ushort)cals.GetInt32();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to extract metrics from RawFitData JSON");
+                    }
+                }
+
                 // Create route GeoJSON
-                var coordinates = parseResult.TrackPoints.Select(p => new[] { p.Longitude, p.Latitude }).ToList();
+                var coordinates = trackPoints.Select(p => new[] { p.Longitude, p.Latitude }).ToList();
                 var routeGeoJson = JsonSerializer.Serialize(new
                 {
                     type = "LineString",
@@ -125,9 +226,9 @@ public static class WorkoutsEndpoints
 
                 // Calculate splits
                 var splits = gpxParser.CalculateSplits(
-                    parseResult.TrackPoints,
-                    parseResult.DistanceMeters,
-                    parseResult.DurationSeconds
+                    trackPoints,
+                    distanceMeters,
+                    durationSeconds
                 );
 
                 foreach (var split in splits)
@@ -136,14 +237,14 @@ public static class WorkoutsEndpoints
                 }
 
                 // Fetch weather data if GPS coordinates are available
-                if (parseResult.TrackPoints.Count > 0)
+                if (trackPoints.Count > 0)
                 {
-                    var firstPoint = parseResult.TrackPoints[0];
+                    var firstPoint = trackPoints[0];
                     try
                     {
                         var weatherJson = await weatherService.GetWeatherForWorkoutAsync(
                             rawStravaDataJson: null,
-                            rawFitDataJson: null,
+                            rawFitDataJson: rawFitDataJson,
                             latitude: firstPoint.Latitude,
                             longitude: firstPoint.Longitude,
                             startTime: startedAtUtc
@@ -181,11 +282,11 @@ public static class WorkoutsEndpoints
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error importing GPX file");
+                logger.LogError(ex, "Error importing workout file");
                 return Results.Problem(
                     detail: ex.Message,
                     statusCode: 500,
-                    title: "Error processing GPX file"
+                    title: "Error processing workout file"
                 );
             }
         })
@@ -193,8 +294,8 @@ public static class WorkoutsEndpoints
         .Produces(200)
         .Produces(400)
         .Produces(500)
-        .WithSummary("Import a GPX workout file")
-        .WithDescription("Uploads and processes a GPX file, extracting workout data and saving it to the database");
+        .WithSummary("Import a workout file")
+        .WithDescription("Uploads and processes a GPX or FIT file (.gpx, .fit, or .fit.gz), extracting workout data and saving it to the database");
 
         group.MapGet("", async (
             TempoDbContext db,
@@ -303,6 +404,166 @@ public static class WorkoutsEndpoints
         .WithDescription("Returns a paginated list of workouts with optional filtering");
 
         // Media routes must come before the generic /{id:guid} route to ensure proper routing
+        group.MapPost("/{id:guid}/media", async (
+            Guid id,
+            HttpRequest request,
+            TempoDbContext db,
+            MediaService mediaService,
+            ILogger<Program> logger) =>
+        {
+            // Verify workout exists
+            var workoutExists = await db.Workouts.AnyAsync(w => w.Id == id);
+            if (!workoutExists)
+            {
+                return Results.NotFound(new { error = "Workout not found" });
+            }
+
+            if (!request.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Request must be multipart/form-data" });
+            }
+
+            var form = await request.ReadFormAsync();
+            var files = form.Files.GetFiles("files");
+
+            if (files == null || files.Count == 0)
+            {
+                return Results.BadRequest(new { error = "No files provided" });
+            }
+
+            var uploadedMedia = new List<WorkoutMedia>();
+            var errors = new List<object>();
+
+            // Process each file
+            foreach (var file in files)
+            {
+                try
+                {
+                    var mediaRecord = mediaService.UploadMediaFile(file, id);
+                    if (mediaRecord != null)
+                    {
+                        uploadedMedia.Add(mediaRecord);
+                        logger.LogInformation("Uploaded media file {FileName} for workout {WorkoutId}", 
+                            file.FileName, id);
+                    }
+                    else
+                    {
+                        errors.Add(new { filename = file.FileName, error = "Failed to process file" });
+                        logger.LogWarning("Failed to upload media file {FileName} for workout {WorkoutId}", 
+                            file.FileName, id);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error uploading media file {FileName} for workout {WorkoutId}", 
+                        file.FileName, id);
+                    errors.Add(new { filename = file.FileName, error = ex.Message });
+                }
+            }
+
+            // If no files were successfully uploaded, return error
+            if (uploadedMedia.Count == 0)
+            {
+                return Results.BadRequest(new 
+                { 
+                    error = "No files were successfully uploaded",
+                    errors = errors
+                });
+            }
+
+            // Batch insert all successfully uploaded media records
+            db.WorkoutMedia.AddRange(uploadedMedia);
+            await db.SaveChangesAsync();
+
+            logger.LogInformation("Successfully uploaded {Count} media files for workout {WorkoutId}", 
+                uploadedMedia.Count, id);
+
+            // Return uploaded media metadata
+            var response = uploadedMedia.Select(m => new
+            {
+                id = m.Id,
+                filename = m.Filename,
+                mimeType = m.MimeType,
+                fileSizeBytes = m.FileSizeBytes,
+                caption = m.Caption,
+                createdAt = m.CreatedAt
+            }).ToList();
+
+            // Include errors if any files failed
+            if (errors.Count > 0)
+            {
+                return Results.Ok(new
+                {
+                    uploaded = response,
+                    errors = errors,
+                    successCount = uploadedMedia.Count,
+                    errorCount = errors.Count
+                });
+            }
+
+            return Results.Ok(response);
+        })
+        .Accepts<IFormFile>("multipart/form-data")
+        .Produces(200)
+        .Produces(400)
+        .Produces(404)
+        .WithSummary("Upload media files to workout")
+        .WithDescription("Uploads one or more media files (images/videos) to a workout");
+
+        group.MapDelete("/{id:guid}/media/{mediaId:guid}", async (
+            Guid id,
+            Guid mediaId,
+            TempoDbContext db,
+            ILogger<Program> logger) =>
+        {
+            // Verify workout exists
+            var workoutExists = await db.Workouts.AnyAsync(w => w.Id == id);
+            if (!workoutExists)
+            {
+                return Results.NotFound(new { error = "Workout not found" });
+            }
+
+            // Get media record
+            var media = await db.WorkoutMedia
+                .FirstOrDefaultAsync(m => m.Id == mediaId && m.WorkoutId == id);
+
+            if (media == null)
+            {
+                return Results.NotFound(new { error = "Media not found" });
+            }
+
+            // Delete file from filesystem
+            try
+            {
+                if (File.Exists(media.FilePath))
+                {
+                    File.Delete(media.FilePath);
+                    logger.LogInformation("Deleted media file from filesystem: {FilePath}", media.FilePath);
+                }
+                else
+                {
+                    logger.LogWarning("Media file not found on filesystem (orphaned record): {FilePath}", media.FilePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error deleting media file from filesystem: {FilePath}", media.FilePath);
+                // Continue with database deletion even if file deletion fails
+            }
+
+            // Delete database record
+            db.WorkoutMedia.Remove(media);
+            await db.SaveChangesAsync();
+
+            logger.LogInformation("Deleted media {MediaId} for workout {WorkoutId}", mediaId, id);
+
+            return Results.NoContent();
+        })
+        .Produces(204)
+        .Produces(404)
+        .WithSummary("Delete workout media")
+        .WithDescription("Deletes a media file from a workout (removes file from filesystem and database record)");
+
         group.MapGet("/{id:guid}/media/{mediaId:guid}", async (
             Guid id,
             Guid mediaId,
@@ -1324,6 +1585,73 @@ public static class WorkoutsEndpoints
         .Produces(404)
         .WithSummary("Update workout")
         .WithDescription("Updates workout RunType and/or Notes");
+
+        group.MapDelete("/{id:guid}", async (
+            Guid id,
+            TempoDbContext db,
+            MediaStorageConfig mediaConfig,
+            ILogger<Program> logger) =>
+        {
+            // Find workout with related media
+            var workout = await db.Workouts
+                .Include(w => w.Media)
+                .FirstOrDefaultAsync(w => w.Id == id);
+
+            if (workout == null)
+            {
+                return Results.NotFound(new { error = "Workout not found" });
+            }
+
+            // Delete all media files from filesystem
+            foreach (var media in workout.Media)
+            {
+                try
+                {
+                    if (File.Exists(media.FilePath))
+                    {
+                        File.Delete(media.FilePath);
+                        logger.LogInformation("Deleted media file from filesystem: {FilePath}", media.FilePath);
+                    }
+                    else
+                    {
+                        logger.LogWarning("Media file not found on filesystem (orphaned record): {FilePath}", media.FilePath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error deleting media file from filesystem: {FilePath}", media.FilePath);
+                    // Continue with deletion even if file deletion fails
+                }
+            }
+
+            // Delete workout's media directory if it exists
+            try
+            {
+                var workoutMediaDir = Path.Combine(mediaConfig.RootPath, id.ToString());
+                if (Directory.Exists(workoutMediaDir))
+                {
+                    Directory.Delete(workoutMediaDir, recursive: true);
+                    logger.LogInformation("Deleted workout media directory: {Directory}", workoutMediaDir);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Error deleting workout media directory for workout {WorkoutId}", id);
+                // Continue with database deletion even if directory deletion fails
+            }
+
+            // Delete workout from database (cascade delete will handle related records)
+            db.Workouts.Remove(workout);
+            await db.SaveChangesAsync();
+
+            logger.LogInformation("Deleted workout {WorkoutId}", id);
+
+            return Results.NoContent();
+        })
+        .Produces(204)
+        .Produces(404)
+        .WithSummary("Delete workout")
+        .WithDescription("Deletes a workout and all associated data (route, splits, media files, and database records)");
     }
 }
 
