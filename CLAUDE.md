@@ -11,7 +11,7 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 ### Backend (ASP.NET Core .NET 9)
 - **Run**: `cd api && dotnet run` (API at http://localhost:5001)
 - **Watch mode**: `cd api && dotnet watch run` (auto-reload on changes)
-- **Database migrations**: `cd api && dotnet ef database update`
+- **Database migrations**: `cd api && dotnet ef database update` (also applied automatically on startup)
 - **Create migration**: `cd api && dotnet ef migrations add <MigrationName>`
 - **Swagger UI**: Available at http://localhost:5001/swagger in development only
 
@@ -26,6 +26,7 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 - **Start PostgreSQL**: `docker-compose up -d postgres`
 - **Stop**: `docker-compose down`
 - **Connection string**: `Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres` (configured in `api/appsettings.json`)
+- **Automatic migrations**: Migrations are automatically applied on API startup via `Program.cs` (handles migration state reconciliation)
 
 ## Architecture
 
@@ -80,7 +81,7 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 - Swagger enabled in development only (`if (app.Environment.IsDevelopment())`)
 - Large file upload support: 500MB limit configured for bulk imports (Kestrel `MaxRequestBodySize` and `FormOptions.MultipartBodyLengthLimit`)
 - Media storage: Configurable via `MediaStorage:RootPath` (defaults to `./media` relative to API directory) and `MediaStorage:MaxFileSizeBytes` (defaults to 50MB). Media root directory is created automatically on startup.
-- Database initialization: `Program.cs` calls `db.Database.EnsureCreated()` as fallback and includes manual SQL for WorkoutMedia table creation (migration workaround). Migrations are preferred (see Important Notes)
+- Database initialization: `Program.cs` automatically applies migrations on startup via `db.Database.Migrate()`. Includes migration state reconciliation logic to handle databases created with `EnsureCreated()` (creates migration history table and marks initial migration as applied if needed). See Database Migrations section for details.
 
 ### Frontend Architecture
 
@@ -139,9 +140,15 @@ Uses `NEXT_PUBLIC_API_URL` environment variable (defaults to `http://localhost:5
 
 ### Database Migrations
 
-Migrations are in `api/Migrations/`. The initial migration creates the three main tables with proper foreign keys and indexes. Use `dotnet ef database update` to apply migrations. 
+Migrations are in `api/Migrations/`. The initial migration creates the main tables with proper foreign keys and indexes. 
 
-**⚠️ Important**: `Program.cs` calls `db.Database.EnsureCreated()` as a fallback and includes manual SQL for WorkoutMedia table creation (migration workaround). This may conflict with migrations in production. Consider removing `EnsureCreated()` and manual SQL in favor of migrations-only approach for production deployments.
+**Automatic Application**: `Program.cs` automatically applies pending migrations on startup using `db.Database.Migrate()`. It also includes logic to reconcile migration state if the database was previously created with `EnsureCreated()` (creates `__EFMigrationsHistory` table and marks initial migration as applied if needed).
+
+**Manual Migration Commands**:
+- Apply migrations: `cd api && dotnet ef database update`
+- Create new migration: `cd api && dotnet ef migrations add <MigrationName>`
+
+**⚠️ Important**: The automatic migration logic in `Program.cs` handles edge cases where tables exist but migration history is missing. For production deployments, ensure migrations are properly tracked and consider removing the migration state reconciliation logic once the database is fully migrated.
 
 **FIT SDK Integration**: The FIT SDK C# source files are located in `api/Libraries/FitSDK/` (version 21.171.00) and are automatically compiled into the project via `<Compile Include>` directives in `Tempo.Api.csproj`. The SDK handles parsing Garmin FIT files including compressed `.fit.gz` files. Coordinate conversion from semicircles (FIT format unit) to degrees is handled in `FitParserService` using the conversion factor `180.0 / 2^31`. The SDK is embedded directly in the repository (not a NuGet package).
 
