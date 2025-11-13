@@ -106,9 +106,12 @@ export interface WorkoutMedia {
   createdAt: string;
 }
 
-export async function importWorkoutFile(file: File): Promise<WorkoutImportResponse> {
+export async function importWorkoutFile(file: File, unitPreference?: 'metric' | 'imperial'): Promise<WorkoutImportResponse> {
   const formData = new FormData();
   formData.append('file', file);
+  if (unitPreference) {
+    formData.append('unitPreference', unitPreference);
+  }
 
   const response = await fetch(`${API_BASE_URL}/workouts/import`, {
     method: 'POST',
@@ -195,9 +198,12 @@ export interface BulkImportResponse {
   }>;
 }
 
-export async function importBulkStravaExport(zipFile: File): Promise<BulkImportResponse> {
+export async function importBulkStravaExport(zipFile: File, unitPreference?: 'metric' | 'imperial'): Promise<BulkImportResponse> {
   const formData = new FormData();
   formData.append('file', zipFile);
+  if (unitPreference) {
+    formData.append('unitPreference', unitPreference);
+  }
 
   const response = await fetch(`${API_BASE_URL}/workouts/import/bulk`, {
     method: 'POST',

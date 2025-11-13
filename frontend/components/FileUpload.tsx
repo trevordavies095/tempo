@@ -3,13 +3,15 @@
 import { useMutation } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { importWorkoutFile } from '@/lib/api';
+import { useSettings } from '@/lib/settings';
 
 export function FileUpload() {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const { unitPreference } = useSettings();
 
   const mutation = useMutation({
-    mutationFn: importWorkoutFile,
+    mutationFn: (file: File) => importWorkoutFile(file, unitPreference),
     onSuccess: (data) => {
       alert(`Workout imported successfully!\nDistance: ${(data.distanceM / 1000).toFixed(2)} km\nDuration: ${Math.floor(data.durationS / 60)}:${(data.durationS % 60).toString().padStart(2, '0')}`);
       setSelectedFile(null);
@@ -67,7 +69,7 @@ export function FileUpload() {
         mutation.mutate(selectedFile);
       }
     },
-    [selectedFile, mutation]
+    [selectedFile, mutation, unitPreference]
   );
 
   return (

@@ -198,12 +198,52 @@ public class StravaCsvParserService
         }
         if (rawData.ContainsKey("Wind Speed"))
         {
-            weather["windSpeed"] = rawData["Wind Speed"];
+            // Strava CSV exports wind speed in km/h, convert to m/s
+            var windSpeedValue = rawData["Wind Speed"];
+            if (windSpeedValue != null)
+            {
+                if (windSpeedValue is double dblSpeed)
+                {
+                    weather["windSpeed"] = dblSpeed / 3.6; // Convert km/h to m/s
+                }
+                else if (windSpeedValue is int intSpeed)
+                {
+                    weather["windSpeed"] = (double)intSpeed / 3.6; // Convert km/h to m/s
+                }
+                else if (windSpeedValue is string strSpeed && double.TryParse(strSpeed, out var parsedSpeed))
+                {
+                    weather["windSpeed"] = parsedSpeed / 3.6; // Convert km/h to m/s
+                }
+                else
+                {
+                    weather["windSpeed"] = windSpeedValue; // Fallback: store as-is if can't parse
+                }
+            }
             hasWeather = true;
         }
         if (rawData.ContainsKey("Wind Gust"))
         {
-            weather["windGust"] = rawData["Wind Gust"];
+            // Strava CSV exports wind gust in km/h, convert to m/s
+            var windGustValue = rawData["Wind Gust"];
+            if (windGustValue != null)
+            {
+                if (windGustValue is double dblGust)
+                {
+                    weather["windGust"] = dblGust / 3.6; // Convert km/h to m/s
+                }
+                else if (windGustValue is int intGust)
+                {
+                    weather["windGust"] = (double)intGust / 3.6; // Convert km/h to m/s
+                }
+                else if (windGustValue is string strGust && double.TryParse(strGust, out var parsedGust))
+                {
+                    weather["windGust"] = parsedGust / 3.6; // Convert km/h to m/s
+                }
+                else
+                {
+                    weather["windGust"] = windGustValue; // Fallback: store as-is if can't parse
+                }
+            }
             hasWeather = true;
         }
         if (rawData.ContainsKey("Wind Bearing"))

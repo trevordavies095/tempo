@@ -325,7 +325,7 @@ public class WeatherService
                 }
             }
 
-            // Extract wind speed
+            // Extract wind speed (Open-Meteo returns km/h, convert to m/s)
             if (hourlyElement.TryGetProperty("wind_speed_10m", out var windSpeedArray) && 
                 windSpeedArray.ValueKind == JsonValueKind.Array && 
                 idx < windSpeedArray.GetArrayLength())
@@ -333,7 +333,7 @@ public class WeatherService
                 var windSpeed = windSpeedArray[idx];
                 if (windSpeed.ValueKind == JsonValueKind.Number)
                 {
-                    weather["windSpeed"] = windSpeed.GetDouble();
+                    weather["windSpeed"] = windSpeed.GetDouble() / 3.6; // Convert km/h to m/s
                 }
             }
 

@@ -35,6 +35,19 @@ public static class WorkoutsEndpoints
                 return Results.BadRequest(new { error = "No file uploaded" });
             }
 
+            // Read unit preference from form (default to "metric" for backward compatibility)
+            var unitPreference = form["unitPreference"].ToString();
+            if (string.IsNullOrWhiteSpace(unitPreference))
+            {
+                unitPreference = "metric";
+            }
+
+            // Calculate split distance based on unit preference
+            // 1000.0 meters = 1 km for metric, 1609.344 meters = 1 mile for imperial
+            var splitDistanceMeters = unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
+                ? 1609.344
+                : 1000.0;
+
             // Validate file extension
             var fileName = file.FileName.ToLowerInvariant();
             bool isGpx = fileName.EndsWith(".gpx");
@@ -228,7 +241,8 @@ public static class WorkoutsEndpoints
                 var splits = gpxParser.CalculateSplits(
                     trackPoints,
                     distanceMeters,
-                    durationSeconds
+                    durationSeconds,
+                    splitDistanceMeters
                 );
 
                 foreach (var split in splits)
@@ -844,6 +858,19 @@ public static class WorkoutsEndpoints
                 return Results.BadRequest(new { error = "File must be a ZIP file" });
             }
 
+            // Read unit preference from form (default to "metric" for backward compatibility)
+            var unitPreference = form["unitPreference"].ToString();
+            if (string.IsNullOrWhiteSpace(unitPreference))
+            {
+                unitPreference = "metric";
+            }
+
+            // Calculate split distance based on unit preference
+            // 1000.0 meters = 1 km for metric, 1609.344 meters = 1 mile for imperial
+            var splitDistanceMeters = unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
+                ? 1609.344
+                : 1000.0;
+
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             var errors = new List<object>();
             var successful = 0;
@@ -1222,7 +1249,8 @@ public static class WorkoutsEndpoints
                         var splits = gpxParser.CalculateSplits(
                             trackPoints,
                             distanceMeters,
-                            durationSeconds
+                            durationSeconds,
+                            splitDistanceMeters
                         );
 
                         foreach (var split in splits)

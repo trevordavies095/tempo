@@ -8,12 +8,13 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 
 ## Development Commands
 
-### Backend (ASP.NET Core .NET 9)
+### Backend (ASP.NET Core .NET 9.0)
 - **Run**: `cd api && dotnet run` (API at http://localhost:5001)
 - **Watch mode**: `cd api && dotnet watch run` (auto-reload on changes)
 - **Database migrations**: `cd api && dotnet ef database update` (also applied automatically on startup)
 - **Create migration**: `cd api && dotnet ef migrations add <MigrationName>`
 - **Swagger UI**: Available at http://localhost:5001/swagger in development only
+- **Tests**: No test infrastructure configured yet (xUnit planned per PRD)
 
 ### Frontend (Next.js 16)
 - **Development**: `cd frontend && npm run dev` (runs at http://localhost:3000)
@@ -27,6 +28,7 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 - **Stop**: `docker-compose down`
 - **Connection string**: `Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres` (configured in `api/appsettings.json`)
 - **Automatic migrations**: Migrations are automatically applied on API startup via `Program.cs` (handles migration state reconciliation)
+- **Data persistence**: PostgreSQL data is stored in Docker volume `postgres_data` (persists across container restarts)
 
 ### Environment Variables
 
@@ -90,7 +92,7 @@ Tempo is a self-hostable, privacy-first running tracker. It allows users to impo
 - Serilog for structured logging (console output, configured via `appsettings.json`)
 - Swagger enabled in development only (`if (app.Environment.IsDevelopment())`)
 - Large file upload support: 500MB limit configured for bulk imports (Kestrel `MaxRequestBodySize` and `FormOptions.MultipartBodyLengthLimit`)
-- Media storage: Configurable via `MediaStorage:RootPath` (defaults to `./media` relative to API directory) and `MediaStorage:MaxFileSizeBytes` (defaults to 50MB). Media root directory is created automatically on startup.
+- Media storage: Configurable via `MediaStorage:RootPath` (defaults to `./media` relative to API directory) and `MediaStorage:MaxFileSizeBytes` (defaults to 50MB). Media root directory is created automatically on startup. For Docker deployments, mount this directory as a volume for persistence.
 - Database initialization: `Program.cs` automatically applies migrations on startup via `db.Database.Migrate()`. Includes migration state reconciliation logic to handle databases created with `EnsureCreated()` (creates migration history table and marks initial migration as applied if needed). See Database Migrations section for details.
 
 ### Frontend Architecture
@@ -161,7 +163,7 @@ Migrations are in `api/Migrations/`. The initial migration creates the main tabl
 
 **⚠️ Important**: The automatic migration logic in `Program.cs` handles edge cases where tables exist but migration history is missing. For production deployments, ensure migrations are properly tracked and consider removing the migration state reconciliation logic once the database is fully migrated.
 
-**Note**: The migration state reconciliation code in `Program.cs` has a hardcoded migration ID (`20251110232429_InitialCreate`) that does not match the actual initial migration filename (`20251111150526_InitialCreate`). This is intentional for handling legacy databases created with `EnsureCreated()`, but if creating a fresh database, ensure the migration history is properly tracked from the start. If updating this logic, use the actual migration filename from `api/Migrations/`.
+**Note**: The migration state reconciliation code in `Program.cs` has a hardcoded migration ID (`20251110232429_InitialCreate`) that does not match the actual initial migration filename (`20251111150526_InitialCreate`). This is intentional for handling legacy databases created with `EnsureCreated()`, but if creating a fresh database, ensure the migration history is properly tracked from the start. If updating this logic, use the actual migration filename from `api/Migrations/` (currently `20251111150526_InitialCreate`).
 
 **FIT SDK Integration**: The FIT SDK C# source files are located in `api/Libraries/FitSDK/` (version 21.171.00) and are automatically compiled into the project via `<Compile Include>` directives in `Tempo.Api.csproj`. The SDK handles parsing Garmin FIT files including compressed `.fit.gz` files. Coordinate conversion from semicircles (FIT format unit) to degrees is handled in `FitParserService` using the conversion factor `180.0 / 2^31`. The SDK is embedded directly in the repository (not a NuGet package).
 
@@ -185,8 +187,8 @@ The `test_data/` directory contains sample files for development:
 - **Run type tagging**: `PATCH /workouts/{id}` endpoint implemented for updating RunType and Notes. Frontend includes inline click-to-edit UI for RunType with options: None (default), Race, Workout, Long Run. Auto-saves on selection change using TanStack Query mutations.
 
 ### ❌ Not Yet Implemented
-- **Tests**: PRD mentions Vitest/Playwright for frontend and xUnit for backend, but no test infrastructure exists yet
-- **Weather API**: Open-Meteo integration planned (per PRD). Weather field exists in database but is not populated.
+- **Tests**: PRD mentions Vitest/Playwright for frontend and xUnit for backend, but no test infrastructure exists yet. No test projects or test commands are configured.
+- **Weather API**: Open-Meteo integration planned (per PRD). Weather field exists in database but is not populated. `WeatherService` exists but is not called during import.
 - **Analytics endpoints**: Basic stats endpoints (`/workouts/stats/weekly` and `/workouts/stats/yearly`) are implemented. `GET /analytics/summary` (comprehensive analytics) planned but not yet implemented (per PRD)
 - **Media upload**: `POST /workouts/{id}/media` endpoint for manual media upload after GPX import (planned per PRD, not yet implemented)
 - **Media deletion**: `DELETE /workouts/{id}/media/{mediaId}` endpoint planned but not implemented (per PRD)
