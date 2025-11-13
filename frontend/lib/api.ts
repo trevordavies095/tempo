@@ -247,6 +247,67 @@ export function getWorkoutMediaUrl(workoutId: string, mediaId: string): string {
   return `${API_BASE_URL}/workouts/${workoutId}/media/${mediaId}`;
 }
 
+export async function deleteWorkoutMedia(
+  workoutId: string,
+  mediaId: string
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media/${mediaId}`, {
+    method: 'DELETE',
+    mode: 'cors',
+    credentials: 'omit',
+  });
+
+  if (response.status === 404) {
+    throw new Error('Media not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to delete media: ${response.status}`);
+  }
+}
+
+export async function uploadWorkoutMedia(
+  workoutId: string,
+  files: File[]
+): Promise<WorkoutMedia[]> {
+  if (files.length === 0) {
+    throw new Error('No files provided');
+  }
+
+  const formData = new FormData();
+  files.forEach((file) => {
+    formData.append('files', file);
+  });
+
+  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media`, {
+    method: 'POST',
+    mode: 'cors',
+    credentials: 'omit',
+    body: formData,
+  });
+
+  if (response.status === 404) {
+    throw new Error('Workout not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to upload media: ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  // Handle response format: could be array directly or object with 'uploaded' property
+  if (Array.isArray(data)) {
+    return data;
+  } else if (data.uploaded && Array.isArray(data.uploaded)) {
+    return data.uploaded;
+  } else {
+    throw new Error('Unexpected response format from upload endpoint');
+  }
+}
+
 export interface WeeklyStatsResponse {
   weekStart: string;
   weekEnd: string;

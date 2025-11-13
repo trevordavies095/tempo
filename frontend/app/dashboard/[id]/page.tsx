@@ -11,6 +11,7 @@ import { useSettings } from '@/lib/settings';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
 import { MediaModal } from '@/components/MediaModal';
 import { WeatherDisplay } from '@/components/WeatherDisplay';
+import { MediaUpload } from '@/components/MediaUpload';
 
 // Dynamically import WorkoutMap to avoid SSR issues with Leaflet
 const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
@@ -477,11 +478,20 @@ export default function WorkoutDetailPage() {
                 )}
               </dd>
             </div>
+            <MediaUpload
+              workoutId={id}
+              onUploadSuccess={() => {
+                queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
+              }}
+            />
             <WorkoutMediaGallery
               workoutId={id}
               media={isMediaError ? [] : media}
               isLoading={isLoadingMedia}
               onMediaClick={handleMediaClick}
+              onDeleteSuccess={() => {
+                queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
+              }}
             />
           </div>
 
@@ -559,6 +569,14 @@ export default function WorkoutDetailPage() {
             workoutId={id}
             isOpen={isModalOpen}
             onClose={handleCloseModal}
+            onDeleteSuccess={() => {
+              queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
+              // If modal closes after deleting last item, reset state
+              if (media && media.length <= 1) {
+                setIsModalOpen(false);
+                setSelectedMediaIndex(null);
+              }
+            }}
           />
         )}
       </main>
