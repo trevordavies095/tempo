@@ -1229,6 +1229,101 @@ public static class WorkoutsEndpoints
         .Produces(200)
         .WithSummary("Get yearly stats")
         .WithDescription("Returns total miles for the current year and previous year");
+
+        group.MapPatch("/{id:guid}", async (
+            Guid id,
+            HttpRequest request,
+            TempoDbContext db,
+            ILogger<Program> logger) =>
+        {
+            // Parse JSON body to check which properties are provided
+            JsonDocument? jsonDoc;
+            try
+            {
+                jsonDoc = await JsonDocument.ParseAsync(request.Body);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to parse update request body");
+                return Results.BadRequest(new { error = "Invalid request body" });
+            }
+
+            if (jsonDoc == null)
+            {
+                return Results.BadRequest(new { error = "Request body is required" });
+            }
+
+            var root = jsonDoc.RootElement;
+
+            // Find workout
+            var workout = await db.Workouts.FindAsync(id);
+            if (workout == null)
+            {
+                return Results.NotFound(new { error = "Workout not found" });
+            }
+
+            // Validate and update RunType if provided
+            if (root.TryGetProperty("runType", out var runTypeElement))
+            {
+                string? runTypeValue = null;
+                if (runTypeElement.ValueKind == JsonValueKind.String)
+                {
+                    runTypeValue = runTypeElement.GetString();
+                }
+                else if (runTypeElement.ValueKind == JsonValueKind.Null)
+                {
+                    runTypeValue = null;
+                }
+                else
+                {
+                    return Results.BadRequest(new { error = "runType must be a string or null" });
+                }
+
+                var validRunTypes = new[] { "Race", "Workout", "Long Run" };
+                if (runTypeValue != null && !validRunTypes.Contains(runTypeValue))
+                {
+                    return Results.BadRequest(new { error = $"Invalid runType. Must be one of: {string.Join(", ", validRunTypes)}, or null" });
+                }
+                workout.RunType = runTypeValue;
+            }
+
+            // Update Notes if provided
+            if (root.TryGetProperty("notes", out var notesElement))
+            {
+                if (notesElement.ValueKind == JsonValueKind.String)
+                {
+                    workout.Notes = notesElement.GetString();
+                }
+                else if (notesElement.ValueKind == JsonValueKind.Null)
+                {
+                    workout.Notes = null;
+                }
+                else
+                {
+                    return Results.BadRequest(new { error = "notes must be a string or null" });
+                }
+            }
+
+            // Save changes
+            var runTypeUpdated = root.TryGetProperty("runType", out _);
+            var notesUpdated = root.TryGetProperty("notes", out _);
+            await db.SaveChangesAsync();
+
+            logger.LogInformation("Updated workout {WorkoutId}: RunType={RunType}, RunTypeUpdated={RunTypeUpdated}, NotesUpdated={NotesUpdated}",
+                workout.Id, workout.RunType ?? "null", runTypeUpdated, notesUpdated);
+
+            return Results.Ok(new
+            {
+                id = workout.Id,
+                runType = workout.RunType,
+                notes = workout.Notes
+            });
+        })
+        .Produces(200)
+        .Produces(400)
+        .Produces(404)
+        .WithSummary("Update workout")
+        .WithDescription("Updates workout RunType and/or Notes");
     }
 }
 
