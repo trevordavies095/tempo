@@ -5,19 +5,28 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import { getWorkout, getWorkoutMedia, updateWorkout, type WorkoutMedia } from '@/lib/api';
 import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
 import { MediaModal } from '@/components/MediaModal';
-import { WeatherDisplay } from '@/components/WeatherDisplay';
 import { MediaUpload } from '@/components/MediaUpload';
+import {
+  getWeatherSymbol,
+  formatTemperature,
+  formatWindSpeed,
+  formatWindDirection,
+  getFeelsLikeTemperature,
+  getHumidity,
+  isNightTime,
+} from '@/lib/weather';
 
 // Dynamically import WorkoutMap to avoid SSR issues with Leaflet
 const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center h-96 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+    <div className="flex items-center justify-center h-64 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
       <p className="text-gray-500 dark:text-gray-400">Loading map...</p>
     </div>
   ),
@@ -99,9 +108,9 @@ export default function WorkoutDetailPage() {
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
+        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
           <div className="w-full">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
               Workout Details
             </h1>
             <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
@@ -117,7 +126,7 @@ export default function WorkoutDetailPage() {
     const isNotFound = error instanceof Error && error.message === 'Workout not found';
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
+        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
           <div className="w-full">
             <Link
               href="/dashboard"
@@ -125,7 +134,7 @@ export default function WorkoutDetailPage() {
             >
               ← Back to Dashboard
             </Link>
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
               Workout Details
             </h1>
             <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
@@ -145,129 +154,78 @@ export default function WorkoutDetailPage() {
 
   return (
     <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
-        <div className="w-full mb-8">
-          <div className="flex items-center justify-between mb-4">
+      <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
+        <div className="w-full mb-4">
+          <div className="flex items-center justify-between mb-2">
             <Link
               href="/dashboard"
-              className="text-blue-600 dark:text-blue-400 hover:underline"
+              className="text-blue-600 dark:text-blue-400 hover:underline text-sm"
             >
               ← Back to Dashboard
             </Link>
             <Link
               href="/settings"
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+              className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
             >
               Settings
             </Link>
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-1">
             {getWorkoutDisplayName(data.name, data.startedAt)}
           </h1>
-          <p className="text-lg text-gray-600 dark:text-gray-400">
+          <p className="text-base text-gray-600 dark:text-gray-400">
             {formatDateTime(data.startedAt)}
           </p>
         </div>
 
-        <div className="w-full space-y-8">
-          {/* Main Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Distance</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {formatDistance(data.distanceM, unitPreference)}
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Duration</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {formatDuration(data.durationS)}
-              </div>
-              {data.movingTimeS !== null && data.movingTimeS !== data.durationS && (
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Moving: {formatDuration(data.movingTimeS)}
-                </div>
-              )}
-            </div>
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Pace</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {formatPace(data.avgPaceS, unitPreference)}
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Elevation</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {data.elevGainM !== null
-                  ? formatElevation(data.elevGainM, unitPreference)
-                  : '—'}
-              </div>
-              {data.elevLossM !== null && (
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Loss: {formatElevation(data.elevLossM, unitPreference)}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Additional Stats */}
-          {(data.maxSpeedMps !== null || data.avgSpeedMps !== null || 
-            data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null ||
-            data.maxCadenceRpm !== null || data.avgCadenceRpm !== null ||
-            data.maxPowerWatts !== null || data.avgPowerWatts !== null ||
-            data.calories !== null) && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {data.maxSpeedMps !== null && (
-                <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Speed</div>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    {(data.maxSpeedMps * 3.6).toFixed(1)} km/h
-                  </div>
-                </div>
-              )}
+        <div className="w-full space-y-4">
+          {/* Additional Performance Stats (HR, Cadence, Power, Calories) */}
+          {(data.maxHeartRateBpm !== null || data.maxCadenceRpm !== null || 
+            data.maxPowerWatts !== null || data.calories !== null) && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {data.maxHeartRateBpm !== null && (
-                <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Heart Rate</div>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div className="text-xs text-gray-600 dark:text-gray-400 mb-0.5">Max HR</div>
+                  <div className="text-lg font-bold text-gray-900 dark:text-gray-100">
                     {data.maxHeartRateBpm} bpm
                   </div>
                   {data.avgHeartRateBpm !== null && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Avg: {data.avgHeartRateBpm} bpm
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Avg: {data.avgHeartRateBpm}
                     </div>
                   )}
                 </div>
               )}
               {data.maxCadenceRpm !== null && (
-                <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Cadence</div>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div className="text-xs text-gray-600 dark:text-gray-400 mb-0.5">Max Cadence</div>
+                  <div className="text-lg font-bold text-gray-900 dark:text-gray-100">
                     {data.maxCadenceRpm} rpm
                   </div>
                   {data.avgCadenceRpm !== null && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Avg: {data.avgCadenceRpm} rpm
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Avg: {data.avgCadenceRpm}
                     </div>
                   )}
                 </div>
               )}
               {data.maxPowerWatts !== null && (
-                <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Power</div>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div className="text-xs text-gray-600 dark:text-gray-400 mb-0.5">Max Power</div>
+                  <div className="text-lg font-bold text-gray-900 dark:text-gray-100">
                     {data.maxPowerWatts} W
                   </div>
                   {data.avgPowerWatts !== null && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                       Avg: {data.avgPowerWatts} W
                     </div>
                   )}
                 </div>
               )}
               {data.calories !== null && (
-                <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Calories</div>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div className="text-xs text-gray-600 dark:text-gray-400 mb-0.5">Calories</div>
+                  <div className="text-lg font-bold text-gray-900 dark:text-gray-100">
                     {data.calories}
                   </div>
                 </div>
@@ -275,42 +233,188 @@ export default function WorkoutDetailPage() {
             </div>
           )}
 
-          {/* Elevation Range */}
-          {(data.minElevM !== null || data.maxElevM !== null) && (
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                Elevation Profile
-              </h2>
-              <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {data.minElevM !== null && (
-                  <div>
-                    <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Min Elevation</dt>
-                    <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                      {formatElevation(data.minElevM, unitPreference)}
-                    </dd>
-                  </div>
-                )}
-                {data.maxElevM !== null && (
-                  <div>
-                    <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Max Elevation</dt>
-                    <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                      {formatElevation(data.maxElevM, unitPreference)}
-                    </dd>
-                  </div>
-                )}
-              </dl>
-            </div>
-          )}
-
-          {/* Additional Info */}
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+          {/* Workout Information */}
+          <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
               Workout Information
             </h2>
-            <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            {/* Two-Column Layout: Stats and Weather */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {/* Left Column: Performance Stats */}
+              <div className="space-y-3">
+              {/* Core Performance Metrics */}
               <div>
-                <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Run Type</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Core Performance</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Distance</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                      {formatDistance(data.distanceM, unitPreference)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Duration</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                      {formatDuration(data.durationS)}
+                    </div>
+                    {data.movingTimeS !== null && data.movingTimeS !== data.durationS && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Moving: {formatDuration(data.movingTimeS)}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Pace</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                      {formatPace(data.avgPaceS, unitPreference)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Elevation Profile */}
+              {(data.elevGainM !== null || data.minElevM !== null || data.maxElevM !== null) && (
+                <div>
+                  <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Elevation Profile</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    {data.elevGainM !== null && (
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Elevation Gain</div>
+                        <div className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                          {formatElevation(data.elevGainM, unitPreference)}
+                        </div>
+                        {data.elevLossM !== null && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Loss: {formatElevation(data.elevLossM, unitPreference)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {data.minElevM !== null && (
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Min Elevation</div>
+                        <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                          {formatElevation(data.minElevM, unitPreference)}
+                        </div>
+                      </div>
+                    )}
+                    {data.maxElevM !== null && (
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Max Elevation</div>
+                        <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                          {formatElevation(data.maxElevM, unitPreference)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Speed Metrics */}
+              {data.maxSpeedMps !== null && (
+                <div>
+                  <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Speed</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Max Speed</div>
+                      <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        {(data.maxSpeedMps * 3.6).toFixed(1)} km/h
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              </div>
+
+              {/* Right Column: Weather Information */}
+              {data.weather && (() => {
+                const isNight = isNightTime(data.startedAt);
+                const symbolFilename = getWeatherSymbol(data.weather.weatherCode, isNight);
+                const symbolPath = `/weather-symbols/${symbolFilename}`;
+                const conditionText = data.weather.condition || 'Unknown';
+                const feelsLike = getFeelsLikeTemperature(data.weather);
+                const humidity = getHumidity(data.weather);
+
+                return (
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Weather</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* Column 1: Weather Symbol */}
+                      <div className="flex items-start justify-start p-0 m-0">
+                        <div className="relative w-10 h-10">
+                          <Image
+                            src={symbolPath}
+                            alt={conditionText}
+                            fill
+                            className="object-contain"
+                            unoptimized
+                          />
+                        </div>
+                      </div>
+
+                      {/* Column 2: Primary Weather Info */}
+                      <div className="space-y-2">
+                        <div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Condition</div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {conditionText}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Temperature</div>
+                          <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                            {formatTemperature(data.weather.temperature, unitPreference)}
+                          </div>
+                        </div>
+                        {humidity !== undefined && humidity !== null && (
+                          <div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Humidity</div>
+                            <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                              {Math.round(humidity)}%
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Column 3: Secondary Weather Info */}
+                      <div className="space-y-2">
+                        {feelsLike !== undefined && (
+                          <div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Feels like</div>
+                            <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                              {formatTemperature(feelsLike, unitPreference)}
+                            </div>
+                          </div>
+                        )}
+                        {data.weather.windSpeed !== undefined && (
+                          <div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Wind Speed</div>
+                            <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                              {formatWindSpeed(data.weather.windSpeed, unitPreference)}
+                            </div>
+                          </div>
+                        )}
+                        {data.weather.windDirection !== undefined && data.weather.windDirection !== null && (
+                          <div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Wind Direction</div>
+                            <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                              {formatWindDirection(data.weather.windDirection)} ({Math.round(data.weather.windDirection)}°)
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Metadata Section */}
+            <dl className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">Run Type</dt>
+                <dd className="text-sm text-gray-900 dark:text-gray-100">
                   {isEditingRunType ? (
                     <div className="flex items-center gap-2">
                       <select
@@ -383,27 +487,15 @@ export default function WorkoutDetailPage() {
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Source</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">Source</dt>
+                <dd className="text-sm text-gray-900 dark:text-gray-100">
                   {data.source || '—'}
                 </dd>
               </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Started At</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                  {formatDateTime(data.startedAt)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Created At</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                  {formatDateTime(data.createdAt)}
-                </dd>
-              </div>
             </dl>
-            <div className="mt-4">
-              <dt className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Notes</dt>
-              <dd className="mt-1">
+            <div className="mt-3">
+              <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Notes</dt>
+              <dd>
                 {isEditingNotes ? (
                   <div className="space-y-2">
                     <textarea
@@ -411,22 +503,22 @@ export default function WorkoutDetailPage() {
                       onChange={(e) => setNotesValue(e.target.value)}
                       disabled={updateWorkoutMutation.isPending}
                       placeholder="Add notes about this workout..."
-                      rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed resize-y"
+                      rows={3}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed resize-y"
                       autoFocus
                     />
                     <div className="flex items-center gap-2">
                       <button
                         onClick={handleSaveNotes}
                         disabled={updateWorkoutMutation.isPending}
-                        className="px-3 py-1 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
                         Save
                       </button>
                       <button
                         onClick={handleCancelNotes}
                         disabled={updateWorkoutMutation.isPending}
-                        className="px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
                         Cancel
                       </button>
@@ -497,24 +589,24 @@ export default function WorkoutDetailPage() {
 
           {/* Splits Table */}
           {data.splits && data.splits.length > 0 && (
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+            <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
                 Splits ({data.splits.length})
               </h2>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-gray-800">
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
                         Split
                       </th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
                         Distance
                       </th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
                         Duration
                       </th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
                         Pace
                       </th>
                     </tr>
@@ -525,16 +617,16 @@ export default function WorkoutDetailPage() {
                         key={`split-${split.idx}`}
                         className="border-b border-gray-100 dark:border-gray-900"
                       >
-                        <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
+                        <td className="py-2 px-3 text-xs text-gray-700 dark:text-gray-300">
                           {split.idx + 1}
                         </td>
-                        <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
+                        <td className="py-2 px-3 text-xs text-gray-700 dark:text-gray-300">
                           {formatDistance(split.distanceM, unitPreference)}
                         </td>
-                        <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
+                        <td className="py-2 px-3 text-xs text-gray-700 dark:text-gray-300">
                           {formatDuration(split.durationS)}
                         </td>
-                        <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
+                        <td className="py-2 px-3 text-xs text-gray-700 dark:text-gray-300">
                           {formatPace(split.paceS, unitPreference)}
                         </td>
                       </tr>
@@ -545,15 +637,10 @@ export default function WorkoutDetailPage() {
             </div>
           )}
 
-          {/* Weather Data */}
-          {data.weather && (
-            <WeatherDisplay weather={data.weather} workoutStartTime={data.startedAt} />
-          )}
-
           {/* Route Map */}
           {data.route && (
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+            <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
                 Route Map
               </h2>
               <WorkoutMap key={data.id} route={data.route} workoutId={data.id} />

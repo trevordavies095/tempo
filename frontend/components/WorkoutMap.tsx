@@ -146,7 +146,7 @@ export default function WorkoutMap({ route, workoutId }: WorkoutMapProps) {
 
   if (!route || !route.coordinates || route.coordinates.length === 0) {
     return (
-      <div className="flex items-center justify-center h-96 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-center h-64 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
         <p className="text-gray-500 dark:text-gray-400">No route data available</p>
       </div>
     );
@@ -155,7 +155,7 @@ export default function WorkoutMap({ route, workoutId }: WorkoutMapProps) {
   return (
     <div
       ref={containerRef}
-      className="w-full h-96 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700"
+      className="w-full h-64 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700"
       style={{ position: 'relative', isolation: 'isolate' }}
     />
   );

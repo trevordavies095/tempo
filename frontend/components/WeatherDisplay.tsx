@@ -36,15 +36,15 @@ export function WeatherDisplay({ weather, workoutStartTime }: WeatherDisplayProp
   const humidity = getHumidity(weather);
 
   return (
-    <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-      <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+    <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
         Weather
       </h2>
 
-      <div className="flex flex-col md:flex-row gap-6">
+      <div className="flex flex-col md:flex-row gap-4">
         {/* Weather Symbol and Condition */}
         <div className="flex flex-col items-center md:items-start">
-          <div className="relative w-24 h-24 mb-3">
+          <div className="relative w-16 h-16 mb-2">
             <Image
               src={symbolPath}
               alt={conditionText}
@@ -54,26 +54,26 @@ export function WeatherDisplay({ weather, workoutStartTime }: WeatherDisplayProp
             />
           </div>
           <div className="text-center md:text-left">
-            <p className="text-lg font-medium text-gray-900 dark:text-gray-100">
+            <p className="text-base font-medium text-gray-900 dark:text-gray-100">
               {conditionText}
             </p>
           </div>
         </div>
 
         {/* Weather Data Grid */}
-        <div className="flex-1 grid grid-cols-2 gap-4">
+        <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3">
           {/* Temperature */}
           <div className="flex flex-col">
-            <span className="text-sm text-gray-600 dark:text-gray-400 mb-1">Temperature</span>
-            <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <span className="text-xs text-gray-600 dark:text-gray-400 mb-0.5">Temperature</span>
+            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
               {formatTemperature(weather.temperature, unitPreference)}
             </span>
           </div>
 
           {/* Humidity */}
           <div className="flex flex-col">
-            <span className="text-sm text-gray-600 dark:text-gray-400 mb-1">Humidity</span>
-            <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <span className="text-xs text-gray-600 dark:text-gray-400 mb-0.5">Humidity</span>
+            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
               {humidity !== undefined && humidity !== null
                 ? `${Math.round(humidity)}%`
                 : 'N/A'}
@@ -82,24 +82,24 @@ export function WeatherDisplay({ weather, workoutStartTime }: WeatherDisplayProp
 
           {/* Feels Like */}
           <div className="flex flex-col">
-            <span className="text-sm text-gray-600 dark:text-gray-400 mb-1">Feels like</span>
-            <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <span className="text-xs text-gray-600 dark:text-gray-400 mb-0.5">Feels like</span>
+            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
               {formatTemperature(feelsLike, unitPreference)}
             </span>
           </div>
 
           {/* Wind Speed */}
           <div className="flex flex-col">
-            <span className="text-sm text-gray-600 dark:text-gray-400 mb-1">Wind Speed</span>
-            <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <span className="text-xs text-gray-600 dark:text-gray-400 mb-0.5">Wind Speed</span>
+            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
               {formatWindSpeed(weather.windSpeed, unitPreference)}
             </span>
           </div>
 
           {/* Wind Direction */}
-          <div className="flex flex-col col-span-2">
-            <span className="text-sm text-gray-600 dark:text-gray-400 mb-1">Wind Direction</span>
-            <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <div className="flex flex-col col-span-2 md:col-span-1">
+            <span className="text-xs text-gray-600 dark:text-gray-400 mb-0.5">Wind Direction</span>
+            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
               {weather.windDirection !== undefined && weather.windDirection !== null
                 ? `${formatWindDirection(weather.windDirection)} (${Math.round(weather.windDirection)}°)`
                 : 'N/A'}
