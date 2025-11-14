@@ -1,9 +1,9 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
-import { getWorkouts, deleteWorkout, type WorkoutsListParams } from '@/lib/api';
+import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
 import { formatDate, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import WeeklyStatsWidget from '@/components/WeeklyStatsWidget';
@@ -13,26 +13,11 @@ export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const { unitPreference } = useSettings();
-  const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['workouts', { page, pageSize }],
     queryFn: () => getWorkouts({ page, pageSize }),
   });
-
-  const deleteWorkoutMutation = useMutation({
-    mutationFn: (id: string) => deleteWorkout(id),
-    onSuccess: () => {
-      // Invalidate workouts list to refresh the table
-      queryClient.invalidateQueries({ queryKey: ['workouts'] });
-    },
-  });
-
-  const handleDeleteWorkout = (workoutId: string, workoutName: string) => {
-    if (window.confirm(`Are you sure you want to delete "${workoutName}"? This action cannot be undone.`)) {
-      deleteWorkoutMutation.mutate(workoutId);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -117,12 +102,13 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <WeeklyStatsWidget />
-          <YearlyComparisonWidget />
-        </div>
-
-        <div className="w-full overflow-x-auto">
+        <div className="w-full flex flex-col md:flex-row gap-6 mb-8">
+          <div className="flex flex-col gap-6 md:w-80 flex-shrink-0">
+            <WeeklyStatsWidget />
+            <YearlyComparisonWidget />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-800">
@@ -149,9 +135,6 @@ export default function DashboardPage() {
                 </th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
                   Splits
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Actions
                 </th>
               </tr>
             </thead>
@@ -192,71 +175,36 @@ export default function DashboardPage() {
                   <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
                     {workout.splitsCount}
                   </td>
-                  <td className="py-3 px-4">
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleDeleteWorkout(workout.id, getWorkoutDisplayName(workout.name, workout.startedAt));
-                      }}
-                      disabled={deleteWorkoutMutation.isPending}
-                      className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors p-1"
-                      type="button"
-                      aria-label={`Delete ${getWorkoutDisplayName(workout.name, workout.startedAt)}`}
-                      title="Delete workout"
-                    >
-                      {deleteWorkoutMutation.isPending && deleteWorkoutMutation.variables === workout.id ? (
-                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                      ) : (
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                          />
-                        </svg>
-                      )}
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-
-        {data.totalPages > 1 && (
-          <div className="w-full mt-8 flex items-center justify-between">
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              Page {data.page} of {data.totalPages}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
-                disabled={page === data.totalPages}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-              </button>
-            </div>
+            {data.totalPages > 1 && (
+              <div className="w-full mt-8 flex items-center justify-between">
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Page {data.page} of {data.totalPages}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
+                    disabled={page === data.totalPages}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </main>
     </div>
   );

@@ -513,6 +513,7 @@ public class GpxParserService
         var accumulatedDistance = 0.0;
         var splitStartDistance = 0.0;
         var splitStartIndex = 0;
+        var lastSplitStartIndex = 0; // Track start index of the last created split
         var splitIndex = 0;
 
         for (int i = 1; i < trackPoints.Count; i++)
@@ -557,6 +558,7 @@ public class GpxParserService
 
                 // Reset for next split
                 splitStartDistance = accumulatedDistance;
+                lastSplitStartIndex = splitStartIndex; // Store the start index of the split we just created
                 splitStartIndex = i;
             }
         }
@@ -601,12 +603,17 @@ public class GpxParserService
                 var mergedDuration = lastSplit.DurationS;
                 if (trackPoints.Count > 1 && trackPoints[trackPoints.Count - 1].Time.HasValue)
                 {
-                    // Find the start time of the last split
-                    var lastSplitStartTime = trackPoints[splitStartIndex].Time;
+                    // Use the start time of the last split (stored in lastSplitStartIndex)
+                    var lastSplitStartTime = trackPoints[lastSplitStartIndex].Time;
                     if (lastSplitStartTime.HasValue && trackPoints[trackPoints.Count - 1].Time.HasValue)
                     {
                         mergedDuration = (int)(trackPoints[trackPoints.Count - 1].Time!.Value - lastSplitStartTime.Value).TotalSeconds;
                     }
+                }
+                else
+                {
+                    // Estimate based on proportion of total distance for the merged split
+                    mergedDuration = (int)((totalLastSplitDistance / distanceMeters) * durationSeconds);
                 }
 
                 lastSplit.DistanceM = totalLastSplitDistance;
