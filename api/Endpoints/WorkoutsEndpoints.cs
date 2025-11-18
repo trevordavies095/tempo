@@ -173,6 +173,7 @@ public static class WorkoutsEndpoints
                     RawGpxData = rawGpxDataJson,
                     RawFitData = rawFitDataJson,
                     Source = isGpx ? "apple_watch" : "fit_import",
+                    RunType = "Easy Run",
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -1212,6 +1213,7 @@ public static class WorkoutsEndpoints
                             Source = "strava_import",
                             Name = !string.IsNullOrWhiteSpace(activity.ActivityName) ? activity.ActivityName : null,
                             Notes = notes,
+                            RunType = "Easy Run",
                             CreatedAt = DateTime.UtcNow
                         };
 
@@ -1658,7 +1660,7 @@ public static class WorkoutsEndpoints
                     return Results.BadRequest(new { error = "runType must be a string or null" });
                 }
 
-                var validRunTypes = new[] { "Race", "Workout", "Long Run" };
+                var validRunTypes = new[] { "Race", "Workout", "Long Run", "Easy Run" };
                 if (runTypeValue != null && !validRunTypes.Contains(runTypeValue))
                 {
                     return Results.BadRequest(new { error = $"Invalid runType. Must be one of: {string.Join(", ", validRunTypes)}, or null" });
