@@ -4,15 +4,14 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
-import { formatDate, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
-import { useSettings } from '@/lib/settings';
 import WeeklyStatsWidget from '@/components/WeeklyStatsWidget';
+import WorkoutCard from '@/components/WorkoutCard';
 
 export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
-  const { unitPreference } = useSettings();
 
+  // Backend applies default 7-day filter when no dates provided
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['workouts', { page, pageSize }],
     queryFn: () => getWorkouts({ page, pageSize }),
@@ -63,7 +62,7 @@ export default function DashboardPage() {
               Dashboard
             </h1>
             <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
-              No workouts found. <Link href="/import" className="text-blue-600 dark:text-blue-400 hover:underline">Import a GPX file</Link> to get started.
+              No workouts found in the last 7 days. <Link href="/import" className="text-blue-600 dark:text-blue-400 hover:underline">Import a GPX file</Link> to get started.
             </p>
           </div>
         </main>
@@ -81,7 +80,7 @@ export default function DashboardPage() {
                 Dashboard
               </h1>
               <p className="text-lg text-gray-600 dark:text-gray-400">
-                {data.totalCount} total workout{data.totalCount !== 1 ? 's' : ''}
+                {data.totalCount} workout{data.totalCount !== 1 ? 's' : ''} in the last 7 days
               </p>
             </div>
             <div className="flex gap-4">
@@ -106,77 +105,10 @@ export default function DashboardPage() {
             <WeeklyStatsWidget />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-gray-800">
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Workout Name
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Date
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Distance
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Duration
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Pace
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Elevation
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Type
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Splits
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+            <div className="flex flex-col gap-4">
               {data.items.map((workout) => (
-                <tr
-                  key={workout.id}
-                  className="border-b border-gray-100 dark:border-gray-900 hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
-                >
-                  <td className="py-3 px-4">
-                    <Link
-                      href={`/dashboard/${workout.id}`}
-                      className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
-                    >
-                      {getWorkoutDisplayName(workout.name, workout.startedAt)}
-                    </Link>
-                  </td>
-                  <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                    {formatDate(workout.startedAt)}
-                  </td>
-                  <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                    {formatDistance(workout.distanceM, unitPreference)}
-                  </td>
-                  <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                    {formatDuration(workout.durationS)}
-                  </td>
-                  <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                    {formatPace(workout.avgPaceS, unitPreference)}
-                  </td>
-                  <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                    {workout.elevGainM !== null
-                      ? formatElevation(workout.elevGainM, unitPreference)
-                      : '—'}
-                  </td>
-                  <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                    {workout.runType || '—'}
-                  </td>
-                  <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                    {workout.splitsCount}
-                  </td>
-                </tr>
+                <WorkoutCard key={workout.id} workout={workout} />
               ))}
-            </tbody>
-          </table>
             </div>
             {data.totalPages > 1 && (
               <div className="w-full mt-8 flex items-center justify-between">

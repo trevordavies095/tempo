@@ -36,6 +36,10 @@ export interface WorkoutListItem {
   device: string | null;
   name: string | null;
   hasRoute: boolean;
+  route: {
+    type: string;
+    coordinates: [number, number][];
+  } | null;
   splitsCount: number;
 }
 

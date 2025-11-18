@@ -357,6 +357,14 @@ public static class WorkoutsEndpoints
             if (pageSize < 1) pageSize = 20;
             if (pageSize > 100) pageSize = 100;
 
+            // Apply default 7-day filter if no date filters provided
+            if (!startDate.HasValue && !endDate.HasValue)
+            {
+                var now = DateTime.UtcNow;
+                endDate = now;
+                startDate = now.AddDays(-7);
+            }
+
             // Build query
             var query = db.Workouts
                 .Include(w => w.Route)
@@ -405,34 +413,52 @@ public static class WorkoutsEndpoints
                 .ToListAsync();
 
             // Map to response
-            var items = workouts.Select(w => new
+            var items = workouts.Select(w =>
             {
-                id = w.Id,
-                startedAt = w.StartedAt,
-                durationS = w.DurationS,
-                distanceM = w.DistanceM,
-                avgPaceS = w.AvgPaceS,
-                elevGainM = w.ElevGainM,
-                elevLossM = w.ElevLossM,
-                minElevM = w.MinElevM,
-                maxElevM = w.MaxElevM,
-                maxSpeedMps = w.MaxSpeedMps,
-                avgSpeedMps = w.AvgSpeedMps,
-                movingTimeS = w.MovingTimeS,
-                maxHeartRateBpm = w.MaxHeartRateBpm,
-                avgHeartRateBpm = w.AvgHeartRateBpm,
-                minHeartRateBpm = w.MinHeartRateBpm,
-                maxCadenceRpm = w.MaxCadenceRpm,
-                avgCadenceRpm = w.AvgCadenceRpm,
-                maxPowerWatts = w.MaxPowerWatts,
-                avgPowerWatts = w.AvgPowerWatts,
-                calories = w.Calories,
-                runType = w.RunType,
-                source = w.Source,
-                device = w.Device,
-                name = w.Name,
-                hasRoute = w.Route != null,
-                splitsCount = w.Splits.Count
+                // Parse route GeoJSON if exists
+                object? routeGeoJson = null;
+                if (w.Route != null && !string.IsNullOrEmpty(w.Route.RouteGeoJson))
+                {
+                    try
+                    {
+                        routeGeoJson = JsonSerializer.Deserialize<object>(w.Route.RouteGeoJson);
+                    }
+                    catch (JsonException ex)
+                    {
+                        logger.LogWarning(ex, "Failed to parse route GeoJSON for workout {WorkoutId}", w.Id);
+                    }
+                }
+
+                return new
+                {
+                    id = w.Id,
+                    startedAt = w.StartedAt,
+                    durationS = w.DurationS,
+                    distanceM = w.DistanceM,
+                    avgPaceS = w.AvgPaceS,
+                    elevGainM = w.ElevGainM,
+                    elevLossM = w.ElevLossM,
+                    minElevM = w.MinElevM,
+                    maxElevM = w.MaxElevM,
+                    maxSpeedMps = w.MaxSpeedMps,
+                    avgSpeedMps = w.AvgSpeedMps,
+                    movingTimeS = w.MovingTimeS,
+                    maxHeartRateBpm = w.MaxHeartRateBpm,
+                    avgHeartRateBpm = w.AvgHeartRateBpm,
+                    minHeartRateBpm = w.MinHeartRateBpm,
+                    maxCadenceRpm = w.MaxCadenceRpm,
+                    avgCadenceRpm = w.AvgCadenceRpm,
+                    maxPowerWatts = w.MaxPowerWatts,
+                    avgPowerWatts = w.AvgPowerWatts,
+                    calories = w.Calories,
+                    runType = w.RunType,
+                    source = w.Source,
+                    device = w.Device,
+                    name = w.Name,
+                    hasRoute = w.Route != null,
+                    route = routeGeoJson,
+                    splitsCount = w.Splits.Count
+                };
             }).ToList();
 
             return Results.Ok(new

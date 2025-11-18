@@ -31,6 +31,8 @@ interface WorkoutMapProps {
   workoutId?: string;
   splits?: Split[];
   hoveredSplitIdx?: number | null;
+  height?: string; // Optional height class (e.g., 'h-48', 'h-64')
+  interactive?: boolean; // Whether the map should be interactive (default: true)
 }
 
 // Haversine distance calculation (same as backend)
@@ -111,7 +113,7 @@ function calculateSplitSegments(
   return segments;
 }
 
-export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx }: WorkoutMapProps) {
+export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, height = 'h-64', interactive = true }: WorkoutMapProps) {
   // Ref to store the Leaflet map instance
   const mapRef = useRef<L.Map | null>(null);
   // Ref to container div element
@@ -190,7 +192,12 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx }
     const map = L.map(container, {
       center: center,
       zoom: 13,
-      scrollWheelZoom: true,
+      scrollWheelZoom: interactive,
+      dragging: interactive,
+      doubleClickZoom: interactive,
+      touchZoom: interactive,
+      boxZoom: interactive,
+      keyboard: interactive,
     });
 
     // Add tile layer
@@ -235,7 +242,7 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx }
         delete (container as any)._leaflet;
       }
     };
-  }, [workoutId, center, bounds, leafletCoordinates, route]);
+  }, [workoutId, center, bounds, leafletCoordinates, route, interactive]);
 
   // Effect to handle highlighted split segment
   useEffect(() => {
@@ -299,7 +306,7 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx }
   return (
     <div
       ref={containerRef}
-      className="w-full h-64 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700"
+      className={`w-full ${height} rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700`}
       style={{ position: 'relative', isolation: 'isolate' }}
     />
   );
