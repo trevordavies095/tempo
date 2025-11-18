@@ -7,7 +7,6 @@ import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
 import { formatDate, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import WeeklyStatsWidget from '@/components/WeeklyStatsWidget';
-import YearlyComparisonWidget from '@/components/YearlyComparisonWidget';
 
 export default function DashboardPage() {
   const [page, setPage] = useState(1);
@@ -105,7 +104,6 @@ export default function DashboardPage() {
         <div className="w-full flex flex-col md:flex-row gap-6 mb-8">
           <div className="flex flex-col gap-6 md:w-80 flex-shrink-0">
             <WeeklyStatsWidget />
-            <YearlyComparisonWidget />
           </div>
           <div className="flex-1 min-w-0">
             <div className="overflow-x-auto">

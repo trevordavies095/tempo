@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getWeeklyStats } from '@/lib/api';
+import { getWeeklyStats, getYearlyStats } from '@/lib/api';
 import { formatDistance } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 
@@ -13,6 +13,11 @@ export default function WeeklyStatsWidget() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['weeklyStats', timezoneOffsetMinutes],
     queryFn: () => getWeeklyStats(timezoneOffsetMinutes),
+  });
+
+  const { data: yearlyData } = useQuery({
+    queryKey: ['yearlyStats', timezoneOffsetMinutes],
+    queryFn: () => getYearlyStats(timezoneOffsetMinutes),
   });
 
   // Calculate current day of week (0=Monday, 6=Sunday)
@@ -78,6 +83,11 @@ export default function WeeklyStatsWidget() {
         <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
           {formatDistance(totalWeeklyMeters, unitPreference)}
         </div>
+        {yearlyData && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {new Date().getFullYear()} total: {formatDistance(yearlyData.currentYear * 1609.344, unitPreference)}
+          </div>
+        )}
       </div>
 
       <div className="relative pt-2">

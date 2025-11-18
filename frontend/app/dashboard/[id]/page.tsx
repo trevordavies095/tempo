@@ -405,6 +405,16 @@ export default function WorkoutDetailPage() {
                 </dd>
               </div>
 
+              {/* Device */}
+              {data.device && (
+                <div>
+                  <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Device</dt>
+                  <dd className="text-sm text-gray-900 dark:text-gray-100">
+                    {data.device}
+                  </dd>
+                </div>
+              )}
+
               {/* Source */}
               {data.source && (
                 <div>

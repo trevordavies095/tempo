@@ -33,6 +33,7 @@ export interface WorkoutListItem {
   calories: number | null;
   runType: string | null;
   source: string | null;
+  device: string | null;
   name: string | null;
   hasRoute: boolean;
   splitsCount: number;
@@ -79,6 +80,7 @@ export interface WorkoutDetail {
   runType: string | null;
   notes: string | null;
   source: string | null;
+  device: string | null;
   name: string | null;
   weather: any | null;
   rawGpxData: any | null;
