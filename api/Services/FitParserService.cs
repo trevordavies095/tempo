@@ -398,8 +398,23 @@ public class FitParserService
             sessionData["avgFlow"] = session.GetAvgFlow().Value;
 
         // Extract device info
+        // Prefer device with SourceType = Local (5) as that's the recording device
+        // According to FIT spec: Local indicates the device that recorded the activity
         var deviceData = new Dictionary<string, object?>();
-        var deviceInfo = deviceInfos.FirstOrDefault();
+        DeviceInfoMesg? deviceInfo = null;
+        
+        // First, try to find device with SourceType = Local (recording device)
+        var localDevice = deviceInfos.FirstOrDefault(d => d.GetSourceType() == SourceType.Local);
+        if (localDevice != null)
+        {
+            deviceInfo = localDevice;
+        }
+        else
+        {
+            // Fallback to first device if no Local device found
+            deviceInfo = deviceInfos.FirstOrDefault();
+        }
+        
         if (deviceInfo != null)
         {
             if (deviceInfo.GetManufacturer().HasValue)
@@ -408,6 +423,20 @@ public class FitParserService
                 deviceData["product"] = deviceInfo.GetProduct().Value;
             if (deviceInfo.GetSerialNumber().HasValue)
                 deviceData["serialNumber"] = deviceInfo.GetSerialNumber().Value;
+            
+            // Extract ProductName field if available (most reliable device name)
+            try
+            {
+                var productName = deviceInfo.GetProductNameAsString();
+                if (!string.IsNullOrWhiteSpace(productName))
+                {
+                    deviceData["productName"] = productName;
+                }
+            }
+            catch
+            {
+                // ProductName may not be available - ignore
+            }
         }
 
         // Extract weather data from WeatherConditionsMesg

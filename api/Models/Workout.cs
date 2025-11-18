@@ -79,6 +79,10 @@ public class Workout
     [MaxLength(50)]
     public string? Source { get; set; }  // apple_watch, strava_import, garmin_import
 
+    [MaxLength(100)]
+    [Column(TypeName = "text")]
+    public string? Device { get; set; }  // Device used to record workout (e.g., "Garmin Forerunner 945", "Apple Watch Series 9")
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // ============================================

@@ -215,10 +215,41 @@ public static class WorkoutsEndpoints
                             if (sessionElement.TryGetProperty("totalCalories", out var cals) && cals.ValueKind == JsonValueKind.Number)
                                 workout.Calories = (ushort)cals.GetInt32();
                         }
+
+                        // Extract device information
+                        if (rawFit.TryGetProperty("device", out var deviceElement))
+                        {
+                            if (deviceElement.ValueKind == JsonValueKind.Object)
+                            {
+                                logger.LogDebug("Found device element in FIT file: {DeviceData}", deviceElement.GetRawText());
+                                workout.Device = ExtractDeviceName(deviceElement, logger);
+                                if (string.IsNullOrWhiteSpace(workout.Device))
+                                {
+                                    logger.LogDebug("Device extraction returned null. Device element: {DeviceData}", deviceElement.GetRawText());
+                                }
+                            }
+                            else
+                            {
+                                logger.LogDebug("Device element exists but is not an object. Type: {Type}, Value: {Value}", deviceElement.ValueKind, deviceElement.GetRawText());
+                            }
+                        }
+                        else
+                        {
+                            logger.LogDebug("No device element found in RawFitData");
+                        }
                     }
                     catch (Exception ex)
                     {
                         logger.LogWarning(ex, "Failed to extract metrics from RawFitData JSON");
+                    }
+                }
+
+                // Infer device from Source field if device is missing or "Development"
+                if (string.IsNullOrWhiteSpace(workout.Device) || workout.Device == "Development")
+                {
+                    if (workout.Source == "apple_watch")
+                    {
+                        workout.Device = "Apple Watch";
                     }
                 }
 
@@ -398,6 +429,7 @@ public static class WorkoutsEndpoints
                 calories = w.Calories,
                 runType = w.RunType,
                 source = w.Source,
+                device = w.Device,
                 name = w.Name,
                 hasRoute = w.Route != null,
                 splitsCount = w.Splits.Count
@@ -815,6 +847,7 @@ public static class WorkoutsEndpoints
                 runType = workout.RunType,
                 notes = workout.Notes,
                 source = workout.Source,
+                device = workout.Device,
                 name = workout.Name,
                 weather = weather,
                 rawGpxData = rawGpxData,
@@ -1195,10 +1228,41 @@ public static class WorkoutsEndpoints
                                     if (sessionElement.TryGetProperty("totalCalories", out var cals) && cals.ValueKind == JsonValueKind.Number)
                                         workout.Calories = (ushort)cals.GetInt32();
                                 }
+
+                                // Extract device information
+                                if (rawFit.TryGetProperty("device", out var deviceElement))
+                                {
+                                    if (deviceElement.ValueKind == JsonValueKind.Object)
+                                    {
+                                        logger.LogDebug("Found device element in FIT file for activity {ActivityId}: {DeviceData}", activity.ActivityId, deviceElement.GetRawText());
+                                        workout.Device = ExtractDeviceName(deviceElement, logger);
+                                        if (string.IsNullOrWhiteSpace(workout.Device))
+                                        {
+                                            logger.LogDebug("Device extraction returned null for activity {ActivityId}. Device element: {DeviceData}", activity.ActivityId, deviceElement.GetRawText());
+                                        }
+                                    }
+                                    else
+                                    {
+                                        logger.LogDebug("Device element exists but is not an object for activity {ActivityId}. Type: {Type}, Value: {Value}", activity.ActivityId, deviceElement.ValueKind, deviceElement.GetRawText());
+                                    }
+                                }
+                                else
+                                {
+                                    logger.LogDebug("No device element found in RawFitData for activity {ActivityId}", activity.ActivityId);
+                                }
                             }
                             catch (Exception ex)
                             {
                                 logger.LogWarning(ex, "Failed to extract metrics from RawFitData JSON");
+                            }
+                        }
+
+                        // Infer device from Source field if device is missing or "Development"
+                        if (string.IsNullOrWhiteSpace(workout.Device) || workout.Device == "Development")
+                        {
+                            if (workout.Source == "apple_watch")
+                            {
+                                workout.Device = "Apple Watch";
                             }
                         }
 
@@ -1680,6 +1744,225 @@ public static class WorkoutsEndpoints
         .Produces(404)
         .WithSummary("Delete workout")
         .WithDescription("Deletes a workout and all associated data (route, splits, media files, and database records)");
+    }
+
+    /// <summary>
+    /// Maps Apple Watch identifiers to friendly device names.
+    /// Based on AppleDB device information: https://appledb.dev/device-selection/Apple-Watch.html
+    /// </summary>
+    private static string? MapAppleWatchIdentifier(string identifier)
+    {
+        // Normalize identifier (remove any extra whitespace, case-insensitive)
+        var normalized = identifier?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return null;
+
+        // Apple Watch identifier pattern: "Watch" followed by number, comma, number
+        // Try exact match first, then partial match
+        return normalized switch
+        {
+            // Watch 7 series (S10/S9)
+            "Watch7,12" => "Apple Watch Ultra 3",
+            "Watch7,17" or "Watch7,18" or "Watch7,19" => "Apple Watch Series 11",
+            "Watch7,13" or "Watch7,14" or "Watch7,15" => "Apple Watch SE 3",
+            "Watch7,8" or "Watch7,9" or "Watch7,10" => "Apple Watch Series 10",
+            "Watch7,5" => "Apple Watch Ultra 2",
+            "Watch7,1" or "Watch7,2" or "Watch7,3" => "Apple Watch Series 9",
+            
+            // Watch 6 series (S8/S7/S6)
+            "Watch6,18" => "Apple Watch Ultra",
+            "Watch6,14" or "Watch6,15" or "Watch6,16" => "Apple Watch Series 8",
+            "Watch6,10" or "Watch6,11" or "Watch6,12" => "Apple Watch SE (2nd generation)",
+            "Watch6,6" or "Watch6,7" or "Watch6,8" => "Apple Watch Series 7",
+            "Watch6,1" or "Watch6,2" or "Watch6,3" => "Apple Watch Series 6",
+            
+            // Watch 5 series (S5)
+            "Watch5,9" or "Watch5,10" or "Watch5,11" => "Apple Watch SE (1st generation)",
+            "Watch5,1" or "Watch5,2" or "Watch5,3" => "Apple Watch Series 5",
+            
+            // Watch 4 series (S4)
+            "Watch4,1" or "Watch4,2" or "Watch4,3" => "Apple Watch Series 4",
+            
+            // Watch 3 series (S3)
+            "Watch3,1" or "Watch3,2" or "Watch3,3" => "Apple Watch Series 3",
+            
+            // Watch 2 series (S2/S1P)
+            "Watch2,3" or "Watch2,4" => "Apple Watch Series 2",
+            "Watch2,6" or "Watch2,7" => "Apple Watch Series 1",
+            
+            // Watch 1 series (S1)
+            "Watch1,1" or "Watch1,2" => "Apple Watch (1st generation)",
+            
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Extracts device name from FIT device JSON element.
+    /// According to FIT spec: ProductName is most reliable, then manufacturer+product codes.
+    /// </summary>
+    private static string? ExtractDeviceName(JsonElement deviceElement, ILogger? logger = null)
+    {
+        // 1. Check ProductName first (most reliable - actual device name string)
+        if (deviceElement.TryGetProperty("productName", out var productNameElement) && 
+            productNameElement.ValueKind == JsonValueKind.String)
+        {
+            var productName = productNameElement.GetString();
+            if (!string.IsNullOrWhiteSpace(productName))
+            {
+                // Check if ProductName is an Apple Watch identifier and map it to friendly name
+                var mappedName = MapAppleWatchIdentifier(productName);
+                if (mappedName != null)
+                {
+                    if (logger != null)
+                    {
+                        logger.LogDebug("Mapped Apple Watch identifier {Identifier} to {FriendlyName}", productName, mappedName);
+                    }
+                    return mappedName;
+                }
+                
+                if (logger != null)
+                {
+                    logger.LogDebug("Using ProductName from FIT file: {ProductName}", productName);
+                }
+                return productName;
+            }
+        }
+
+        string? manufacturer = null;
+        ushort? productCode = null;
+
+        // 2. Extract manufacturer code
+        if (deviceElement.TryGetProperty("manufacturer", out var manufacturerElement))
+        {
+            if (manufacturerElement.ValueKind == JsonValueKind.Number)
+            {
+                var manufacturerCode = manufacturerElement.GetInt32();
+                
+                // Handle extended manufacturer codes (>255 are manufacturer-specific)
+                // For Garmin, extended codes might still be Garmin devices
+                if (manufacturerCode > 255)
+                {
+                    // Extended manufacturer codes: check if it might be Garmin
+                    // Many Garmin devices use extended codes, but we can't definitively identify them
+                    // For now, if we have a product code that looks like a Garmin product, assume Garmin
+                    if (deviceElement.TryGetProperty("product", out var prodCheck) && 
+                        prodCheck.ValueKind == JsonValueKind.Number)
+                    {
+                        var prod = prodCheck.GetInt32();
+                        // Garmin products typically have specific ranges
+                        // If product code is reasonable (< 10000), might be Garmin
+                        if (prod < 10000)
+                        {
+                            manufacturer = "Garmin";
+                            if (logger != null)
+                            {
+                                logger.LogDebug("Extended manufacturer code {Code} with product {Product} - assuming Garmin", 
+                                    manufacturerCode, prod);
+                            }
+                        }
+                        else
+                        {
+                            if (logger != null)
+                            {
+                                logger.LogDebug("Extended manufacturer code: {Code} (unknown manufacturer)", manufacturerCode);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (logger != null)
+                        {
+                            logger.LogDebug("Extended manufacturer code: {Code} (unknown manufacturer)", manufacturerCode);
+                        }
+                    }
+                }
+                else
+                {
+                    // Standard manufacturer codes (0-255)
+                    manufacturer = manufacturerCode switch
+                    {
+                        1 => "Garmin",
+                        2 => "Garmin", // GarminFr405Antfs
+                        23 => "Suunto",
+                        32 => "Wahoo Fitness",
+                        71 => "TomTom",
+                        73 => "Wattbike",
+                        94 => "Stryd",
+                        123 => "Polar",
+                        129 => "Coros",
+                        142 => "Tag Heuer",
+                        144 => "Zwift",
+                        182 => "Strava",
+                        265 => "Strava",
+                        294 => "Coros",
+                        // 255 is "Development" in FIT spec but not helpful for end users
+                        255 => null,
+                        _ => null
+                    };
+                    
+                    if (manufacturer == null && logger != null)
+                    {
+                        logger.LogDebug("Unknown manufacturer code: {Code}", manufacturerCode);
+                    }
+                }
+            }
+            else if (manufacturerElement.ValueKind == JsonValueKind.String)
+            {
+                manufacturer = manufacturerElement.GetString();
+            }
+        }
+
+        // 3. Extract product code
+        if (deviceElement.TryGetProperty("product", out var productElement))
+        {
+            if (productElement.ValueKind == JsonValueKind.Number)
+            {
+                productCode = (ushort)productElement.GetInt32();
+            }
+            else if (productElement.ValueKind == JsonValueKind.String)
+            {
+                // Product as string - use directly
+                var productStr = productElement.GetString();
+                if (!string.IsNullOrWhiteSpace(productStr))
+                {
+                    // If we have manufacturer, combine them
+                    if (!string.IsNullOrWhiteSpace(manufacturer))
+                    {
+                        return $"{manufacturer} {productStr}".Trim();
+                    }
+                    return productStr;
+                }
+            }
+        }
+
+        // 4. Combine manufacturer and product code
+        if (!string.IsNullOrWhiteSpace(manufacturer) && productCode.HasValue)
+        {
+            // For known manufacturers, show manufacturer name
+            // For Garmin, we could map product codes, but that's extensive
+            // For now, show manufacturer name (cleaner than "Garmin 108")
+            return manufacturer;
+        }
+
+        // 5. Fallback: show product code if available
+        if (productCode.HasValue)
+        {
+            return $"Product {productCode.Value}";
+        }
+
+        // 6. Fallback: show manufacturer if available
+        if (!string.IsNullOrWhiteSpace(manufacturer))
+        {
+            return manufacturer;
+        }
+
+        if (logger != null)
+        {
+            logger.LogDebug("No device information extracted from FIT file");
+        }
+
+        return null;
     }
 }
 
