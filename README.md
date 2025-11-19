@@ -12,7 +12,7 @@ Get Tempo running in minutes with Docker Compose:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/tempo.git
+git clone https://github.com/trevordavies095/tempo.git
 cd tempo
 
 # Start all services
