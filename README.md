@@ -1,95 +1,138 @@
 # Tempo - Self-Hostable Running Tracker
 
-A privacy-first, self-hostable running tracker for runners who want to track their workouts locally without social features or subscriptions.
+> A privacy-first, self-hosted Strava alternative. Import GPX, FIT, and CSV files from Garmin, Apple Watch, Strava, and more. Keep all your data local—no subscriptions, no cloud required.
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
+![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
+
+## Quick Start
+
+Get Tempo running in minutes with Docker Compose:
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/tempo.git
+cd tempo
+
+# Start all services
+docker-compose up -d
+
+# Access the application
+# Frontend: http://localhost:3000
+# API: http://localhost:5001
+```
+
+That's it! The database migrations run automatically on first startup.
 
 ## Features
 
-- **Manual GPX Import**: Upload GPX files from Apple Watch or other devices
-- **Workout Analytics**: View distance, pace, elevation, and splits
-- **Self-Hostable**: Run everything on your own server with Docker
-- **100% Local**: All data stays on your machine
+- **Multi-Format Support** - Import GPX, FIT (.fit, .fit.gz), and Strava CSV files from Garmin, Apple Watch, and other devices
+- **Workout Analytics** - Track distance, pace, elevation, splits, and time series data
+- **Interactive Maps** - Visualize routes with elevation profiles
+- **Media Support** - Attach photos and videos to workouts
+- **Weather Data** - Automatic weather conditions for each workout
+- **Bulk Import** - Import multiple workouts at once via ZIP file
+- **100% Local** - All data stays on your machine, no cloud sync required
 
 ## Tech Stack
 
-- **Frontend**: Next.js 14+ (React, TypeScript, Tailwind CSS)
+- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS
 - **Backend**: ASP.NET Core (.NET 9) Minimal APIs
-- **Database**: PostgreSQL
+- **Database**: PostgreSQL 16
 - **State Management**: TanStack Query
 
-## Prerequisites
+## Local Development
+
+For development without Docker:
+
+### Prerequisites
 
 - .NET 9 SDK
 - Node.js 18+ and npm
-- Docker and Docker Compose
-- PostgreSQL (or use Docker Compose)
+- PostgreSQL (or use Docker Compose for database only)
 
-## Setup
+### Setup
 
-### 1. Start PostgreSQL
+1. **Start PostgreSQL** (if not using Docker):
+   ```bash
+   docker-compose up -d postgres
+   ```
 
-```bash
-docker-compose up -d postgres
-```
+2. **Configure Backend**:
+   Update `api/appsettings.json` with your database connection string if needed.
 
-### 2. Configure Backend
+3. **Run Migrations**:
+   ```bash
+   cd api
+   dotnet ef database update
+   ```
 
-Update `api/appsettings.json` with your database connection string if needed (defaults are already set for Docker Compose).
+4. **Start Backend**:
+   ```bash
+   cd api
+   dotnet watch run
+   ```
+   API runs at `http://localhost:5001`
 
-### 3. Run Database Migrations
-
-```bash
-cd api
-dotnet ef database update
-```
-
-### 4. Start Backend
-
-```bash
-cd api
-dotnet run
-```
-
-The API will be available at `http://localhost:5001`
-
-### 5. Start Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The frontend will be available at `http://localhost:3000`
+5. **Start Frontend**:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+   Frontend runs at `http://localhost:3000`
 
 ## Usage
 
-1. Export a GPX file from your Apple Watch or other device
-2. Navigate to the frontend at `http://localhost:3000`
-3. Drag and drop or select your GPX file
-4. Click "Import Workout" to process and save the workout
+### Single Workout Import
 
-## API Endpoints
+1. Export a workout file from your device:
+   - **Garmin**: Export FIT files (.fit) directly from your device
+   - **Apple Watch**: Export GPX files from the Health app
+   - **Strava**: Download individual GPX files
+2. Open `http://localhost:3000` in your browser
+3. Drag and drop your file (GPX, FIT, or CSV) or use the import page
+4. View your workout with maps, analytics, and splits
 
-- `POST /workouts/import` - Upload and import a GPX file
+### Bulk Import from Strava
+
+Import your entire Strava history at once using a Strava data export ZIP file.
+
+**ZIP File Structure:**
+```
+your-strava-export.zip
+├── activities.csv          # Required: CSV file with activity metadata
+└── activities/            # Folder containing workout files
+    ├── 1234567890.gpx     # GPX files (supported)
+    ├── 1234567891.fit.gz  # Gzipped FIT files (supported)
+    └── ...
+```
+
+**Requirements:**
+- `activities.csv` must be in the root of the ZIP file
+- Workout files (`.gpx` or `.fit.gz`) should be in the `activities/` folder
+- The CSV `Filename` column should reference the file path (e.g., `activities/1234567890.gpx`)
+- Only "Run" activities are imported (other activity types are skipped)
+
+**Steps:**
+1. Request your data export from Strava (Settings → My Account → Download or Delete Your Account → Request Archive)
+2. Extract and re-zip if needed to match the structure above
+3. Go to the Import page in Tempo
+4. Upload the ZIP file under "Bulk Import Strava Export"
+5. Wait for processing to complete (you'll see a summary of imported/skipped workouts)
+
+## Deployment
+
+For production deployment, see [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed instructions including Docker image configuration, environment variables, and reverse proxy setup.
+
+## API
+
+- `POST /workouts/import` - Import GPX, FIT, or CSV workout files
+- `GET /workouts` - List all workouts
+- `GET /workouts/{id}` - Get workout details
 - `GET /health` - Health check endpoint
-
-## Development
-
-### Backend
-
-```bash
-cd api
-dotnet watch run
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm run dev
-```
 
 ## License
 
-MIT
-
+MIT License - see LICENSE file for details
