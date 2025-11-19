@@ -934,7 +934,20 @@ public static class WorkoutsEndpoints
                 return Results.BadRequest(new { error = "Request must be multipart/form-data" });
             }
 
-            var form = await request.ReadFormAsync();
+            // Enable request body buffering to ensure the full request is received before processing
+            request.EnableBuffering();
+
+            Microsoft.AspNetCore.Http.IFormCollection form;
+            try
+            {
+                form = await request.ReadFormAsync();
+            }
+            catch (Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
+            {
+                logger.LogError(ex, "Request body was incomplete or connection was closed prematurely during bulk import");
+                return Results.BadRequest(new { error = "Upload failed: The request was incomplete. This may be due to a timeout or connection issue. Please try again with a stable connection." });
+            }
+
             var file = form.Files.GetFile("file");
 
             if (file == null || file.Length == 0)
