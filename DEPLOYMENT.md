@@ -18,13 +18,13 @@ This guide will help you deploy Tempo on your home lab using pre-built Docker im
 
 2. **Download the production compose file:**
    ```bash
-   curl -o docker-compose.yml https://raw.githubusercontent.com/{owner}/{repo}/main/docker-compose.prod.yml
+   curl -o docker-compose.yml https://raw.githubusercontent.com/trevordavies095/tempo/main/docker-compose.prod.yml
    ```
    
    Or create `docker-compose.yml` manually (see Configuration section below).
 
 3. **Edit the compose file:**
-   - Replace `{owner}` and `{repo}` with the actual GitHub username and repository name
+   - Replace `trevordavies095` and `tempo` with the actual GitHub username and repository name
    - Example: `ghcr.io/username/tempo/api:latest`
 
 4. **Start the services:**
@@ -51,7 +51,7 @@ The production compose file uses pre-built images with the following tag options
 To use a different tag, edit `docker-compose.yml` and change the image tags:
 ```yaml
 api:
-  image: ghcr.io/{owner}/{repo}/api:latest  # Change 'latest' to 'edge' or 'v1.0.0'
+  image: ghcr.io/trevordavies095/tempo/api:latest  # Change 'latest' to 'edge' or 'v1.0.0'
 ```
 
 ### Environment Variables
@@ -121,9 +121,9 @@ Two volumes are used for data persistence:
 1. **Edit `docker-compose.yml`** and change image tags to the desired version:
    ```yaml
    api:
-     image: ghcr.io/{owner}/{repo}/api:v1.0.0
+     image: ghcr.io/trevordavies095/tempo/api:v1.0.0
    frontend:
-     image: ghcr.io/{owner}/{repo}/frontend:v1.0.0
+     image: ghcr.io/trevordavies095/tempo/frontend:v1.0.0
    ```
 
 2. **Pull and restart:**

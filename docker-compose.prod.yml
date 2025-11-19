@@ -1,9 +1,5 @@
 version: '3.8'
 
-# Production docker-compose file using pre-built images from GitHub Container Registry
-# Replace {owner} and {repo} with your GitHub username and repository name
-# Example: ghcr.io/username/tempo/api:latest
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -24,9 +20,8 @@ services:
     restart: unless-stopped
 
   api:
-    # Replace {owner}/{repo} with your GitHub username and repository name
     # Available tags: latest (stable), edge (bleeding edge), v1.0.0 (specific version)
-    image: ghcr.io/{owner}/{repo}/api:latest
+    image: ghcr.io/trevordavies095/tempo/api:latest
     container_name: tempo-api
     environment:
       # Database connection
@@ -58,9 +53,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    # Replace {owner}/{repo} with your GitHub username and repository name
-    # Available tags: latest (stable), edge (bleeding edge), v1.0.0 (specific version)
-    image: ghcr.io/{owner}/{repo}/frontend:latest
+    image: ghcr.io/trevordavies095/tempo/frontend:latest
     container_name: tempo-frontend
     ports:
       - "3000:3000"
