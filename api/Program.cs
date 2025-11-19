@@ -77,8 +77,8 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = 500_000_000; // 500MB
-    options.Limits.RequestBodyTimeout = TimeSpan.FromMinutes(10); // Allow 10 minutes for large file uploads
-    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(2); // Allow 2 minutes for multipart form headers
+    options.Limits.MinRequestBodyDataRate = null; // Disable minimum data rate to prevent timeouts during slow uploads
+    options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(10); // Keep connections alive during long uploads
 });
 
 var app = builder.Build();
