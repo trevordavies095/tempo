@@ -42,6 +42,7 @@ export default function WorkoutDetailPage() {
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState<string>('');
   const [hoveredSplitIdx, setHoveredSplitIdx] = useState<number | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
 
@@ -103,6 +104,23 @@ export default function WorkoutDetailPage() {
       workoutId: id,
     });
   }, [media, isLoadingMedia, isMediaError, id]);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (isMenuOpen && !target.closest('[data-menu-container]')) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [isMenuOpen]);
 
   const handleMediaClick = (media: WorkoutMedia, index: number) => {
     setSelectedMediaIndex(index);
@@ -175,75 +193,95 @@ export default function WorkoutDetailPage() {
     <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
         <div className="w-full mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <Link
-              href="/dashboard"
-              className="text-blue-600 dark:text-blue-400 hover:underline text-sm"
-            >
-              ← Back to Dashboard
-            </Link>
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mb-1" data-menu-container>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+              {getWorkoutDisplayName(data.name, data.startedAt)}
+            </h1>
+            <div className="relative">
               <button
-                onClick={handleDeleteWorkout}
-                disabled={deleteWorkoutMutation.isPending}
-                className="px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
                 type="button"
-                aria-label="Delete workout"
+                aria-label="More options"
+                aria-expanded={isMenuOpen}
               >
-                {deleteWorkoutMutation.isPending ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Deleting...
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                    Delete
-                  </>
-                )}
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                  />
+                </svg>
               </button>
-              {deleteWorkoutMutation.isError && (
-                <span className="text-xs text-red-600 dark:text-red-400">
-                  {deleteWorkoutMutation.error instanceof Error ? deleteWorkoutMutation.error.message : 'Failed to delete workout'}
-                </span>
+              {isMenuOpen && (
+                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-10">
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        handleDeleteWorkout();
+                      }}
+                      disabled={deleteWorkoutMutation.isPending}
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                      type="button"
+                    >
+                      {deleteWorkoutMutation.isPending ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
+                          Delete Workout
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               )}
-              <Link
-                href="/settings"
-                className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
-              >
-                Settings
-              </Link>
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {getWorkoutDisplayName(data.name, data.startedAt)}
-          </h1>
+          {deleteWorkoutMutation.isError && (
+            <div className="mb-2">
+              <span className="text-xs text-red-600 dark:text-red-400">
+                {deleteWorkoutMutation.error instanceof Error ? deleteWorkoutMutation.error.message : 'Failed to delete workout'}
+              </span>
+            </div>
+          )}
           <p className="text-base text-gray-600 dark:text-gray-400">
             {formatDateTime(data.startedAt)}
           </p>
         </div>
 
-        <div className="w-full space-y-4">
+        <div className="w-full space-y-3">
           {/* Main Content Area - Two Columns */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {/* Left Column - Activity Details */}
-            <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
+            <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   {formatDateTime(data.startedAt)}
@@ -434,7 +472,7 @@ export default function WorkoutDetailPage() {
                     queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
                   }}
                 />
-                <div className="mt-3">
+                <div className="mt-2">
                   <WorkoutMediaGallery
                     workoutId={id}
                     media={isMediaError ? [] : media}
@@ -449,11 +487,11 @@ export default function WorkoutDetailPage() {
             </div>
 
             {/* Right Column - Stats and Weather */}
-            <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
+            <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
               {/* Key Metrics */}
               <div>
-                <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Key Metrics</h3>
-                <div className="grid grid-cols-3 gap-4">
+                <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Key Metrics</h3>
+                <div className="grid grid-cols-3 gap-3">
                   <div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Distance</div>
                     <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -484,176 +522,187 @@ export default function WorkoutDetailPage() {
                 </div>
               </div>
 
-              {/* Additional Details */}
-              {(data.elevGainM !== null || data.calories !== null || 
-                data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null ||
-                data.maxCadenceRpm !== null || data.avgCadenceRpm !== null ||
-                data.maxPowerWatts !== null || data.avgPowerWatts !== null) && (
-                <div>
-                  <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Additional Details</h3>
-                  <div className="space-y-2">
-                    {data.elevGainM !== null && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Elevation</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {formatElevation(data.elevGainM, unitPreference)}
-                        </span>
-                      </div>
-                    )}
-                    {data.movingTimeS !== null && data.movingTimeS !== data.durationS && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Elapsed Time</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {formatDuration(data.durationS)}
-                        </span>
-                      </div>
-                    )}
-                    {data.calories !== null && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Calories</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {data.calories}
-                        </span>
-                      </div>
-                    )}
-                    {(data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null) && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Heart Rate</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {data.maxHeartRateBpm !== null && data.avgHeartRateBpm !== null
-                            ? `${data.maxHeartRateBpm} / ${data.avgHeartRateBpm} bpm`
-                            : data.maxHeartRateBpm !== null
-                            ? `${data.maxHeartRateBpm} bpm`
-                            : `${data.avgHeartRateBpm} bpm`}
-                        </span>
-                      </div>
-                    )}
-                    {(data.maxCadenceRpm !== null || data.avgCadenceRpm !== null) && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Cadence</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {data.maxCadenceRpm !== null && data.avgCadenceRpm !== null
-                            ? `${data.maxCadenceRpm} / ${data.avgCadenceRpm} rpm`
-                            : data.maxCadenceRpm !== null
-                            ? `${data.maxCadenceRpm} rpm`
-                            : `${data.avgCadenceRpm} rpm`}
-                        </span>
-                      </div>
-                    )}
-                    {(data.maxPowerWatts !== null || data.avgPowerWatts !== null) && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Power</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {data.maxPowerWatts !== null && data.avgPowerWatts !== null
-                            ? `${data.maxPowerWatts} / ${data.avgPowerWatts} W`
-                            : data.maxPowerWatts !== null
-                            ? `${data.maxPowerWatts} W`
-                            : `${data.avgPowerWatts} W`}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+              {/* Additional Details and Weather - Side by Side */}
+              {(() => {
+                const hasAdditionalDetails = data.elevGainM !== null || data.calories !== null || 
+                  data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null ||
+                  data.maxCadenceRpm !== null || data.avgCadenceRpm !== null ||
+                  data.maxPowerWatts !== null || data.avgPowerWatts !== null;
+                const hasWeather = !!data.weather;
+                const bothExist = hasAdditionalDetails && hasWeather;
 
-              {/* Weather Information */}
-              {data.weather && (() => {
-                const isNight = isNightTime(data.startedAt);
-                const symbolFilename = getWeatherSymbol(data.weather.weatherCode, isNight);
-                const symbolPath = `/weather-symbols/${symbolFilename}`;
-                const conditionText = data.weather.condition || 'Unknown';
-                const feelsLike = getFeelsLikeTemperature(data.weather);
-                const humidity = getHumidity(data.weather);
+                return (hasAdditionalDetails || hasWeather) ? (
+                  <div className={bothExist ? "grid grid-cols-1 md:grid-cols-2 gap-3" : ""}>
+                    {/* Additional Details */}
+                    {hasAdditionalDetails && (
+                      <div>
+                        <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Additional Details</h3>
+                        <div className="space-y-1.5">
+                          {data.elevGainM !== null && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Elevation</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {formatElevation(data.elevGainM, unitPreference)}
+                              </span>
+                            </div>
+                          )}
+                          {data.movingTimeS !== null && data.movingTimeS !== data.durationS && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Elapsed Time</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {formatDuration(data.durationS)}
+                              </span>
+                            </div>
+                          )}
+                          {data.calories !== null && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Calories</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {data.calories}
+                              </span>
+                            </div>
+                          )}
+                          {(data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null) && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Heart Rate</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {data.maxHeartRateBpm !== null && data.avgHeartRateBpm !== null
+                                  ? `${data.maxHeartRateBpm} / ${data.avgHeartRateBpm} bpm`
+                                  : data.maxHeartRateBpm !== null
+                                  ? `${data.maxHeartRateBpm} bpm`
+                                  : `${data.avgHeartRateBpm} bpm`}
+                              </span>
+                            </div>
+                          )}
+                          {(data.maxCadenceRpm !== null || data.avgCadenceRpm !== null) && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Cadence</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {data.maxCadenceRpm !== null && data.avgCadenceRpm !== null
+                                  ? `${data.maxCadenceRpm} / ${data.avgCadenceRpm} rpm`
+                                  : data.maxCadenceRpm !== null
+                                  ? `${data.maxCadenceRpm} rpm`
+                                  : `${data.avgCadenceRpm} rpm`}
+                              </span>
+                            </div>
+                          )}
+                          {(data.maxPowerWatts !== null || data.avgPowerWatts !== null) && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Power</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {data.maxPowerWatts !== null && data.avgPowerWatts !== null
+                                  ? `${data.maxPowerWatts} / ${data.avgPowerWatts} W`
+                                  : data.maxPowerWatts !== null
+                                  ? `${data.maxPowerWatts} W`
+                                  : `${data.avgPowerWatts} W`}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
-                return (
-                  <div>
-                    <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Weather</h3>
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-                          <div className="relative w-4 h-4 flex-shrink-0">
-                            <Image
-                              src={symbolPath}
-                              alt={conditionText}
-                              fill
-                              className="object-contain"
-                              unoptimized
-                            />
+                    {/* Weather Information */}
+                    {hasWeather && (() => {
+                      const isNight = isNightTime(data.startedAt);
+                      const symbolFilename = getWeatherSymbol(data.weather.weatherCode, isNight);
+                      const symbolPath = `/weather-symbols/${symbolFilename}`;
+                      const conditionText = data.weather.condition || 'Unknown';
+                      const feelsLike = getFeelsLikeTemperature(data.weather);
+                      const humidity = getHumidity(data.weather);
+
+                      return (
+                        <div>
+                          <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Weather</h3>
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                                <div className="relative w-4 h-4 flex-shrink-0">
+                                  <Image
+                                    src={symbolPath}
+                                    alt={conditionText}
+                                    fill
+                                    className="object-contain"
+                                    unoptimized
+                                  />
+                                </div>
+                                Condition
+                              </span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {conditionText}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Temperature</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {formatTemperature(data.weather.temperature, unitPreference)}
+                              </span>
+                            </div>
+                            {humidity !== undefined && humidity !== null && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Humidity</span>
+                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                  {Math.round(humidity)}%
+                                </span>
+                              </div>
+                            )}
+                            {feelsLike !== undefined && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Feels like</span>
+                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                  {formatTemperature(feelsLike, unitPreference)}
+                                </span>
+                              </div>
+                            )}
+                            {data.weather.windSpeed !== undefined && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Wind Speed</span>
+                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                  {formatWindSpeed(data.weather.windSpeed, unitPreference)}
+                                </span>
+                              </div>
+                            )}
+                            {data.weather.windDirection !== undefined && data.weather.windDirection !== null && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Wind Direction</span>
+                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                  {formatWindDirection(data.weather.windDirection)} ({Math.round(data.weather.windDirection)}°)
+                                </span>
+                              </div>
+                            )}
                           </div>
-                          Condition
-                        </span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {conditionText}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Temperature</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {formatTemperature(data.weather.temperature, unitPreference)}
-                        </span>
-                      </div>
-                      {humidity !== undefined && humidity !== null && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">Humidity</span>
-                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            {Math.round(humidity)}%
-                          </span>
                         </div>
-                      )}
-                      {feelsLike !== undefined && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">Feels like</span>
-                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            {formatTemperature(feelsLike, unitPreference)}
-                          </span>
-                        </div>
-                      )}
-                      {data.weather.windSpeed !== undefined && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">Wind Speed</span>
-                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            {formatWindSpeed(data.weather.windSpeed, unitPreference)}
-                          </span>
-                        </div>
-                      )}
-                      {data.weather.windDirection !== undefined && data.weather.windDirection !== null && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">Wind Direction</span>
-                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            {formatWindDirection(data.weather.windDirection)} ({Math.round(data.weather.windDirection)}°)
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                      );
+                    })()}
                   </div>
-                );
+                ) : null;
               })()}
             </div>
           </div>
 
           {/* Lower Section - Splits and Map */}
           {(data.splits && data.splits.length > 0) || data.route ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Splits Table */}
               {data.splits && data.splits.length > 0 && (
-                <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
                     Splits ({data.splits.length})
                   </h2>
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse">
                       <thead>
                         <tr className="border-b border-gray-200 dark:border-gray-800">
-                          <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
                             Split
                           </th>
-                          <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
                             Distance
                           </th>
-                          <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
                             Duration
                           </th>
-                          <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
                             Pace
                           </th>
                         </tr>
@@ -666,16 +715,16 @@ export default function WorkoutDetailPage() {
                             onMouseEnter={() => setHoveredSplitIdx(split.idx)}
                             onMouseLeave={() => setHoveredSplitIdx(null)}
                           >
-                            <td className="py-2 px-3 text-xs text-gray-700 dark:text-gray-300">
+                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
                               {split.idx + 1}
                             </td>
-                            <td className="py-2 px-3 text-xs text-gray-700 dark:text-gray-300">
+                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
                               {formatDistance(split.distanceM, unitPreference)}
                             </td>
-                            <td className="py-2 px-3 text-xs text-gray-700 dark:text-gray-300">
+                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
                               {formatDuration(split.durationS)}
                             </td>
-                            <td className="py-2 px-3 text-xs text-gray-700 dark:text-gray-300">
+                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
                               {formatPace(split.paceS, unitPreference)}
                             </td>
                           </tr>
@@ -688,8 +737,8 @@ export default function WorkoutDetailPage() {
 
               {/* Route Map */}
               {data.route && (
-                <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
                     Route Map
                   </h2>
                   <WorkoutMap 

@@ -188,31 +188,15 @@ export default function DashboardPage() {
     <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
         <div className="w-full mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                Dashboard
-              </h1>
-              <p className="text-lg text-gray-600 dark:text-gray-400">
-                {selectedWeek
-                  ? `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} for selected week`
-                  : `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} in the last 7 days`}
-              </p>
-            </div>
-            <div className="flex gap-4">
-              <Link
-                href="/settings"
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
-              >
-                Settings
-              </Link>
-              <Link
-                href="/import"
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
-              >
-                Import
-              </Link>
-            </div>
+          <div className="mb-4">
+            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+              Dashboard
+            </h1>
+            <p className="text-lg text-gray-600 dark:text-gray-400">
+              {selectedWeek
+                ? `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} for selected week`
+                : `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} in the last 7 days`}
+            </p>
           </div>
         </div>
 

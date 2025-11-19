@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { FileUpload } from '@/components/FileUpload';
 import { BulkImport } from '@/components/BulkImport';
 
@@ -7,30 +6,12 @@ export default function ImportPage() {
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-4xl flex-col items-center justify-start py-16 px-8">
         <div className="w-full mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                Tempo
-              </h1>
-              <p className="text-lg text-gray-600 dark:text-gray-400">
-                Self-hostable running tracker
-              </p>
-            </div>
-            <div className="flex gap-4">
-              <Link
-                href="/settings"
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
-              >
-                Settings
-              </Link>
-              <Link
-                href="/dashboard"
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
-              >
-                Dashboard
-              </Link>
-            </div>
-          </div>
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            Import Workouts
+          </h1>
+          <p className="text-lg text-gray-600 dark:text-gray-400">
+            Upload GPX files or bulk import from Strava
+          </p>
         </div>
 
         <div className="w-full space-y-8">
