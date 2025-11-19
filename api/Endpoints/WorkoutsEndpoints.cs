@@ -366,6 +366,35 @@ public static class WorkoutsEndpoints
                 startDate = now.AddDays(-7);
             }
 
+            // Normalize dates to UTC for PostgreSQL compatibility
+            if (startDate.HasValue)
+            {
+                var start = startDate.Value;
+                if (start.Kind == DateTimeKind.Unspecified)
+                {
+                    start = DateTime.SpecifyKind(start, DateTimeKind.Utc);
+                }
+                else if (start.Kind == DateTimeKind.Local)
+                {
+                    start = start.ToUniversalTime();
+                }
+                startDate = start.Date; // Ensure start of day
+            }
+
+            if (endDate.HasValue)
+            {
+                var end = endDate.Value;
+                if (end.Kind == DateTimeKind.Unspecified)
+                {
+                    end = DateTime.SpecifyKind(end, DateTimeKind.Utc);
+                }
+                else if (end.Kind == DateTimeKind.Local)
+                {
+                    end = end.ToUniversalTime();
+                }
+                endDate = end.Date.AddDays(1).AddTicks(-1); // End of day (23:59:59.999)
+            }
+
             // Build query
             var query = db.Workouts
                 .Include(w => w.Route)
@@ -1491,10 +1520,12 @@ public static class WorkoutsEndpoints
             [FromQuery] int? timezoneOffsetMinutes = null) =>
         {
             // Get current week boundaries (Monday-Sunday) in the specified timezone
+            // Frontend sends timezoneOffsetMinutes as -getTimezoneOffset() (negative for timezones behind UTC)
+            // To convert UTC to local: UTC + offset (since offset is already negative)
             var now = DateTime.UtcNow;
             if (timezoneOffsetMinutes.HasValue)
             {
-                now = now.AddMinutes(-timezoneOffsetMinutes.Value);
+                now = now.AddMinutes(timezoneOffsetMinutes.Value);
             }
 
             // Calculate start of current week (Monday)
@@ -1554,10 +1585,12 @@ public static class WorkoutsEndpoints
             [FromQuery] int? timezoneOffsetMinutes = null) =>
         {
             // Get current year boundaries in the specified timezone
+            // Frontend sends timezoneOffsetMinutes as -getTimezoneOffset() (negative for timezones behind UTC)
+            // To convert UTC to local: UTC + offset (since offset is already negative)
             var now = DateTime.UtcNow;
             if (timezoneOffsetMinutes.HasValue)
             {
-                now = now.AddMinutes(-timezoneOffsetMinutes.Value);
+                now = now.AddMinutes(timezoneOffsetMinutes.Value);
             }
 
             var currentYear = now.Year;
@@ -1610,6 +1643,254 @@ public static class WorkoutsEndpoints
         .Produces(200)
         .WithSummary("Get yearly stats")
         .WithDescription("Returns total miles for the current year and previous year");
+
+        group.MapGet("/stats/yearly-weekly", async (
+            TempoDbContext db,
+            ILogger<Program> logger,
+            [FromQuery] string? periodEndDate = null,
+            [FromQuery] int? timezoneOffsetMinutes = null) =>
+        {
+            // Get current date in the specified timezone
+            // Frontend sends timezoneOffsetMinutes as -getTimezoneOffset() (negative for timezones behind UTC)
+            // To convert UTC to local: UTC + offset (since offset is already negative)
+            var now = DateTime.UtcNow;
+            if (timezoneOffsetMinutes.HasValue)
+            {
+                now = now.AddMinutes(timezoneOffsetMinutes.Value);
+            }
+
+            // Compute period bounds
+            // If periodEndDate not provided, default to today (last 12 months ending today)
+            // This ensures alignment with /workouts/stats/available-periods
+            DateTime periodEnd;
+            var today = now.Date;
+            if (!string.IsNullOrEmpty(periodEndDate) && DateTime.TryParse(periodEndDate, out var parsedEndDate))
+            {
+                periodEnd = parsedEndDate.Date;
+            }
+            else
+            {
+                // Default to today (so the period is the last 12 months ending today)
+                periodEnd = today;
+            }
+
+            // Period start = periodEnd.AddYears(-1).AddDays(1) (inclusive)
+            // This gives us the last 12 months ending on periodEnd
+            var periodStart = periodEnd.AddYears(-1).AddDays(1);
+            
+            // Calculate total days in period (365 or 366)
+            var totalDays = (periodEnd - periodStart).Days + 1;
+
+            // Convert period bounds to UTC for database queries
+            var periodStartUtc = timezoneOffsetMinutes.HasValue
+                ? DateTime.SpecifyKind(periodStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                : DateTime.SpecifyKind(periodStart, DateTimeKind.Utc);
+            var periodEndUtc = timezoneOffsetMinutes.HasValue
+                ? DateTime.SpecifyKind(periodEnd.AddMinutes(-timezoneOffsetMinutes.Value).AddDays(1).AddTicks(-1), DateTimeKind.Utc)
+                : DateTime.SpecifyKind(periodEnd.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+
+            // Get all workouts in the period
+            var workouts = await db.Workouts
+                .Where(w => w.StartedAt >= periodStartUtc && w.StartedAt <= periodEndUtc)
+                .AsNoTracking()
+                .ToListAsync();
+
+            // Initialize 52 week buckets (indexed 0-51)
+            var weekBuckets = new Dictionary<int, double>();
+            for (int i = 0; i < 52; i++)
+            {
+                weekBuckets[i] = 0.0;
+            }
+
+            // Group workouts by week index
+            foreach (var workout in workouts)
+            {
+                // Convert workout date to local timezone for calculation
+                var workoutDate = workout.StartedAt;
+                if (timezoneOffsetMinutes.HasValue)
+                {
+                    workoutDate = workoutDate.AddMinutes(timezoneOffsetMinutes.Value);
+                }
+                var workoutDateOnly = workoutDate.Date;
+
+                // Calculate dayIndex (0-based integer number of days from periodStart)
+                var dayIndex = (workoutDateOnly - periodStart).Days;
+
+                // Calculate weekIndex (0-51)
+                var weekIndex = (int)Math.Floor(dayIndex * 52.0 / totalDays);
+                
+                // Clamp to valid range (shouldn't be necessary, but safety check)
+                if (weekIndex < 0) weekIndex = 0;
+                if (weekIndex >= 52) weekIndex = 51;
+
+                // Update bucket distance
+                weekBuckets[weekIndex] += workout.DistanceM;
+            }
+
+            // Build response with 52 weeks
+            // Calculate theoretical date range for each bucket to ensure complete coverage
+            var weeks = new List<object>();
+            for (int weekIndex = 0; weekIndex < 52; weekIndex++)
+            {
+                var distanceM = weekBuckets[weekIndex];
+                
+                // Calculate theoretical date range for this bucket
+                // This ensures every date in the period is covered exactly once
+                var dayIndexStart = (int)Math.Floor(weekIndex * totalDays / 52.0);
+                var dayIndexEnd = (int)Math.Floor((weekIndex + 1) * totalDays / 52.0) - 1;
+                
+                // Ensure dayIndexEnd doesn't exceed totalDays - 1
+                if (dayIndexEnd >= totalDays)
+                {
+                    dayIndexEnd = totalDays - 1;
+                }
+                
+                var weekStartDate = periodStart.AddDays(dayIndexStart);
+                var weekEndDate = periodStart.AddDays(dayIndexEnd);
+
+                weeks.Add(new
+                {
+                    weekNumber = weekIndex + 1, // 1-52
+                    weekStart = weekStartDate.ToString("yyyy-MM-dd"),
+                    weekEnd = weekEndDate.ToString("yyyy-MM-dd"),
+                    distanceM = distanceM
+                });
+            }
+
+            return Results.Ok(new
+            {
+                weeks,
+                dateRangeStart = periodStart.ToString("yyyy-MM-dd"),
+                dateRangeEnd = periodEnd.ToString("yyyy-MM-dd")
+            });
+        })
+        .Produces(200)
+        .WithSummary("Get yearly weekly stats")
+        .WithDescription("Returns 52 equal week buckets within a 1-year period, covering all dates with no gaps or overlaps. If periodEndDate not provided, defaults to today (last 12 months ending today).");
+
+        group.MapGet("/stats/available-periods", async (
+            TempoDbContext db,
+            ILogger<Program> logger,
+            [FromQuery] int? timezoneOffsetMinutes = null) =>
+        {
+            // Get current date in the specified timezone
+            // We need to get today's date in the local timezone, not UTC
+            // The date should be the calendar date in the user's timezone, not UTC
+            // Frontend sends timezoneOffsetMinutes as -getTimezoneOffset() (negative for timezones behind UTC)
+            // For example, EST (UTC-5) sends -300, PST (UTC-8) sends -480
+            // To convert UTC to local: UTC + offset (since offset is already negative)
+            var nowUtc = DateTime.UtcNow;
+            DateTime today;
+            if (timezoneOffsetMinutes.HasValue)
+            {
+                // Convert UTC to local time by adding the offset
+                // timezoneOffsetMinutes is already negative for timezones behind UTC (e.g., EST = -300)
+                // So we add the negative number, which subtracts time (correct conversion)
+                var localDateTime = nowUtc.AddMinutes(timezoneOffsetMinutes.Value);
+                // Get just the date part (midnight of that day in local time)
+                today = localDateTime.Date;
+            }
+            else
+            {
+                // No timezone offset provided, use UTC date
+                today = nowUtc.Date;
+            }
+            
+            // Ensure today is a date at midnight (no time component)
+            today = today.Date;
+            
+            // Log the calculated today date for debugging
+            logger.LogDebug("Calculated today's date: {Today} (UTC now: {UtcNow}, timezone offset: {Offset})", 
+                today.ToString("yyyy-MM-dd"), nowUtc.ToString("yyyy-MM-dd HH:mm:ss"), 
+                timezoneOffsetMinutes?.ToString() ?? "none");
+
+            // Get first workout date to know when to stop
+            var firstWorkout = await db.Workouts
+                .AsNoTracking()
+                .OrderBy(w => w.StartedAt)
+                .FirstOrDefaultAsync();
+
+            DateTime? firstWorkoutDate = null;
+            if (firstWorkout != null)
+            {
+                firstWorkoutDate = firstWorkout.StartedAt;
+                if (timezoneOffsetMinutes.HasValue)
+                {
+                    firstWorkoutDate = firstWorkoutDate.Value.AddMinutes(timezoneOffsetMinutes.Value);
+                }
+            }
+
+            // Generate consecutive 1-year periods going backwards from today
+            // Current period: End = today (inclusive), Start = today.AddYears(-1).AddDays(1) (last 12 months ending today)
+            // Previous periods: For older period N with newer period N+1:
+            //   End(N) = Start(N+1).AddDays(-1)
+            //   Start(N) = End(N).AddYears(-1).AddDays(1)
+            // Example: If today = Nov 18, 2025:
+            //   Period 1: Nov 19, 2024 - Nov 18, 2025
+            //   Period 2: Nov 19, 2023 - Nov 18, 2024
+            //   Period 3: Nov 19, 2022 - Nov 18, 2023
+            var periods = new List<object>();
+            var currentPeriodEnd = today;
+            var currentPeriodStart = today.AddYears(-1).AddDays(1);
+            
+            // Log first period for debugging
+            logger.LogDebug("First period (last 12 months ending today): {Start} - {End}", currentPeriodStart.ToString("yyyy-MM-dd"), currentPeriodEnd.ToString("yyyy-MM-dd"));
+            
+            while (true)
+            {
+                periods.Add(new
+                {
+                    periodEndDate = currentPeriodEnd.ToString("yyyy-MM-dd"),
+                    dateRangeStart = currentPeriodStart.ToString("yyyy-MM-dd"),
+                    dateRangeEnd = currentPeriodEnd.ToString("yyyy-MM-dd"),
+                    dateRangeLabel = $"{currentPeriodStart:MMM d, yyyy} - {currentPeriodEnd:MMM d, yyyy}"
+                });
+                
+                // Calculate previous period
+                // Previous period ends 1 day before current period starts
+                var previousPeriodEnd = currentPeriodStart.AddDays(-1);
+                // Previous period starts 1 year before its end date (so it's exactly 1 year)
+                var previousPeriodStart = previousPeriodEnd.AddYears(-1).AddDays(1);
+                
+                // Stop if we've generated more than 20 periods (safety limit)
+                if (periods.Count > 20)
+                {
+                    break;
+                }
+                
+                // Stop if we've gone past the first workout date
+                if (firstWorkoutDate.HasValue && previousPeriodEnd.Date < firstWorkoutDate.Value.Date)
+                {
+                    break;
+                }
+                
+                currentPeriodStart = previousPeriodStart;
+                currentPeriodEnd = previousPeriodEnd;
+            }
+
+            return Results.Ok(periods);
+        })
+        .Produces(200)
+        .WithSummary("Get available periods")
+        .WithDescription("Returns consecutive 1-year periods (365/366 days) going backwards from today. Current period is the last 12 months ending today.");
+
+        group.MapGet("/stats/available-years", async (
+            TempoDbContext db,
+            ILogger<Program> logger) =>
+        {
+            // Get distinct years from workouts
+            var years = await db.Workouts
+                .AsNoTracking()
+                .Select(w => w.StartedAt.Year)
+                .Distinct()
+                .OrderByDescending(y => y)
+                .ToListAsync();
+
+            return Results.Ok(years);
+        })
+        .Produces(200)
+        .WithSummary("Get available years")
+        .WithDescription("Returns list of years that have workouts");
 
         group.MapPatch("/{id:guid}", async (
             Guid id,

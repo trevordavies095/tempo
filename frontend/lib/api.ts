@@ -375,6 +375,91 @@ export async function getYearlyStats(timezoneOffsetMinutes?: number): Promise<Ye
   return response.json();
 }
 
+export interface YearlyWeeklyStatsItem {
+  weekNumber: number;
+  weekStart: string;
+  weekEnd: string;
+  distanceM: number;
+}
+
+export interface YearlyWeeklyStatsResponse {
+  weeks: YearlyWeeklyStatsItem[];
+  dateRangeStart: string;
+  dateRangeEnd: string;
+}
+
+export async function getYearlyWeeklyStats(
+  periodEndDate?: string,
+  timezoneOffsetMinutes?: number
+): Promise<YearlyWeeklyStatsResponse> {
+  const searchParams = new URLSearchParams();
+  if (periodEndDate) {
+    searchParams.set('periodEndDate', periodEndDate);
+  }
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/workouts/stats/yearly-weekly${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch yearly weekly stats: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface AvailablePeriod {
+  periodEndDate: string;
+  dateRangeStart: string;
+  dateRangeEnd: string;
+  dateRangeLabel: string;
+}
+
+export async function getAvailablePeriods(
+  timezoneOffsetMinutes?: number
+): Promise<AvailablePeriod[]> {
+  const searchParams = new URLSearchParams();
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/workouts/stats/available-periods${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch available periods: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getAvailableYears(): Promise<number[]> {
+  const url = `${API_BASE_URL}/workouts/stats/available-years`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch available years: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export interface UpdateWorkoutRequest {
   runType?: string | null;
   notes?: string | null;

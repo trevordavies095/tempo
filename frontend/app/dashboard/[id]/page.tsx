@@ -346,6 +346,7 @@ export default function WorkoutDetailPage() {
                         autoFocus
                       >
                         <option value="">None</option>
+                        <option value="Easy Run">Easy Run</option>
                         <option value="Race">Race</option>
                         <option value="Workout">Workout</option>
                         <option value="Long Run">Long Run</option>

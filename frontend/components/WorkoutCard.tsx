@@ -1,10 +1,15 @@
 'use client';
 
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { type WorkoutListItem } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDateTime, getWorkoutDisplayName } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
-import WorkoutMap from './WorkoutMap';
+
+// Dynamically import WorkoutMap to avoid SSR issues with Leaflet
+const WorkoutMap = dynamic(() => import('./WorkoutMap'), {
+  ssr: false,
+});
 
 interface WorkoutCardProps {
   workout: WorkoutListItem;
@@ -12,6 +17,8 @@ interface WorkoutCardProps {
 
 function getRunTypeBadgeColor(runType: string | null): string {
   switch (runType) {
+    case 'Easy Run':
+      return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border-green-200 dark:border-green-800';
     case 'Race':
       return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800';
     case 'Workout':

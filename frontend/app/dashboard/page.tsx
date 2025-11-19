@@ -2,19 +2,133 @@
 
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
 import WeeklyStatsWidget from '@/components/WeeklyStatsWidget';
 import WorkoutCard from '@/components/WorkoutCard';
+import YearlyWeeklyChart from '@/components/YearlyWeeklyChart';
 
 export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
+  const [selectedPeriodEndDate, setSelectedPeriodEndDate] = useState<string | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState<{ weekStart: string; weekEnd: string } | null>(null);
 
-  // Backend applies default 7-day filter when no dates provided
+  // Parse URL hash on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      if (hash.startsWith('#interval')) {
+        const params = new URLSearchParams(hash.substring(10)); // Remove '#interval?'
+        const interval = params.get('interval');
+        const yearOffset = parseInt(params.get('year_offset') || '0', 10);
+
+        if (interval && interval.length === 6) {
+          // Format: YYYYWW (e.g., 202516)
+          // Calculate the week from the interval (for backwards compatibility)
+          const year = parseInt(interval.substring(0, 4), 10) - yearOffset;
+          const weekNum = parseInt(interval.substring(4, 6), 10);
+
+          // Calculate week boundaries from the last 52 weeks
+          // Week 52 is the most recent complete week
+          const today = new Date();
+          const daysSinceMonday = ((today.getDay() - 1 + 7) % 7);
+          const mostRecentMonday = new Date(today);
+          mostRecentMonday.setDate(today.getDate() - daysSinceMonday);
+          
+          let week52End = new Date(mostRecentMonday);
+          week52End.setDate(mostRecentMonday.getDate() + 6);
+          if (daysSinceMonday === 0) {
+            week52End.setDate(mostRecentMonday.getDate() - 1);
+          }
+          
+          const week52Start = new Date(week52End);
+          week52Start.setDate(week52End.getDate() - 6);
+          
+          // Calculate the week start for the given week number
+          const weekStart = new Date(week52Start);
+          weekStart.setDate(week52Start.getDate() - (52 - weekNum) * 7);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 6);
+
+          setSelectedWeek({
+            weekStart: weekStart.toISOString().split('T')[0],
+            weekEnd: weekEnd.toISOString().split('T')[0],
+          });
+        }
+      }
+    }
+  }, []);
+
+  // Reset page and clear week selection when period changes
+  useEffect(() => {
+    setPage(1);
+    setSelectedWeek(null);
+  }, [selectedPeriodEndDate]);
+
+  // Reset page when week selection changes
+  useEffect(() => {
+    setPage(1);
+  }, [selectedWeek]);
+
+  // Update URL hash when week is selected
+  useEffect(() => {
+    if (selectedWeek && typeof window !== 'undefined') {
+      const weekStartDate = new Date(selectedWeek.weekStart);
+      const year = weekStartDate.getFullYear();
+      
+      // Calculate week number (1-52) for the last 52 weeks
+      // Match backend logic: Week 52 is the most recent complete week
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const daysSinceMonday = ((today.getDay() - 1 + 7) % 7);
+      const mostRecentMonday = new Date(today);
+      mostRecentMonday.setDate(today.getDate() - daysSinceMonday);
+      
+      let week52End = new Date(mostRecentMonday);
+      week52End.setDate(mostRecentMonday.getDate() + 6);
+      if (daysSinceMonday === 0) {
+        // If today is Monday, week 52 ended yesterday (last Sunday)
+        week52End.setDate(mostRecentMonday.getDate() - 1);
+      }
+      
+      const week52Start = new Date(week52End);
+      week52Start.setDate(week52End.getDate() - 6);
+      
+      // Week 1 starts 51 weeks before week 52
+      const week1Start = new Date(week52Start);
+      week1Start.setDate(week52Start.getDate() - 51 * 7);
+      
+      // Calculate which week number (1-52) the selected week is
+      const diffTime = weekStartDate.getTime() - week1Start.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      const weekNum = Math.floor(diffDays / 7) + 1;
+
+      const interval = `${year}${Math.min(52, Math.max(1, weekNum)).toString().padStart(2, '0')}`;
+      const yearOffset = new Date().getFullYear() - year;
+      window.location.hash = `interval?interval=${interval}&interval_type=week&year_offset=${yearOffset}`;
+    } else if (!selectedWeek && typeof window !== 'undefined') {
+      // Clear hash when no week is selected
+      window.location.hash = '';
+    }
+  }, [selectedWeek]);
+
+  // Build query params based on selected week
+  const queryParams: WorkoutsListParams = {
+    page,
+    pageSize,
+  };
+
+  // If a week is selected, filter by that week; otherwise use default 7-day filter
+  if (selectedWeek) {
+    queryParams.startDate = selectedWeek.weekStart;
+    queryParams.endDate = selectedWeek.weekEnd;
+  }
+  // If no week selected, backend will apply default 7-day filter
+
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['workouts', { page, pageSize }],
-    queryFn: () => getWorkouts({ page, pageSize }),
+    queryKey: ['workouts', queryParams],
+    queryFn: () => getWorkouts(queryParams),
   });
 
   if (isLoading) {
@@ -80,7 +194,9 @@ export default function DashboardPage() {
                 Dashboard
               </h1>
               <p className="text-lg text-gray-600 dark:text-gray-400">
-                {data.totalCount} workout{data.totalCount !== 1 ? 's' : ''} in the last 7 days
+                {selectedWeek
+                  ? `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} for selected week`
+                  : `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} in the last 7 days`}
               </p>
             </div>
             <div className="flex gap-4">
@@ -98,6 +214,15 @@ export default function DashboardPage() {
               </Link>
             </div>
           </div>
+        </div>
+
+        <div className="w-full mb-8">
+          <YearlyWeeklyChart
+            selectedPeriodEndDate={selectedPeriodEndDate}
+            onPeriodChange={setSelectedPeriodEndDate}
+            selectedWeek={selectedWeek}
+            onWeekSelect={setSelectedWeek}
+          />
         </div>
 
         <div className="w-full flex flex-col md:flex-row gap-6 mb-8">
