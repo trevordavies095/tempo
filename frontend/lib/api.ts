@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+const API_BASE_URL = '/api';
 
 export interface WorkoutImportResponse {
   id: string;
@@ -121,8 +121,6 @@ export async function importWorkoutFile(file: File, unitPreference?: 'metric' | 
 
   const response = await fetch(`${API_BASE_URL}/workouts/import`, {
     method: 'POST',
-    mode: 'cors',
-    credentials: 'omit',
     body: formData,
   });
 
@@ -213,8 +211,6 @@ export async function importBulkStravaExport(zipFile: File, unitPreference?: 'me
 
   const response = await fetch(`${API_BASE_URL}/workouts/import/bulk`, {
     method: 'POST',
-    mode: 'cors',
-    credentials: 'omit',
     body: formData,
   });
 
@@ -265,8 +261,6 @@ export async function deleteWorkoutMedia(
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media/${mediaId}`, {
     method: 'DELETE',
-    mode: 'cors',
-    credentials: 'omit',
   });
 
   if (response.status === 404) {
@@ -294,8 +288,6 @@ export async function uploadWorkoutMedia(
 
   const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media`, {
     method: 'POST',
-    mode: 'cors',
-    credentials: 'omit',
     body: formData,
   });
 
@@ -496,8 +488,6 @@ export async function updateWorkout(
 export async function deleteWorkout(id: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
     method: 'DELETE',
-    mode: 'cors',
-    credentials: 'omit',
   });
 
   if (response.status === 404) {
