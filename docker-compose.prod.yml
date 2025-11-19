@@ -37,8 +37,8 @@ services:
       # ASP.NET Core
       ASPNETCORE_URLS: "http://+:5001"
       ASPNETCORE_ENVIRONMENT: "Production"
-      # CORS - Update this to match your frontend URL
-      CORS__AllowedOrigins: "http://localhost:3000"
+      # CORS - Allow multiple origins (comma-separated)
+      CORS__AllowedOrigins: "http://localhost:3000,http://localhost:3004,http://192.168.4.205:3004"
     ports:
       - "5001:5001"
     volumes:
@@ -60,7 +60,7 @@ services:
     image: ghcr.io/trevordavies095/tempo/frontend:latest
     container_name: tempo-frontend
     ports:
-      - "3000:3000"
+      - "3004:3000"
     depends_on:
       api:
         condition: service_healthy
@@ -76,5 +76,5 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.25.0.0/16
+        - subnet: 10.20.0.0/16
 
