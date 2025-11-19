@@ -935,7 +935,8 @@ public static class WorkoutsEndpoints
             }
 
             // Enable request body buffering to ensure the full request is received before processing
-            request.EnableBuffering();
+            // Use 500MB buffer size to match MaxRequestBodySize and MultipartBodyLengthLimit
+            request.EnableBuffering(500_000_000);
 
             Microsoft.AspNetCore.Http.IFormCollection form;
             try

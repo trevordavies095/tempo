@@ -202,6 +202,24 @@ export interface BulkImportResponse {
   }>;
 }
 
+// Get direct API URL for large file uploads (bypasses Next.js rewrites to avoid 10MB limit)
+function getDirectApiUrl(): string {
+  // Use environment variable if available, otherwise determine based on current host
+  if (typeof window !== 'undefined') {
+    // Client-side: use the same host and port as the current page, but point to API port
+    const host = window.location.hostname;
+    // In Docker, API is on port 5001; in development, also on 5001
+    // If we're accessing via a different port (e.g., 3000 for frontend), use localhost:5001
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:5001';
+    }
+    // In production, assume API is on the same host but port 5001
+    return `${window.location.protocol}//${host}:5001`;
+  }
+  // Server-side fallback
+  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+}
+
 export async function importBulkStravaExport(zipFile: File, unitPreference?: 'metric' | 'imperial'): Promise<BulkImportResponse> {
   const formData = new FormData();
   formData.append('file', zipFile);
@@ -209,7 +227,9 @@ export async function importBulkStravaExport(zipFile: File, unitPreference?: 'me
     formData.append('unitPreference', unitPreference);
   }
 
-  const response = await fetch(`${API_BASE_URL}/workouts/import/bulk`, {
+  // Use direct API URL to bypass Next.js rewrites and avoid 10MB body size limit
+  const directApiUrl = getDirectApiUrl();
+  const response = await fetch(`${directApiUrl}/workouts/import/bulk`, {
     method: 'POST',
     body: formData,
   });
