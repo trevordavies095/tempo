@@ -18,6 +18,8 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - tempo-network
 
   api:
     # Available tags: latest (stable), edge (bleeding edge), v1.0.0 (specific version)
@@ -51,6 +53,8 @@ services:
       retries: 3
       start_period: 40s
     restart: unless-stopped
+    networks:
+      - tempo-network
 
   frontend:
     image: ghcr.io/trevordavies095/tempo/frontend:latest
@@ -61,7 +65,16 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - tempo-network
 
 volumes:
   postgres_data:
+
+networks:
+  tempo-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
 
