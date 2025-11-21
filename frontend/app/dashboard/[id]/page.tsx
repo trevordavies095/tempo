@@ -63,6 +63,13 @@ export default function WorkoutDetailPage() {
     onSuccess: () => {
       // Invalidate and refetch workout data
       queryClient.invalidateQueries({ queryKey: ['workout', id] });
+      // Invalidate all workout list queries (dashboard, activities page, home page)
+      queryClient.invalidateQueries({ queryKey: ['workouts'] });
+      // Invalidate stats queries
+      queryClient.invalidateQueries({ queryKey: ['weeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
       setIsEditingRunType(false);
       setIsEditingNotes(false);
     },
@@ -74,6 +81,11 @@ export default function WorkoutDetailPage() {
       // Invalidate all workout-related queries
       queryClient.invalidateQueries({ queryKey: ['workouts'] });
       queryClient.invalidateQueries({ queryKey: ['workout', id] });
+      // Invalidate stats queries
+      queryClient.invalidateQueries({ queryKey: ['weeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
       // Redirect to dashboard
       router.push('/dashboard');
     },
