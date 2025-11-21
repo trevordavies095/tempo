@@ -123,8 +123,14 @@ export default function DashboardPage() {
   if (selectedWeek) {
     queryParams.startDate = selectedWeek.weekStart;
     queryParams.endDate = selectedWeek.weekEnd;
+  } else {
+    // Apply default 7-day filter when no week is selected
+    const now = new Date();
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(now.getDate() - 7);
+    queryParams.startDate = sevenDaysAgo.toISOString().split('T')[0];
+    queryParams.endDate = now.toISOString().split('T')[0];
   }
-  // If no week selected, backend will apply default 7-day filter
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['workouts', queryParams],
@@ -167,23 +173,6 @@ export default function DashboardPage() {
     );
   }
 
-  if (!data || data.items.length === 0) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
-          <div className="w-full">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Dashboard
-            </h1>
-            <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
-              No workouts found in the last 7 days. <Link href="/import" className="text-blue-600 dark:text-blue-400 hover:underline">Import a GPX file</Link> to get started.
-            </p>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
@@ -193,9 +182,13 @@ export default function DashboardPage() {
               Dashboard
             </h1>
             <p className="text-lg text-gray-600 dark:text-gray-400">
-              {selectedWeek
-                ? `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} for selected week`
-                : `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} in the last 7 days`}
+              {!data || data.items.length === 0
+                ? selectedWeek
+                  ? 'No workouts found for selected week'
+                  : 'No workouts found in the last 7 days'
+                : selectedWeek
+                  ? `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} for selected week`
+                  : `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} in the last 7 days`}
             </p>
           </div>
         </div>
@@ -214,33 +207,51 @@ export default function DashboardPage() {
             <WeeklyStatsWidget />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex flex-col gap-4">
-              {data.items.map((workout) => (
-                <WorkoutCard key={workout.id} workout={workout} />
-              ))}
-            </div>
-            {data.totalPages > 1 && (
-              <div className="w-full mt-8 flex items-center justify-between">
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  Page {data.page} of {data.totalPages}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
-                    disabled={page === data.totalPages}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Next
-                  </button>
-                </div>
+            {!data || data.items.length === 0 ? (
+              <div className="p-8 text-center text-gray-600 dark:text-gray-400">
+                <p className="mb-4">
+                  {selectedWeek
+                    ? 'No workouts found for the selected week.'
+                    : 'No workouts found in the last 7 days.'}
+                </p>
+                <p>
+                  <Link href="/import" className="text-blue-600 dark:text-blue-400 hover:underline">
+                    Import a GPX file
+                  </Link>{' '}
+                  to get started, or select a different week from the chart above.
+                </p>
               </div>
+            ) : (
+              <>
+                <div className="flex flex-col gap-4">
+                  {data.items.map((workout) => (
+                    <WorkoutCard key={workout.id} workout={workout} />
+                  ))}
+                </div>
+                {data.totalPages > 1 && (
+                  <div className="w-full mt-8 flex items-center justify-between">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      Page {data.page} of {data.totalPages}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
+                        disabled={page === data.totalPages}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

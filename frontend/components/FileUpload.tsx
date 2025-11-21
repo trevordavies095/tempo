@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { importWorkoutFile } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
@@ -9,10 +9,18 @@ export function FileUpload() {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { unitPreference } = useSettings();
+  const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: (file: File) => importWorkoutFile(file, unitPreference),
     onSuccess: (data) => {
+      // Invalidate all workout list queries (dashboard, activities page, home page)
+      queryClient.invalidateQueries({ queryKey: ['workouts'] });
+      // Invalidate stats queries
+      queryClient.invalidateQueries({ queryKey: ['weeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
       alert(`Workout imported successfully!\nDistance: ${(data.distanceM / 1000).toFixed(2)} km\nDuration: ${Math.floor(data.durationS / 60)}:${(data.durationS % 60).toString().padStart(2, '0')}`);
       setSelectedFile(null);
     },

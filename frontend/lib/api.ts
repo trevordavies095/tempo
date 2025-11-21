@@ -58,6 +58,10 @@ export interface WorkoutsListParams {
   endDate?: string;
   minDistanceM?: number;
   maxDistanceM?: number;
+  keyword?: string;
+  runType?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
 export interface WorkoutDetail {
@@ -154,6 +158,18 @@ export async function getWorkouts(
   }
   if (params?.maxDistanceM !== undefined) {
     searchParams.set('maxDistanceM', params.maxDistanceM.toString());
+  }
+  if (params?.keyword) {
+    searchParams.set('keyword', params.keyword);
+  }
+  if (params?.runType) {
+    searchParams.set('runType', params.runType);
+  }
+  if (params?.sortBy) {
+    searchParams.set('sortBy', params.sortBy);
+  }
+  if (params?.sortOrder) {
+    searchParams.set('sortOrder', params.sortOrder);
   }
 
   const queryString = searchParams.toString();
