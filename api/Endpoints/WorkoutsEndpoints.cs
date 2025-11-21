@@ -351,20 +351,19 @@ public static class WorkoutsEndpoints
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null,
             [FromQuery] double? minDistanceM = null,
-            [FromQuery] double? maxDistanceM = null) =>
+            [FromQuery] double? maxDistanceM = null,
+            [FromQuery] string? keyword = null,
+            [FromQuery] string? runType = null,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null) =>
         {
             // Validate pagination parameters
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 20;
             if (pageSize > 100) pageSize = 100;
 
-            // Apply default 7-day filter if no date filters provided
-            if (!startDate.HasValue && !endDate.HasValue)
-            {
-                var now = DateTime.UtcNow;
-                endDate = now;
-                startDate = now.AddDays(-7);
-            }
+            // No default date filter - callers should explicitly pass date ranges if needed
+            // This allows the activities page to show all activities by default
 
             // Normalize dates to UTC for PostgreSQL compatibility
             if (startDate.HasValue)
@@ -422,6 +421,23 @@ public static class WorkoutsEndpoints
                 query = query.Where(w => w.DistanceM <= maxDistanceM.Value);
             }
 
+            // Apply keyword search (case-insensitive partial matching across Name, Device, and Source)
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                var keywordPattern = $"%{keyword}%";
+                query = query.Where(w =>
+                    (w.Name != null && EF.Functions.ILike(w.Name, keywordPattern)) ||
+                    (w.Device != null && EF.Functions.ILike(w.Device, keywordPattern)) ||
+                    (w.Source != null && EF.Functions.ILike(w.Source, keywordPattern))
+                );
+            }
+
+            // Apply runType filter
+            if (!string.IsNullOrWhiteSpace(runType))
+            {
+                query = query.Where(w => w.RunType == runType);
+            }
+
             // Get total count before pagination
             var totalCount = await query.CountAsync();
 
@@ -434,9 +450,43 @@ public static class WorkoutsEndpoints
                 return Results.NotFound(new { error = "Page not found" });
             }
 
-            // Apply ordering and pagination
+            // Apply dynamic sorting
+            var isDescending = sortOrder?.ToLower() == "desc" || (string.IsNullOrWhiteSpace(sortOrder) && string.IsNullOrWhiteSpace(sortBy));
+            var sortByLower = sortBy?.ToLower();
+
+            if (sortByLower == "name")
+            {
+                query = isDescending
+                    ? query.OrderByDescending(w => w.Name ?? "")
+                    : query.OrderBy(w => w.Name ?? "");
+            }
+            else if (sortByLower == "duration" || sortByLower == "durations")
+            {
+                query = isDescending
+                    ? query.OrderByDescending(w => w.DurationS)
+                    : query.OrderBy(w => w.DurationS);
+            }
+            else if (sortByLower == "distance" || sortByLower == "distancem")
+            {
+                query = isDescending
+                    ? query.OrderByDescending(w => w.DistanceM)
+                    : query.OrderBy(w => w.DistanceM);
+            }
+            else if (sortByLower == "elevation" || sortByLower == "elevgainm")
+            {
+                query = isDescending
+                    ? query.OrderByDescending(w => w.ElevGainM ?? 0)
+                    : query.OrderBy(w => w.ElevGainM ?? 0);
+            }
+            else // Default: sort by startedAt
+            {
+                query = isDescending
+                    ? query.OrderByDescending(w => w.StartedAt)
+                    : query.OrderBy(w => w.StartedAt);
+            }
+
+            // Apply pagination
             var workouts = await query
-                .OrderByDescending(w => w.StartedAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .AsNoTracking()
@@ -934,7 +984,21 @@ public static class WorkoutsEndpoints
                 return Results.BadRequest(new { error = "Request must be multipart/form-data" });
             }
 
-            var form = await request.ReadFormAsync();
+            // Enable request body buffering to ensure the full request is received before processing
+            // Use 500MB buffer size to match MaxRequestBodySize and MultipartBodyLengthLimit
+            request.EnableBuffering(500_000_000);
+
+            Microsoft.AspNetCore.Http.IFormCollection form;
+            try
+            {
+                form = await request.ReadFormAsync();
+            }
+            catch (Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
+            {
+                logger.LogError(ex, "Request body was incomplete or connection was closed prematurely during bulk import");
+                return Results.BadRequest(new { error = "Upload failed: The request was incomplete. This may be due to a timeout or connection issue. Please try again with a stable connection." });
+            }
+
             var file = form.Files.GetFile("file");
 
             if (file == null || file.Length == 0)

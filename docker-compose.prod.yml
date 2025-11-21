@@ -18,11 +18,12 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - tempo-network
 
   api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
+    # Available tags: latest (stable), edge (bleeding edge), v1.0.0 (specific version)
+    image: ghcr.io/trevordavies095/tempo/api:latest
     container_name: tempo-api
     environment:
       # Database connection
@@ -36,8 +37,8 @@ services:
       # ASP.NET Core
       ASPNETCORE_URLS: "http://+:5001"
       ASPNETCORE_ENVIRONMENT: "Production"
-      # CORS
-      CORS__AllowedOrigins: "http://localhost:3000"
+      # CORS - Allow multiple origins (comma-separated)
+      CORS__AllowedOrigins: "http://localhost:3000,http://localhost:3004,http://192.168.4.205:3004"
     ports:
       - "5001:5001"
     volumes:
@@ -52,20 +53,28 @@ services:
       retries: 3
       start_period: 40s
     restart: unless-stopped
+    networks:
+      - tempo-network
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: "http://localhost:5001"
+    image: ghcr.io/trevordavies095/tempo/frontend:latest
+    container_name: tempo-frontend
     ports:
-      - "3000:3000"
+      - "3004:3000"
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - tempo-network
 
 volumes:
   postgres_data:
+
+networks:
+  tempo-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.20.0.0/16
 
