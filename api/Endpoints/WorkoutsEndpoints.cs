@@ -48,45 +48,62 @@ public static class WorkoutsEndpoints
                 ? 1609.344
                 : 1000.0;
 
-            // Validate file extension
+            // Determine file type from extension
+            string? fileType = null;
             var fileName = file.FileName.ToLowerInvariant();
             bool isGpx = fileName.EndsWith(".gpx");
             bool isFit = fileName.EndsWith(".fit");
             bool isFitGz = fileName.EndsWith(".fit.gz");
 
-            if (!isGpx && !isFit && !isFitGz)
+            if (isGpx)
+            {
+                fileType = "gpx";
+            }
+            else if (isFitGz || isFit)
+            {
+                fileType = "fit";
+            }
+            else
             {
                 return Results.BadRequest(new { error = "File must be a GPX or FIT file (.gpx, .fit, or .fit.gz)" });
             }
 
             try
             {
-                // Parse file based on type
+                // Read file into byte array before parsing
+                byte[] rawFileData;
+                using (var stream = file.OpenReadStream())
+                using (var memoryStream = new MemoryStream())
+                {
+                    await stream.CopyToAsync(memoryStream);
+                    rawFileData = memoryStream.ToArray();
+                }
+
+                // Parse the file based on type
                 GpxParserService.GpxParseResult? parseResult = null;
                 FitParserService.FitParseResult? fitResult = null;
 
-                using (var stream = file.OpenReadStream())
+                if (fileType == "gpx")
                 {
-                    if (isGpx)
+                    using (var stream = new MemoryStream(rawFileData))
                     {
                         parseResult = gpxParser.ParseGpx(stream);
                     }
-                    else if (isFitGz)
+                }
+                else if (fileType == "fit")
+                {
+                    using (var stream = new MemoryStream(rawFileData))
                     {
                         try
                         {
-                            fitResult = fitParser.ParseGzippedFit(stream);
-                        }
-                        catch (NotSupportedException ex)
-                        {
-                            return Results.BadRequest(new { error = ex.Message });
-                        }
-                    }
-                    else if (isFit)
-                    {
-                        try
-                        {
-                            fitResult = fitParser.ParseFit(stream);
+                            if (isFitGz)
+                            {
+                                fitResult = fitParser.ParseGzippedFit(stream);
+                            }
+                            else
+                            {
+                                fitResult = fitParser.ParseFit(stream);
+                            }
                         }
                         catch (NotSupportedException ex)
                         {
@@ -95,7 +112,7 @@ public static class WorkoutsEndpoints
                     }
                 }
 
-                // Use GPX result or convert FIT result
+                // Extract data from parse result
                 DateTime startTime;
                 int durationSeconds;
                 double distanceMeters;
@@ -170,6 +187,9 @@ public static class WorkoutsEndpoints
                     DistanceM = distanceMeters,
                     AvgPaceS = avgPaceS,
                     ElevGainM = elevationGainMeters,
+                    RawFileData = rawFileData,
+                    RawFileName = file.FileName,
+                    RawFileType = fileType,
                     RawGpxData = rawGpxDataJson,
                     RawFitData = rawFitDataJson,
                     Source = isGpx ? "apple_watch" : "fit_import",
@@ -1028,6 +1048,7 @@ public static class WorkoutsEndpoints
             var errors = new List<object>();
             var successful = 0;
             var skipped = 0;
+            var updated = 0;
             var totalProcessed = 0;
 
             try
@@ -1094,24 +1115,60 @@ public static class WorkoutsEndpoints
                             continue;
                         }
 
+                        // Read file into byte array before parsing
+                        byte[] rawFileData;
+                        using (var fileStream = File.OpenRead(filePath))
+                        using (var memoryStream = new MemoryStream())
+                        {
+                            await fileStream.CopyToAsync(memoryStream);
+                            rawFileData = memoryStream.ToArray();
+                        }
+
+                        // Determine file type
+                        string? fileType = null;
+                        if (filePath.EndsWith(".gpx", StringComparison.OrdinalIgnoreCase))
+                        {
+                            fileType = "gpx";
+                        }
+                        else if (filePath.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase))
+                        {
+                            fileType = "fit";
+                        }
+                        else if (filePath.EndsWith(".fit", StringComparison.OrdinalIgnoreCase))
+                        {
+                            fileType = "fit";
+                        }
+                        else
+                        {
+                            errors.Add(new { filename = activity.Filename, error = "Unsupported file format. Only .gpx and .fit/.fit.gz files are supported." });
+                            continue;
+                        }
+
                         // Parse the activity file
                         GpxParserService.GpxParseResult? parseResult = null;
                         FitParserService.FitParseResult? fitResult = null;
 
-                        if (filePath.EndsWith(".gpx", StringComparison.OrdinalIgnoreCase))
+                        if (fileType == "gpx")
                         {
-                            using (var stream = File.OpenRead(filePath))
+                            using (var stream = new MemoryStream(rawFileData))
                             {
                                 parseResult = gpxParser.ParseGpx(stream);
                             }
                         }
-                        else if (filePath.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase))
+                        else if (fileType == "fit")
                         {
                             try
                             {
-                                using (var stream = File.OpenRead(filePath))
+                                using (var stream = new MemoryStream(rawFileData))
                                 {
-                                    fitResult = fitParser.ParseGzippedFit(stream);
+                                    if (filePath.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        fitResult = fitParser.ParseGzippedFit(stream);
+                                    }
+                                    else
+                                    {
+                                        fitResult = fitParser.ParseFit(stream);
+                                    }
                                 }
                             }
                             catch (NotSupportedException ex)
@@ -1119,11 +1176,6 @@ public static class WorkoutsEndpoints
                                 errors.Add(new { filename = activity.Filename, error = ex.Message });
                                 continue;
                             }
-                        }
-                        else
-                        {
-                            errors.Add(new { filename = activity.Filename, error = "Unsupported file format. Only .gpx and .fit.gz files are supported." });
-                            continue;
                         }
 
                         // Use GPX result or convert FIT result
@@ -1164,8 +1216,29 @@ public static class WorkoutsEndpoints
 
                         if (existingWorkout != null)
                         {
-                            skipped++;
-                            logger.LogInformation("Skipped duplicate workout: {Filename} at {StartTime}", activity.Filename, startTime);
+                            // Check if existing workout is missing raw file data
+                            bool needsRawFileUpdate = existingWorkout.RawFileData == null || existingWorkout.RawFileData.Length == 0;
+                            
+                            if (needsRawFileUpdate)
+                            {
+                                // Backfill raw file data for existing workout
+                                existingWorkout.RawFileData = rawFileData;
+                                existingWorkout.RawFileName = Path.GetFileName(activity.Filename);
+                                existingWorkout.RawFileType = fileType;
+                                
+                                // Save the update immediately
+                                await db.SaveChangesAsync();
+                                
+                                updated++;
+                                logger.LogInformation("Updated duplicate workout {WorkoutId} with raw file data: {Filename} at {StartTime}", 
+                                    existingWorkout.Id, activity.Filename, startTime);
+                            }
+                            else
+                            {
+                                skipped++;
+                                logger.LogInformation("Skipped duplicate workout (already has raw file): {Filename} at {StartTime}", 
+                                    activity.Filename, startTime);
+                            }
                             
                             // Still process media files for the existing workout if they don't already exist
                             if (!string.IsNullOrWhiteSpace(activity.Media))
@@ -1306,6 +1379,9 @@ public static class WorkoutsEndpoints
                             Source = "strava_import",
                             Name = !string.IsNullOrWhiteSpace(activity.ActivityName) ? activity.ActivityName : null,
                             Notes = notes,
+                            RawFileData = rawFileData,
+                            RawFileName = Path.GetFileName(activity.Filename),
+                            RawFileType = fileType,
                             RunType = "Easy Run",
                             CreatedAt = DateTime.UtcNow
                         };
@@ -1542,6 +1618,7 @@ public static class WorkoutsEndpoints
                     totalProcessed,
                     successful,
                     skipped,
+                    updated,
                     errors = errors.Count,
                     errorDetails = errors
                 });
