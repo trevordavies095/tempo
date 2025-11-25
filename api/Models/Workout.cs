@@ -83,6 +83,15 @@ public class Workout
     [Column(TypeName = "text")]
     public string? Device { get; set; }  // Device used to record workout (e.g., "Garmin Forerunner 945", "Apple Watch Series 9")
 
+    [Column(TypeName = "bytea")]
+    public byte[]? RawFileData { get; set; }
+
+    [MaxLength(255)]
+    public string? RawFileName { get; set; }
+
+    [MaxLength(10)]
+    public string? RawFileType { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // ============================================
