@@ -36,6 +36,15 @@ public class Workout
     [Column(TypeName = "jsonb")]
     public string? Weather { get; set; }
 
+    [Column(TypeName = "bytea")]
+    public byte[]? RawFileData { get; set; }
+
+    [MaxLength(255)]
+    public string? RawFileName { get; set; }
+
+    [MaxLength(10)]
+    public string? RawFileType { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation properties
