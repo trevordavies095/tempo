@@ -1,33 +1,28 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts';
-import { getWeeklyStats } from '@/lib/api';
+import { getWeeklyStats, getYearlyStats } from '@/lib/api';
+import { formatDistance } from '@/lib/format';
+import { useSettings } from '@/lib/settings';
 
 export default function WeeklyStatsWidget() {
   // Get timezone offset in minutes (negative for timezones ahead of UTC)
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
-  
-  // Detect dark mode
-  const [isDark, setIsDark] = useState(false);
-  useEffect(() => {
-    const checkDarkMode = () => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    };
-    checkDarkMode();
-    const observer = new MutationObserver(checkDarkMode);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-    return () => observer.disconnect();
-  }, []);
+  const { unitPreference } = useSettings();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['weeklyStats', timezoneOffsetMinutes],
     queryFn: () => getWeeklyStats(timezoneOffsetMinutes),
   });
+
+  const { data: yearlyData } = useQuery({
+    queryKey: ['yearlyStats', timezoneOffsetMinutes],
+    queryFn: () => getYearlyStats(timezoneOffsetMinutes),
+  });
+
+  // Calculate current day of week (0=Monday, 6=Sunday)
+  const now = new Date();
+  const currentDayOfWeek = (now.getDay() + 6) % 7;
 
   if (isLoading) {
     return (
@@ -61,50 +56,69 @@ export default function WeeklyStatsWidget() {
     return null;
   }
 
-  // Prepare data for chart: [M, T, W, T, F, S, S]
-  // Ensure all values are numbers
-  const chartData = [
-    { day: 'M', miles: Number(data.dailyMiles[0]) || 0 },
-    { day: 'T', miles: Number(data.dailyMiles[1]) || 0 },
-    { day: 'W', miles: Number(data.dailyMiles[2]) || 0 },
-    { day: 'T', miles: Number(data.dailyMiles[3]) || 0 },
-    { day: 'F', miles: Number(data.dailyMiles[4]) || 0 },
-    { day: 'S', miles: Number(data.dailyMiles[5]) || 0 },
-    { day: 'S', miles: Number(data.dailyMiles[6]) || 0 },
-  ];
+  // Convert miles to meters for formatDistance (which expects meters)
+  const totalWeeklyMiles = data.dailyMiles.reduce((sum, miles) => sum + (Number(miles) || 0), 0);
+  const totalWeeklyMeters = totalWeeklyMiles * 1609.344;
 
-  // Calculate max value for Y-axis (round up to nearest whole number, minimum 1)
-  const maxMiles = Math.max(...chartData.map(d => d.miles), 0);
-  const yAxisMax = maxMiles === 0 ? 1 : Math.max(1, Math.ceil(maxMiles));
+  // Convert miles to the preferred unit for bars
+  const convertMiles = (miles: number) => {
+    if (unitPreference === 'metric') {
+      return miles * 1.609344; // Convert to km
+    }
+    return miles;
+  };
+
+  const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const dailyValues = data.dailyMiles.map(miles => convertMiles(Number(miles) || 0));
+  const maxValue = Math.max(...dailyValues, 0.1); // Minimum 0.1 to avoid division by zero
+  const scaleMax = maxValue * 1.1; // Scale goes 10% higher than max value
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
       <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
         This Week
       </h2>
-      <div style={{ width: '100%', height: '200px', minHeight: '200px' }}>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-            <XAxis
-              dataKey="day"
-              tick={{ fill: 'currentColor' }}
-              style={{ fontSize: '12px' }}
-            />
-            <YAxis
-              domain={[0, yAxisMax]}
-              tick={{ fill: 'currentColor' }}
-              style={{ fontSize: '12px' }}
-              width={40}
-              allowDecimals={false}
-            />
-            <Bar
-              dataKey="miles"
-              fill={isDark ? '#60a5fa' : '#3b82f6'}
-              radius={[4, 4, 0, 0]}
-              isAnimationActive={false}
-            />
-          </BarChart>
-        </ResponsiveContainer>
+      
+      <div className="mb-6">
+        <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+          {formatDistance(totalWeeklyMeters, unitPreference)}
+        </div>
+        {yearlyData && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {new Date().getFullYear()} total: {formatDistance(yearlyData.currentYear * 1609.344, unitPreference)}
+          </div>
+        )}
+      </div>
+
+      <div className="relative pt-2">
+        <div className="flex justify-between items-end gap-1" style={{ height: '80px', marginBottom: '24px' }}>
+          {days.map((day, index) => {
+            const value = dailyValues[index];
+            const barHeightPercent = scaleMax > 0 ? (value / scaleMax) * 100 : 0;
+            // Ensure minimum 5% height for any non-zero value to make small bars visible
+            const barHeight = value > 0 ? Math.max(barHeightPercent, 5) : 0;
+            return (
+              <div key={index} className="flex flex-col items-center justify-end relative flex-1" style={{ height: '100%' }}>
+                <div
+                  className="w-3/4 bg-gray-300 dark:bg-gray-600 rounded-t"
+                  style={{ height: `${barHeight}%`, minHeight: value > 0 ? '4px' : '0' }}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex justify-between items-center relative">
+          {days.map((day, index) => (
+            <div key={index} className="flex flex-col items-center relative flex-1">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {day}
+              </span>
+              {index === currentDayOfWeek && (
+                <div className="absolute top-5 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-orange-500"></div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

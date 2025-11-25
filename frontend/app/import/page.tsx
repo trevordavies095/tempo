@@ -6,20 +6,18 @@ export default function ImportPage() {
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-4xl flex-col items-center justify-start py-16 px-8">
         <div className="w-full mb-8">
-          <div>
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Tempo
-            </h1>
-            <p className="text-lg text-gray-600 dark:text-gray-400">
-              Self-hostable running tracker
-            </p>
-          </div>
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            Import Workouts
+          </h1>
+          <p className="text-lg text-gray-600 dark:text-gray-400">
+            Upload GPX files or bulk import from Strava
+          </p>
         </div>
 
         <div className="w-full space-y-8">
           <div>
             <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Import Single GPX Workout
+              Import Single Workout
             </h2>
             <FileUpload />
           </div>

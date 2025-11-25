@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+const API_BASE_URL = '/api';
 
 export interface WorkoutImportResponse {
   id: string;
@@ -17,9 +17,29 @@ export interface WorkoutListItem {
   distanceM: number;
   avgPaceS: number;
   elevGainM: number | null;
+  elevLossM: number | null;
+  minElevM: number | null;
+  maxElevM: number | null;
+  maxSpeedMps: number | null;
+  avgSpeedMps: number | null;
+  movingTimeS: number | null;
+  maxHeartRateBpm: number | null;
+  avgHeartRateBpm: number | null;
+  minHeartRateBpm: number | null;
+  maxCadenceRpm: number | null;
+  avgCadenceRpm: number | null;
+  maxPowerWatts: number | null;
+  avgPowerWatts: number | null;
+  calories: number | null;
   runType: string | null;
   source: string | null;
+  device: string | null;
+  name: string | null;
   hasRoute: boolean;
+  route: {
+    type: string;
+    coordinates: [number, number][];
+  } | null;
   splitsCount: number;
 }
 
@@ -38,6 +58,10 @@ export interface WorkoutsListParams {
   endDate?: string;
   minDistanceM?: number;
   maxDistanceM?: number;
+  keyword?: string;
+  runType?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
 export interface WorkoutDetail {
@@ -47,10 +71,29 @@ export interface WorkoutDetail {
   distanceM: number;
   avgPaceS: number;
   elevGainM: number | null;
+  elevLossM: number | null;
+  minElevM: number | null;
+  maxElevM: number | null;
+  maxSpeedMps: number | null;
+  avgSpeedMps: number | null;
+  movingTimeS: number | null;
+  maxHeartRateBpm: number | null;
+  avgHeartRateBpm: number | null;
+  minHeartRateBpm: number | null;
+  maxCadenceRpm: number | null;
+  avgCadenceRpm: number | null;
+  maxPowerWatts: number | null;
+  avgPowerWatts: number | null;
+  calories: number | null;
   runType: string | null;
   notes: string | null;
   source: string | null;
+  device: string | null;
+  name: string | null;
   weather: any | null;
+  rawGpxData: any | null;
+  rawFitData: any | null;
+  rawStravaData: any | null;
   createdAt: string;
   route: {
     type: string;
@@ -73,19 +116,20 @@ export interface WorkoutMedia {
   createdAt: string;
 }
 
-export async function importGpxFile(file: File): Promise<WorkoutImportResponse> {
+export async function importWorkoutFile(file: File, unitPreference?: 'metric' | 'imperial'): Promise<WorkoutImportResponse> {
   const formData = new FormData();
   formData.append('file', file);
+  if (unitPreference) {
+    formData.append('unitPreference', unitPreference);
+  }
 
   const response = await fetch(`${API_BASE_URL}/workouts/import`, {
     method: 'POST',
-    mode: 'cors',
-    credentials: 'omit',
     body: formData,
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to import GPX file' }));
+    const error = await response.json().catch(() => ({ error: 'Failed to import workout file' }));
     throw new Error(error.error || `HTTP error! status: ${response.status}`);
   }
 
@@ -114,6 +158,18 @@ export async function getWorkouts(
   }
   if (params?.maxDistanceM !== undefined) {
     searchParams.set('maxDistanceM', params.maxDistanceM.toString());
+  }
+  if (params?.keyword) {
+    searchParams.set('keyword', params.keyword);
+  }
+  if (params?.runType) {
+    searchParams.set('runType', params.runType);
+  }
+  if (params?.sortBy) {
+    searchParams.set('sortBy', params.sortBy);
+  }
+  if (params?.sortOrder) {
+    searchParams.set('sortOrder', params.sortOrder);
   }
 
   const queryString = searchParams.toString();
@@ -162,14 +218,35 @@ export interface BulkImportResponse {
   }>;
 }
 
-export async function importBulkStravaExport(zipFile: File): Promise<BulkImportResponse> {
+// Get direct API URL for large file uploads (bypasses Next.js rewrites to avoid 10MB limit)
+function getDirectApiUrl(): string {
+  // Use environment variable if available, otherwise determine based on current host
+  if (typeof window !== 'undefined') {
+    // Client-side: use the same host and port as the current page, but point to API port
+    const host = window.location.hostname;
+    // In Docker, API is on port 5001; in development, also on 5001
+    // If we're accessing via a different port (e.g., 3000 for frontend), use localhost:5001
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:5001';
+    }
+    // In production, assume API is on the same host but port 5001
+    return `${window.location.protocol}//${host}:5001`;
+  }
+  // Server-side fallback
+  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+}
+
+export async function importBulkStravaExport(zipFile: File, unitPreference?: 'metric' | 'imperial'): Promise<BulkImportResponse> {
   const formData = new FormData();
   formData.append('file', zipFile);
+  if (unitPreference) {
+    formData.append('unitPreference', unitPreference);
+  }
 
-  const response = await fetch(`${API_BASE_URL}/workouts/import/bulk`, {
+  // Use direct API URL to bypass Next.js rewrites and avoid 10MB body size limit
+  const directApiUrl = getDirectApiUrl();
+  const response = await fetch(`${directApiUrl}/workouts/import/bulk`, {
     method: 'POST',
-    mode: 'cors',
-    credentials: 'omit',
     body: formData,
   });
 
@@ -212,6 +289,63 @@ export async function getWorkoutMedia(workoutId: string): Promise<WorkoutMedia[]
 
 export function getWorkoutMediaUrl(workoutId: string, mediaId: string): string {
   return `${API_BASE_URL}/workouts/${workoutId}/media/${mediaId}`;
+}
+
+export async function deleteWorkoutMedia(
+  workoutId: string,
+  mediaId: string
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media/${mediaId}`, {
+    method: 'DELETE',
+  });
+
+  if (response.status === 404) {
+    throw new Error('Media not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to delete media: ${response.status}`);
+  }
+}
+
+export async function uploadWorkoutMedia(
+  workoutId: string,
+  files: File[]
+): Promise<WorkoutMedia[]> {
+  if (files.length === 0) {
+    throw new Error('No files provided');
+  }
+
+  const formData = new FormData();
+  files.forEach((file) => {
+    formData.append('files', file);
+  });
+
+  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (response.status === 404) {
+    throw new Error('Workout not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to upload media: ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  // Handle response format: could be array directly or object with 'uploaded' property
+  if (Array.isArray(data)) {
+    return data;
+  } else if (data.uploaded && Array.isArray(data.uploaded)) {
+    return data.uploaded;
+  } else {
+    throw new Error('Unexpected response format from upload endpoint');
+  }
 }
 
 export interface WeeklyStatsResponse {
@@ -267,5 +401,138 @@ export async function getYearlyStats(timezoneOffsetMinutes?: number): Promise<Ye
   }
 
   return response.json();
+}
+
+export interface YearlyWeeklyStatsItem {
+  weekNumber: number;
+  weekStart: string;
+  weekEnd: string;
+  distanceM: number;
+}
+
+export interface YearlyWeeklyStatsResponse {
+  weeks: YearlyWeeklyStatsItem[];
+  dateRangeStart: string;
+  dateRangeEnd: string;
+}
+
+export async function getYearlyWeeklyStats(
+  periodEndDate?: string,
+  timezoneOffsetMinutes?: number
+): Promise<YearlyWeeklyStatsResponse> {
+  const searchParams = new URLSearchParams();
+  if (periodEndDate) {
+    searchParams.set('periodEndDate', periodEndDate);
+  }
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/workouts/stats/yearly-weekly${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch yearly weekly stats: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface AvailablePeriod {
+  periodEndDate: string;
+  dateRangeStart: string;
+  dateRangeEnd: string;
+  dateRangeLabel: string;
+}
+
+export async function getAvailablePeriods(
+  timezoneOffsetMinutes?: number
+): Promise<AvailablePeriod[]> {
+  const searchParams = new URLSearchParams();
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/workouts/stats/available-periods${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch available periods: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getAvailableYears(): Promise<number[]> {
+  const url = `${API_BASE_URL}/workouts/stats/available-years`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch available years: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface UpdateWorkoutRequest {
+  runType?: string | null;
+  notes?: string | null;
+}
+
+export interface UpdateWorkoutResponse {
+  id: string;
+  runType: string | null;
+  notes: string | null;
+}
+
+export async function updateWorkout(
+  id: string,
+  updates: UpdateWorkoutRequest
+): Promise<UpdateWorkoutResponse> {
+  const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+
+  if (response.status === 404) {
+    throw new Error('Workout not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update workout: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteWorkout(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
+    method: 'DELETE',
+  });
+
+  if (response.status === 404) {
+    throw new Error('Workout not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to delete workout: ${response.status}`);
+  }
 }
 

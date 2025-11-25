@@ -1,20 +1,32 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { getWorkout, getWorkoutMedia, type WorkoutMedia } from '@/lib/api';
-import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
+import Image from 'next/image';
+import { getWorkout, getWorkoutMedia, updateWorkout, deleteWorkout, type WorkoutMedia } from '@/lib/api';
+import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
+import { useSettings } from '@/lib/settings';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
 import { MediaModal } from '@/components/MediaModal';
+import { MediaUpload } from '@/components/MediaUpload';
+import {
+  getWeatherSymbol,
+  formatTemperature,
+  formatWindSpeed,
+  formatWindDirection,
+  getFeelsLikeTemperature,
+  getHumidity,
+  isNightTime,
+} from '@/lib/weather';
 
 // Dynamically import WorkoutMap to avoid SSR issues with Leaflet
 const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center h-96 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+    <div className="flex items-center justify-center h-64 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
       <p className="text-gray-500 dark:text-gray-400">Loading map...</p>
     </div>
   ),
@@ -22,9 +34,17 @@ const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
 
 export default function WorkoutDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
   const [selectedMediaIndex, setSelectedMediaIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditingRunType, setIsEditingRunType] = useState(false);
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState<string>('');
+  const [hoveredSplitIdx, setHoveredSplitIdx] = useState<number | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { unitPreference } = useSettings();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['workout', id],
@@ -37,6 +57,52 @@ export default function WorkoutDetailPage() {
     enabled: !!id, // Fetch media as soon as we have the workout ID
     retry: false, // Don't retry on error - treat as no media
   });
+
+  const updateWorkoutMutation = useMutation({
+    mutationFn: (updates: { runType?: string | null; notes?: string | null }) => updateWorkout(id, updates),
+    onSuccess: () => {
+      // Invalidate and refetch workout data
+      queryClient.invalidateQueries({ queryKey: ['workout', id] });
+      // Invalidate all workout list queries (dashboard, activities page, home page)
+      queryClient.invalidateQueries({ queryKey: ['workouts'] });
+      // Invalidate stats queries
+      queryClient.invalidateQueries({ queryKey: ['weeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
+      setIsEditingRunType(false);
+      setIsEditingNotes(false);
+    },
+  });
+
+  const deleteWorkoutMutation = useMutation({
+    mutationFn: () => deleteWorkout(id),
+    onSuccess: () => {
+      // Invalidate all workout-related queries
+      queryClient.invalidateQueries({ queryKey: ['workouts'] });
+      queryClient.invalidateQueries({ queryKey: ['workout', id] });
+      // Invalidate stats queries
+      queryClient.invalidateQueries({ queryKey: ['weeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
+      // Redirect to dashboard
+      router.push('/dashboard');
+    },
+  });
+
+  const handleDeleteWorkout = () => {
+    if (window.confirm('Are you sure you want to delete this workout? This action cannot be undone.')) {
+      deleteWorkoutMutation.mutate();
+    }
+  };
+
+  // Sync notesValue with data.notes when entering edit mode or data changes
+  useEffect(() => {
+    if (data && isEditingNotes) {
+      setNotesValue(data.notes || '');
+    }
+  }, [data, isEditingNotes]);
 
   // Debug logging for media query
   useEffect(() => {
@@ -51,6 +117,23 @@ export default function WorkoutDetailPage() {
     });
   }, [media, isLoadingMedia, isMediaError, id]);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (isMenuOpen && !target.closest('[data-menu-container]')) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [isMenuOpen]);
+
   const handleMediaClick = (media: WorkoutMedia, index: number) => {
     setSelectedMediaIndex(index);
     setIsModalOpen(true);
@@ -61,12 +144,22 @@ export default function WorkoutDetailPage() {
     setSelectedMediaIndex(null);
   };
 
+  const handleSaveNotes = () => {
+    const trimmedNotes = notesValue.trim() || null;
+    updateWorkoutMutation.mutate({ notes: trimmedNotes });
+  };
+
+  const handleCancelNotes = () => {
+    setIsEditingNotes(false);
+    setNotesValue(data?.notes || '');
+  };
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
+        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
           <div className="w-full">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
               Workout Details
             </h1>
             <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
@@ -82,7 +175,7 @@ export default function WorkoutDetailPage() {
     const isNotFound = error instanceof Error && error.message === 'Workout not found';
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
+        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
           <div className="w-full">
             <Link
               href="/dashboard"
@@ -90,7 +183,7 @@ export default function WorkoutDetailPage() {
             >
               ← Back to Dashboard
             </Link>
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
               Workout Details
             </h1>
             <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
@@ -110,171 +203,567 @@ export default function WorkoutDetailPage() {
 
   return (
     <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
-        <div className="w-full mb-8">
-          <Link
-            href="/dashboard"
-            className="text-blue-600 dark:text-blue-400 hover:underline mb-4 inline-block"
-          >
-            ← Back to Dashboard
-          </Link>
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            Workout Details
-          </h1>
-          <p className="text-lg text-gray-600 dark:text-gray-400">
+      <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
+        <div className="w-full mb-4">
+          <div className="flex items-center gap-2 mb-1" data-menu-container>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+              {getWorkoutDisplayName(data.name, data.startedAt)}
+            </h1>
+            <div className="relative">
+              <button
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                type="button"
+                aria-label="More options"
+                aria-expanded={isMenuOpen}
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                  />
+                </svg>
+              </button>
+              {isMenuOpen && (
+                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-10">
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        handleDeleteWorkout();
+                      }}
+                      disabled={deleteWorkoutMutation.isPending}
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                      type="button"
+                    >
+                      {deleteWorkoutMutation.isPending ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
+                          Delete Workout
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          {deleteWorkoutMutation.isError && (
+            <div className="mb-2">
+              <span className="text-xs text-red-600 dark:text-red-400">
+                {deleteWorkoutMutation.error instanceof Error ? deleteWorkoutMutation.error.message : 'Failed to delete workout'}
+              </span>
+            </div>
+          )}
+          <p className="text-base text-gray-600 dark:text-gray-400">
             {formatDateTime(data.startedAt)}
           </p>
         </div>
 
-        <div className="w-full space-y-8">
-          {/* Main Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Distance</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {formatDistance(data.distanceM)}
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Duration</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {formatDuration(data.durationS)}
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Pace</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {formatPace(data.avgPaceS)}
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Elevation</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {data.elevGainM !== null
-                  ? formatElevation(data.elevGainM)
-                  : '—'}
-              </div>
-            </div>
-          </div>
-
-          {/* Additional Info */}
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Workout Information
-            </h2>
-            <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="w-full space-y-3">
+          {/* Main Content Area - Two Columns */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Left Column - Activity Details */}
+            <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
               <div>
-                <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Run Type</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                  {data.runType || '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Source</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                  {data.source || '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Started At</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
                   {formatDateTime(data.startedAt)}
-                </dd>
+                </p>
               </div>
+
+              {/* Notes/Description */}
               <div>
-                <dt className="text-sm font-medium text-gray-600 dark:text-gray-400">Created At</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                  {formatDateTime(data.createdAt)}
+                <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Description</dt>
+                <dd>
+                  {isEditingNotes ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={notesValue}
+                        onChange={(e) => setNotesValue(e.target.value)}
+                        disabled={updateWorkoutMutation.isPending}
+                        placeholder="Add a description..."
+                        rows={3}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed resize-y"
+                        autoFocus
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleSaveNotes}
+                          disabled={updateWorkoutMutation.isPending}
+                          className="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancelNotes}
+                          disabled={updateWorkoutMutation.isPending}
+                          className="px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        {updateWorkoutMutation.isPending && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Saving...</span>
+                        )}
+                        {updateWorkoutMutation.isError && (
+                          <span className="text-xs text-red-600 dark:text-red-400">
+                            Error: {updateWorkoutMutation.error instanceof Error ? updateWorkoutMutation.error.message : 'Failed to update'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setNotesValue(data.notes || '');
+                        setIsEditingNotes(true);
+                      }}
+                      className="flex items-start gap-2 w-full text-left hover:text-blue-600 dark:hover:text-blue-400 transition-colors group"
+                      type="button"
+                    >
+                      <div className="flex-1 min-w-0">
+                        {data.notes ? (
+                          <p className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+                            {data.notes}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+                            Add a description...
+                          </p>
+                        )}
+                      </div>
+                      <svg
+                        className="w-4 h-4 opacity-0 group-hover:opacity-50 mt-0.5 flex-shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
+                    </button>
+                  )}
                 </dd>
               </div>
-            </dl>
-            {data.notes && (
-              <div className="mt-4">
-                <dt className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Notes</dt>
-                <dd className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
-                  {data.notes}
+
+              {/* Run Type */}
+              <div>
+                <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Run Type</dt>
+                <dd className="text-sm text-gray-900 dark:text-gray-100">
+                  {isEditingRunType ? (
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={data.runType || ''}
+                        onChange={(e) => {
+                          const newValue = e.target.value === '' ? null : e.target.value;
+                          updateWorkoutMutation.mutate({ runType: newValue });
+                        }}
+                        disabled={updateWorkoutMutation.isPending}
+                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        autoFocus
+                      >
+                        <option value="">None</option>
+                        <option value="Easy Run">Easy Run</option>
+                        <option value="Race">Race</option>
+                        <option value="Workout">Workout</option>
+                        <option value="Long Run">Long Run</option>
+                      </select>
+                      <button
+                        onClick={() => setIsEditingRunType(false)}
+                        className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        type="button"
+                        disabled={updateWorkoutMutation.isPending}
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditingRunType(true)}
+                      className="flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                      type="button"
+                    >
+                      <span>{data.runType || 'None'}</span>
+                      <svg
+                        className="w-4 h-4 opacity-50"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                  {updateWorkoutMutation.isPending && (
+                    <span className="ml-2 text-xs text-gray-500">Saving...</span>
+                  )}
+                  {updateWorkoutMutation.isError && (
+                    <span className="ml-2 text-xs text-red-600 dark:text-red-400">
+                      Error: {updateWorkoutMutation.error instanceof Error ? updateWorkoutMutation.error.message : 'Failed to update'}
+                    </span>
+                  )}
                 </dd>
               </div>
-            )}
-            <WorkoutMediaGallery
-              workoutId={id}
-              media={isMediaError ? [] : media}
-              isLoading={isLoadingMedia}
-              onMediaClick={handleMediaClick}
-            />
+
+              {/* Device */}
+              {data.device && (
+                <div>
+                  <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Device</dt>
+                  <dd className="text-sm text-gray-900 dark:text-gray-100">
+                    {data.device}
+                  </dd>
+                </div>
+              )}
+
+              {/* Source */}
+              {data.source && (
+                <div>
+                  <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Source</dt>
+                  <dd className="text-sm text-gray-900 dark:text-gray-100">
+                    {data.source}
+                  </dd>
+                </div>
+              )}
+
+              {/* Media Upload and Gallery */}
+              <div>
+                <MediaUpload
+                  workoutId={id}
+                  onUploadSuccess={() => {
+                    queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
+                  }}
+                />
+                <div className="mt-2">
+                  <WorkoutMediaGallery
+                    workoutId={id}
+                    media={isMediaError ? [] : media}
+                    isLoading={isLoadingMedia}
+                    onMediaClick={handleMediaClick}
+                    onDeleteSuccess={() => {
+                      queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column - Stats and Weather */}
+            <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
+              {/* Key Metrics */}
+              <div>
+                <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Key Metrics</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Distance</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                      {formatDistance(data.distanceM, unitPreference)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      {data.movingTimeS !== null && data.movingTimeS !== data.durationS ? 'Moving Time' : 'Duration'}
+                    </div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                      {data.movingTimeS !== null && data.movingTimeS !== data.durationS 
+                        ? formatDuration(data.movingTimeS)
+                        : formatDuration(data.durationS)}
+                    </div>
+                    {data.movingTimeS !== null && data.movingTimeS !== data.durationS && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Elapsed: {formatDuration(data.durationS)}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Pace</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                      {formatPace(data.avgPaceS, unitPreference)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Additional Details and Weather - Side by Side */}
+              {(() => {
+                const hasAdditionalDetails = data.elevGainM !== null || data.calories !== null || 
+                  data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null ||
+                  data.maxCadenceRpm !== null || data.avgCadenceRpm !== null ||
+                  data.maxPowerWatts !== null || data.avgPowerWatts !== null;
+                const hasWeather = !!data.weather;
+                const bothExist = hasAdditionalDetails && hasWeather;
+
+                return (hasAdditionalDetails || hasWeather) ? (
+                  <div className={bothExist ? "grid grid-cols-1 md:grid-cols-2 gap-3" : ""}>
+                    {/* Additional Details */}
+                    {hasAdditionalDetails && (
+                      <div>
+                        <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Additional Details</h3>
+                        <div className="space-y-1.5">
+                          {data.elevGainM !== null && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Elevation</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {formatElevation(data.elevGainM, unitPreference)}
+                              </span>
+                            </div>
+                          )}
+                          {data.movingTimeS !== null && data.movingTimeS !== data.durationS && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Elapsed Time</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {formatDuration(data.durationS)}
+                              </span>
+                            </div>
+                          )}
+                          {data.calories !== null && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Calories</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {data.calories}
+                              </span>
+                            </div>
+                          )}
+                          {(data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null) && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Heart Rate</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {data.maxHeartRateBpm !== null && data.avgHeartRateBpm !== null
+                                  ? `${data.maxHeartRateBpm} / ${data.avgHeartRateBpm} bpm`
+                                  : data.maxHeartRateBpm !== null
+                                  ? `${data.maxHeartRateBpm} bpm`
+                                  : `${data.avgHeartRateBpm} bpm`}
+                              </span>
+                            </div>
+                          )}
+                          {(data.maxCadenceRpm !== null || data.avgCadenceRpm !== null) && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Cadence</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {data.maxCadenceRpm !== null && data.avgCadenceRpm !== null
+                                  ? `${data.maxCadenceRpm} / ${data.avgCadenceRpm} rpm`
+                                  : data.maxCadenceRpm !== null
+                                  ? `${data.maxCadenceRpm} rpm`
+                                  : `${data.avgCadenceRpm} rpm`}
+                              </span>
+                            </div>
+                          )}
+                          {(data.maxPowerWatts !== null || data.avgPowerWatts !== null) && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Power</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {data.maxPowerWatts !== null && data.avgPowerWatts !== null
+                                  ? `${data.maxPowerWatts} / ${data.avgPowerWatts} W`
+                                  : data.maxPowerWatts !== null
+                                  ? `${data.maxPowerWatts} W`
+                                  : `${data.avgPowerWatts} W`}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Weather Information */}
+                    {hasWeather && (() => {
+                      const isNight = isNightTime(data.startedAt);
+                      const symbolFilename = getWeatherSymbol(data.weather.weatherCode, isNight);
+                      const symbolPath = `/weather-symbols/${symbolFilename}`;
+                      const conditionText = data.weather.condition || 'Unknown';
+                      const feelsLike = getFeelsLikeTemperature(data.weather);
+                      const humidity = getHumidity(data.weather);
+
+                      return (
+                        <div>
+                          <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Weather</h3>
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                                <div className="relative w-4 h-4 flex-shrink-0">
+                                  <Image
+                                    src={symbolPath}
+                                    alt={conditionText}
+                                    fill
+                                    className="object-contain"
+                                    unoptimized
+                                  />
+                                </div>
+                                Condition
+                              </span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {conditionText}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Temperature</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {formatTemperature(data.weather.temperature, unitPreference)}
+                              </span>
+                            </div>
+                            {humidity !== undefined && humidity !== null && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Humidity</span>
+                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                  {Math.round(humidity)}%
+                                </span>
+                              </div>
+                            )}
+                            {feelsLike !== undefined && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Feels like</span>
+                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                  {formatTemperature(feelsLike, unitPreference)}
+                                </span>
+                              </div>
+                            )}
+                            {data.weather.windSpeed !== undefined && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Wind Speed</span>
+                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                  {formatWindSpeed(data.weather.windSpeed, unitPreference)}
+                                </span>
+                              </div>
+                            )}
+                            {data.weather.windDirection !== undefined && data.weather.windDirection !== null && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Wind Direction</span>
+                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                  {formatWindDirection(data.weather.windDirection)} ({Math.round(data.weather.windDirection)}°)
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : null;
+              })()}
+            </div>
           </div>
 
-          {/* Splits Table */}
-          {data.splits && data.splits.length > 0 && (
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                Splits ({data.splits.length})
-              </h2>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b border-gray-200 dark:border-gray-800">
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        Split
-                      </th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        Distance
-                      </th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        Duration
-                      </th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        Pace
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.splits.map((split) => (
-                      <tr
-                        key={`split-${split.idx}`}
-                        className="border-b border-gray-100 dark:border-gray-900"
-                      >
-                        <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                          {split.idx + 1}
-                        </td>
-                        <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                          {formatDistance(split.distanceM)}
-                        </td>
-                        <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                          {formatDuration(split.durationS)}
-                        </td>
-                        <td className="py-3 px-4 text-gray-700 dark:text-gray-300">
-                          {formatPace(split.paceS)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          {/* Lower Section - Splits and Map */}
+          {(data.splits && data.splits.length > 0) || data.route ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Splits Table */}
+              {data.splits && data.splits.length > 0 && (
+                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                    Splits ({data.splits.length})
+                  </h2>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="border-b border-gray-200 dark:border-gray-800">
+                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                            Split
+                          </th>
+                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                            Distance
+                          </th>
+                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                            Duration
+                          </th>
+                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                            Pace
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.splits.map((split) => (
+                          <tr
+                            key={`split-${split.idx}`}
+                            className="border-b border-gray-100 dark:border-gray-900 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                            onMouseEnter={() => setHoveredSplitIdx(split.idx)}
+                            onMouseLeave={() => setHoveredSplitIdx(null)}
+                          >
+                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
+                              {split.idx + 1}
+                            </td>
+                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
+                              {formatDistance(split.distanceM, unitPreference)}
+                            </td>
+                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
+                              {formatDuration(split.durationS)}
+                            </td>
+                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
+                              {formatPace(split.paceS, unitPreference)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
-          {/* Weather Data */}
-          {data.weather && (
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                Weather
-              </h2>
-              <pre className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 p-4 rounded overflow-x-auto">
-                {JSON.stringify(data.weather, null, 2)}
-              </pre>
+              {/* Route Map */}
+              {data.route && (
+                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                    Route Map
+                  </h2>
+                  <WorkoutMap 
+                    key={data.id} 
+                    route={data.route} 
+                    workoutId={data.id}
+                    splits={data.splits}
+                    hoveredSplitIdx={hoveredSplitIdx}
+                  />
+                </div>
+              )}
             </div>
-          )}
-
-          {/* Route Map */}
-          {data.route && (
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                Route Map
-              </h2>
-              <WorkoutMap key={data.id} route={data.route} workoutId={data.id} />
-            </div>
-          )}
+          ) : null}
         </div>
 
         {/* Media Modal */}
@@ -285,6 +774,14 @@ export default function WorkoutDetailPage() {
             workoutId={id}
             isOpen={isModalOpen}
             onClose={handleCloseModal}
+            onDeleteSuccess={() => {
+              queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
+              // If modal closes after deleting last item, reset state
+              if (media && media.length <= 1) {
+                setIsModalOpen(false);
+                setSelectedMediaIndex(null);
+              }
+            }}
           />
         )}
       </main>

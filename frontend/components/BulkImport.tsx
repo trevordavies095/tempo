@@ -1,17 +1,27 @@
 'use client';
 
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { importBulkStravaExport, type BulkImportResponse } from '@/lib/api';
+import { useSettings } from '@/lib/settings';
 
 export function BulkImport() {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<BulkImportResponse | null>(null);
+  const { unitPreference } = useSettings();
+  const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: importBulkStravaExport,
+    mutationFn: (file: File) => importBulkStravaExport(file, unitPreference),
     onSuccess: (data) => {
+      // Invalidate all workout list queries (dashboard, activities page, home page)
+      queryClient.invalidateQueries({ queryKey: ['workouts'] });
+      // Invalidate stats queries
+      queryClient.invalidateQueries({ queryKey: ['weeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
+      queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
       setImportResult(data);
       setSelectedFile(null);
     },
@@ -68,7 +78,7 @@ export function BulkImport() {
         mutation.mutate(selectedFile);
       }
     },
-    [selectedFile, mutation]
+    [selectedFile, mutation, unitPreference]
   );
 
   return (

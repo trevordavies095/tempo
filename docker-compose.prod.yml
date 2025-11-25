@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tempo-postgres
+    environment:
+      POSTGRES_DB: tempo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - tempo-network
+
+  api:
+    # Available tags: latest (stable), edge (bleeding edge), v1.0.0 (specific version)
+    image: ghcr.io/trevordavies095/tempo/api:latest
+    container_name: tempo-api
+    environment:
+      # Database connection
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=tempo;Username=postgres;Password=postgres"
+      # Media storage
+      MediaStorage__RootPath: "/app/media"
+      MediaStorage__MaxFileSizeBytes: "52428800"
+      # Elevation calculation
+      ElevationCalculation__NoiseThresholdMeters: "2.0"
+      ElevationCalculation__MinDistanceMeters: "10.0"
+      # ASP.NET Core
+      ASPNETCORE_URLS: "http://+:5001"
+      ASPNETCORE_ENVIRONMENT: "Production"
+      # CORS - Allow multiple origins (comma-separated)
+      CORS__AllowedOrigins: "http://localhost:3000,http://localhost:3004,http://192.168.4.205:3004"
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./media:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - tempo-network
+
+  frontend:
+    image: ghcr.io/trevordavies095/tempo/frontend:latest
+    container_name: tempo-frontend
+    ports:
+      - "3004:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - tempo-network
+
+volumes:
+  postgres_data:
+
+networks:
+  tempo-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.20.0.0/16
+
