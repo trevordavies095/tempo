@@ -9,6 +9,13 @@ namespace Tempo.Api.Endpoints;
 
 public static class WorkoutsEndpoints
 {
+    // Result class for file processing
+    private class FileProcessResult
+    {
+        public string Action { get; set; } = "created"; // "created", "updated", "skipped", "error"
+        public string? ErrorMessage { get; set; }
+        public object? Response { get; set; }
+    }
     public static void MapWorkoutsEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/workouts")
@@ -28,11 +35,11 @@ public static class WorkoutsEndpoints
             }
 
             var form = await request.ReadFormAsync();
-            var file = form.Files.GetFile("file");
+            var files = form.Files.GetFiles("file");
 
-            if (file == null || file.Length == 0)
+            if (files == null || files.Count == 0)
             {
-                return Results.BadRequest(new { error = "No file uploaded" });
+                return Results.BadRequest(new { error = "No files uploaded" });
             }
 
             // Read unit preference from form (default to "metric" for backward compatibility)
@@ -47,6 +54,102 @@ public static class WorkoutsEndpoints
             var splitDistanceMeters = unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
                 ? 1609.344
                 : 1000.0;
+
+            // Handle single file for backward compatibility
+            if (files.Count == 1)
+            {
+                var singleFileResult = await ProcessSingleFile(
+                    files[0],
+                    db,
+                    gpxParser,
+                    fitParser,
+                    weatherService,
+                    splitDistanceMeters,
+                    logger);
+
+                // Return single file response format for backward compatibility
+                if (singleFileResult.Action == "error")
+                {
+                    return Results.BadRequest(new { error = singleFileResult.ErrorMessage ?? "Error processing file" });
+                }
+                return Results.Ok(singleFileResult.Response);
+            }
+
+            // Handle multiple files
+            var successful = 0;
+            var skipped = 0;
+            var updated = 0;
+            var errors = new List<object>();
+            var totalProcessed = files.Count;
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    var result = await ProcessSingleFile(
+                        file,
+                        db,
+                        gpxParser,
+                        fitParser,
+                        weatherService,
+                        splitDistanceMeters,
+                        logger);
+
+                    if (result.Action == "error")
+                    {
+                        errors.Add(new { filename = file.FileName, error = result.ErrorMessage ?? "Unknown error" });
+                    }
+                    else if (result.Action == "created")
+                    {
+                        successful++;
+                    }
+                    else if (result.Action == "updated")
+                    {
+                        updated++;
+                    }
+                    else if (result.Action == "skipped")
+                    {
+                        skipped++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error processing file {FileName}", file.FileName);
+                    errors.Add(new { filename = file.FileName, error = ex.Message });
+                }
+            }
+
+            return Results.Ok(new
+            {
+                totalProcessed,
+                successful,
+                skipped,
+                updated,
+                errors = errors.Count,
+                errorDetails = errors
+            });
+        })
+        .Accepts<IFormFile>("multipart/form-data")
+        .Produces(200)
+        .Produces(400)
+        .Produces(500)
+        .WithSummary("Import workout file(s)")
+        .WithDescription("Uploads and processes one or more GPX or FIT files (.gpx, .fit, or .fit.gz), extracting workout data and saving it to the database. Supports multiple files for batch import.");
+
+        // Helper method to process a single file
+        static async Task<FileProcessResult> ProcessSingleFile(
+            IFormFile file,
+            TempoDbContext db,
+            GpxParserService gpxParser,
+            FitParserService fitParser,
+            WeatherService weatherService,
+            double splitDistanceMeters,
+            ILogger logger)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return new FileProcessResult { Action = "error", ErrorMessage = "File is empty" };
+            }
 
             // Determine file type from extension
             string? fileType = null;
@@ -65,7 +168,7 @@ public static class WorkoutsEndpoints
             }
             else
             {
-                return Results.BadRequest(new { error = "File must be a GPX or FIT file (.gpx, .fit, or .fit.gz)" });
+                return new FileProcessResult { Action = "error", ErrorMessage = "File must be a GPX or FIT file (.gpx, .fit, or .fit.gz)" };
             }
 
             try
@@ -107,7 +210,7 @@ public static class WorkoutsEndpoints
                         }
                         catch (NotSupportedException ex)
                         {
-                            return Results.BadRequest(new { error = ex.Message });
+                            return new FileProcessResult { Action = "error", ErrorMessage = ex.Message };
                         }
                     }
                 }
@@ -141,7 +244,7 @@ public static class WorkoutsEndpoints
                 }
                 else
                 {
-                    return Results.BadRequest(new { error = "Failed to parse file" });
+                    return new FileProcessResult { Action = "error", ErrorMessage = "Failed to parse file" };
                 }
 
                 // Calculate average pace (seconds per km - stored in metric)
@@ -213,17 +316,21 @@ public static class WorkoutsEndpoints
                         logger.LogInformation("Updated duplicate workout {WorkoutId} with raw file data: {Filename} at {StartTime}", 
                             existingWorkout.Id, file.FileName, startedAtUtc);
                         
-                        return Results.Ok(new
+                        return new FileProcessResult
                         {
-                            id = existingWorkout.Id,
-                            startedAt = existingWorkout.StartedAt,
-                            durationS = existingWorkout.DurationS,
-                            distanceM = existingWorkout.DistanceM,
-                            avgPaceS = existingWorkout.AvgPaceS,
-                            elevGainM = existingWorkout.ElevGainM,
-                            action = "updated",
-                            message = "Workout already exists and was updated with raw file data"
-                        });
+                            Action = "updated",
+                            Response = new
+                            {
+                                id = existingWorkout.Id,
+                                startedAt = existingWorkout.StartedAt,
+                                durationS = existingWorkout.DurationS,
+                                distanceM = existingWorkout.DistanceM,
+                                avgPaceS = existingWorkout.AvgPaceS,
+                                elevGainM = existingWorkout.ElevGainM,
+                                action = "updated",
+                                message = "Workout already exists and was updated with raw file data"
+                            }
+                        };
                     }
                     else
                     {
@@ -231,17 +338,21 @@ public static class WorkoutsEndpoints
                         logger.LogInformation("Skipped duplicate workout (already has raw file): {Filename} at {StartTime}", 
                             file.FileName, startedAtUtc);
                         
-                        return Results.Ok(new
+                        return new FileProcessResult
                         {
-                            id = existingWorkout.Id,
-                            startedAt = existingWorkout.StartedAt,
-                            durationS = existingWorkout.DurationS,
-                            distanceM = existingWorkout.DistanceM,
-                            avgPaceS = existingWorkout.AvgPaceS,
-                            elevGainM = existingWorkout.ElevGainM,
-                            action = "skipped",
-                            message = "Workout already exists and has raw file data"
-                        });
+                            Action = "skipped",
+                            Response = new
+                            {
+                                id = existingWorkout.Id,
+                                startedAt = existingWorkout.StartedAt,
+                                durationS = existingWorkout.DurationS,
+                                distanceM = existingWorkout.DistanceM,
+                                avgPaceS = existingWorkout.AvgPaceS,
+                                elevGainM = existingWorkout.ElevGainM,
+                                action = "skipped",
+                                message = "Workout already exists and has raw file data"
+                            }
+                        };
                     }
                 }
 
@@ -402,28 +513,29 @@ public static class WorkoutsEndpoints
 
                 logger.LogInformation("Imported workout {WorkoutId} with {Distance} meters", workout.Id, workout.DistanceM);
 
-                return Results.Ok(new
+                return new FileProcessResult
                 {
-                    id = workout.Id,
-                    startedAt = workout.StartedAt,
-                    durationS = workout.DurationS,
-                    distanceM = workout.DistanceM,
-                    avgPaceS = workout.AvgPaceS,
-                    elevGainM = workout.ElevGainM,
-                    splitsCount = splits.Count,
-                    action = "created",
-                    message = "Workout imported successfully"
-                });
+                    Action = "created",
+                    Response = new
+                    {
+                        id = workout.Id,
+                        startedAt = workout.StartedAt,
+                        durationS = workout.DurationS,
+                        distanceM = workout.DistanceM,
+                        avgPaceS = workout.AvgPaceS,
+                        elevGainM = workout.ElevGainM,
+                        splitsCount = splits.Count,
+                        action = "created",
+                        message = "Workout imported successfully"
+                    }
+                };
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error importing workout file");
-                return Results.Problem(
-                    detail: ex.Message,
-                    statusCode: 500,
-                    title: "Error processing workout file"
-                );
+                return new FileProcessResult { Action = "error", ErrorMessage = ex.Message };
             }
+        }
         })
         .Accepts<IFormFile>("multipart/form-data")
         .Produces(200)
