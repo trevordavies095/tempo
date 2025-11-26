@@ -3,6 +3,7 @@
 > A privacy-first, self-hosted Strava alternative. Import GPX, FIT, and CSV files from Garmin, Apple Watch, Strava, and more. Keep all your data local—no subscriptions, no cloud required.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Version](https://img.shields.io/badge/version-1.0.0-green.svg)
 ![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 
@@ -124,7 +125,7 @@ your-strava-export.zip
 
 ## Deployment
 
-For production deployment, see [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed instructions including Docker image configuration, environment variables, and reverse proxy setup.
+For production deployment, use Docker Compose with the provided `docker-compose.prod.yml` file. Configure environment variables as needed for your deployment environment.
 
 ## API
 
