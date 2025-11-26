@@ -294,12 +294,6 @@ export default function WorkoutDetailPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {/* Left Column - Activity Details */}
             <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
-              <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {formatDateTime(data.startedAt)}
-                </p>
-              </div>
-
               {/* Notes/Description */}
               <div>
                 <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Description</dt>
@@ -503,7 +497,7 @@ export default function WorkoutDetailPage() {
               {/* Key Metrics */}
               <div>
                 <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Key Metrics</h3>
-                <div className="grid grid-cols-3 gap-3">
+                <div className={`grid gap-3 ${data.relativeEffort !== null ? 'grid-cols-4' : 'grid-cols-3'}`}>
                   <div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Distance</div>
                     <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -531,6 +525,14 @@ export default function WorkoutDetailPage() {
                       {formatPace(data.avgPaceS, unitPreference)}
                     </div>
                   </div>
+                  {data.relativeEffort !== null && (
+                    <div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Relative Effort</div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                        {data.relativeEffort}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
