@@ -170,7 +170,6 @@ public static class WorkoutsEndpoints
                     }
                 }
 
-                // Create workout
                 // Ensure StartedAt is UTC (defensive conversion)
                 var startedAtUtc = startTime.Kind switch
                 {
@@ -179,6 +178,74 @@ public static class WorkoutsEndpoints
                     _ => DateTime.SpecifyKind(startTime, DateTimeKind.Utc)
                 };
 
+                // Check for duplicate using database query
+                var existingWorkout = await db.Workouts
+                    .Where(w => w.StartedAt == startedAtUtc &&
+                                Math.Abs(w.DistanceM - distanceMeters) < 1.0 &&
+                                Math.Abs(w.DurationS - durationSeconds) < 1)
+                    .FirstOrDefaultAsync();
+
+                if (existingWorkout != null)
+                {
+                    // Check if existing workout is missing raw file data
+                    bool needsRawFileUpdate = existingWorkout.RawFileData == null || existingWorkout.RawFileData.Length == 0;
+                    
+                    if (needsRawFileUpdate)
+                    {
+                        // Backfill raw file data for existing workout
+                        existingWorkout.RawFileData = rawFileData;
+                        existingWorkout.RawFileName = file.FileName;
+                        existingWorkout.RawFileType = fileType;
+                        
+                        // Also update RawGpxData and RawFitData if available
+                        if (!string.IsNullOrEmpty(rawGpxDataJson))
+                        {
+                            existingWorkout.RawGpxData = rawGpxDataJson;
+                        }
+                        if (!string.IsNullOrEmpty(rawFitDataJson))
+                        {
+                            existingWorkout.RawFitData = rawFitDataJson;
+                        }
+                        
+                        // Save the update immediately
+                        await db.SaveChangesAsync();
+                        
+                        logger.LogInformation("Updated duplicate workout {WorkoutId} with raw file data: {Filename} at {StartTime}", 
+                            existingWorkout.Id, file.FileName, startedAtUtc);
+                        
+                        return Results.Ok(new
+                        {
+                            id = existingWorkout.Id,
+                            startedAt = existingWorkout.StartedAt,
+                            durationS = existingWorkout.DurationS,
+                            distanceM = existingWorkout.DistanceM,
+                            avgPaceS = existingWorkout.AvgPaceS,
+                            elevGainM = existingWorkout.ElevGainM,
+                            action = "updated",
+                            message = "Workout already exists and was updated with raw file data"
+                        });
+                    }
+                    else
+                    {
+                        // Duplicate exists and already has raw file data
+                        logger.LogInformation("Skipped duplicate workout (already has raw file): {Filename} at {StartTime}", 
+                            file.FileName, startedAtUtc);
+                        
+                        return Results.Ok(new
+                        {
+                            id = existingWorkout.Id,
+                            startedAt = existingWorkout.StartedAt,
+                            durationS = existingWorkout.DurationS,
+                            distanceM = existingWorkout.DistanceM,
+                            avgPaceS = existingWorkout.AvgPaceS,
+                            elevGainM = existingWorkout.ElevGainM,
+                            action = "skipped",
+                            message = "Workout already exists and has raw file data"
+                        });
+                    }
+                }
+
+                // Create workout (no duplicate found)
                 var workout = new Workout
                 {
                     Id = Guid.NewGuid(),
@@ -343,7 +410,9 @@ public static class WorkoutsEndpoints
                     distanceM = workout.DistanceM,
                     avgPaceS = workout.AvgPaceS,
                     elevGainM = workout.ElevGainM,
-                    splitsCount = splits.Count
+                    splitsCount = splits.Count,
+                    action = "created",
+                    message = "Workout imported successfully"
                 });
             }
             catch (Exception ex)
