@@ -376,6 +376,17 @@ export interface WeeklyStatsResponse {
   dailyMiles: number[]; // [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
 }
 
+export interface RelativeEffortStatsResponse {
+  weekStart: string;
+  weekEnd: string;
+  currentWeek: number[]; // Cumulative relative effort [Monday, Tuesday, ..., Sunday]
+  previousWeeks: number[]; // Total relative effort for each of the 3 previous weeks
+  threeWeekAverage: number;
+  rangeMin: number;
+  rangeMax: number;
+  currentWeekTotal: number;
+}
+
 export interface YearlyStatsResponse {
   currentYear: number;
   previousYear: number;
@@ -399,6 +410,27 @@ export async function getWeeklyStats(timezoneOffsetMinutes?: number): Promise<We
 
   if (!response.ok) {
     throw new Error(`Failed to fetch weekly stats: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getRelativeEffortStats(timezoneOffsetMinutes?: number): Promise<RelativeEffortStatsResponse> {
+  const searchParams = new URLSearchParams();
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/workouts/stats/relative-effort${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch relative effort stats: ${response.status}`);
   }
 
   return response.json();
