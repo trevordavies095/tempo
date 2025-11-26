@@ -16,6 +16,8 @@ import { RecalculateEffortDialog } from '@/components/RecalculateEffortDialog';
 import { ZoneUpdateDialog } from '@/components/ZoneUpdateDialog';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { getVersion } from '@/lib/api';
 
 export default function SettingsPage() {
   const { unitPreference, setUnitPreference } = useSettings();
@@ -49,6 +51,14 @@ export default function SettingsPage() {
   const [showZoneUpdateDialog, setShowZoneUpdateDialog] = useState(false);
   const [zoneUpdateWorkoutCount, setZoneUpdateWorkoutCount] = useState<number | null>(null);
   const [isZoneUpdating, setIsZoneUpdating] = useState(false);
+
+  // Fetch version information
+  const { data: versionInfo } = useQuery({
+    queryKey: ['version'],
+    queryFn: getVersion,
+    staleTime: Infinity, // Version doesn't change during session
+    retry: 1, // Only retry once if it fails
+  });
 
   // Load heart rate zones on mount
   useEffect(() => {
@@ -545,6 +555,20 @@ export default function SettingsPage() {
               <li>Splits will be calculated and displayed based on your unit preference (1 km splits for metric, 1 mile splits for imperial).</li>
             </ul>
           </div>
+
+          {/* Version Information */}
+          {versionInfo && (
+            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800">
+              <div className="text-center text-sm text-gray-500 dark:text-gray-400">
+                <div className="font-mono">v{versionInfo.version}</div>
+                {versionInfo.buildDate && versionInfo.buildDate !== 'unknown' && (
+                  <div className="text-xs mt-1">
+                    Built {new Date(versionInfo.buildDate).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </main>
       
