@@ -116,9 +116,29 @@ export interface WorkoutMedia {
   createdAt: string;
 }
 
-export async function importWorkoutFile(file: File, unitPreference?: 'metric' | 'imperial'): Promise<WorkoutImportResponse> {
+export interface WorkoutImportSummaryResponse {
+  totalProcessed: number;
+  successful: number;
+  skipped: number;
+  updated: number;
+  errors: number;
+  errorDetails: Array<{ filename: string; error: string }>;
+}
+
+export async function importWorkoutFile(
+  files: File | File[], 
+  unitPreference?: 'metric' | 'imperial'
+): Promise<WorkoutImportResponse | WorkoutImportSummaryResponse> {
   const formData = new FormData();
-  formData.append('file', file);
+  
+  // Handle both single file (backward compat) and multiple files
+  const fileArray = Array.isArray(files) ? files : [files];
+  
+  // Append all files with the same field name to support multiple files
+  fileArray.forEach(file => {
+    formData.append('file', file);
+  });
+  
   if (unitPreference) {
     formData.append('unitPreference', unitPreference);
   }
