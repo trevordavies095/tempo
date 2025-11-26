@@ -5,6 +5,7 @@ import { formatDistance, formatPace, formatElevation } from '@/lib/format';
 import { 
   getHeartRateZones, 
   updateHeartRateZones,
+  updateHeartRateZonesWithRecalc,
   recalculateAllRelativeEffort,
   getQualifyingWorkoutCount,
   type HeartRateZoneSettings,
@@ -12,6 +13,7 @@ import {
   type UpdateHeartRateZoneSettingsRequest
 } from '@/lib/api';
 import { RecalculateEffortDialog } from '@/components/RecalculateEffortDialog';
+import { ZoneUpdateDialog } from '@/components/ZoneUpdateDialog';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -42,6 +44,11 @@ export default function SettingsPage() {
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [recalcError, setRecalcError] = useState<string | null>(null);
   const [recalcSuccess, setRecalcSuccess] = useState(false);
+  
+  // Zone Update Dialog state (for subsequent updates)
+  const [showZoneUpdateDialog, setShowZoneUpdateDialog] = useState(false);
+  const [zoneUpdateWorkoutCount, setZoneUpdateWorkoutCount] = useState<number | null>(null);
+  const [isZoneUpdating, setIsZoneUpdating] = useState(false);
 
   // Load heart rate zones on mount
   useEffect(() => {
@@ -119,7 +126,7 @@ export default function SettingsPage() {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
       
-      // If this is first time setup, show confirmation dialog
+      // If this is first time setup, show confirmation dialog for recalculation
       if (updated.isFirstTimeSetup) {
         // Fetch workout count first
         try {
@@ -130,6 +137,16 @@ export default function SettingsPage() {
           setRecalcWorkoutCount(null);
         }
         setShowRecalcDialog(true);
+      } else {
+        // Subsequent update: show dialog with options
+        try {
+          const countResponse = await getQualifyingWorkoutCount();
+          setZoneUpdateWorkoutCount(countResponse.count);
+        } catch (error) {
+          // If we can't get the count, still show dialog with null count
+          setZoneUpdateWorkoutCount(null);
+        }
+        setShowZoneUpdateDialog(true);
       }
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Failed to save heart rate zones');
@@ -171,6 +188,33 @@ export default function SettingsPage() {
     } finally {
       setIsRecalculating(false);
     }
+  };
+
+  const handleZoneUpdateRecalculateAll = async () => {
+    setIsZoneUpdating(true);
+    setRecalcError(null);
+    setRecalcSuccess(false);
+    setShowZoneUpdateDialog(false);
+
+    try {
+      // Zones are already saved, just recalculate all workouts
+      const response = await recalculateAllRelativeEffort();
+      setRecalcWorkoutCount(response.totalQualifyingWorkouts);
+      setRecalcSuccess(true);
+      setTimeout(() => {
+        setRecalcSuccess(false);
+        setRecalcWorkoutCount(null);
+      }, 5000);
+    } catch (error) {
+      setRecalcError(error instanceof Error ? error.message : 'Failed to recalculate relative effort');
+    } finally {
+      setIsZoneUpdating(false);
+    }
+  };
+
+  const handleZoneUpdateKeepExisting = () => {
+    // Zones are already saved, just close the dialog
+    setShowZoneUpdateDialog(false);
   };
 
   const updateCustomZone = (index: number, field: 'min' | 'max', value: number) => {
@@ -504,13 +548,23 @@ export default function SettingsPage() {
         </div>
       </main>
       
-      {/* Recalculate Relative Effort Dialog */}
+      {/* Recalculate Relative Effort Dialog (for first-time setup) */}
       <RecalculateEffortDialog
         open={showRecalcDialog}
         onClose={() => setShowRecalcDialog(false)}
         onConfirm={handleRecalculateConfirm}
         workoutCount={recalcWorkoutCount}
         isLoading={isRecalculating}
+      />
+      
+      {/* Zone Update Dialog (for subsequent updates) */}
+      <ZoneUpdateDialog
+        open={showZoneUpdateDialog}
+        onClose={() => setShowZoneUpdateDialog(false)}
+        onRecalculateAll={handleZoneUpdateRecalculateAll}
+        onKeepExisting={handleZoneUpdateKeepExisting}
+        workoutCount={zoneUpdateWorkoutCount}
+        isLoading={isZoneUpdating}
       />
     </div>
   );

@@ -614,6 +614,32 @@ export async function updateHeartRateZones(
   return response.json();
 }
 
+export interface UpdateHeartRateZonesWithRecalcRequest extends UpdateHeartRateZoneSettingsRequest {
+  recalculateExisting?: boolean;
+}
+
+export interface UpdateHeartRateZonesWithRecalcResponse extends HeartRateZoneSettings {
+  recalculatedCount?: number | null;
+  recalculatedErrorCount?: number | null;
+}
+
+export async function updateHeartRateZonesWithRecalc(
+  settings: UpdateHeartRateZonesWithRecalcRequest
+): Promise<UpdateHeartRateZonesWithRecalcResponse> {
+  const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones/update-with-recalc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update heart rate zones: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export interface RecalculateRelativeEffortResponse {
   updatedCount: number;
   totalQualifyingWorkouts: number;
