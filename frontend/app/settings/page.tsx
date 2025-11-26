@@ -5,10 +5,15 @@ import { formatDistance, formatPace, formatElevation } from '@/lib/format';
 import { 
   getHeartRateZones, 
   updateHeartRateZones,
+  updateHeartRateZonesWithRecalc,
+  recalculateAllRelativeEffort,
+  getQualifyingWorkoutCount,
   type HeartRateZoneSettings,
   type HeartRateCalculationMethod,
   type UpdateHeartRateZoneSettingsRequest
 } from '@/lib/api';
+import { RecalculateEffortDialog } from '@/components/RecalculateEffortDialog';
+import { ZoneUpdateDialog } from '@/components/ZoneUpdateDialog';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -32,6 +37,18 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  
+  // Recalculate Relative Effort state
+  const [showRecalcDialog, setShowRecalcDialog] = useState(false);
+  const [recalcWorkoutCount, setRecalcWorkoutCount] = useState<number | null>(null);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const [recalcError, setRecalcError] = useState<string | null>(null);
+  const [recalcSuccess, setRecalcSuccess] = useState(false);
+  
+  // Zone Update Dialog state (for subsequent updates)
+  const [showZoneUpdateDialog, setShowZoneUpdateDialog] = useState(false);
+  const [zoneUpdateWorkoutCount, setZoneUpdateWorkoutCount] = useState<number | null>(null);
+  const [isZoneUpdating, setIsZoneUpdating] = useState(false);
 
   // Load heart rate zones on mount
   useEffect(() => {
@@ -108,11 +125,96 @@ export default function SettingsPage() {
       setHrZones(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+      
+      // If this is first time setup, show confirmation dialog for recalculation
+      if (updated.isFirstTimeSetup) {
+        // Fetch workout count first
+        try {
+          const countResponse = await getQualifyingWorkoutCount();
+          setRecalcWorkoutCount(countResponse.count);
+        } catch (error) {
+          // If we can't get the count, still show dialog with null count
+          setRecalcWorkoutCount(null);
+        }
+        setShowRecalcDialog(true);
+      } else {
+        // Subsequent update: show dialog with options
+        try {
+          const countResponse = await getQualifyingWorkoutCount();
+          setZoneUpdateWorkoutCount(countResponse.count);
+        } catch (error) {
+          // If we can't get the count, still show dialog with null count
+          setZoneUpdateWorkoutCount(null);
+        }
+        setShowZoneUpdateDialog(true);
+      }
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Failed to save heart rate zones');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleRecalculateClick = async () => {
+    // Fetch workout count before showing dialog
+    try {
+      const countResponse = await getQualifyingWorkoutCount();
+      setRecalcWorkoutCount(countResponse.count);
+      setShowRecalcDialog(true);
+    } catch (error) {
+      setRecalcError('Failed to get workout count');
+      // Still show dialog with null count
+      setRecalcWorkoutCount(null);
+      setShowRecalcDialog(true);
+    }
+  };
+
+  const handleRecalculateConfirm = async () => {
+    setIsRecalculating(true);
+    setRecalcError(null);
+    setRecalcSuccess(false);
+    setShowRecalcDialog(false);
+
+    try {
+      const response = await recalculateAllRelativeEffort();
+      setRecalcWorkoutCount(response.totalQualifyingWorkouts);
+      setRecalcSuccess(true);
+      setTimeout(() => {
+        setRecalcSuccess(false);
+        setRecalcWorkoutCount(null);
+      }, 5000);
+    } catch (error) {
+      setRecalcError(error instanceof Error ? error.message : 'Failed to recalculate relative effort');
+    } finally {
+      setIsRecalculating(false);
+    }
+  };
+
+  const handleZoneUpdateRecalculateAll = async () => {
+    setIsZoneUpdating(true);
+    setRecalcError(null);
+    setRecalcSuccess(false);
+    setShowZoneUpdateDialog(false);
+
+    try {
+      // Zones are already saved, just recalculate all workouts
+      const response = await recalculateAllRelativeEffort();
+      setRecalcWorkoutCount(response.totalQualifyingWorkouts);
+      setRecalcSuccess(true);
+      setTimeout(() => {
+        setRecalcSuccess(false);
+        setRecalcWorkoutCount(null);
+      }, 5000);
+    } catch (error) {
+      setRecalcError(error instanceof Error ? error.message : 'Failed to recalculate relative effort');
+    } finally {
+      setIsZoneUpdating(false);
+    }
+  };
+
+  const handleZoneUpdateKeepExisting = () => {
+    // Zones are already saved, just close the dialog
+    setShowZoneUpdateDialog(false);
   };
 
   const updateCustomZone = (index: number, field: 'min' | 'max', value: number) => {
@@ -371,27 +473,56 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Save Button and Messages */}
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={handleSaveHrZones}
-                    disabled={isSaving}
-                    className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-                      isSaving
-                        ? 'bg-gray-400 text-white cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600'
-                    }`}
-                  >
-                    {isSaving ? 'Saving...' : 'Save Heart Rate Zones'}
-                  </button>
-                  {saveSuccess && (
-                    <span className="text-sm text-green-600 dark:text-green-400">
-                      Settings saved successfully!
-                    </span>
-                  )}
-                  {saveError && (
-                    <span className="text-sm text-red-600 dark:text-red-400">
-                      {saveError}
-                    </span>
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={handleSaveHrZones}
+                      disabled={isSaving}
+                      className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                        isSaving
+                          ? 'bg-gray-400 text-white cursor-not-allowed'
+                          : 'bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600'
+                      }`}
+                    >
+                      {isSaving ? 'Saving...' : 'Save Heart Rate Zones'}
+                    </button>
+                    {saveSuccess && (
+                      <span className="text-sm text-green-600 dark:text-green-400">
+                        Settings saved successfully!
+                      </span>
+                    )}
+                    {saveError && (
+                      <span className="text-sm text-red-600 dark:text-red-400">
+                        {saveError}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* Recalculate Relative Effort Button */}
+                  {hrZones && (
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={handleRecalculateClick}
+                        disabled={isRecalculating || isSaving}
+                        className={`px-6 py-3 rounded-lg font-medium transition-colors w-fit ${
+                          isRecalculating || isSaving
+                            ? 'bg-gray-400 text-white cursor-not-allowed'
+                            : 'bg-orange-600 text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600'
+                        }`}
+                      >
+                        {isRecalculating ? 'Recalculating...' : 'Recalculate Relative Effort'}
+                      </button>
+                      {recalcSuccess && (
+                        <span className="text-sm text-green-600 dark:text-green-400">
+                          Successfully recalculated relative effort for {recalcWorkoutCount} workout{recalcWorkoutCount !== 1 ? 's' : ''}!
+                        </span>
+                      )}
+                      {recalcError && (
+                        <span className="text-sm text-red-600 dark:text-red-400">
+                          {recalcError}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               </>
@@ -416,6 +547,25 @@ export default function SettingsPage() {
           </div>
         </div>
       </main>
+      
+      {/* Recalculate Relative Effort Dialog (for first-time setup) */}
+      <RecalculateEffortDialog
+        open={showRecalcDialog}
+        onClose={() => setShowRecalcDialog(false)}
+        onConfirm={handleRecalculateConfirm}
+        workoutCount={recalcWorkoutCount}
+        isLoading={isRecalculating}
+      />
+      
+      {/* Zone Update Dialog (for subsequent updates) */}
+      <ZoneUpdateDialog
+        open={showZoneUpdateDialog}
+        onClose={() => setShowZoneUpdateDialog(false)}
+        onRecalculateAll={handleZoneUpdateRecalculateAll}
+        onKeepExisting={handleZoneUpdateKeepExisting}
+        workoutCount={zoneUpdateWorkoutCount}
+        isLoading={isZoneUpdating}
+      />
     </div>
   );
 }

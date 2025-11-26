@@ -537,6 +537,7 @@ export default function WorkoutDetailPage() {
               {/* Additional Details and Weather - Side by Side */}
               {(() => {
                 const hasAdditionalDetails = data.elevGainM !== null || data.calories !== null || 
+                  data.relativeEffort !== null ||
                   data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null ||
                   data.maxCadenceRpm !== null || data.avgCadenceRpm !== null ||
                   data.maxPowerWatts !== null || data.avgPowerWatts !== null;
@@ -571,6 +572,14 @@ export default function WorkoutDetailPage() {
                               <span className="text-xs text-gray-500 dark:text-gray-400">Calories</span>
                               <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                                 {data.calories}
+                              </span>
+                            </div>
+                          )}
+                          {data.relativeEffort !== null && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Relative Effort</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {data.relativeEffort}
                               </span>
                             </div>
                           )}
