@@ -707,3 +707,22 @@ export async function recalculateAllRelativeEffort(): Promise<RecalculateRelativ
   return response.json();
 }
 
+export interface VersionResponse {
+  version: string;
+  buildDate: string;
+  gitCommit: string;
+}
+
+export async function getVersion(): Promise<VersionResponse> {
+  const response = await fetch(`${API_BASE_URL}/version`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch version: ${response.status}`);
+  }
+
+  return response.json();
+}
+

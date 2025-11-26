@@ -101,6 +101,7 @@ app.UseSerilogRequestLogging();
 // Map endpoints
 app.MapWorkoutsEndpoints();
 app.MapSettingsEndpoints();
+app.MapVersionEndpoints();
 
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
