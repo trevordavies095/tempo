@@ -1587,6 +1587,109 @@ public static class WorkoutsEndpoints
         .WithSummary("Get weekly stats")
         .WithDescription("Returns daily miles for the current week (Monday-Sunday), grouped by day of week");
 
+        group.MapGet("/stats/relative-effort", async (
+            TempoDbContext db,
+            ILogger<Program> logger,
+            [FromQuery] int? timezoneOffsetMinutes = null) =>
+        {
+            // Get current week boundaries (Monday-Sunday) in the specified timezone
+            var now = DateTime.UtcNow;
+            if (timezoneOffsetMinutes.HasValue)
+            {
+                now = now.AddMinutes(timezoneOffsetMinutes.Value);
+            }
+
+            // Calculate start of current week (Monday)
+            var daysSinceMonday = ((int)now.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+            var weekStart = now.Date.AddDays(-daysSinceMonday);
+            var weekEnd = weekStart.AddDays(7).AddTicks(-1);
+
+            // Convert back to UTC for database query
+            var weekStartUtc = timezoneOffsetMinutes.HasValue
+                ? DateTime.SpecifyKind(weekStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                : DateTime.SpecifyKind(weekStart, DateTimeKind.Utc);
+            var weekEndUtc = timezoneOffsetMinutes.HasValue
+                ? DateTime.SpecifyKind(weekEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                : DateTime.SpecifyKind(weekEnd, DateTimeKind.Utc);
+
+            // Query workouts for the current week with relative effort
+            var currentWeekWorkouts = await db.Workouts
+                .Where(w => w.StartedAt >= weekStartUtc && w.StartedAt <= weekEndUtc)
+                .AsNoTracking()
+                .ToListAsync();
+
+            // Calculate daily relative effort totals (Monday-Sunday)
+            var dailyEffort = new int[7]; // M T W T F S S
+            foreach (var workout in currentWeekWorkouts)
+            {
+                if (!workout.RelativeEffort.HasValue)
+                {
+                    continue;
+                }
+
+                // Convert UTC to local timezone
+                var localTime = timezoneOffsetMinutes.HasValue
+                    ? workout.StartedAt.AddMinutes(timezoneOffsetMinutes.Value)
+                    : workout.StartedAt;
+
+                // Get day of week (0=Monday, 6=Sunday)
+                var dayOfWeek = ((int)localTime.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+                dailyEffort[dayOfWeek] += workout.RelativeEffort.Value;
+            }
+
+            // Calculate cumulative values (Monday = day 1, Tuesday = day 1 + day 2, etc.)
+            var cumulativeEffort = new int[7];
+            int runningTotal = 0;
+            for (int i = 0; i < 7; i++)
+            {
+                runningTotal += dailyEffort[i];
+                cumulativeEffort[i] = runningTotal;
+            }
+
+            // Calculate previous 3 complete weeks
+            var previousWeeks = new List<int>();
+            for (int weekOffset = 1; weekOffset <= 3; weekOffset++)
+            {
+                var prevWeekStart = weekStart.AddDays(-7 * weekOffset);
+                var prevWeekEnd = prevWeekStart.AddDays(7).AddTicks(-1);
+
+                var prevWeekStartUtc = timezoneOffsetMinutes.HasValue
+                    ? DateTime.SpecifyKind(prevWeekStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                    : DateTime.SpecifyKind(prevWeekStart, DateTimeKind.Utc);
+                var prevWeekEndUtc = timezoneOffsetMinutes.HasValue
+                    ? DateTime.SpecifyKind(prevWeekEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+                    : DateTime.SpecifyKind(prevWeekEnd, DateTimeKind.Utc);
+
+                var prevWeekTotal = await db.Workouts
+                    .Where(w => w.StartedAt >= prevWeekStartUtc && w.StartedAt <= prevWeekEndUtc)
+                    .AsNoTracking()
+                    .SumAsync(w => (int?)w.RelativeEffort) ?? 0;
+
+                previousWeeks.Add(prevWeekTotal);
+            }
+
+            // Calculate 3-week average and range
+            var threeWeekAverage = previousWeeks.Count > 0 ? previousWeeks.Average() : 0.0;
+            var rangeMin = previousWeeks.Count > 0 ? previousWeeks.Min() : 0;
+            var rangeMax = previousWeeks.Count > 0 ? previousWeeks.Max() : 0;
+            var currentWeekTotal = cumulativeEffort[6]; // Sunday's cumulative value
+
+            return Results.Ok(new
+            {
+                weekStart = weekStart.ToString("yyyy-MM-dd"),
+                weekEnd = weekEnd.ToString("yyyy-MM-dd"),
+                currentWeek = cumulativeEffort,
+                previousWeeks = previousWeeks,
+                threeWeekAverage = Math.Round(threeWeekAverage, 1),
+                rangeMin = rangeMin,
+                rangeMax = rangeMax,
+                currentWeekTotal = currentWeekTotal
+            });
+        })
+        .Produces(200)
+        .WithSummary("Get relative effort stats")
+        .WithDescription("Returns cumulative relative effort for the current week and 3-week average range");
+
         group.MapGet("/stats/yearly", async (
             TempoDbContext db,
             ILogger<Program> logger,
