@@ -1,3 +1,6 @@
+# Cursor IDE metadata
+.cursor/
+
 # .NET
 api/bin/
 api/obj/
