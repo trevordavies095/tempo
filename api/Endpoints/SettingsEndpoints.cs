@@ -124,6 +124,7 @@ public static class SettingsEndpoints
 
                 // Get or create settings record
                 var settings = await db.UserSettings.FirstOrDefaultAsync();
+                var isFirstTimeSetup = settings == null;
 
                 if (settings == null)
                 {
@@ -152,7 +153,8 @@ public static class SettingsEndpoints
                         zoneNumber = i + 1,
                         minBpm = z.MinBpm,
                         maxBpm = z.MaxBpm
-                    }).ToArray()
+                    }).ToArray(),
+                    isFirstTimeSetup = isFirstTimeSetup
                 });
             }
             catch (ArgumentException ex)
@@ -166,6 +168,165 @@ public static class SettingsEndpoints
                 return Results.Problem("Failed to update heart rate zones");
             }
         });
+
+        group.MapGet("/recalculate-relative-effort/count", async (
+            TempoDbContext db,
+            ILogger<Program> logger) =>
+        {
+            try
+            {
+                // Get workouts that can have relative effort calculated:
+                // 1. Workouts with time series data with heart rate
+                // 2. Workouts with RawFitData (may contain avgHeartRate)
+                // 3. Workouts with AvgHeartRateBpm
+                var workoutIdsWithTimeSeries = await db.WorkoutTimeSeries
+                    .Where(ts => ts.HeartRateBpm.HasValue)
+                    .Select(ts => ts.WorkoutId)
+                    .Distinct()
+                    .ToListAsync();
+
+                var workoutIdsWithRawFit = await db.Workouts
+                    .Where(w => w.RawFitData != null)
+                    .Select(w => w.Id)
+                    .ToListAsync();
+
+                var workoutIdsWithAvgHr = await db.Workouts
+                    .Where(w => w.AvgHeartRateBpm.HasValue)
+                    .Select(w => w.Id)
+                    .ToListAsync();
+
+                // Combine all qualifying workout IDs
+                var allQualifyingIds = workoutIdsWithTimeSeries
+                    .Union(workoutIdsWithRawFit)
+                    .Union(workoutIdsWithAvgHr)
+                    .Distinct()
+                    .ToList();
+
+                return Results.Ok(new { count = allQualifyingIds.Count });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error getting qualifying workout count");
+                return Results.Problem("Failed to get qualifying workout count");
+            }
+        })
+        .Produces(200)
+        .WithSummary("Get count of workouts eligible for relative effort recalculation")
+        .WithDescription("Returns the number of workouts that have heart rate data (time series, raw FIT data, or average HR)");
+
+        group.MapPost("/recalculate-relative-effort", async (
+            TempoDbContext db,
+            HeartRateZoneService zoneService,
+            RelativeEffortService relativeEffortService,
+            ILogger<Program> logger) =>
+        {
+            try
+            {
+                // Check if heart rate zones are configured
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                if (settings == null)
+                {
+                    return Results.BadRequest(new { error = "Heart rate zones not configured. Please configure heart rate zones in settings first." });
+                }
+
+                var zones = zoneService.GetZonesFromUserSettings(settings);
+
+                // Get workouts that can have relative effort calculated:
+                // 1. Workouts with time series data with heart rate
+                // 2. Workouts with RawFitData (may contain avgHeartRate)
+                // 3. Workouts with AvgHeartRateBpm
+                var workoutIdsWithTimeSeries = await db.WorkoutTimeSeries
+                    .Where(ts => ts.HeartRateBpm.HasValue)
+                    .Select(ts => ts.WorkoutId)
+                    .Distinct()
+                    .ToListAsync();
+
+                var workoutIdsWithRawFit = await db.Workouts
+                    .Where(w => w.RawFitData != null)
+                    .Select(w => w.Id)
+                    .ToListAsync();
+
+                var workoutIdsWithAvgHr = await db.Workouts
+                    .Where(w => w.AvgHeartRateBpm.HasValue)
+                    .Select(w => w.Id)
+                    .ToListAsync();
+
+                // Combine all qualifying workout IDs
+                var allQualifyingIds = workoutIdsWithTimeSeries
+                    .Union(workoutIdsWithRawFit)
+                    .Union(workoutIdsWithAvgHr)
+                    .Distinct()
+                    .ToList();
+
+                if (allQualifyingIds.Count == 0)
+                {
+                    return Results.Ok(new
+                    {
+                        updatedCount = 0,
+                        totalQualifyingWorkouts = 0,
+                        message = "No workouts with heart rate data found"
+                    });
+                }
+
+                // Get all qualifying workouts
+                var qualifyingWorkouts = await db.Workouts
+                    .Where(w => allQualifyingIds.Contains(w.Id))
+                    .ToListAsync();
+
+                if (qualifyingWorkouts.Count == 0)
+                {
+                    return Results.Ok(new
+                    {
+                        updatedCount = 0,
+                        message = "No workouts with time series heart rate data found"
+                    });
+                }
+
+                int updatedCount = 0;
+                int errorCount = 0;
+                var errors = new List<string>();
+
+                // Recalculate relative effort for each qualifying workout
+                foreach (var workout in qualifyingWorkouts)
+                {
+                    try
+                    {
+                        var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                        if (relativeEffort.HasValue)
+                        {
+                            workout.RelativeEffort = relativeEffort.Value;
+                            updatedCount++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        errorCount++;
+                        logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
+                        errors.Add($"Workout {workout.Id}: {ex.Message}");
+                    }
+                }
+
+                // Save all changes
+                await db.SaveChangesAsync();
+
+                return Results.Ok(new
+                {
+                    updatedCount = updatedCount,
+                    totalQualifyingWorkouts = qualifyingWorkouts.Count,
+                    errorCount = errorCount,
+                    errors = errors.Count > 0 ? errors : null
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error recalculating Relative Effort for all workouts");
+                return Results.Problem("Failed to recalculate Relative Effort for all workouts");
+            }
+        })
+        .Produces(200)
+        .Produces(400)
+        .WithSummary("Recalculate relative effort for all qualifying workouts")
+        .WithDescription("Recalculates relative effort for all workouts that have time series heart rate data using the current heart rate zone configuration");
     }
 
     public class UpdateHeartRateZonesRequest

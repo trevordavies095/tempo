@@ -62,6 +62,9 @@ public class Workout
     // Calories (if available)
     public ushort? Calories { get; set; }
 
+    // Relative Effort (calculated from heart rate zones)
+    public int? RelativeEffort { get; set; }
+
     // ============================================
     // METADATA
     // ============================================

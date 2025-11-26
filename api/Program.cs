@@ -45,6 +45,7 @@ builder.Services.AddScoped<StravaCsvParserService>();
 builder.Services.AddScoped<FitParserService>();
 builder.Services.AddScoped<MediaService>();
 builder.Services.AddScoped<HeartRateZoneService>();
+builder.Services.AddScoped<RelativeEffortService>();
 builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage

@@ -7,7 +7,7 @@ import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
 import { formatDuration, formatDistance, formatElevation, getWorkoutDisplayName } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 
-type SortColumn = 'startedAt' | 'name' | 'durationS' | 'distanceM' | 'elevGainM';
+type SortColumn = 'startedAt' | 'name' | 'durationS' | 'distanceM' | 'elevGainM' | 'relativeEffort';
 type SortOrder = 'asc' | 'desc';
 
 const RUN_TYPES = [
@@ -24,6 +24,7 @@ const SORT_COLUMN_MAP: Record<string, SortColumn> = {
   durationS: 'durationS',
   distanceM: 'distanceM',
   elevGainM: 'elevGainM',
+  relativeEffort: 'relativeEffort',
 };
 
 export default function ActivitiesPage() {
@@ -65,6 +66,7 @@ export default function ActivitiesPage() {
       durationS: 'duration',
       distanceM: 'distance',
       elevGainM: 'elevation',
+      relativeEffort: 'relativeEffort',
     };
     return apiColumnMap[column];
   }, []);
@@ -236,6 +238,15 @@ export default function ActivitiesPage() {
                           {getSortIcon('elevGainM')}
                         </div>
                       </th>
+                      <th
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                        onClick={() => handleSort('relativeEffort')}
+                      >
+                        <div className="flex items-center">
+                          Relative Effort
+                          {getSortIcon('relativeEffort')}
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
@@ -261,6 +272,11 @@ export default function ActivitiesPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                           {workout.elevGainM !== null && workout.elevGainM !== undefined
                             ? formatElevation(workout.elevGainM, unitPreference)
+                            : '—'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                          {workout.relativeEffort !== null && workout.relativeEffort !== undefined
+                            ? workout.relativeEffort
                             : '—'}
                         </td>
                       </tr>
