@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Tempo.Api.Data;
@@ -11,9 +12,11 @@ using Tempo.Api.Data;
 namespace Tempo.Api.Migrations
 {
     [DbContext(typeof(TempoDbContext))]
-    partial class TempoDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251126004007_AddHeartRateZones")]
+    partial class AddHeartRateZones
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -177,9 +180,6 @@ namespace Tempo.Api.Migrations
 
                     b.Property<string>("RawStravaData")
                         .HasColumnType("jsonb");
-
-                    b.Property<int?>("RelativeEffort")
-                        .HasColumnType("integer");
 
                     b.Property<string>("RunType")
                         .HasMaxLength(50)

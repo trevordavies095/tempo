@@ -31,6 +31,7 @@ export interface WorkoutListItem {
   maxPowerWatts: number | null;
   avgPowerWatts: number | null;
   calories: number | null;
+  relativeEffort: number | null;
   runType: string | null;
   source: string | null;
   device: string | null;
@@ -85,6 +86,7 @@ export interface WorkoutDetail {
   maxPowerWatts: number | null;
   avgPowerWatts: number | null;
   calories: number | null;
+  relativeEffort: number | null;
   runType: string | null;
   notes: string | null;
   source: string | null;
@@ -554,5 +556,122 @@ export async function deleteWorkout(id: string): Promise<void> {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to delete workout: ${response.status}`);
   }
+}
+
+// Heart Rate Zones
+export type HeartRateCalculationMethod = 'AgeBased' | 'Karvonen' | 'Custom';
+
+export interface HeartRateZone {
+  zoneNumber: number;
+  minBpm: number;
+  maxBpm: number;
+}
+
+export interface HeartRateZoneSettings {
+  calculationMethod: HeartRateCalculationMethod;
+  age: number | null;
+  restingHeartRateBpm: number | null;
+  maxHeartRateBpm: number | null;
+  zones: HeartRateZone[];
+  isFirstTimeSetup?: boolean;
+}
+
+export interface UpdateHeartRateZoneSettingsRequest {
+  calculationMethod: HeartRateCalculationMethod;
+  age?: number | null;
+  restingHeartRateBpm?: number | null;
+  maxHeartRateBpm?: number | null;
+  zones?: HeartRateZone[];
+}
+
+export async function getHeartRateZones(): Promise<HeartRateZoneSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch heart rate zones: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function updateHeartRateZones(
+  settings: UpdateHeartRateZoneSettingsRequest
+): Promise<HeartRateZoneSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update heart rate zones: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface UpdateHeartRateZonesWithRecalcRequest extends UpdateHeartRateZoneSettingsRequest {
+  recalculateExisting?: boolean;
+}
+
+export interface UpdateHeartRateZonesWithRecalcResponse extends HeartRateZoneSettings {
+  recalculatedCount?: number | null;
+  recalculatedErrorCount?: number | null;
+}
+
+export async function updateHeartRateZonesWithRecalc(
+  settings: UpdateHeartRateZonesWithRecalcRequest
+): Promise<UpdateHeartRateZonesWithRecalcResponse> {
+  const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones/update-with-recalc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update heart rate zones: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface RecalculateRelativeEffortResponse {
+  updatedCount: number;
+  totalQualifyingWorkouts: number;
+  errorCount: number;
+  errors?: string[];
+  message?: string;
+}
+
+export async function getQualifyingWorkoutCount(): Promise<{ count: number }> {
+  const response = await fetch(`${API_BASE_URL}/settings/recalculate-relative-effort/count`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get qualifying workout count: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function recalculateAllRelativeEffort(): Promise<RecalculateRelativeEffortResponse> {
+  const response = await fetch(`${API_BASE_URL}/settings/recalculate-relative-effort`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to recalculate relative effort: ${response.status}`);
+  }
+
+  return response.json();
 }
 

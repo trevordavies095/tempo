@@ -27,6 +27,8 @@ public static class WorkoutsEndpoints
             GpxParserService gpxParser,
             FitParserService fitParser,
             WeatherService weatherService,
+            HeartRateZoneService zoneService,
+            RelativeEffortService relativeEffortService,
             ILogger<Program> logger) =>
         {
             if (!request.HasFormContentType)
@@ -64,6 +66,8 @@ public static class WorkoutsEndpoints
                     gpxParser,
                     fitParser,
                     weatherService,
+                    zoneService,
+                    relativeEffortService,
                     splitDistanceMeters,
                     logger);
 
@@ -92,6 +96,8 @@ public static class WorkoutsEndpoints
                         gpxParser,
                         fitParser,
                         weatherService,
+                        zoneService,
+                        relativeEffortService,
                         splitDistanceMeters,
                         logger);
 
@@ -271,6 +277,12 @@ public static class WorkoutsEndpoints
                     ? query.OrderByDescending(w => w.ElevGainM ?? 0)
                     : query.OrderBy(w => w.ElevGainM ?? 0);
             }
+            else if (sortByLower == "relativeeffort" || sortByLower == "relative-effort")
+            {
+                query = isDescending
+                    ? query.OrderByDescending(w => w.RelativeEffort ?? 0)
+                    : query.OrderBy(w => w.RelativeEffort ?? 0);
+            }
             else // Default: sort by startedAt
             {
                 query = isDescending
@@ -324,6 +336,7 @@ public static class WorkoutsEndpoints
                     maxPowerWatts = w.MaxPowerWatts,
                     avgPowerWatts = w.AvgPowerWatts,
                     calories = w.Calories,
+                    relativeEffort = w.RelativeEffort,
                     runType = w.RunType,
                     source = w.Source,
                     device = w.Device,
@@ -599,6 +612,53 @@ public static class WorkoutsEndpoints
         .WithSummary("List workout media")
         .WithDescription("Retrieves all media files associated with a workout");
 
+        group.MapPost("/{id:guid}/recalculate-effort", async (
+            Guid id,
+            TempoDbContext db,
+            HeartRateZoneService zoneService,
+            RelativeEffortService relativeEffortService,
+            ILogger<Program> logger) =>
+        {
+            var workout = await db.Workouts
+                .FirstOrDefaultAsync(w => w.Id == id);
+
+            if (workout == null)
+            {
+                return Results.NotFound(new { error = "Workout not found" });
+            }
+
+            try
+            {
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                if (settings == null)
+                {
+                    return Results.BadRequest(new { error = "Heart rate zones not configured. Please configure heart rate zones in settings first." });
+                }
+
+                var zones = zoneService.GetZonesFromUserSettings(settings);
+                var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                
+                workout.RelativeEffort = relativeEffort;
+                await db.SaveChangesAsync();
+
+                return Results.Ok(new
+                {
+                    id = workout.Id,
+                    relativeEffort = workout.RelativeEffort
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error recalculating Relative Effort for workout {WorkoutId}", id);
+                return Results.Problem("Failed to recalculate Relative Effort");
+            }
+        })
+        .Produces(200)
+        .Produces(404)
+        .Produces(400)
+        .WithSummary("Recalculate Relative Effort")
+        .WithDescription("Recalculates the Relative Effort score for a workout using current heart rate zone settings");
+
         group.MapGet("/{id:guid}", async (
             Guid id,
             TempoDbContext db,
@@ -743,6 +803,7 @@ public static class WorkoutsEndpoints
                 maxPowerWatts = workout.MaxPowerWatts,
                 avgPowerWatts = workout.AvgPowerWatts,
                 calories = workout.Calories,
+                relativeEffort = workout.RelativeEffort,
                 runType = workout.RunType,
                 notes = workout.Notes,
                 source = workout.Source,
@@ -770,6 +831,8 @@ public static class WorkoutsEndpoints
             FitParserService fitParser,
             MediaService mediaService,
             WeatherService weatherService,
+            HeartRateZoneService zoneService,
+            RelativeEffortService relativeEffortService,
             ILogger<Program> logger) =>
         {
             if (!request.HasFormContentType)
@@ -1375,6 +1438,37 @@ public static class WorkoutsEndpoints
                     db.WorkoutSplits.AddRange(splitsToAdd);
                     await db.SaveChangesAsync();
                     logger.LogInformation("Bulk imported {Count} workouts", workoutsToAdd.Count);
+
+                    // Calculate Relative Effort for all imported workouts
+                    try
+                    {
+                        var settings = await db.UserSettings.FirstOrDefaultAsync();
+                        if (settings != null)
+                        {
+                            var zones = zoneService.GetZonesFromUserSettings(settings);
+                            foreach (var workout in workoutsToAdd)
+                            {
+                                try
+                                {
+                                    var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                                    if (relativeEffort.HasValue)
+                                    {
+                                        workout.RelativeEffort = relativeEffort.Value;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
+                                }
+                            }
+                            await db.SaveChangesAsync();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to calculate Relative Effort for bulk imported workouts");
+                        // Continue - Relative Effort is optional
+                    }
                 }
 
                 // Save media records separately (for both new workouts and existing workouts)
@@ -1978,6 +2072,8 @@ public static class WorkoutsEndpoints
         GpxParserService gpxParser,
         FitParserService fitParser,
         WeatherService weatherService,
+        HeartRateZoneService zoneService,
+        RelativeEffortService relativeEffortService,
         double splitDistanceMeters,
         ILogger logger)
     {
@@ -2345,6 +2441,27 @@ public static class WorkoutsEndpoints
             db.WorkoutRoutes.Add(route);
             db.WorkoutSplits.AddRange(splits);
             await db.SaveChangesAsync();
+
+            // Calculate Relative Effort after workout is saved
+            try
+            {
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                if (settings != null)
+                {
+                    var zones = zoneService.GetZonesFromUserSettings(settings);
+                    var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                    if (relativeEffort.HasValue)
+                    {
+                        workout.RelativeEffort = relativeEffort.Value;
+                        await db.SaveChangesAsync();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
+                // Continue - Relative Effort is optional
+            }
 
             logger.LogInformation("Imported workout {WorkoutId} with {Distance} meters", workout.Id, workout.DistanceM);
 
