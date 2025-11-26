@@ -44,6 +44,7 @@ builder.Services.AddScoped<GpxParserService>();
 builder.Services.AddScoped<StravaCsvParserService>();
 builder.Services.AddScoped<FitParserService>();
 builder.Services.AddScoped<MediaService>();
+builder.Services.AddScoped<HeartRateZoneService>();
 builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage
@@ -98,6 +99,7 @@ app.UseSerilogRequestLogging();
 
 // Map endpoints
 app.MapWorkoutsEndpoints();
+app.MapSettingsEndpoints();
 
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));

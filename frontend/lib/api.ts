@@ -556,3 +556,58 @@ export async function deleteWorkout(id: string): Promise<void> {
   }
 }
 
+// Heart Rate Zones
+export type HeartRateCalculationMethod = 'AgeBased' | 'Karvonen' | 'Custom';
+
+export interface HeartRateZone {
+  zoneNumber: number;
+  minBpm: number;
+  maxBpm: number;
+}
+
+export interface HeartRateZoneSettings {
+  calculationMethod: HeartRateCalculationMethod;
+  age: number | null;
+  restingHeartRateBpm: number | null;
+  maxHeartRateBpm: number | null;
+  zones: HeartRateZone[];
+}
+
+export interface UpdateHeartRateZoneSettingsRequest {
+  calculationMethod: HeartRateCalculationMethod;
+  age?: number | null;
+  restingHeartRateBpm?: number | null;
+  maxHeartRateBpm?: number | null;
+  zones?: HeartRateZone[];
+}
+
+export async function getHeartRateZones(): Promise<HeartRateZoneSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch heart rate zones: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function updateHeartRateZones(
+  settings: UpdateHeartRateZoneSettingsRequest
+): Promise<HeartRateZoneSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update heart rate zones: ${response.status}`);
+  }
+
+  return response.json();
+}
+

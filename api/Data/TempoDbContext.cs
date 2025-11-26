@@ -14,6 +14,7 @@ public class TempoDbContext : DbContext
     public DbSet<WorkoutSplit> WorkoutSplits { get; set; }
     public DbSet<WorkoutMedia> WorkoutMedia { get; set; }
     public DbSet<WorkoutTimeSeries> WorkoutTimeSeries { get; set; }
+    public DbSet<UserSettings> UserSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -75,6 +76,13 @@ public class TempoDbContext : DbContext
 
             // Composite index for efficient time series queries
             entity.HasIndex(e => new { e.WorkoutId, e.ElapsedSeconds });
+        });
+
+        modelBuilder.Entity<UserSettings>(entity =>
+        {
+            // Single-row table pattern - ensure only one settings record exists
+            // We'll enforce this in application logic, but add a unique constraint on Id
+            entity.HasIndex(e => e.Id).IsUnique();
         });
     }
 }
