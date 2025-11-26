@@ -203,7 +203,7 @@ export default function RelativeEffortGraph() {
         Relative Effort
       </h2>
       
-      <div className="mb-6">
+      <div className="mb-4">
         <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
           {data.currentWeekTotal}
         </div>
@@ -224,10 +224,10 @@ export default function RelativeEffortGraph() {
         </div>
       </div>
 
-      <div className="relative pt-2">
-        <div style={{ height: '200px', marginBottom: '24px' }}>
+      <div className="relative">
+        <div style={{ height: '180px', marginBottom: '0px' }}>
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 20 }}>
             <defs>
               <linearGradient id="rangeGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="rgba(156, 163, 175, 0.25)" stopOpacity={0.25} />
