@@ -161,6 +161,10 @@ export default function SettingsPage() {
       const response = await recalculateAllRelativeEffort();
       setRecalcWorkoutCount(response.totalQualifyingWorkouts);
       setRecalcSuccess(true);
+      
+      // Invalidate all workout queries to refresh the UI
+      invalidateWorkoutQueries(queryClient);
+      
       setTimeout(() => {
         setRecalcSuccess(false);
         setRecalcWorkoutCount(null);
@@ -183,6 +187,10 @@ export default function SettingsPage() {
       const response = await recalculateAllRelativeEffort();
       setRecalcWorkoutCount(response.totalQualifyingWorkouts);
       setRecalcSuccess(true);
+      
+      // Invalidate all workout queries to refresh the UI
+      invalidateWorkoutQueries(queryClient);
+      
       setTimeout(() => {
         setRecalcSuccess(false);
         setRecalcWorkoutCount(null);

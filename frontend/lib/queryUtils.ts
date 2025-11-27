@@ -25,5 +25,6 @@ export function invalidateWorkoutQueries(queryClient: QueryClient, workoutId?: s
   queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
   queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
   queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
+  queryClient.invalidateQueries({ queryKey: ['relativeEffortStats'] });
 }
 
