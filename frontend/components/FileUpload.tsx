@@ -4,23 +4,25 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { importWorkoutFile } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
+import { invalidateWorkoutQueries } from '@/lib/queryUtils';
+import { useFileDrop } from '@/hooks/useFileDrop';
 
 export function FileUpload() {
-  const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
 
+  const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
+    onFilesSelected: (files) => {
+      setSelectedFiles((prev) => [...prev, ...files]);
+    },
+    acceptExtensions: ['.gpx', '.fit', '.fit.gz'],
+  });
+
   const mutation = useMutation({
     mutationFn: (files: File[]) => importWorkoutFile(files, unitPreference),
     onSuccess: (data) => {
-      // Invalidate all workout list queries (dashboard, activities page, home page)
-      queryClient.invalidateQueries({ queryKey: ['workouts'] });
-      // Invalidate stats queries
-      queryClient.invalidateQueries({ queryKey: ['weeklyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
+      invalidateWorkoutQueries(queryClient);
       
       // Handle both single file (backward compat) and multiple file responses
       if ('totalProcessed' in data) {
@@ -45,59 +47,6 @@ export function FileUpload() {
     },
   });
 
-  const handleDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  }, []);
-
-  const isValidFile = useCallback((fileName: string): boolean => {
-    const lower = fileName.toLowerCase();
-    return lower.endsWith('.gpx') || lower.endsWith('.fit') || lower.endsWith('.fit.gz');
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDragActive(false);
-
-      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        const files = Array.from(e.dataTransfer.files);
-        const validFiles = files.filter(file => isValidFile(file.name));
-        
-        if (validFiles.length !== files.length) {
-          alert('Some files were skipped. Only GPX or FIT files (.gpx, .fit, .fit.gz) are supported.');
-        }
-        
-        if (validFiles.length > 0) {
-          setSelectedFiles(prev => [...prev, ...validFiles]);
-        }
-      }
-    },
-    [isValidFile]
-  );
-
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files);
-      const validFiles = files.filter(file => isValidFile(file.name));
-      
-      if (validFiles.length !== files.length) {
-        alert('Some files were skipped. Only GPX or FIT files (.gpx, .fit, .fit.gz) are supported.');
-      }
-      
-      if (validFiles.length > 0) {
-        setSelectedFiles(prev => [...prev, ...validFiles]);
-      }
-    }
-    // Reset input so same files can be selected again
-    e.target.value = '';
-  }, [isValidFile]);
 
   const handleRemoveFile = useCallback((index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));

@@ -158,9 +158,12 @@ export async function importWorkoutFile(
   return response.json();
 }
 
-export async function getWorkouts(
-  params?: WorkoutsListParams
-): Promise<WorkoutsListResponse> {
+/**
+ * Builds a URLSearchParams object from WorkoutsListParams
+ * @param params - Optional workout list parameters
+ * @returns URLSearchParams object
+ */
+function buildQueryParams(params?: WorkoutsListParams): URLSearchParams {
   const searchParams = new URLSearchParams();
   
   if (params?.page) {
@@ -194,6 +197,13 @@ export async function getWorkouts(
     searchParams.set('sortOrder', params.sortOrder);
   }
 
+  return searchParams;
+}
+
+export async function getWorkouts(
+  params?: WorkoutsListParams
+): Promise<WorkoutsListResponse> {
+  const searchParams = buildQueryParams(params);
   const queryString = searchParams.toString();
   const url = `${API_BASE_URL}/workouts${queryString ? `?${queryString}` : ''}`;
 
@@ -288,24 +298,14 @@ export async function getWorkoutMedia(workoutId: string): Promise<WorkoutMedia[]
 
   // If workout not found, return empty array (no media)
   if (response.status === 404) {
-    console.log('[getWorkoutMedia] Workout not found (404) for workoutId:', workoutId);
     return [];
   }
 
   if (!response.ok) {
-    console.error('[getWorkoutMedia] Error response:', response.status, response.statusText);
     throw new Error(`Failed to fetch workout media: ${response.status}`);
   }
 
   const data = await response.json();
-  console.log('[getWorkoutMedia] Raw API response:', {
-    workoutId,
-    status: response.status,
-    data,
-    dataType: typeof data,
-    isArray: Array.isArray(data),
-    length: Array.isArray(data) ? data.length : 'N/A',
-  });
   return data;
 }
 

@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { LineChart, Line, Area, AreaChart, XAxis, YAxis, ResponsiveContainer, Tooltip, ComposedChart, ReferenceArea } from 'recharts';
 import { getRelativeEffortStats } from '@/lib/api';
+import { calculateYAxisTicks, calculateYAxisMax } from '@/utils/chartUtils';
 
 export default function RelativeEffortGraph() {
   // Get timezone offset in minutes (negative for timezones ahead of UTC)
@@ -82,61 +83,10 @@ export default function RelativeEffortGraph() {
     };
   });
 
-  // Calculate max value for Y-axis (add some padding)
+  // Calculate max value for Y-axis
   const maxEffort = Math.max(...data.currentWeek, data.rangeMax, 1);
-  const yAxisMax = Math.ceil(maxEffort * 1.2);
-  
-  // Generate Y-axis ticks that align with data values
-  // Find a nice round number for the max (round up to nearest 50 or 100)
-  const roundToNice = (num: number): number => {
-    if (num <= 50) return Math.ceil(num / 10) * 10;
-    if (num <= 200) return Math.ceil(num / 50) * 50;
-    return Math.ceil(num / 100) * 100;
-  };
-  
-  const niceMax = roundToNice(yAxisMax);
-  const tickCount = 3;
-  
-  // Generate ticks that include 0 and divide the range nicely
-  // Also ensure we include the actual max data value if it's significant
-  const yAxisTicks = [0];
-  if (niceMax <= 100) {
-    // For smaller ranges, use increments of 25 or 50
-    const step = niceMax <= 50 ? 25 : 50;
-    for (let val = step; val <= niceMax; val += step) {
-      yAxisTicks.push(val);
-    }
-  } else {
-    // For larger ranges, divide into 3-4 equal parts with nice numbers
-    const step = roundToNice(niceMax / tickCount);
-    for (let val = step; val <= niceMax; val += step) {
-      yAxisTicks.push(val);
-    }
-  }
-  
-  // Ensure we include the actual max effort value if it's not already in ticks
-  // This helps align data points with Y-axis labels
-  if (maxEffort > 0 && !yAxisTicks.includes(maxEffort)) {
-    // Find the closest tick and add the actual value if it's significantly different
-    const closestTick = yAxisTicks.reduce((prev, curr) => 
-      Math.abs(curr - maxEffort) < Math.abs(prev - maxEffort) ? curr : prev
-    );
-    if (Math.abs(closestTick - maxEffort) > maxEffort * 0.1) {
-      // Add the actual max value if it's more than 10% different from closest tick
-      yAxisTicks.push(maxEffort);
-      yAxisTicks.sort((a, b) => a - b);
-    }
-  }
-  
-  // Ensure we have at least 3 ticks including 0
-  if (yAxisTicks.length < 3) {
-    const step = niceMax / 2;
-    yAxisTicks.length = 1; // Keep 0
-    yAxisTicks.push(Math.round(step));
-    yAxisTicks.push(niceMax);
-  }
-  
-  const adjustedYAxisMax = niceMax;
+  const adjustedYAxisMax = calculateYAxisMax(maxEffort);
+  const yAxisTicks = calculateYAxisTicks(maxEffort, 3);
 
   // Determine status relative to range
   const currentTotal = data.currentWeekTotal;
