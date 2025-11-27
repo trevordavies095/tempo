@@ -4,24 +4,30 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { importBulkStravaExport, type BulkImportResponse } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
+import { invalidateWorkoutQueries } from '@/lib/queryUtils';
+import { useFileDrop } from '@/hooks/useFileDrop';
 
 export function BulkImport() {
-  const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<BulkImportResponse | null>(null);
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
 
+  const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
+    onFilesSelected: (files) => {
+      if (files.length > 0) {
+        setSelectedFile(files[0]);
+        setImportResult(null);
+      }
+    },
+    acceptExtensions: ['.zip'],
+    maxFiles: 1,
+  });
+
   const mutation = useMutation({
     mutationFn: (file: File) => importBulkStravaExport(file, unitPreference),
     onSuccess: (data) => {
-      // Invalidate all workout list queries (dashboard, activities page, home page)
-      queryClient.invalidateQueries({ queryKey: ['workouts'] });
-      // Invalidate stats queries
-      queryClient.invalidateQueries({ queryKey: ['weeklyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
+      invalidateWorkoutQueries(queryClient);
       setImportResult(data);
       setSelectedFile(null);
     },
@@ -30,46 +36,6 @@ export function BulkImport() {
     },
   });
 
-  const handleDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDragActive(false);
-
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        const file = e.dataTransfer.files[0];
-        if (file.name.endsWith('.zip')) {
-          setSelectedFile(file);
-          setImportResult(null);
-        } else {
-          alert('Please upload a ZIP file containing your Strava export');
-        }
-      }
-    },
-    []
-  );
-
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.name.endsWith('.zip')) {
-        setSelectedFile(file);
-        setImportResult(null);
-      } else {
-        alert('Please upload a ZIP file containing your Strava export');
-      }
-    }
-  }, []);
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {

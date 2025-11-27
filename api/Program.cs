@@ -46,6 +46,8 @@ builder.Services.AddScoped<FitParserService>();
 builder.Services.AddScoped<MediaService>();
 builder.Services.AddScoped<HeartRateZoneService>();
 builder.Services.AddScoped<RelativeEffortService>();
+builder.Services.AddScoped<BulkImportService>();
+builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage
@@ -110,82 +112,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-    
-    // Handle migration state mismatch: if database was created with EnsureCreated(),
-    // it has tables but no __EFMigrationsHistory table. We need to fix this first.
-    try
-    {
-        // Create __EFMigrationsHistory table if it doesn't exist
-        db.Database.ExecuteSqlRaw(@"
-            CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
-                ""MigrationId"" character varying(150) NOT NULL,
-                ""ProductVersion"" character varying(32) NOT NULL,
-                CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY (""MigrationId"")
-            );
-        ");
-        
-        // Check if Workouts table exists (indicates InitialCreate was applied via EnsureCreated)
-        // Use connection to execute scalar query
-        var workoutsTableExists = false;
-        try
-        {
-            var connection = db.Database.GetDbConnection();
-            if (connection.State != ConnectionState.Open)
-                connection.Open();
-            
-            using var command = connection.CreateCommand();
-            command.CommandText = @"
-                SELECT COUNT(*) FROM information_schema.tables 
-                WHERE table_schema = 'public' AND table_name = 'Workouts';
-            ";
-            var result = command.ExecuteScalar();
-            workoutsTableExists = Convert.ToInt32(result) > 0;
-        }
-        catch
-        {
-            workoutsTableExists = false;
-        }
-        
-        // Check if InitialCreate migration is recorded
-        var initialCreateRecorded = false;
-        try
-        {
-            var connection = db.Database.GetDbConnection();
-            if (connection.State != ConnectionState.Open)
-                connection.Open();
-            
-            using var command = connection.CreateCommand();
-            command.CommandText = @"
-                SELECT COUNT(*) FROM ""__EFMigrationsHistory""
-                WHERE ""MigrationId"" = '20251110232429_InitialCreate';
-            ";
-            var result = command.ExecuteScalar();
-            initialCreateRecorded = Convert.ToInt32(result) > 0;
-        }
-        catch
-        {
-            initialCreateRecorded = false;
-        }
-        
-        // If tables exist but InitialCreate isn't recorded, mark it as applied
-        if (workoutsTableExists && !initialCreateRecorded)
-        {
-            db.Database.ExecuteSqlRaw(@"
-                INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") 
-                VALUES ('20251110232429_InitialCreate', '9.0.10')
-                ON CONFLICT (""MigrationId"") DO NOTHING;
-            ");
-            Log.Information("Marked InitialCreate migration as applied (tables existed from EnsureCreated)");
-        }
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Error checking migration state - will attempt to migrate anyway");
-    }
-    
-    // Now apply any pending migrations (like AddWorkoutMedia)
-    db.Database.Migrate();
-    Log.Information("Database migrations applied successfully");
+    DatabaseMigrationHelper.ApplyMigrations(db);
 }
 
 app.Run();

@@ -1,40 +1,31 @@
 'use client';
 
 import { useSettings } from '@/lib/settings';
-import { formatDistance, formatPace, formatElevation } from '@/lib/format';
 import { 
   getHeartRateZones, 
   updateHeartRateZones,
-  updateHeartRateZonesWithRecalc,
   recalculateAllRelativeEffort,
   getQualifyingWorkoutCount,
+  getQualifyingWorkoutCountForSplits,
+  recalculateAllSplits,
   type HeartRateZoneSettings,
   type HeartRateCalculationMethod,
   type UpdateHeartRateZoneSettingsRequest
 } from '@/lib/api';
 import { RecalculateEffortDialog } from '@/components/RecalculateEffortDialog';
 import { ZoneUpdateDialog } from '@/components/ZoneUpdateDialog';
+import { RecalculateSplitsDialog } from '@/components/RecalculateSplitsDialog';
+import UnitPreferenceSection from '@/components/UnitPreferenceSection';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVersion } from '@/lib/api';
+import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
+import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 
 export default function SettingsPage() {
-  const { unitPreference, setUnitPreference } = useSettings();
-  
-  // Heart Rate Zones state
+  const queryClient = useQueryClient();
   const [hrZones, setHrZones] = useState<HeartRateZoneSettings | null>(null);
-  const [calculationMethod, setCalculationMethod] = useState<HeartRateCalculationMethod>('AgeBased');
-  const [age, setAge] = useState<number>(30);
-  const [restingHr, setRestingHr] = useState<number>(60);
-  const [maxHr, setMaxHr] = useState<number>(190);
-  const [customZones, setCustomZones] = useState<Array<{ min: number; max: number }>>([
-    { min: 95, max: 114 },
-    { min: 114, max: 133 },
-    { min: 133, max: 152 },
-    { min: 152, max: 171 },
-    { min: 171, max: 190 },
-  ]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -51,6 +42,13 @@ export default function SettingsPage() {
   const [showZoneUpdateDialog, setShowZoneUpdateDialog] = useState(false);
   const [zoneUpdateWorkoutCount, setZoneUpdateWorkoutCount] = useState<number | null>(null);
   const [isZoneUpdating, setIsZoneUpdating] = useState(false);
+  
+  // Recalculate Splits state
+  const [showRecalcSplitsDialog, setShowRecalcSplitsDialog] = useState(false);
+  const [recalcSplitsWorkoutCount, setRecalcSplitsWorkoutCount] = useState<number | null>(null);
+  const [isRecalculatingSplits, setIsRecalculatingSplits] = useState(false);
+  const [recalcSplitsError, setRecalcSplitsError] = useState<string | null>(null);
+  const [recalcSplitsSuccess, setRecalcSplitsSuccess] = useState(false);
 
   // Fetch version information
   const { data: versionInfo } = useQuery({
@@ -66,13 +64,6 @@ export default function SettingsPage() {
       try {
         const settings = await getHeartRateZones();
         setHrZones(settings);
-        setCalculationMethod(settings.calculationMethod);
-        if (settings.age !== null) setAge(settings.age);
-        if (settings.restingHeartRateBpm !== null) setRestingHr(settings.restingHeartRateBpm);
-        if (settings.maxHeartRateBpm !== null) setMaxHr(settings.maxHeartRateBpm);
-        if (settings.zones && settings.zones.length === 5) {
-          setCustomZones(settings.zones.map(z => ({ min: z.minBpm, max: z.maxBpm })));
-        }
       } catch (error) {
         console.error('Failed to load heart rate zones:', error);
       } finally {
@@ -82,38 +73,19 @@ export default function SettingsPage() {
     loadHrZones();
   }, []);
 
-  // Recalculate zones when method or inputs change (for preview only)
-  useEffect(() => {
-    if (calculationMethod === 'Custom') return; // Don't recalculate custom zones
-    
-    const zonePercentages = [
-      { min: 0.50, max: 0.60 }, // Zone 1: 50-60%
-      { min: 0.60, max: 0.70 }, // Zone 2: 60-70%
-      { min: 0.70, max: 0.80 }, // Zone 3: 70-80%
-      { min: 0.80, max: 0.90 }, // Zone 4: 80-90%
-      { min: 0.90, max: 1.00 }, // Zone 5: 90-100%
-    ];
-
-    let calculatedZones: Array<{ min: number; max: number }> = [];
-
-    if (calculationMethod === 'AgeBased') {
-      const maxHeartRate = 220 - age;
-      calculatedZones = zonePercentages.map(p => ({
-        min: Math.round(maxHeartRate * p.min),
-        max: Math.round(maxHeartRate * p.max),
-      }));
-    } else if (calculationMethod === 'Karvonen') {
-      const heartRateReserve = maxHr - restingHr;
-      calculatedZones = zonePercentages.map(p => ({
-        min: Math.round((heartRateReserve * p.min) + restingHr),
-        max: Math.round((heartRateReserve * p.max) + restingHr),
-      }));
-    }
-
-    if (calculatedZones.length === 5) {
-      setCustomZones(calculatedZones);
-    }
-  }, [calculationMethod, age, restingHr, maxHr]);
+  const {
+    calculationMethod,
+    setCalculationMethod,
+    age,
+    setAge,
+    restingHr,
+    setRestingHr,
+    maxHr,
+    setMaxHr,
+    customZones,
+    displayZones,
+    updateCustomZone,
+  } = useHeartRateZones(hrZones);
 
   const handleSaveHrZones = async () => {
     setIsSaving(true);
@@ -127,7 +99,7 @@ export default function SettingsPage() {
         restingHeartRateBpm: calculationMethod === 'Karvonen' ? restingHr : null,
         maxHeartRateBpm: calculationMethod === 'Karvonen' ? maxHr : null,
         zones: calculationMethod === 'Custom' 
-          ? customZones.map((z, i) => ({ zoneNumber: i + 1, minBpm: z.min, maxBpm: z.max }))
+          ? displayZones.map((z, i) => ({ zoneNumber: i + 1, minBpm: z.min, maxBpm: z.max }))
           : undefined,
       };
 
@@ -189,6 +161,10 @@ export default function SettingsPage() {
       const response = await recalculateAllRelativeEffort();
       setRecalcWorkoutCount(response.totalQualifyingWorkouts);
       setRecalcSuccess(true);
+      
+      // Invalidate all workout queries to refresh the UI
+      invalidateWorkoutQueries(queryClient);
+      
       setTimeout(() => {
         setRecalcSuccess(false);
         setRecalcWorkoutCount(null);
@@ -211,6 +187,10 @@ export default function SettingsPage() {
       const response = await recalculateAllRelativeEffort();
       setRecalcWorkoutCount(response.totalQualifyingWorkouts);
       setRecalcSuccess(true);
+      
+      // Invalidate all workout queries to refresh the UI
+      invalidateWorkoutQueries(queryClient);
+      
       setTimeout(() => {
         setRecalcSuccess(false);
         setRecalcWorkoutCount(null);
@@ -227,10 +207,43 @@ export default function SettingsPage() {
     setShowZoneUpdateDialog(false);
   };
 
-  const updateCustomZone = (index: number, field: 'min' | 'max', value: number) => {
-    const updated = [...customZones];
-    updated[index] = { ...updated[index], [field]: value };
-    setCustomZones(updated);
+  const handleRecalculateSplitsClick = async () => {
+    // Fetch workout count before showing dialog
+    try {
+      const countResponse = await getQualifyingWorkoutCountForSplits();
+      setRecalcSplitsWorkoutCount(countResponse.count);
+      setShowRecalcSplitsDialog(true);
+    } catch (error) {
+      setRecalcSplitsError('Failed to get workout count');
+      // Still show dialog with null count
+      setRecalcSplitsWorkoutCount(null);
+      setShowRecalcSplitsDialog(true);
+    }
+  };
+
+  const handleRecalculateSplitsConfirm = async () => {
+    setIsRecalculatingSplits(true);
+    setRecalcSplitsError(null);
+    setRecalcSplitsSuccess(false);
+    setShowRecalcSplitsDialog(false);
+
+    try {
+      const response = await recalculateAllSplits();
+      setRecalcSplitsWorkoutCount(response.totalWorkouts);
+      setRecalcSplitsSuccess(true);
+      
+      // Invalidate all workout queries to refresh the UI
+      invalidateWorkoutQueries(queryClient);
+      
+      setTimeout(() => {
+        setRecalcSplitsSuccess(false);
+        setRecalcSplitsWorkoutCount(null);
+      }, 5000);
+    } catch (error) {
+      setRecalcSplitsError(error instanceof Error ? error.message : 'Failed to recalculate splits');
+    } finally {
+      setIsRecalculatingSplits(false);
+    }
   };
 
   return (
@@ -252,63 +265,38 @@ export default function SettingsPage() {
         </div>
 
         <div className="w-full space-y-8">
-          {/* Unit Preference */}
+          <UnitPreferenceSection />
+
+          {/* Recalculate Splits Button */}
           <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Unit Preference
+              Recalculate Splits
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Choose how distances, paces, and elevations are displayed throughout the app.
+              Recalculate splits for all existing workouts based on your current unit preference. New workouts will automatically use your current preference.
             </p>
-
-            <div className="flex gap-4 mb-6">
+            <div className="flex flex-col gap-2">
               <button
-                onClick={() => setUnitPreference('metric')}
-                className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-                  unitPreference === 'metric'
-                    ? 'bg-blue-600 text-white dark:bg-blue-500'
-                    : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                onClick={handleRecalculateSplitsClick}
+                disabled={isRecalculatingSplits}
+                className={`px-6 py-3 rounded-lg font-medium transition-colors w-fit ${
+                  isRecalculatingSplits
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
+                    : 'bg-orange-600 text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600'
                 }`}
               >
-                Metric
+                {isRecalculatingSplits ? 'Recalculating...' : 'Recalculate Splits'}
               </button>
-              <button
-                onClick={() => setUnitPreference('imperial')}
-                className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-                  unitPreference === 'imperial'
-                    ? 'bg-blue-600 text-white dark:bg-blue-500'
-                    : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                }`}
-              >
-                Imperial
-              </button>
-            </div>
-
-            {/* Preview */}
-            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-                Preview
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div>
-                  <div className="text-gray-600 dark:text-gray-400 mb-1">Distance</div>
-                  <div className="text-gray-900 dark:text-gray-100 font-medium">
-                    {formatDistance(10000, unitPreference)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-gray-600 dark:text-gray-400 mb-1">Pace</div>
-                  <div className="text-gray-900 dark:text-gray-100 font-medium">
-                    {formatPace(300, unitPreference)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-gray-600 dark:text-gray-400 mb-1">Elevation</div>
-                  <div className="text-gray-900 dark:text-gray-100 font-medium">
-                    {formatElevation(150, unitPreference)}
-                  </div>
-                </div>
-              </div>
+              {recalcSplitsSuccess && (
+                <span className="text-sm text-green-600 dark:text-green-400">
+                  Successfully recalculated splits for {recalcSplitsWorkoutCount} workout{recalcSplitsWorkoutCount !== 1 ? 's' : ''}!
+                </span>
+              )}
+              {recalcSplitsError && (
+                <span className="text-sm text-red-600 dark:text-red-400">
+                  {recalcSplitsError}
+                </span>
+              )}
             </div>
           </div>
 
@@ -469,7 +457,7 @@ export default function SettingsPage() {
                     Zone Preview
                   </h3>
                   <div className="space-y-2">
-                    {customZones.map((zone, index) => (
+                    {displayZones.map((zone, index) => (
                       <div key={index} className="flex items-center justify-between text-sm">
                         <span className="text-gray-700 dark:text-gray-300 font-medium">
                           Zone {index + 1}
@@ -551,8 +539,9 @@ export default function SettingsPage() {
               <li>
                 <strong>Imperial:</strong> Distances in miles (mi), pace per mile, elevation in feet (ft)
               </li>
-              <li>Your preference is saved locally in your browser and will persist across sessions.</li>
-              <li>Splits will be calculated and displayed based on your unit preference (1 km splits for metric, 1 mile splits for imperial).</li>
+              <li>Your preference is saved and will persist across sessions.</li>
+              <li>New workouts will be imported with splits based on your current unit preference (1 km splits for metric, 1 mile splits for imperial).</li>
+              <li>To update splits for existing workouts, use the "Recalculate Splits" button above.</li>
             </ul>
           </div>
 
@@ -589,6 +578,15 @@ export default function SettingsPage() {
         onKeepExisting={handleZoneUpdateKeepExisting}
         workoutCount={zoneUpdateWorkoutCount}
         isLoading={isZoneUpdating}
+      />
+      
+      {/* Recalculate Splits Dialog */}
+      <RecalculateSplitsDialog
+        open={showRecalcSplitsDialog}
+        onClose={() => setShowRecalcSplitsDialog(false)}
+        onConfirm={handleRecalculateSplitsConfirm}
+        workoutCount={recalcSplitsWorkoutCount}
+        isLoading={isRecalculatingSplits}
       />
     </div>
   );

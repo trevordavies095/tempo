@@ -8,6 +8,10 @@ import WeeklyStatsWidget from '@/components/WeeklyStatsWidget';
 import RelativeEffortGraph from '@/components/RelativeEffortGraph';
 import WorkoutCard from '@/components/WorkoutCard';
 import YearlyWeeklyChart from '@/components/YearlyWeeklyChart';
+import Pagination from '@/components/Pagination';
+import LoadingState from '@/components/LoadingState';
+import ErrorState from '@/components/ErrorState';
+import { calculateWeekFromInterval, generateIntervalFromWeek } from '@/utils/weekUtils';
 
 export default function DashboardPage() {
   const [page, setPage] = useState(1);
@@ -24,38 +28,11 @@ export default function DashboardPage() {
         const interval = params.get('interval');
         const yearOffset = parseInt(params.get('year_offset') || '0', 10);
 
-        if (interval && interval.length === 6) {
-          // Format: YYYYWW (e.g., 202516)
-          // Calculate the week from the interval (for backwards compatibility)
-          const year = parseInt(interval.substring(0, 4), 10) - yearOffset;
-          const weekNum = parseInt(interval.substring(4, 6), 10);
-
-          // Calculate week boundaries from the last 52 weeks
-          // Week 52 is the most recent complete week
-          const today = new Date();
-          const daysSinceMonday = ((today.getDay() - 1 + 7) % 7);
-          const mostRecentMonday = new Date(today);
-          mostRecentMonday.setDate(today.getDate() - daysSinceMonday);
-          
-          let week52End = new Date(mostRecentMonday);
-          week52End.setDate(mostRecentMonday.getDate() + 6);
-          if (daysSinceMonday === 0) {
-            week52End.setDate(mostRecentMonday.getDate() - 1);
+        if (interval) {
+          const weekRange = calculateWeekFromInterval(interval, yearOffset);
+          if (weekRange) {
+            setSelectedWeek(weekRange);
           }
-          
-          const week52Start = new Date(week52End);
-          week52Start.setDate(week52End.getDate() - 6);
-          
-          // Calculate the week start for the given week number
-          const weekStart = new Date(week52Start);
-          weekStart.setDate(week52Start.getDate() - (52 - weekNum) * 7);
-          const weekEnd = new Date(weekStart);
-          weekEnd.setDate(weekStart.getDate() + 6);
-
-          setSelectedWeek({
-            weekStart: weekStart.toISOString().split('T')[0],
-            weekEnd: weekEnd.toISOString().split('T')[0],
-          });
         }
       }
     }
@@ -75,39 +52,10 @@ export default function DashboardPage() {
   // Update URL hash when week is selected
   useEffect(() => {
     if (selectedWeek && typeof window !== 'undefined') {
-      const weekStartDate = new Date(selectedWeek.weekStart);
-      const year = weekStartDate.getFullYear();
-      
-      // Calculate week number (1-52) for the last 52 weeks
-      // Match backend logic: Week 52 is the most recent complete week
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const daysSinceMonday = ((today.getDay() - 1 + 7) % 7);
-      const mostRecentMonday = new Date(today);
-      mostRecentMonday.setDate(today.getDate() - daysSinceMonday);
-      
-      let week52End = new Date(mostRecentMonday);
-      week52End.setDate(mostRecentMonday.getDate() + 6);
-      if (daysSinceMonday === 0) {
-        // If today is Monday, week 52 ended yesterday (last Sunday)
-        week52End.setDate(mostRecentMonday.getDate() - 1);
+      const result = generateIntervalFromWeek(selectedWeek.weekStart);
+      if (result) {
+        window.location.hash = `interval?interval=${result.interval}&interval_type=week&year_offset=${result.yearOffset}`;
       }
-      
-      const week52Start = new Date(week52End);
-      week52Start.setDate(week52End.getDate() - 6);
-      
-      // Week 1 starts 51 weeks before week 52
-      const week1Start = new Date(week52Start);
-      week1Start.setDate(week52Start.getDate() - 51 * 7);
-      
-      // Calculate which week number (1-52) the selected week is
-      const diffTime = weekStartDate.getTime() - week1Start.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      const weekNum = Math.floor(diffDays / 7) + 1;
-
-      const interval = `${year}${Math.min(52, Math.max(1, weekNum)).toString().padStart(2, '0')}`;
-      const yearOffset = new Date().getFullYear() - year;
-      window.location.hash = `interval?interval=${interval}&interval_type=week&year_offset=${yearOffset}`;
     } else if (!selectedWeek && typeof window !== 'undefined') {
       // Clear hash when no week is selected
       window.location.hash = '';
@@ -146,9 +94,7 @@ export default function DashboardPage() {
             <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
               Dashboard
             </h1>
-            <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
-              Loading workouts...
-            </p>
+            <LoadingState message="Loading workouts..." className="mb-8" />
           </div>
         </main>
       </div>
@@ -164,9 +110,7 @@ export default function DashboardPage() {
               Dashboard
             </h1>
             <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-              <p className="text-sm text-red-800 dark:text-red-200">
-                Error: {error instanceof Error ? error.message : 'Failed to load workouts'}
-              </p>
+              <ErrorState error={error} message="Failed to load workouts" />
             </div>
           </div>
         </main>
@@ -230,29 +174,12 @@ export default function DashboardPage() {
                     <WorkoutCard key={workout.id} workout={workout} />
                   ))}
                 </div>
-                {data.totalPages > 1 && (
-                  <div className="w-full mt-8 flex items-center justify-between">
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      Page {data.page} of {data.totalPages}
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                        disabled={page === 1}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        Previous
-                      </button>
-                      <button
-                        onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
-                        disabled={page === data.totalPages}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <Pagination
+                  currentPage={data.page}
+                  totalPages={data.totalPages}
+                  onPageChange={setPage}
+                  className="w-full mt-8"
+                />
               </>
             )}
           </div>

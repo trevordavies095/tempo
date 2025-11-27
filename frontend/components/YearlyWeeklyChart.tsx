@@ -6,6 +6,8 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 
 import { getYearlyWeeklyStats, getAvailablePeriods, type AvailablePeriod } from '@/lib/api';
 import { formatDistance } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
+import { formatDateRange, formatOverallDateRange } from '@/utils/dateUtils';
+import PeriodSelector from '@/components/PeriodSelector';
 
 interface YearlyWeeklyChartProps {
   selectedPeriodEndDate: string | null;
@@ -88,17 +90,6 @@ export default function YearlyWeeklyChart({
     }
   };
 
-  const formatDateRange = (weekStart: string, weekEnd: string) => {
-    const start = new Date(weekStart);
-    const end = new Date(weekEnd);
-    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  };
-
-  const formatOverallDateRange = (dateStart: string, dateEnd: string) => {
-    const start = new Date(dateStart);
-    const end = new Date(dateEnd);
-    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  };
 
   if (isLoading) {
     return (
@@ -107,27 +98,13 @@ export default function YearlyWeeklyChart({
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             Activities
           </h2>
-          {isLoadingPeriods ? (
-            <div className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400">
-              Loading periods...
-            </div>
-          ) : isErrorPeriods ? (
-            <div className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400">
-              Error loading periods
-            </div>
-          ) : availablePeriods && availablePeriods.length > 0 ? (
-            <select
-              value={selectedPeriodEndDate || ''}
-              onChange={(e) => onPeriodChange(e.target.value || null)}
-              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {availablePeriods.map((period) => (
-                <option key={period.periodEndDate} value={period.periodEndDate}>
-                  {period.dateRangeLabel}
-                </option>
-              ))}
-            </select>
-          ) : null}
+          <PeriodSelector
+            availablePeriods={availablePeriods}
+            selectedPeriodEndDate={selectedPeriodEndDate}
+            onPeriodChange={onPeriodChange}
+            isLoading={isLoadingPeriods}
+            isError={isErrorPeriods}
+          />
         </div>
         <div className="h-64 flex items-center justify-center">
           <p className="text-sm text-gray-600 dark:text-gray-400">Loading...</p>
@@ -143,27 +120,13 @@ export default function YearlyWeeklyChart({
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             Activities
           </h2>
-          {isLoadingPeriods ? (
-            <div className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400">
-              Loading periods...
-            </div>
-          ) : isErrorPeriods ? (
-            <div className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400">
-              Error loading periods
-            </div>
-          ) : availablePeriods && availablePeriods.length > 0 ? (
-            <select
-              value={selectedPeriodEndDate || ''}
-              onChange={(e) => onPeriodChange(e.target.value || null)}
-              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {availablePeriods.map((period) => (
-                <option key={period.periodEndDate} value={period.periodEndDate}>
-                  {period.dateRangeLabel}
-                </option>
-              ))}
-            </select>
-          ) : null}
+          <PeriodSelector
+            availablePeriods={availablePeriods}
+            selectedPeriodEndDate={selectedPeriodEndDate}
+            onPeriodChange={onPeriodChange}
+            isLoading={isLoadingPeriods}
+            isError={isErrorPeriods}
+          />
         </div>
         <div className="h-64 flex items-center justify-center">
           <p className="text-sm text-red-600 dark:text-red-400">
@@ -191,31 +154,13 @@ export default function YearlyWeeklyChart({
             </div>
           )}
         </div>
-        {isLoadingPeriods ? (
-          <div className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400">
-            Loading periods...
-          </div>
-        ) : isErrorPeriods ? (
-          <div className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400">
-            Error loading periods
-          </div>
-        ) : availablePeriods && availablePeriods.length > 0 ? (
-          <select
-            value={selectedPeriodEndDate || ''}
-            onChange={(e) => onPeriodChange(e.target.value || null)}
-            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {availablePeriods.map((period) => (
-              <option key={period.periodEndDate} value={period.periodEndDate}>
-                {period.dateRangeLabel}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <div className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400">
-            No periods available
-          </div>
-        )}
+        <PeriodSelector
+          availablePeriods={availablePeriods}
+          selectedPeriodEndDate={selectedPeriodEndDate}
+          onPeriodChange={onPeriodChange}
+          isLoading={isLoadingPeriods}
+          isError={isErrorPeriods}
+        />
       </div>
 
       <div className="mt-4">

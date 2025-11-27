@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Tempo.Api.Data;
@@ -11,9 +12,11 @@ using Tempo.Api.Data;
 namespace Tempo.Api.Migrations
 {
     [DbContext(typeof(TempoDbContext))]
-    partial class TempoDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251122003810_AddRelativeEffortToWorkout")]
+    partial class AddRelativeEffortToWorkout
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -31,59 +34,52 @@ namespace Tempo.Api.Migrations
                     b.Property<int?>("Age")
                         .HasColumnType("integer");
 
-                    b.Property<int>("CalculationMethod")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int?>("MaxHeartRateBpm")
-                        .HasColumnType("integer");
+                    b.Property<byte?>("MaxHeartRateBpm")
+                        .HasColumnType("smallint");
 
-                    b.Property<int?>("RestingHeartRateBpm")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("UnitPreference")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
+                    b.Property<byte?>("RestingHeartRateBpm")
+                        .HasColumnType("smallint");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("Zone1MaxBpm")
-                        .HasColumnType("integer");
+                    b.Property<byte?>("Zone1Max")
+                        .HasColumnType("smallint");
 
-                    b.Property<int>("Zone1MinBpm")
-                        .HasColumnType("integer");
+                    b.Property<byte?>("Zone1Min")
+                        .HasColumnType("smallint");
 
-                    b.Property<int>("Zone2MaxBpm")
-                        .HasColumnType("integer");
+                    b.Property<byte?>("Zone2Max")
+                        .HasColumnType("smallint");
 
-                    b.Property<int>("Zone2MinBpm")
-                        .HasColumnType("integer");
+                    b.Property<byte?>("Zone2Min")
+                        .HasColumnType("smallint");
 
-                    b.Property<int>("Zone3MaxBpm")
-                        .HasColumnType("integer");
+                    b.Property<byte?>("Zone3Max")
+                        .HasColumnType("smallint");
 
-                    b.Property<int>("Zone3MinBpm")
-                        .HasColumnType("integer");
+                    b.Property<byte?>("Zone3Min")
+                        .HasColumnType("smallint");
 
-                    b.Property<int>("Zone4MaxBpm")
-                        .HasColumnType("integer");
+                    b.Property<byte?>("Zone4Max")
+                        .HasColumnType("smallint");
 
-                    b.Property<int>("Zone4MinBpm")
-                        .HasColumnType("integer");
+                    b.Property<byte?>("Zone4Min")
+                        .HasColumnType("smallint");
 
-                    b.Property<int>("Zone5MaxBpm")
-                        .HasColumnType("integer");
+                    b.Property<byte?>("Zone5Max")
+                        .HasColumnType("smallint");
 
-                    b.Property<int>("Zone5MinBpm")
+                    b.Property<byte?>("Zone5Min")
+                        .HasColumnType("smallint");
+
+                    b.Property<int>("ZoneCalculationMethod")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("Id")
-                        .IsUnique();
 
                     b.ToTable("UserSettings");
                 });
@@ -161,17 +157,6 @@ namespace Tempo.Api.Migrations
 
                     b.Property<string>("Notes")
                         .HasColumnType("text");
-
-                    b.Property<byte[]>("RawFileData")
-                        .HasColumnType("bytea");
-
-                    b.Property<string>("RawFileName")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("RawFileType")
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
 
                     b.Property<string>("RawFitData")
                         .HasColumnType("jsonb");

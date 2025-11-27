@@ -8,6 +8,62 @@ namespace Tempo.Api.Endpoints;
 
 public static class SettingsEndpoints
 {
+    /// <summary>
+    /// Calculates heart rate zones based on the request method and validates the input.
+    /// Returns the zones and any validation error message.
+    /// </summary>
+    private static (List<HeartRateZone>? Zones, string? ErrorMessage) CalculateZonesFromRequest(
+        UpdateHeartRateZonesRequest request,
+        HeartRateZoneService zoneService)
+    {
+        if (!Enum.TryParse<HeartRateCalculationMethod>(request.CalculationMethod, true, out var method))
+        {
+            return (null, "Invalid calculation method");
+        }
+
+        List<HeartRateZone> zones;
+
+        // Calculate zones based on method
+        switch (method)
+        {
+            case HeartRateCalculationMethod.AgeBased:
+                if (!request.Age.HasValue)
+                {
+                    return (null, "Age is required for AgeBased calculation method");
+                }
+                zones = zoneService.CalculateZonesFromAge(request.Age.Value);
+                break;
+
+            case HeartRateCalculationMethod.Karvonen:
+                if (!request.MaxHeartRateBpm.HasValue || !request.RestingHeartRateBpm.HasValue)
+                {
+                    return (null, "Max heart rate and resting heart rate are required for Karvonen calculation method");
+                }
+                zones = zoneService.CalculateZonesFromKarvonen(
+                    request.MaxHeartRateBpm.Value,
+                    request.RestingHeartRateBpm.Value);
+                break;
+
+            case HeartRateCalculationMethod.Custom:
+                if (request.Zones == null || request.Zones.Count != 5)
+                {
+                    return (null, "Exactly 5 zones are required for Custom method");
+                }
+                var validation = zoneService.ValidateCustomZones(request.Zones);
+                if (!validation.IsValid)
+                {
+                    return (null, validation.ErrorMessage);
+                }
+                zones = request.Zones;
+                break;
+
+            default:
+                return (null, "Invalid calculation method");
+        }
+
+        return (zones, null);
+    }
+
     public static void MapSettingsEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/settings")
@@ -76,51 +132,14 @@ public static class SettingsEndpoints
         {
             try
             {
-                // Validate request
-                if (!Enum.TryParse<HeartRateCalculationMethod>(request.CalculationMethod, true, out var method))
-                {
-                    return Results.BadRequest(new { error = "Invalid calculation method" });
-                }
-
-                List<HeartRateZone> zones;
-
                 // Calculate zones based on method
-                switch (method)
+                var (zones, errorMessage) = CalculateZonesFromRequest(request, zoneService);
+                if (zones == null)
                 {
-                    case HeartRateCalculationMethod.AgeBased:
-                        if (!request.Age.HasValue)
-                        {
-                            return Results.BadRequest(new { error = "Age is required for AgeBased calculation method" });
-                        }
-                        zones = zoneService.CalculateZonesFromAge(request.Age.Value);
-                        break;
-
-                    case HeartRateCalculationMethod.Karvonen:
-                        if (!request.MaxHeartRateBpm.HasValue || !request.RestingHeartRateBpm.HasValue)
-                        {
-                            return Results.BadRequest(new { error = "Max heart rate and resting heart rate are required for Karvonen calculation method" });
-                        }
-                        zones = zoneService.CalculateZonesFromKarvonen(
-                            request.MaxHeartRateBpm.Value,
-                            request.RestingHeartRateBpm.Value);
-                        break;
-
-                    case HeartRateCalculationMethod.Custom:
-                        if (request.Zones == null || request.Zones.Count != 5)
-                        {
-                            return Results.BadRequest(new { error = "Exactly 5 zones are required for Custom method" });
-                        }
-                        var validation = zoneService.ValidateCustomZones(request.Zones);
-                        if (!validation.IsValid)
-                        {
-                            return Results.BadRequest(new { error = validation.ErrorMessage });
-                        }
-                        zones = request.Zones;
-                        break;
-
-                    default:
-                        return Results.BadRequest(new { error = "Invalid calculation method" });
+                    return Results.BadRequest(new { error = errorMessage ?? "Invalid calculation method" });
                 }
+
+                var method = Enum.Parse<HeartRateCalculationMethod>(request.CalculationMethod, true);
 
                 // Get or create settings record
                 var settings = await db.UserSettings.FirstOrDefaultAsync();
@@ -171,37 +190,12 @@ public static class SettingsEndpoints
 
         group.MapGet("/recalculate-relative-effort/count", async (
             TempoDbContext db,
+            RelativeEffortService relativeEffortService,
             ILogger<Program> logger) =>
         {
             try
             {
-                // Get workouts that can have relative effort calculated:
-                // 1. Workouts with time series data with heart rate
-                // 2. Workouts with RawFitData (may contain avgHeartRate)
-                // 3. Workouts with AvgHeartRateBpm
-                var workoutIdsWithTimeSeries = await db.WorkoutTimeSeries
-                    .Where(ts => ts.HeartRateBpm.HasValue)
-                    .Select(ts => ts.WorkoutId)
-                    .Distinct()
-                    .ToListAsync();
-
-                var workoutIdsWithRawFit = await db.Workouts
-                    .Where(w => w.RawFitData != null)
-                    .Select(w => w.Id)
-                    .ToListAsync();
-
-                var workoutIdsWithAvgHr = await db.Workouts
-                    .Where(w => w.AvgHeartRateBpm.HasValue)
-                    .Select(w => w.Id)
-                    .ToListAsync();
-
-                // Combine all qualifying workout IDs
-                var allQualifyingIds = workoutIdsWithTimeSeries
-                    .Union(workoutIdsWithRawFit)
-                    .Union(workoutIdsWithAvgHr)
-                    .Distinct()
-                    .ToList();
-
+                var allQualifyingIds = await relativeEffortService.GetQualifyingWorkoutIdsAsync(db);
                 return Results.Ok(new { count = allQualifyingIds.Count });
             }
             catch (Exception ex)
@@ -231,32 +225,8 @@ public static class SettingsEndpoints
 
                 var zones = zoneService.GetZonesFromUserSettings(settings);
 
-                // Get workouts that can have relative effort calculated:
-                // 1. Workouts with time series data with heart rate
-                // 2. Workouts with RawFitData (may contain avgHeartRate)
-                // 3. Workouts with AvgHeartRateBpm
-                var workoutIdsWithTimeSeries = await db.WorkoutTimeSeries
-                    .Where(ts => ts.HeartRateBpm.HasValue)
-                    .Select(ts => ts.WorkoutId)
-                    .Distinct()
-                    .ToListAsync();
-
-                var workoutIdsWithRawFit = await db.Workouts
-                    .Where(w => w.RawFitData != null)
-                    .Select(w => w.Id)
-                    .ToListAsync();
-
-                var workoutIdsWithAvgHr = await db.Workouts
-                    .Where(w => w.AvgHeartRateBpm.HasValue)
-                    .Select(w => w.Id)
-                    .ToListAsync();
-
-                // Combine all qualifying workout IDs
-                var allQualifyingIds = workoutIdsWithTimeSeries
-                    .Union(workoutIdsWithRawFit)
-                    .Union(workoutIdsWithAvgHr)
-                    .Distinct()
-                    .ToList();
+                // Get workouts that can have relative effort calculated
+                var allQualifyingIds = await relativeEffortService.GetQualifyingWorkoutIdsAsync(db);
 
                 if (allQualifyingIds.Count == 0)
                 {
@@ -337,51 +307,23 @@ public static class SettingsEndpoints
         {
             try
             {
-                // Validate request
-                if (!Enum.TryParse<HeartRateCalculationMethod>(request.CalculationMethod, true, out var method))
-                {
-                    return Results.BadRequest(new { error = "Invalid calculation method" });
-                }
-
-                List<HeartRateZone> zones;
-
                 // Calculate zones based on method
-                switch (method)
+                // Convert UpdateHeartRateZonesWithRecalcRequest to UpdateHeartRateZonesRequest for the helper
+                var baseRequest = new UpdateHeartRateZonesRequest
                 {
-                    case HeartRateCalculationMethod.AgeBased:
-                        if (!request.Age.HasValue)
-                        {
-                            return Results.BadRequest(new { error = "Age is required for AgeBased calculation method" });
-                        }
-                        zones = zoneService.CalculateZonesFromAge(request.Age.Value);
-                        break;
-
-                    case HeartRateCalculationMethod.Karvonen:
-                        if (!request.MaxHeartRateBpm.HasValue || !request.RestingHeartRateBpm.HasValue)
-                        {
-                            return Results.BadRequest(new { error = "Max heart rate and resting heart rate are required for Karvonen calculation method" });
-                        }
-                        zones = zoneService.CalculateZonesFromKarvonen(
-                            request.MaxHeartRateBpm.Value,
-                            request.RestingHeartRateBpm.Value);
-                        break;
-
-                    case HeartRateCalculationMethod.Custom:
-                        if (request.Zones == null || request.Zones.Count != 5)
-                        {
-                            return Results.BadRequest(new { error = "Exactly 5 zones are required for Custom method" });
-                        }
-                        var validation = zoneService.ValidateCustomZones(request.Zones);
-                        if (!validation.IsValid)
-                        {
-                            return Results.BadRequest(new { error = validation.ErrorMessage });
-                        }
-                        zones = request.Zones;
-                        break;
-
-                    default:
-                        return Results.BadRequest(new { error = "Invalid calculation method" });
+                    CalculationMethod = request.CalculationMethod,
+                    Age = request.Age,
+                    RestingHeartRateBpm = request.RestingHeartRateBpm,
+                    MaxHeartRateBpm = request.MaxHeartRateBpm,
+                    Zones = request.Zones
+                };
+                var (zones, errorMessage) = CalculateZonesFromRequest(baseRequest, zoneService);
+                if (zones == null)
+                {
+                    return Results.BadRequest(new { error = errorMessage ?? "Invalid calculation method" });
                 }
+
+                var method = Enum.Parse<HeartRateCalculationMethod>(request.CalculationMethod, true);
 
                 // Get or create settings record
                 var settings = await db.UserSettings.FirstOrDefaultAsync();
@@ -411,27 +353,7 @@ public static class SettingsEndpoints
                     try
                     {
                         // Get workouts that can have relative effort calculated
-                        var workoutIdsWithTimeSeries = await db.WorkoutTimeSeries
-                            .Where(ts => ts.HeartRateBpm.HasValue)
-                            .Select(ts => ts.WorkoutId)
-                            .Distinct()
-                            .ToListAsync();
-
-                        var workoutIdsWithRawFit = await db.Workouts
-                            .Where(w => w.RawFitData != null)
-                            .Select(w => w.Id)
-                            .ToListAsync();
-
-                        var workoutIdsWithAvgHr = await db.Workouts
-                            .Where(w => w.AvgHeartRateBpm.HasValue)
-                            .Select(w => w.Id)
-                            .ToListAsync();
-
-                        var allQualifyingIds = workoutIdsWithTimeSeries
-                            .Union(workoutIdsWithRawFit)
-                            .Union(workoutIdsWithAvgHr)
-                            .Distinct()
-                            .ToList();
+                        var allQualifyingIds = await relativeEffortService.GetQualifyingWorkoutIdsAsync(db);
 
                         if (allQualifyingIds.Count > 0)
                         {
@@ -504,6 +426,117 @@ public static class SettingsEndpoints
         .Produces(400)
         .WithSummary("Update heart rate zones and optionally recalculate relative effort")
         .WithDescription("Updates heart rate zones and optionally recalculates relative effort for all qualifying workouts in one atomic operation");
+
+        group.MapGet("/unit-preference", async (
+            TempoDbContext db,
+            ILogger<Program> logger) =>
+        {
+            try
+            {
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                var unitPreference = settings?.UnitPreference ?? "metric";
+                
+                return Results.Ok(new { unitPreference });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error getting unit preference");
+                return Results.Problem("Failed to retrieve unit preference");
+            }
+        })
+        .Produces(200)
+        .WithSummary("Get unit preference")
+        .WithDescription("Returns the stored unit preference (metric or imperial), defaults to metric");
+
+        group.MapPut("/unit-preference", async (
+            [FromBody] UpdateUnitPreferenceRequest request,
+            TempoDbContext db,
+            ILogger<Program> logger) =>
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.UnitPreference) ||
+                    (request.UnitPreference != "metric" && request.UnitPreference != "imperial"))
+                {
+                    return Results.BadRequest(new { error = "Unit preference must be 'metric' or 'imperial'" });
+                }
+
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                if (settings == null)
+                {
+                    settings = new UserSettings();
+                    db.UserSettings.Add(settings);
+                }
+
+                settings.UnitPreference = request.UnitPreference;
+                settings.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+
+                return Results.Ok(new { unitPreference = settings.UnitPreference });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error updating unit preference");
+                return Results.Problem("Failed to update unit preference");
+            }
+        })
+        .Produces(200)
+        .Produces(400)
+        .WithSummary("Update unit preference")
+        .WithDescription("Updates the unit preference (metric or imperial)");
+
+        group.MapGet("/recalculate-splits/count", async (
+            TempoDbContext db,
+            ILogger<Program> logger) =>
+        {
+            try
+            {
+                var count = await db.Workouts
+                    .Where(w => w.Route != null)
+                    .CountAsync();
+                return Results.Ok(new { count });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error getting workout count for split recalculation");
+                return Results.Problem("Failed to get workout count");
+            }
+        })
+        .Produces(200)
+        .WithSummary("Get count of workouts eligible for split recalculation")
+        .WithDescription("Returns the number of workouts that have route data and can have splits recalculated");
+
+        group.MapPost("/recalculate-splits", async (
+            TempoDbContext db,
+            SplitRecalculationService splitRecalculationService,
+            ILogger<Program> logger) =>
+        {
+            try
+            {
+                // Get unit preference from settings
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                var unitPreference = settings?.UnitPreference ?? "metric";
+
+                var result = await splitRecalculationService.RecalculateSplitsForAllWorkoutsAsync(unitPreference);
+
+                return Results.Ok(new
+                {
+                    updatedCount = result.SuccessCount,
+                    totalWorkouts = result.TotalWorkouts,
+                    errorCount = result.ErrorCount,
+                    errors = result.Errors.Count > 0 ? result.Errors : null
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error recalculating splits for all workouts");
+                return Results.Problem("Failed to recalculate splits for all workouts");
+            }
+        })
+        .Produces(200)
+        .Produces(400)
+        .WithSummary("Recalculate splits for all workouts")
+        .WithDescription("Recalculates splits for all workouts that have route data using the current unit preference");
     }
 
     public class UpdateHeartRateZonesRequest
@@ -523,6 +556,11 @@ public static class SettingsEndpoints
         public int? MaxHeartRateBpm { get; set; }
         public List<HeartRateZone>? Zones { get; set; }
         public bool? RecalculateExisting { get; set; }
+    }
+
+    public class UpdateUnitPreferenceRequest
+    {
+        public string UnitPreference { get; set; } = string.Empty;
     }
 }
 

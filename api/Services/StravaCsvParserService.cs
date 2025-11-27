@@ -2,6 +2,8 @@ using CsvHelper;
 using CsvHelper.Configuration;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Tempo.Api.Utils;
 
 namespace Tempo.Api.Services;
 
@@ -127,11 +129,7 @@ public class StravaCsvParserService
                     importedAt = DateTime.UtcNow.ToString("O")
                 };
 
-                record.RawStravaDataJson = JsonSerializer.Serialize(rawStravaData, new JsonSerializerOptions
-                {
-                    WriteIndented = false,
-                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-                });
+                record.RawStravaDataJson = JsonSerializer.Serialize(rawStravaData, JsonUtils.DefaultOptions);
 
                 records.Add(record);
             }
@@ -161,148 +159,82 @@ public class StravaCsvParserService
         var weather = new Dictionary<string, object?>();
         bool hasWeather = false;
 
-        if (rawData.ContainsKey("Weather Observation Time"))
+        // Simple field mappings (direct copy)
+        var simpleMappings = new Dictionary<string, string>
         {
-            weather["observationTime"] = rawData["Weather Observation Time"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Weather Condition"))
+            { "Weather Observation Time", "observationTime" },
+            { "Weather Condition", "condition" },
+            { "Weather Temperature", "temperature" },
+            { "Apparent Temperature", "apparentTemperature" },
+            { "Dewpoint", "dewpoint" },
+            { "Humidity", "humidity" },
+            { "Weather Pressure", "pressure" },
+            { "Wind Bearing", "windDirection" },
+            { "Precipitation Intensity", "precipitationIntensity" },
+            { "Precipitation Probability", "precipitationProbability" },
+            { "Precipitation Type", "precipitationType" },
+            { "Cloud Cover", "cloudCover" },
+            { "Weather Visibility", "visibility" },
+            { "UV Index", "uvIndex" },
+            { "Weather Ozone", "ozone" },
+            { "Sunrise Time", "sunriseTime" },
+            { "Sunset Time", "sunsetTime" },
+            { "Moon Phase", "moonPhase" }
+        };
+
+        foreach (var mapping in simpleMappings)
         {
-            weather["condition"] = rawData["Weather Condition"];
-            hasWeather = true;
+            if (rawData.ContainsKey(mapping.Key))
+            {
+                weather[mapping.Value] = rawData[mapping.Key];
+                hasWeather = true;
+            }
         }
-        if (rawData.ContainsKey("Weather Temperature"))
-        {
-            weather["temperature"] = rawData["Weather Temperature"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Apparent Temperature"))
-        {
-            weather["apparentTemperature"] = rawData["Apparent Temperature"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Dewpoint"))
-        {
-            weather["dewpoint"] = rawData["Dewpoint"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Humidity"))
-        {
-            weather["humidity"] = rawData["Humidity"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Weather Pressure"))
-        {
-            weather["pressure"] = rawData["Weather Pressure"];
-            hasWeather = true;
-        }
+
+        // Wind Speed - requires conversion from km/h to m/s
         if (rawData.ContainsKey("Wind Speed"))
         {
-            // Strava CSV exports wind speed in km/h, convert to m/s
-            var windSpeedValue = rawData["Wind Speed"];
-            if (windSpeedValue != null)
-            {
-                if (windSpeedValue is double dblSpeed)
-                {
-                    weather["windSpeed"] = dblSpeed / 3.6; // Convert km/h to m/s
-                }
-                else if (windSpeedValue is int intSpeed)
-                {
-                    weather["windSpeed"] = (double)intSpeed / 3.6; // Convert km/h to m/s
-                }
-                else if (windSpeedValue is string strSpeed && double.TryParse(strSpeed, out var parsedSpeed))
-                {
-                    weather["windSpeed"] = parsedSpeed / 3.6; // Convert km/h to m/s
-                }
-                else
-                {
-                    weather["windSpeed"] = windSpeedValue; // Fallback: store as-is if can't parse
-                }
-            }
+            weather["windSpeed"] = ConvertWindSpeed(rawData["Wind Speed"]);
             hasWeather = true;
         }
+
+        // Wind Gust - requires conversion from km/h to m/s
         if (rawData.ContainsKey("Wind Gust"))
         {
-            // Strava CSV exports wind gust in km/h, convert to m/s
-            var windGustValue = rawData["Wind Gust"];
-            if (windGustValue != null)
-            {
-                if (windGustValue is double dblGust)
-                {
-                    weather["windGust"] = dblGust / 3.6; // Convert km/h to m/s
-                }
-                else if (windGustValue is int intGust)
-                {
-                    weather["windGust"] = (double)intGust / 3.6; // Convert km/h to m/s
-                }
-                else if (windGustValue is string strGust && double.TryParse(strGust, out var parsedGust))
-                {
-                    weather["windGust"] = parsedGust / 3.6; // Convert km/h to m/s
-                }
-                else
-                {
-                    weather["windGust"] = windGustValue; // Fallback: store as-is if can't parse
-                }
-            }
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Wind Bearing"))
-        {
-            weather["windDirection"] = rawData["Wind Bearing"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Precipitation Intensity"))
-        {
-            weather["precipitationIntensity"] = rawData["Precipitation Intensity"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Precipitation Probability"))
-        {
-            weather["precipitationProbability"] = rawData["Precipitation Probability"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Precipitation Type"))
-        {
-            weather["precipitationType"] = rawData["Precipitation Type"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Cloud Cover"))
-        {
-            weather["cloudCover"] = rawData["Cloud Cover"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Weather Visibility"))
-        {
-            weather["visibility"] = rawData["Weather Visibility"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("UV Index"))
-        {
-            weather["uvIndex"] = rawData["UV Index"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Weather Ozone"))
-        {
-            weather["ozone"] = rawData["Weather Ozone"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Sunrise Time"))
-        {
-            weather["sunriseTime"] = rawData["Sunrise Time"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Sunset Time"))
-        {
-            weather["sunsetTime"] = rawData["Sunset Time"];
-            hasWeather = true;
-        }
-        if (rawData.ContainsKey("Moon Phase"))
-        {
-            weather["moonPhase"] = rawData["Moon Phase"];
+            weather["windGust"] = ConvertWindSpeed(rawData["Wind Gust"]);
             hasWeather = true;
         }
 
         return hasWeather ? weather : null;
+    }
+
+    /// <summary>
+    /// Converts wind speed from km/h to m/s. Handles various input types.
+    /// </summary>
+    private static object? ConvertWindSpeed(object? windSpeedValue)
+    {
+        if (windSpeedValue == null)
+        {
+            return null;
+        }
+
+        // Strava CSV exports wind speed in km/h, convert to m/s
+        if (windSpeedValue is double dblSpeed)
+        {
+            return dblSpeed / 3.6; // Convert km/h to m/s
+        }
+        else if (windSpeedValue is int intSpeed)
+        {
+            return (double)intSpeed / 3.6; // Convert km/h to m/s
+        }
+        else if (windSpeedValue is string strSpeed && double.TryParse(strSpeed, out var parsedSpeed))
+        {
+            return parsedSpeed / 3.6; // Convert km/h to m/s
+        }
+        else
+        {
+            return windSpeedValue; // Fallback: store as-is if can't parse
+        }
     }
 
     public List<StravaActivityRecord> GetRunActivities(List<StravaActivityRecord> allActivities)
