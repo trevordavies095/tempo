@@ -1,14 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { getWorkout, getWorkoutMedia, updateWorkout, deleteWorkout, type WorkoutMedia } from '@/lib/api';
-import { formatDate, formatDateTime, formatDistance, formatDuration, formatPace, formatElevation, getWorkoutDisplayName } from '@/lib/format';
+import { getWorkout, getWorkoutMedia, type WorkoutMedia } from '@/lib/api';
+import { formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
+import WorkoutDetailHeader from '@/components/WorkoutDetailHeader';
+import WorkoutDetailSplits from '@/components/WorkoutDetailSplits';
+import { useWorkoutMutations } from '@/hooks/useWorkoutMutations';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
 import { MediaModal } from '@/components/MediaModal';
 import { MediaUpload } from '@/components/MediaUpload';
@@ -34,7 +37,6 @@ const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
 
 export default function WorkoutDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const id = params.id as string;
   const [selectedMediaIndex, setSelectedMediaIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -42,9 +44,9 @@ export default function WorkoutDetailPage() {
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState<string>('');
   const [hoveredSplitIdx, setHoveredSplitIdx] = useState<number | null>(null);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
+  const { updateWorkoutMutation } = useWorkoutMutations(id);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['workout', id],
@@ -58,45 +60,6 @@ export default function WorkoutDetailPage() {
     retry: false, // Don't retry on error - treat as no media
   });
 
-  const updateWorkoutMutation = useMutation({
-    mutationFn: (updates: { runType?: string | null; notes?: string | null }) => updateWorkout(id, updates),
-    onSuccess: () => {
-      // Invalidate and refetch workout data
-      queryClient.invalidateQueries({ queryKey: ['workout', id] });
-      // Invalidate all workout list queries (dashboard, activities page, home page)
-      queryClient.invalidateQueries({ queryKey: ['workouts'] });
-      // Invalidate stats queries
-      queryClient.invalidateQueries({ queryKey: ['weeklyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
-      setIsEditingRunType(false);
-      setIsEditingNotes(false);
-    },
-  });
-
-  const deleteWorkoutMutation = useMutation({
-    mutationFn: () => deleteWorkout(id),
-    onSuccess: () => {
-      // Invalidate all workout-related queries
-      queryClient.invalidateQueries({ queryKey: ['workouts'] });
-      queryClient.invalidateQueries({ queryKey: ['workout', id] });
-      // Invalidate stats queries
-      queryClient.invalidateQueries({ queryKey: ['weeklyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['yearlyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
-      queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
-      // Redirect to dashboard
-      router.push('/dashboard');
-    },
-  });
-
-  const handleDeleteWorkout = () => {
-    if (window.confirm('Are you sure you want to delete this workout? This action cannot be undone.')) {
-      deleteWorkoutMutation.mutate();
-    }
-  };
-
   // Sync notesValue with data.notes when entering edit mode or data changes
   useEffect(() => {
     if (data && isEditingNotes) {
@@ -104,35 +67,7 @@ export default function WorkoutDetailPage() {
     }
   }, [data, isEditingNotes]);
 
-  // Debug logging for media query
-  useEffect(() => {
-    console.log('[WorkoutDetailPage] Media query state:', {
-      isLoading: isLoadingMedia,
-      isError: isMediaError,
-      media: media,
-      mediaType: typeof media,
-      isArray: Array.isArray(media),
-      length: Array.isArray(media) ? media.length : 'N/A',
-      workoutId: id,
-    });
-  }, [media, isLoadingMedia, isMediaError, id]);
 
-  // Close menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (isMenuOpen && !target.closest('[data-menu-container]')) {
-        setIsMenuOpen(false);
-      }
-    };
-
-    if (isMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
-    }
-  }, [isMenuOpen]);
 
   const handleMediaClick = (media: WorkoutMedia, index: number) => {
     setSelectedMediaIndex(index);
@@ -146,7 +81,14 @@ export default function WorkoutDetailPage() {
 
   const handleSaveNotes = () => {
     const trimmedNotes = notesValue.trim() || null;
-    updateWorkoutMutation.mutate({ notes: trimmedNotes });
+    updateWorkoutMutation.mutate(
+      { notes: trimmedNotes },
+      {
+        onSuccess: () => {
+          setIsEditingNotes(false);
+        },
+      }
+    );
   };
 
   const handleCancelNotes = () => {
@@ -204,90 +146,7 @@ export default function WorkoutDetailPage() {
   return (
     <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
-        <div className="w-full mb-4">
-          <div className="flex items-center gap-2 mb-1" data-menu-container>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-              {getWorkoutDisplayName(data.name, data.startedAt)}
-            </h1>
-            <div className="relative">
-              <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-                type="button"
-                aria-label="More options"
-                aria-expanded={isMenuOpen}
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-                  />
-                </svg>
-              </button>
-              {isMenuOpen && (
-                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-10">
-                  <div className="py-1">
-                    <button
-                      onClick={() => {
-                        setIsMenuOpen(false);
-                        handleDeleteWorkout();
-                      }}
-                      disabled={deleteWorkoutMutation.isPending}
-                      className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                      type="button"
-                    >
-                      {deleteWorkoutMutation.isPending ? (
-                        <>
-                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          Deleting...
-                        </>
-                      ) : (
-                        <>
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                          Delete Workout
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-          {deleteWorkoutMutation.isError && (
-            <div className="mb-2">
-              <span className="text-xs text-red-600 dark:text-red-400">
-                {deleteWorkoutMutation.error instanceof Error ? deleteWorkoutMutation.error.message : 'Failed to delete workout'}
-              </span>
-            </div>
-          )}
-          <p className="text-base text-gray-600 dark:text-gray-400">
-            {formatDateTime(data.startedAt)}
-          </p>
-        </div>
+        <WorkoutDetailHeader workout={data} />
 
         <div className="w-full space-y-3">
           {/* Main Content Area - Two Columns */}
@@ -383,7 +242,14 @@ export default function WorkoutDetailPage() {
                         value={data.runType || ''}
                         onChange={(e) => {
                           const newValue = e.target.value === '' ? null : e.target.value;
-                          updateWorkoutMutation.mutate({ runType: newValue });
+                          updateWorkoutMutation.mutate(
+                            { runType: newValue },
+                            {
+                              onSuccess: () => {
+                                setIsEditingRunType(false);
+                              },
+                            }
+                          );
                         }}
                         disabled={updateWorkoutMutation.isPending}
                         className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -706,57 +572,12 @@ export default function WorkoutDetailPage() {
           {/* Lower Section - Splits and Map */}
           {(data.splits && data.splits.length > 0) || data.route ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Splits Table */}
-              {data.splits && data.splits.length > 0 && (
-                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                    Splits ({data.splits.length})
-                  </h2>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="border-b border-gray-200 dark:border-gray-800">
-                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                            Split
-                          </th>
-                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                            Distance
-                          </th>
-                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                            Duration
-                          </th>
-                          <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                            Pace
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.splits.map((split) => (
-                          <tr
-                            key={`split-${split.idx}`}
-                            className="border-b border-gray-100 dark:border-gray-900 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                            onMouseEnter={() => setHoveredSplitIdx(split.idx)}
-                            onMouseLeave={() => setHoveredSplitIdx(null)}
-                          >
-                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
-                              {split.idx + 1}
-                            </td>
-                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
-                              {formatDistance(split.distanceM, unitPreference)}
-                            </td>
-                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
-                              {formatDuration(split.durationS)}
-                            </td>
-                            <td className="py-1.5 px-2.5 text-xs text-gray-700 dark:text-gray-300">
-                              {formatPace(split.paceS, unitPreference)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+              <WorkoutDetailSplits
+                splits={data.splits}
+                unitPreference={unitPreference}
+                hoveredSplitIdx={hoveredSplitIdx}
+                onSplitHover={setHoveredSplitIdx}
+              />
 
               {/* Route Map */}
               {data.route && (
