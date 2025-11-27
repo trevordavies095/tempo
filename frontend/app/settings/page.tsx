@@ -6,20 +6,25 @@ import {
   updateHeartRateZones,
   recalculateAllRelativeEffort,
   getQualifyingWorkoutCount,
+  getQualifyingWorkoutCountForSplits,
+  recalculateAllSplits,
   type HeartRateZoneSettings,
   type HeartRateCalculationMethod,
   type UpdateHeartRateZoneSettingsRequest
 } from '@/lib/api';
 import { RecalculateEffortDialog } from '@/components/RecalculateEffortDialog';
 import { ZoneUpdateDialog } from '@/components/ZoneUpdateDialog';
+import { RecalculateSplitsDialog } from '@/components/RecalculateSplitsDialog';
 import UnitPreferenceSection from '@/components/UnitPreferenceSection';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVersion } from '@/lib/api';
 import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
+import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 
 export default function SettingsPage() {
+  const queryClient = useQueryClient();
   const [hrZones, setHrZones] = useState<HeartRateZoneSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -37,6 +42,13 @@ export default function SettingsPage() {
   const [showZoneUpdateDialog, setShowZoneUpdateDialog] = useState(false);
   const [zoneUpdateWorkoutCount, setZoneUpdateWorkoutCount] = useState<number | null>(null);
   const [isZoneUpdating, setIsZoneUpdating] = useState(false);
+  
+  // Recalculate Splits state
+  const [showRecalcSplitsDialog, setShowRecalcSplitsDialog] = useState(false);
+  const [recalcSplitsWorkoutCount, setRecalcSplitsWorkoutCount] = useState<number | null>(null);
+  const [isRecalculatingSplits, setIsRecalculatingSplits] = useState(false);
+  const [recalcSplitsError, setRecalcSplitsError] = useState<string | null>(null);
+  const [recalcSplitsSuccess, setRecalcSplitsSuccess] = useState(false);
 
   // Fetch version information
   const { data: versionInfo } = useQuery({
@@ -187,6 +199,45 @@ export default function SettingsPage() {
     setShowZoneUpdateDialog(false);
   };
 
+  const handleRecalculateSplitsClick = async () => {
+    // Fetch workout count before showing dialog
+    try {
+      const countResponse = await getQualifyingWorkoutCountForSplits();
+      setRecalcSplitsWorkoutCount(countResponse.count);
+      setShowRecalcSplitsDialog(true);
+    } catch (error) {
+      setRecalcSplitsError('Failed to get workout count');
+      // Still show dialog with null count
+      setRecalcSplitsWorkoutCount(null);
+      setShowRecalcSplitsDialog(true);
+    }
+  };
+
+  const handleRecalculateSplitsConfirm = async () => {
+    setIsRecalculatingSplits(true);
+    setRecalcSplitsError(null);
+    setRecalcSplitsSuccess(false);
+    setShowRecalcSplitsDialog(false);
+
+    try {
+      const response = await recalculateAllSplits();
+      setRecalcSplitsWorkoutCount(response.totalWorkouts);
+      setRecalcSplitsSuccess(true);
+      
+      // Invalidate all workout queries to refresh the UI
+      invalidateWorkoutQueries(queryClient);
+      
+      setTimeout(() => {
+        setRecalcSplitsSuccess(false);
+        setRecalcSplitsWorkoutCount(null);
+      }, 5000);
+    } catch (error) {
+      setRecalcSplitsError(error instanceof Error ? error.message : 'Failed to recalculate splits');
+    } finally {
+      setIsRecalculatingSplits(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-4xl flex-col items-start py-16 px-8">
@@ -207,6 +258,39 @@ export default function SettingsPage() {
 
         <div className="w-full space-y-8">
           <UnitPreferenceSection />
+
+          {/* Recalculate Splits Button */}
+          <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              Recalculate Splits
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Recalculate splits for all existing workouts based on your current unit preference. New workouts will automatically use your current preference.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleRecalculateSplitsClick}
+                disabled={isRecalculatingSplits}
+                className={`px-6 py-3 rounded-lg font-medium transition-colors w-fit ${
+                  isRecalculatingSplits
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
+                    : 'bg-orange-600 text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600'
+                }`}
+              >
+                {isRecalculatingSplits ? 'Recalculating...' : 'Recalculate Splits'}
+              </button>
+              {recalcSplitsSuccess && (
+                <span className="text-sm text-green-600 dark:text-green-400">
+                  Successfully recalculated splits for {recalcSplitsWorkoutCount} workout{recalcSplitsWorkoutCount !== 1 ? 's' : ''}!
+                </span>
+              )}
+              {recalcSplitsError && (
+                <span className="text-sm text-red-600 dark:text-red-400">
+                  {recalcSplitsError}
+                </span>
+              )}
+            </div>
+          </div>
 
           {/* Heart Rate Zones */}
           <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
@@ -447,8 +531,9 @@ export default function SettingsPage() {
               <li>
                 <strong>Imperial:</strong> Distances in miles (mi), pace per mile, elevation in feet (ft)
               </li>
-              <li>Your preference is saved locally in your browser and will persist across sessions.</li>
-              <li>Splits will be calculated and displayed based on your unit preference (1 km splits for metric, 1 mile splits for imperial).</li>
+              <li>Your preference is saved and will persist across sessions.</li>
+              <li>New workouts will be imported with splits based on your current unit preference (1 km splits for metric, 1 mile splits for imperial).</li>
+              <li>To update splits for existing workouts, use the "Recalculate Splits" button above.</li>
             </ul>
           </div>
 
@@ -485,6 +570,15 @@ export default function SettingsPage() {
         onKeepExisting={handleZoneUpdateKeepExisting}
         workoutCount={zoneUpdateWorkoutCount}
         isLoading={isZoneUpdating}
+      />
+      
+      {/* Recalculate Splits Dialog */}
+      <RecalculateSplitsDialog
+        open={showRecalcSplitsDialog}
+        onClose={() => setShowRecalcSplitsDialog(false)}
+        onConfirm={handleRecalculateSplitsConfirm}
+        workoutCount={recalcSplitsWorkoutCount}
+        isLoading={isRecalculatingSplits}
       />
     </div>
   );

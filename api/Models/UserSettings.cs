@@ -44,6 +44,9 @@ public class UserSettings
     public int Zone5MinBpm { get; set; }
     public int Zone5MaxBpm { get; set; }
 
+    [MaxLength(20)]
+    public string? UnitPreference { get; set; } // "metric" or "imperial", default "metric"
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

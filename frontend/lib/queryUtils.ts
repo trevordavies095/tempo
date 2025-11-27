@@ -11,9 +11,13 @@ export function invalidateWorkoutQueries(queryClient: QueryClient, workoutId?: s
   // Invalidate all workout list queries (dashboard, activities page, home page)
   queryClient.invalidateQueries({ queryKey: ['workouts'] });
   
-  // Invalidate specific workout if ID provided
+  // Invalidate workout queries
   if (workoutId) {
+    // Invalidate specific workout if ID provided
     queryClient.invalidateQueries({ queryKey: ['workout', workoutId] });
+  } else {
+    // Invalidate all individual workout queries (for bulk operations like split recalculation)
+    queryClient.invalidateQueries({ queryKey: ['workout'] });
   }
   
   // Invalidate stats queries
