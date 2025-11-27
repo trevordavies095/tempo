@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-11-26
+
+### Changed
+- API refactor - comprehensive code refactoring to reduce duplication and complexity (~800+ lines eliminated, new utilities/services created)
+- Frontend refactor - reduce code duplication and improve maintainability (764 lines removed, new hooks/components extracted)
+
+### Fixed
+- Recalculate splits when unit preference changes (fixes #18)
+- Invalidate cache after Relative Effort recalculation
+
 ## [1.0.0] - 2025-11-26
 
 ### Added
