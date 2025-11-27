@@ -53,6 +53,9 @@ public static class WorkoutsEndpoints
                 unitPreference = "metric";
             }
 
+            // Save unit preference to UserSettings
+            await SaveUnitPreferenceToSettingsAsync(db, unitPreference, logger);
+
             // Calculate split distance based on unit preference
             // 1000.0 meters = 1 km for metric, 1609.344 meters = 1 mile for imperial
             var splitDistanceMeters = unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
@@ -661,6 +664,60 @@ public static class WorkoutsEndpoints
         .WithSummary("Recalculate Relative Effort")
         .WithDescription("Recalculates the Relative Effort score for a workout using current heart rate zone settings");
 
+        group.MapPost("/{id:guid}/recalculate-splits", async (
+            Guid id,
+            TempoDbContext db,
+            SplitRecalculationService splitRecalculationService,
+            ILogger<Program> logger) =>
+        {
+            var workout = await db.Workouts
+                .Include(w => w.Route)
+                .FirstOrDefaultAsync(w => w.Id == id);
+
+            if (workout == null)
+            {
+                return Results.NotFound(new { error = "Workout not found" });
+            }
+
+            if (workout.Route == null)
+            {
+                return Results.BadRequest(new { error = "Workout has no route data. Splits cannot be recalculated." });
+            }
+
+            try
+            {
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                var unitPreference = settings?.UnitPreference ?? "metric";
+
+                var success = await splitRecalculationService.RecalculateSplitsForWorkoutAsync(workout, unitPreference);
+
+                if (!success)
+                {
+                    return Results.BadRequest(new { error = "Failed to recalculate splits. Insufficient track point data." });
+                }
+
+                // Reload splits to return updated count
+                await db.Entry(workout).Collection(w => w.Splits).LoadAsync();
+                var splitsCount = workout.Splits.Count;
+
+                return Results.Ok(new
+                {
+                    id = workout.Id,
+                    splitsCount = splitsCount
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error recalculating splits for workout {WorkoutId}", id);
+                return Results.Problem("Failed to recalculate splits");
+            }
+        })
+        .Produces(200)
+        .Produces(404)
+        .Produces(400)
+        .WithSummary("Recalculate Splits")
+        .WithDescription("Recalculates splits for a workout using current unit preference");
+
         group.MapGet("/{id:guid}", async (
             Guid id,
             TempoDbContext db,
@@ -869,6 +926,9 @@ public static class WorkoutsEndpoints
             {
                 unitPreference = "metric";
             }
+
+            // Save unit preference to UserSettings
+            await SaveUnitPreferenceToSettingsAsync(db, unitPreference, logger);
 
             // Calculate split distance based on unit preference
             // 1000.0 meters = 1 km for metric, 1609.344 meters = 1 mile for imperial
@@ -2226,6 +2286,45 @@ public static class WorkoutsEndpoints
         {
             logger.LogError(ex, "Error importing workout file");
             return new FileProcessResult { Action = "error", ErrorMessage = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Saves unit preference to UserSettings if provided.
+    /// </summary>
+    private static async Task SaveUnitPreferenceToSettingsAsync(
+        TempoDbContext db,
+        string unitPreference,
+        ILogger logger)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(unitPreference) ||
+                (unitPreference != "metric" && unitPreference != "imperial"))
+            {
+                return;
+            }
+
+            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            if (settings == null)
+            {
+                settings = new UserSettings();
+                db.UserSettings.Add(settings);
+            }
+
+            // Only update if different to avoid unnecessary database writes
+            if (settings.UnitPreference != unitPreference)
+            {
+                settings.UnitPreference = unitPreference;
+                settings.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                logger.LogInformation("Updated unit preference to {UnitPreference}", unitPreference);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to save unit preference to UserSettings");
+            // Don't throw - this is not critical for import to succeed
         }
     }
 

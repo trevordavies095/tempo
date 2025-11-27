@@ -426,6 +426,117 @@ public static class SettingsEndpoints
         .Produces(400)
         .WithSummary("Update heart rate zones and optionally recalculate relative effort")
         .WithDescription("Updates heart rate zones and optionally recalculates relative effort for all qualifying workouts in one atomic operation");
+
+        group.MapGet("/unit-preference", async (
+            TempoDbContext db,
+            ILogger<Program> logger) =>
+        {
+            try
+            {
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                var unitPreference = settings?.UnitPreference ?? "metric";
+                
+                return Results.Ok(new { unitPreference });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error getting unit preference");
+                return Results.Problem("Failed to retrieve unit preference");
+            }
+        })
+        .Produces(200)
+        .WithSummary("Get unit preference")
+        .WithDescription("Returns the stored unit preference (metric or imperial), defaults to metric");
+
+        group.MapPut("/unit-preference", async (
+            [FromBody] UpdateUnitPreferenceRequest request,
+            TempoDbContext db,
+            ILogger<Program> logger) =>
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.UnitPreference) ||
+                    (request.UnitPreference != "metric" && request.UnitPreference != "imperial"))
+                {
+                    return Results.BadRequest(new { error = "Unit preference must be 'metric' or 'imperial'" });
+                }
+
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                if (settings == null)
+                {
+                    settings = new UserSettings();
+                    db.UserSettings.Add(settings);
+                }
+
+                settings.UnitPreference = request.UnitPreference;
+                settings.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+
+                return Results.Ok(new { unitPreference = settings.UnitPreference });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error updating unit preference");
+                return Results.Problem("Failed to update unit preference");
+            }
+        })
+        .Produces(200)
+        .Produces(400)
+        .WithSummary("Update unit preference")
+        .WithDescription("Updates the unit preference (metric or imperial)");
+
+        group.MapGet("/recalculate-splits/count", async (
+            TempoDbContext db,
+            ILogger<Program> logger) =>
+        {
+            try
+            {
+                var count = await db.Workouts
+                    .Where(w => w.Route != null)
+                    .CountAsync();
+                return Results.Ok(new { count });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error getting workout count for split recalculation");
+                return Results.Problem("Failed to get workout count");
+            }
+        })
+        .Produces(200)
+        .WithSummary("Get count of workouts eligible for split recalculation")
+        .WithDescription("Returns the number of workouts that have route data and can have splits recalculated");
+
+        group.MapPost("/recalculate-splits", async (
+            TempoDbContext db,
+            SplitRecalculationService splitRecalculationService,
+            ILogger<Program> logger) =>
+        {
+            try
+            {
+                // Get unit preference from settings
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                var unitPreference = settings?.UnitPreference ?? "metric";
+
+                var result = await splitRecalculationService.RecalculateSplitsForAllWorkoutsAsync(unitPreference);
+
+                return Results.Ok(new
+                {
+                    updatedCount = result.SuccessCount,
+                    totalWorkouts = result.TotalWorkouts,
+                    errorCount = result.ErrorCount,
+                    errors = result.Errors.Count > 0 ? result.Errors : null
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error recalculating splits for all workouts");
+                return Results.Problem("Failed to recalculate splits for all workouts");
+            }
+        })
+        .Produces(200)
+        .Produces(400)
+        .WithSummary("Recalculate splits for all workouts")
+        .WithDescription("Recalculates splits for all workouts that have route data using the current unit preference");
     }
 
     public class UpdateHeartRateZonesRequest
@@ -445,6 +556,11 @@ public static class SettingsEndpoints
         public int? MaxHeartRateBpm { get; set; }
         public List<HeartRateZone>? Zones { get; set; }
         public bool? RecalculateExisting { get; set; }
+    }
+
+    public class UpdateUnitPreferenceRequest
+    {
+        public string UnitPreference { get; set; } = string.Empty;
     }
 }
 

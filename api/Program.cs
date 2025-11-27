@@ -47,6 +47,7 @@ builder.Services.AddScoped<MediaService>();
 builder.Services.AddScoped<HeartRateZoneService>();
 builder.Services.AddScoped<RelativeEffortService>();
 builder.Services.AddScoped<BulkImportService>();
+builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage

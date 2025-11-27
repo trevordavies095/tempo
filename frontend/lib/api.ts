@@ -707,6 +707,82 @@ export async function recalculateAllRelativeEffort(): Promise<RecalculateRelativ
   return response.json();
 }
 
+export async function getUnitPreference(): Promise<{ unitPreference: 'metric' | 'imperial' }> {
+  const response = await fetch(`${API_BASE_URL}/settings/unit-preference`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get unit preference: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function updateUnitPreference(unitPreference: 'metric' | 'imperial'): Promise<{ unitPreference: 'metric' | 'imperial' }> {
+  const response = await fetch(`${API_BASE_URL}/settings/unit-preference`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ unitPreference }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update unit preference: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getQualifyingWorkoutCountForSplits(): Promise<{ count: number }> {
+  const response = await fetch(`${API_BASE_URL}/settings/recalculate-splits/count`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get workout count for split recalculation: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface RecalculateSplitsResponse {
+  updatedCount: number;
+  totalWorkouts: number;
+  errorCount: number;
+  errors?: string[] | null;
+}
+
+export async function recalculateAllSplits(): Promise<RecalculateSplitsResponse> {
+  const response = await fetch(`${API_BASE_URL}/settings/recalculate-splits`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to recalculate splits: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function recalculateWorkoutSplits(workoutId: string): Promise<{ id: string; splitsCount: number }> {
+  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/recalculate-splits`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to recalculate splits for workout: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export interface VersionResponse {
   version: string;
   buildDate: string;
