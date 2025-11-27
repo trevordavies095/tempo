@@ -204,5 +204,44 @@ public class RelativeEffortService
 
         return -1; // Outside all zones
     }
+
+    /// <summary>
+    /// Get IDs of workouts that are eligible for relative effort calculation.
+    /// A workout qualifies if it has:
+    /// 1. Time series data with heart rate
+    /// 2. RawFitData (may contain avgHeartRate)
+    /// 3. AvgHeartRateBpm field populated
+    /// </summary>
+    public async Task<List<Guid>> GetQualifyingWorkoutIdsAsync(TempoDbContext db)
+    {
+        // Get workouts that can have relative effort calculated:
+        // 1. Workouts with time series data with heart rate
+        var workoutIdsWithTimeSeries = await db.WorkoutTimeSeries
+            .Where(ts => ts.HeartRateBpm.HasValue)
+            .Select(ts => ts.WorkoutId)
+            .Distinct()
+            .ToListAsync();
+
+        // 2. Workouts with RawFitData (may contain avgHeartRate)
+        var workoutIdsWithRawFit = await db.Workouts
+            .Where(w => w.RawFitData != null)
+            .Select(w => w.Id)
+            .ToListAsync();
+
+        // 3. Workouts with AvgHeartRateBpm
+        var workoutIdsWithAvgHr = await db.Workouts
+            .Where(w => w.AvgHeartRateBpm.HasValue)
+            .Select(w => w.Id)
+            .ToListAsync();
+
+        // Combine all qualifying workout IDs
+        var allQualifyingIds = workoutIdsWithTimeSeries
+            .Union(workoutIdsWithRawFit)
+            .Union(workoutIdsWithAvgHr)
+            .Distinct()
+            .ToList();
+
+        return allQualifyingIds;
+    }
 }
 

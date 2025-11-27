@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Tempo.Api.Utils;
 
 namespace Tempo.Api.Services;
 
@@ -16,6 +17,41 @@ public class WeatherService
     }
 
     /// <summary>
+    /// Extracts weather data from JSON element.
+    /// </summary>
+    private Dictionary<string, object>? ExtractWeatherFromJson(JsonElement weatherElement, string source)
+    {
+        if (weatherElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var weather = new Dictionary<string, object>();
+        foreach (var prop in weatherElement.EnumerateObject())
+        {
+            weather[prop.Name] = prop.Value.ValueKind switch
+            {
+                JsonValueKind.String => prop.Value.GetString() ?? (object)string.Empty,
+                JsonValueKind.Number => prop.Value.GetDouble(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null!,
+                _ => prop.Value.GetRawText()
+            };
+        }
+
+        if (weather.Count == 0)
+        {
+            return null;
+        }
+
+        weather["source"] = source;
+        weather["fetchedAt"] = DateTime.UtcNow.ToString("O");
+
+        return weather;
+    }
+
+    /// <summary>
     /// Extracts weather data from Strava CSV RawStravaData JSON
     /// </summary>
     public Dictionary<string, object>? ExtractWeatherFromStravaData(string? rawStravaDataJson)
@@ -28,105 +64,93 @@ public class WeatherService
         try
         {
             var rawData = JsonSerializer.Deserialize<JsonElement>(rawStravaDataJson);
-            if (rawData.TryGetProperty("weather", out var weatherElement) && weatherElement.ValueKind == JsonValueKind.Object)
+            if (!rawData.TryGetProperty("weather", out var weatherElement))
             {
-                var weather = new Dictionary<string, object>();
-                foreach (var prop in weatherElement.EnumerateObject())
-                {
-                    weather[prop.Name] = prop.Value.ValueKind switch
-                    {
-                        JsonValueKind.String => prop.Value.GetString() ?? (object)string.Empty,
-                        JsonValueKind.Number => prop.Value.GetDouble(),
-                        JsonValueKind.True => true,
-                        JsonValueKind.False => false,
-                        JsonValueKind.Null => null!,
-                        _ => prop.Value.GetRawText()
-                    };
-                }
+                return null;
+            }
 
-                if (weather.Count > 0)
+            var weather = ExtractWeatherFromJson(weatherElement, "strava_import");
+            if (weather == null)
+            {
+                return null;
+            }
+                    
+            // Map Strava condition string to WMO weather code if condition exists but weatherCode doesn't
+            if (weather.ContainsKey("condition") && !weather.ContainsKey("weatherCode"))
+            {
+                var condition = weather["condition"]?.ToString();
+                if (!string.IsNullOrEmpty(condition))
                 {
-                    weather["source"] = "strava_import";
-                    weather["fetchedAt"] = DateTime.UtcNow.ToString("O");
-                    
-                    // Map Strava condition string to WMO weather code if condition exists but weatherCode doesn't
-                    if (weather.ContainsKey("condition") && !weather.ContainsKey("weatherCode"))
+                    var weatherCode = MapStravaConditionToWeatherCode(condition);
+                    if (weatherCode.HasValue)
                     {
-                        var condition = weather["condition"]?.ToString();
-                        if (!string.IsNullOrEmpty(condition))
-                        {
-                            var weatherCode = MapStravaConditionToWeatherCode(condition);
-                            if (weatherCode.HasValue)
-                            {
-                                weather["weatherCode"] = weatherCode.Value;
-                            }
-                        }
+                        weather["weatherCode"] = weatherCode.Value;
                     }
-                    
-                    // Convert numeric condition to human-readable string
-                    if (weather.ContainsKey("condition"))
-                    {
-                        var condition = weather["condition"];
-                        // Check if condition is numeric (could be stored as double or string representation of number)
-                        int? numericCode = null;
-                        if (condition is double dblCondition)
-                        {
-                            numericCode = (int)Math.Round(dblCondition);
-                        }
-                        else if (condition is int intCondition)
-                        {
-                            numericCode = intCondition;
-                        }
-                        else if (condition is string strCondition && !string.IsNullOrWhiteSpace(strCondition))
-                        {
-                            // Try parsing string as numeric code
-                            if (int.TryParse(strCondition.Trim(), out var parsedCode))
-                            {
-                                numericCode = parsedCode;
-                            }
-                        }
-                        
-                        // If condition is numeric, convert to human-readable string
-                        if (numericCode.HasValue && numericCode.Value >= 0 && numericCode.Value <= 99)
-                        {
-                            weather["condition"] = MapWeatherCodeToCondition(numericCode.Value);
-                            // Also ensure weatherCode is set if it wasn't already
-                            if (!weather.ContainsKey("weatherCode"))
-                            {
-                                weather["weatherCode"] = numericCode.Value;
-                            }
-                        }
-                    }
-                    
-                    // If weatherCode exists but condition doesn't, set condition from weatherCode
-                    if (weather.ContainsKey("weatherCode") && !weather.ContainsKey("condition"))
-                    {
-                        var weatherCode = weather["weatherCode"];
-                        int? code = null;
-                        if (weatherCode is double dblCode)
-                        {
-                            code = (int)Math.Round(dblCode);
-                        }
-                        else if (weatherCode is int intCode)
-                        {
-                            code = intCode;
-                        }
-                        
-                        if (code.HasValue)
-                        {
-                            weather["condition"] = MapWeatherCodeToCondition(code.Value);
-                        }
-                    }
-                    
-                    // Normalize humidity value to ensure it's in 0-100 range (percentage)
-                    if (weather.ContainsKey("humidity"))
-                    {
-                        weather["humidity"] = NormalizeHumidityValue(weather["humidity"]);
-                    }
-                    
-                    return weather;
                 }
             }
+                    
+            // Convert numeric condition to human-readable string
+            if (weather.ContainsKey("condition"))
+            {
+                var condition = weather["condition"];
+                // Check if condition is numeric (could be stored as double or string representation of number)
+                int? numericCode = null;
+                if (condition is double dblCondition)
+                {
+                    numericCode = (int)Math.Round(dblCondition);
+                }
+                else if (condition is int intCondition)
+                {
+                    numericCode = intCondition;
+                }
+                else if (condition is string strCondition && !string.IsNullOrWhiteSpace(strCondition))
+                {
+                    // Try parsing string as numeric code
+                    if (int.TryParse(strCondition.Trim(), out var parsedCode))
+                    {
+                        numericCode = parsedCode;
+                    }
+                }
+                        
+                // If condition is numeric, convert to human-readable string
+                if (numericCode.HasValue && numericCode.Value >= 0 && numericCode.Value <= 99)
+                {
+                    weather["condition"] = MapWeatherCodeToCondition(numericCode.Value);
+                    // Also ensure weatherCode is set if it wasn't already
+                    if (!weather.ContainsKey("weatherCode"))
+                    {
+                        weather["weatherCode"] = numericCode.Value;
+                    }
+                }
+            }
+                    
+            // If weatherCode exists but condition doesn't, set condition from weatherCode
+            if (weather.ContainsKey("weatherCode") && !weather.ContainsKey("condition"))
+            {
+                var weatherCode = weather["weatherCode"];
+                int? code = null;
+                if (weatherCode is double dblCode)
+                {
+                    code = (int)Math.Round(dblCode);
+                }
+                else if (weatherCode is int intCode)
+                {
+                    code = intCode;
+                }
+                        
+                if (code.HasValue)
+                {
+                    weather["condition"] = MapWeatherCodeToCondition(code.Value);
+                }
+            }
+                    
+            // Normalize humidity value to ensure it's in 0-100 range (percentage)
+            if (weather.ContainsKey("humidity"))
+            {
+                weather["humidity"] = NormalizeHumidityValue(weather["humidity"]);
+            }
+                    
+            return weather;
         }
         catch (Exception ex)
         {
@@ -149,43 +173,31 @@ public class WeatherService
         try
         {
             var rawData = JsonSerializer.Deserialize<JsonElement>(rawFitDataJson);
-            if (rawData.TryGetProperty("weather", out var weatherElement) && weatherElement.ValueKind == JsonValueKind.Object)
+            if (!rawData.TryGetProperty("weather", out var weatherElement))
             {
-                var weather = new Dictionary<string, object>();
-                foreach (var prop in weatherElement.EnumerateObject())
-                {
-                    weather[prop.Name] = prop.Value.ValueKind switch
-                    {
-                        JsonValueKind.String => prop.Value.GetString() ?? (object)string.Empty,
-                        JsonValueKind.Number => prop.Value.GetDouble(),
-                        JsonValueKind.True => true,
-                        JsonValueKind.False => false,
-                        JsonValueKind.Null => null!,
-                        _ => prop.Value.GetRawText()
-                    };
-                }
-
-                if (weather.Count > 0)
-                {
-                    weather["source"] = "fit_import";
-                    weather["fetchedAt"] = DateTime.UtcNow.ToString("O");
-                    
-                    // Normalize relativeHumidity to humidity (FIT files use relativeHumidity)
-                    if (weather.ContainsKey("relativeHumidity") && !weather.ContainsKey("humidity"))
-                    {
-                        var relativeHumidity = weather["relativeHumidity"];
-                        weather["humidity"] = NormalizeHumidityValue(relativeHumidity);
-                        weather.Remove("relativeHumidity");
-                    }
-                    // If humidity already exists, normalize it
-                    else if (weather.ContainsKey("humidity"))
-                    {
-                        weather["humidity"] = NormalizeHumidityValue(weather["humidity"]);
-                    }
-                    
-                    return weather;
-                }
+                return null;
             }
+
+            var weather = ExtractWeatherFromJson(weatherElement, "fit_import");
+            if (weather == null)
+            {
+                return null;
+            }
+                    
+            // Normalize relativeHumidity to humidity (FIT files use relativeHumidity)
+            if (weather.ContainsKey("relativeHumidity") && !weather.ContainsKey("humidity"))
+            {
+                var relativeHumidity = weather["relativeHumidity"];
+                weather["humidity"] = NormalizeHumidityValue(relativeHumidity);
+                weather.Remove("relativeHumidity");
+            }
+            // If humidity already exists, normalize it
+            else if (weather.ContainsKey("humidity"))
+            {
+                weather["humidity"] = NormalizeHumidityValue(weather["humidity"]);
+            }
+                    
+            return weather;
         }
         catch (Exception ex)
         {
@@ -389,22 +401,14 @@ public class WeatherService
         var weather = ExtractWeatherFromStravaData(rawStravaDataJson);
         if (weather != null)
         {
-            return JsonSerializer.Serialize(weather, new JsonSerializerOptions
-            {
-                WriteIndented = false,
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-            });
+            return JsonSerializer.Serialize(weather, JsonUtils.DefaultOptions);
         }
 
         // Try FIT data
         weather = ExtractWeatherFromFitData(rawFitDataJson);
         if (weather != null)
         {
-            return JsonSerializer.Serialize(weather, new JsonSerializerOptions
-            {
-                WriteIndented = false,
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-            });
+            return JsonSerializer.Serialize(weather, JsonUtils.DefaultOptions);
         }
 
         // Fallback to Open-Meteo if we have coordinates

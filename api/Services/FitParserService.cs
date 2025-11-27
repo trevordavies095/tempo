@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.IO.Compression;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Tempo.Api.Services;
+using Tempo.Api.Utils;
 using Dynastream.Fit;
 
 namespace Tempo.Api.Services;
@@ -222,7 +224,7 @@ public class FitParserService
                 // Skip points without elevation, but continue tracking distance
                 if (lastPoint != null)
                 {
-                    accumulatedDistance += HaversineDistance(
+                    accumulatedDistance += GeoUtils.HaversineDistance(
                         lastPoint.Latitude,
                         lastPoint.Longitude,
                         point.Latitude,
@@ -235,16 +237,16 @@ public class FitParserService
 
             double currentElevation = point.Elevation.Value;
 
-            if (lastElevation.HasValue && lastPoint != null)
-            {
-                // Calculate horizontal distance since last point
-                double segmentDistance = HaversineDistance(
-                    lastPoint.Latitude,
-                    lastPoint.Longitude,
-                    point.Latitude,
-                    point.Longitude
-                );
-                accumulatedDistance += segmentDistance;
+                if (lastElevation.HasValue && lastPoint != null)
+                {
+                    // Calculate horizontal distance since last point
+                    double segmentDistance = GeoUtils.HaversineDistance(
+                        lastPoint.Latitude,
+                        lastPoint.Longitude,
+                        point.Latitude,
+                        point.Longitude
+                    );
+                    accumulatedDistance += segmentDistance;
 
                 // Calculate elevation change
                 double elevationDiff = currentElevation - lastElevation.Value;
@@ -299,24 +301,6 @@ public class FitParserService
         return totalElevationGain > 0 ? totalElevationGain : null;
     }
 
-    private static double HaversineDistance(double lat1, double lon1, double lat2, double lon2)
-    {
-        const double R = 6371000; // Earth radius in meters
-        var dLat = ToRadians(lat2 - lat1);
-        var dLon = ToRadians(lon2 - lon1);
-
-        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
-                Math.Cos(ToRadians(lat1)) * Math.Cos(ToRadians(lat2)) *
-                Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
-
-        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-        return R * c;
-    }
-
-    private static double ToRadians(double degrees)
-    {
-        return degrees * Math.PI / 180.0;
-    }
 
     private string? BuildRawFitData(SessionMesg? session, ReadOnlyCollection<DeviceInfoMesg> deviceInfos, int recordCount, ReadOnlyCollection<WeatherConditionsMesg> weatherConditions)
     {
@@ -325,6 +309,26 @@ public class FitParserService
             return null;
         }
 
+        var sessionData = ExtractSessionData(session);
+        var deviceData = ExtractDeviceData(deviceInfos);
+        var weatherData = ExtractWeatherData(weatherConditions);
+
+        var rawFitData = new
+        {
+            session = sessionData.Count > 0 ? sessionData : null,
+            device = deviceData.Count > 0 ? deviceData : null,
+            weather = weatherData?.Count > 0 ? weatherData : null,
+            recordCount = recordCount,
+            hasTimeSeries = recordCount > 0,
+            source = "fit_import",
+            importedAt = System.DateTime.UtcNow.ToString("O")
+        };
+
+        return JsonSerializer.Serialize(rawFitData, JsonUtils.DefaultOptions);
+    }
+
+    private Dictionary<string, object?> ExtractSessionData(SessionMesg session)
+    {
         var sessionData = new Dictionary<string, object?>();
 
         // Extract all SessionMesg fields
@@ -397,10 +401,15 @@ public class FitParserService
         if (session.GetAvgFlow().HasValue)
             sessionData["avgFlow"] = session.GetAvgFlow().Value;
 
-        // Extract device info
+        return sessionData;
+    }
+
+    private Dictionary<string, object?> ExtractDeviceData(ReadOnlyCollection<DeviceInfoMesg> deviceInfos)
+    {
+        var deviceData = new Dictionary<string, object?>();
+        
         // Prefer device with SourceType = Local (5) as that's the recording device
         // According to FIT spec: Local indicates the device that recorded the activity
-        var deviceData = new Dictionary<string, object?>();
         DeviceInfoMesg? deviceInfo = null;
         
         // First, try to find device with SourceType = Local (recording device)
@@ -439,71 +448,61 @@ public class FitParserService
             }
         }
 
-        // Extract weather data from WeatherConditionsMesg
-        Dictionary<string, object?>? weatherData = null;
+        return deviceData;
+    }
+
+    private Dictionary<string, object?>? ExtractWeatherData(ReadOnlyCollection<WeatherConditionsMesg> weatherConditions)
+    {
         var weatherCondition = weatherConditions.FirstOrDefault();
-        if (weatherCondition != null)
+        if (weatherCondition == null)
         {
-            weatherData = new Dictionary<string, object?>();
-            
-            if (weatherCondition.GetWeatherReport().HasValue)
-                weatherData["weatherReport"] = weatherCondition.GetWeatherReport().Value.ToString();
-            if (weatherCondition.GetTemperature().HasValue)
-                weatherData["temperature"] = weatherCondition.GetTemperature().Value;
-            if (weatherCondition.GetCondition().HasValue)
-                weatherData["condition"] = weatherCondition.GetCondition().Value.ToString();
-            if (weatherCondition.GetWindDirection().HasValue)
-                weatherData["windDirection"] = weatherCondition.GetWindDirection().Value;
-            if (weatherCondition.GetWindSpeed().HasValue)
-                weatherData["windSpeed"] = weatherCondition.GetWindSpeed().Value;
-            if (weatherCondition.GetPrecipitationProbability().HasValue)
-                weatherData["precipitationProbability"] = weatherCondition.GetPrecipitationProbability().Value;
-            if (weatherCondition.GetTemperatureFeelsLike().HasValue)
-                weatherData["temperatureFeelsLike"] = weatherCondition.GetTemperatureFeelsLike().Value;
-            if (weatherCondition.GetRelativeHumidity().HasValue)
-                weatherData["relativeHumidity"] = weatherCondition.GetRelativeHumidity().Value;
-            var locationStr = weatherCondition.GetLocationAsString();
-            if (!string.IsNullOrEmpty(locationStr))
-                weatherData["location"] = locationStr;
-            try
-            {
-                var observedAtTime = weatherCondition.GetObservedAtTime();
-                // GetObservedAtTime() returns Dynastream.Fit.DateTime, convert to System.DateTime
-                if (observedAtTime != null)
-                    weatherData["observedAtTime"] = observedAtTime.GetDateTime().ToString("O");
-            }
-            catch
-            {
-                // ObservedAtTime may be null/invalid - skip it
-            }
-            if (weatherCondition.GetObservedLocationLat().HasValue)
-                weatherData["observedLocationLat"] = weatherCondition.GetObservedLocationLat().Value;
-            if (weatherCondition.GetObservedLocationLong().HasValue)
-                weatherData["observedLocationLong"] = weatherCondition.GetObservedLocationLong().Value;
-            if (weatherCondition.GetDayOfWeek().HasValue)
-                weatherData["dayOfWeek"] = weatherCondition.GetDayOfWeek().Value.ToString();
-            if (weatherCondition.GetHighTemperature().HasValue)
-                weatherData["highTemperature"] = weatherCondition.GetHighTemperature().Value;
-            if (weatherCondition.GetLowTemperature().HasValue)
-                weatherData["lowTemperature"] = weatherCondition.GetLowTemperature().Value;
+            return null;
         }
 
-        var rawFitData = new
+        var weatherData = new Dictionary<string, object?>();
+        
+        if (weatherCondition.GetWeatherReport().HasValue)
+            weatherData["weatherReport"] = weatherCondition.GetWeatherReport().Value.ToString();
+        if (weatherCondition.GetTemperature().HasValue)
+            weatherData["temperature"] = weatherCondition.GetTemperature().Value;
+        if (weatherCondition.GetCondition().HasValue)
+            weatherData["condition"] = weatherCondition.GetCondition().Value.ToString();
+        if (weatherCondition.GetWindDirection().HasValue)
+            weatherData["windDirection"] = weatherCondition.GetWindDirection().Value;
+        if (weatherCondition.GetWindSpeed().HasValue)
+            weatherData["windSpeed"] = weatherCondition.GetWindSpeed().Value;
+        if (weatherCondition.GetPrecipitationProbability().HasValue)
+            weatherData["precipitationProbability"] = weatherCondition.GetPrecipitationProbability().Value;
+        if (weatherCondition.GetTemperatureFeelsLike().HasValue)
+            weatherData["temperatureFeelsLike"] = weatherCondition.GetTemperatureFeelsLike().Value;
+        if (weatherCondition.GetRelativeHumidity().HasValue)
+            weatherData["relativeHumidity"] = weatherCondition.GetRelativeHumidity().Value;
+        var locationStr = weatherCondition.GetLocationAsString();
+        if (!string.IsNullOrEmpty(locationStr))
+            weatherData["location"] = locationStr;
+        try
         {
-            session = sessionData.Count > 0 ? sessionData : null,
-            device = deviceData.Count > 0 ? deviceData : null,
-            weather = weatherData?.Count > 0 ? weatherData : null,
-            recordCount = recordCount,
-            hasTimeSeries = recordCount > 0,
-            source = "fit_import",
-            importedAt = System.DateTime.UtcNow.ToString("O")
-        };
+            var observedAtTime = weatherCondition.GetObservedAtTime();
+            // GetObservedAtTime() returns Dynastream.Fit.DateTime, convert to System.DateTime
+            if (observedAtTime != null)
+                weatherData["observedAtTime"] = observedAtTime.GetDateTime().ToString("O");
+        }
+        catch
+        {
+            // ObservedAtTime may be null/invalid - skip it
+        }
+        if (weatherCondition.GetObservedLocationLat().HasValue)
+            weatherData["observedLocationLat"] = weatherCondition.GetObservedLocationLat().Value;
+        if (weatherCondition.GetObservedLocationLong().HasValue)
+            weatherData["observedLocationLong"] = weatherCondition.GetObservedLocationLong().Value;
+        if (weatherCondition.GetDayOfWeek().HasValue)
+            weatherData["dayOfWeek"] = weatherCondition.GetDayOfWeek().Value.ToString();
+        if (weatherCondition.GetHighTemperature().HasValue)
+            weatherData["highTemperature"] = weatherCondition.GetHighTemperature().Value;
+        if (weatherCondition.GetLowTemperature().HasValue)
+            weatherData["lowTemperature"] = weatherCondition.GetLowTemperature().Value;
 
-        return JsonSerializer.Serialize(rawFitData, new JsonSerializerOptions
-        {
-            WriteIndented = false,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-        });
+        return weatherData;
     }
 }
 
