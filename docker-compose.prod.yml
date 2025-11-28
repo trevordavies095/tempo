@@ -25,7 +25,7 @@ services:
     # Available tags: latest (stable), v1.0.0 (specific version)
     # Update the version tag below when deploying a new release
     # Example: ghcr.io/trevordavies095/tempo/api:v1.0.0
-    image: ghcr.io/trevordavies095/tempo/api:v1.0.0
+    image: ghcr.io/trevordavies095/tempo/api:v1.2.0
     container_name: tempo-api
     environment:
       # Database connection
@@ -62,7 +62,7 @@ services:
     # Available tags: latest (stable), v1.0.0 (specific version)
     # Update the version tag below when deploying a new release
     # Example: ghcr.io/trevordavies095/tempo/frontend:v1.0.0
-    image: ghcr.io/trevordavies095/tempo/frontend:v1.0.0
+    image: ghcr.io/trevordavies095/tempo/frontend:v1.2.0
     container_name: tempo-frontend
     ports:
       - "3004:3000"

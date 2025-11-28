@@ -545,12 +545,14 @@ export async function getAvailableYears(): Promise<number[]> {
 export interface UpdateWorkoutRequest {
   runType?: string | null;
   notes?: string | null;
+  name?: string | null;
 }
 
 export interface UpdateWorkoutResponse {
   id: string;
   runType: string | null;
   notes: string | null;
+  name: string | null;
 }
 
 export async function updateWorkout(
@@ -778,6 +780,34 @@ export async function recalculateWorkoutSplits(workoutId: string): Promise<{ id:
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to recalculate splits for workout: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface CropWorkoutRequest {
+  startTrimSeconds: number;
+  endTrimSeconds: number;
+}
+
+export async function cropWorkout(
+  workoutId: string,
+  startTrimSeconds: number,
+  endTrimSeconds: number
+): Promise<WorkoutDetail> {
+  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/crop`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ startTrimSeconds, endTrimSeconds }),
+  });
+
+  if (response.status === 404) {
+    throw new Error('Workout not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to crop workout: ${response.status}`);
   }
 
   return response.json();

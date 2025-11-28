@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { updateWorkout, deleteWorkout } from '@/lib/api';
+import { updateWorkout, deleteWorkout, cropWorkout } from '@/lib/api';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 
 export function useWorkoutMutations(workoutId: string) {
@@ -8,7 +8,7 @@ export function useWorkoutMutations(workoutId: string) {
   const queryClient = useQueryClient();
 
   const updateWorkoutMutation = useMutation({
-    mutationFn: (updates: { runType?: string | null; notes?: string | null }) =>
+    mutationFn: (updates: { runType?: string | null; notes?: string | null; name?: string | null }) =>
       updateWorkout(workoutId, updates),
     onSuccess: () => {
       invalidateWorkoutQueries(queryClient, workoutId);
@@ -23,6 +23,14 @@ export function useWorkoutMutations(workoutId: string) {
     },
   });
 
+  const cropWorkoutMutation = useMutation({
+    mutationFn: ({ startTrimSeconds, endTrimSeconds }: { startTrimSeconds: number; endTrimSeconds: number }) =>
+      cropWorkout(workoutId, startTrimSeconds, endTrimSeconds),
+    onSuccess: () => {
+      invalidateWorkoutQueries(queryClient, workoutId);
+    },
+  });
+
   const handleDeleteWorkout = () => {
     if (window.confirm('Are you sure you want to delete this workout? This action cannot be undone.')) {
       deleteWorkoutMutation.mutate();
@@ -32,6 +40,7 @@ export function useWorkoutMutations(workoutId: string) {
   return {
     updateWorkoutMutation,
     deleteWorkoutMutation,
+    cropWorkoutMutation,
     handleDeleteWorkout,
   };
 }
