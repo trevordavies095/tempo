@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2025-01-27
+
+### Added
+- Workout crop/trim functionality - Users can now crop workouts by removing time from the beginning and/or end
+  - Interactive dialog with time input fields for start and end trim values
+  - Preview of new duration and distance before applying changes
+  - Automatically recalculates all derived data (splits, pace, elevation, heart rate stats, relative effort)
+  - Preserves original raw data for audit trail
+  - Updates route coordinates, time series data, and workout aggregates
+  - Accessible from workout detail page via crop button
+- Activity name editing - Users can now edit workout activity names through inline editing
+  - Click on the activity name in the workout detail header to edit
+  - Inline editing with keyboard shortcuts (Enter to save, Escape to cancel)
+  - Name field supports up to 200 characters
+  - Changes are automatically saved and reflected across all views
+
 ## [1.1.2] - 2025-11-27
 
 ### Fixed
