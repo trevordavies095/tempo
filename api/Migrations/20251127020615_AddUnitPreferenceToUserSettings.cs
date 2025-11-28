@@ -10,14 +10,24 @@ namespace Tempo.Api.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "UnitPreference",
-                table: "UserSettings",
-                type: "character varying(20)",
-                maxLength: 20,
-                nullable: true);
+            // Use raw SQL to check if column exists before adding (idempotent migration)
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'UserSettings' 
+                        AND column_name = 'UnitPreference'
+                    ) THEN
+                        -- Column doesn't exist - add it
+                        ALTER TABLE ""UserSettings""
+                            ADD COLUMN ""UnitPreference"" character varying(20);
+                    END IF;
+                END $$;
+            ");
 
-            // Set default value "metric" for existing records
+            // Set default value "metric" for existing records (safe to run multiple times)
             migrationBuilder.Sql(@"
                 UPDATE ""UserSettings""
                 SET ""UnitPreference"" = 'metric'
@@ -28,9 +38,21 @@ namespace Tempo.Api.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "UnitPreference",
-                table: "UserSettings");
+            // Use raw SQL to check if column exists before dropping (idempotent migration)
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'UserSettings' 
+                        AND column_name = 'UnitPreference'
+                    ) THEN
+                        ALTER TABLE ""UserSettings""
+                            DROP COLUMN ""UnitPreference"";
+                    END IF;
+                END $$;
+            ");
         }
     }
 }
