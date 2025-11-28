@@ -1630,26 +1630,52 @@ public static class WorkoutsEndpoints
                 }
             }
 
+            // Validate and update Name if provided
+            if (root.TryGetProperty("name", out var nameElement))
+            {
+                string? nameValue = null;
+                if (nameElement.ValueKind == JsonValueKind.String)
+                {
+                    nameValue = nameElement.GetString();
+                    // Validate max length (200 characters as per model constraint)
+                    if (nameValue != null && nameValue.Length > 200)
+                    {
+                        return Results.BadRequest(new { error = "name must be 200 characters or less" });
+                    }
+                }
+                else if (nameElement.ValueKind == JsonValueKind.Null)
+                {
+                    nameValue = null;
+                }
+                else
+                {
+                    return Results.BadRequest(new { error = "name must be a string or null" });
+                }
+                workout.Name = nameValue;
+            }
+
             // Save changes
             var runTypeUpdated = root.TryGetProperty("runType", out _);
             var notesUpdated = root.TryGetProperty("notes", out _);
+            var nameUpdated = root.TryGetProperty("name", out _);
             await db.SaveChangesAsync();
 
-            logger.LogInformation("Updated workout {WorkoutId}: RunType={RunType}, RunTypeUpdated={RunTypeUpdated}, NotesUpdated={NotesUpdated}",
-                workout.Id, workout.RunType ?? "null", runTypeUpdated, notesUpdated);
+            logger.LogInformation("Updated workout {WorkoutId}: RunType={RunType}, RunTypeUpdated={RunTypeUpdated}, NotesUpdated={NotesUpdated}, NameUpdated={NameUpdated}",
+                workout.Id, workout.RunType ?? "null", runTypeUpdated, notesUpdated, nameUpdated);
 
             return Results.Ok(new
             {
                 id = workout.Id,
                 runType = workout.RunType,
-                notes = workout.Notes
+                notes = workout.Notes,
+                name = workout.Name
             });
         })
         .Produces(200)
         .Produces(400)
         .Produces(404)
         .WithSummary("Update workout")
-        .WithDescription("Updates workout RunType and/or Notes");
+        .WithDescription("Updates workout RunType, Notes, and/or Name");
 
         group.MapDelete("/{id:guid}", async (
             Guid id,
