@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2025-11-27
+
+### Fixed
+- Fixed database migration errors causing container startup failures
+- Made all migrations idempotent to prevent "already exists" errors
+- Enhanced DatabaseMigrationHelper to detect existing tables and columns
+- Prevents migration conflicts when database state doesn't match migration history
+
 ## [1.1.1] - 2025-11-27
 
 ### Fixed

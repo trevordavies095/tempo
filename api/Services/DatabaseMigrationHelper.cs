@@ -23,6 +23,21 @@ public static class DatabaseMigrationHelper
         { "UserSettings", "20251122003646_AddUserSettings" }
     };
 
+    // Map of (table, column) pairs to their corresponding migration IDs
+    private static readonly Dictionary<(string Table, string Column), string> ColumnToMigrationMap = new()
+    {
+        // AddRelativeEffortToWorkout migration
+        { ("Workouts", "RelativeEffort"), "20251122003810_AddRelativeEffortToWorkout" },
+        // AddDeviceField migration
+        { ("Workouts", "Device"), "20251117230159_AddDeviceField" },
+        // AddRawFileStorage migration
+        { ("Workouts", "RawFileData"), "20251124171046_AddRawFileStorage" },
+        { ("Workouts", "RawFileName"), "20251124171046_AddRawFileStorage" },
+        { ("Workouts", "RawFileType"), "20251124171046_AddRawFileStorage" },
+        // AddUnitPreferenceToUserSettings migration
+        { ("UserSettings", "UnitPreference"), "20251127020615_AddUnitPreferenceToUserSettings" }
+    };
+
     private const string ProductVersion = "9.0.10";
 
     /// <summary>
@@ -99,6 +114,22 @@ public static class DatabaseMigrationHelper
                 }
             }
 
+            // Also check for existing columns and mark their migrations as applied
+            var existingColumns = GetExistingColumns(db);
+            Log.Information("Found {Count} existing columns to check", existingColumns.Count);
+
+            foreach (var (table, column) in existingColumns)
+            {
+                if (ColumnToMigrationMap.TryGetValue((table, column), out var migrationId))
+                {
+                    if (!recordedMigrations.Contains(migrationId))
+                    {
+                        migrationsToMark.Add(migrationId);
+                        Log.Information("Column '{Table}.{Column}' exists but migration '{Migration}' is not recorded", table, column, migrationId);
+                    }
+                }
+            }
+
             // Mark missing migrations as applied
             foreach (var migrationId in migrationsToMark)
             {
@@ -109,7 +140,7 @@ public static class DatabaseMigrationHelper
                         VALUES ({0}, {1})
                         ON CONFLICT (""MigrationId"") DO NOTHING;
                     ", migrationId, ProductVersion);
-                    Log.Information("Marked migration '{Migration}' as applied (table already exists)", migrationId);
+                    Log.Information("Marked migration '{Migration}' as applied", migrationId);
                 }
                 catch (Exception ex)
                 {
@@ -190,6 +221,53 @@ public static class DatabaseMigrationHelper
         }
 
         return migrations;
+    }
+
+    /// <summary>
+    /// Gets a list of all existing columns in tracked tables, as (table, column) pairs.
+    /// </summary>
+    private static List<(string Table, string Column)> GetExistingColumns(TempoDbContext db)
+    {
+        var columns = new List<(string, string)>();
+        try
+        {
+            var connection = db.Database.GetDbConnection();
+            if (connection.State != ConnectionState.Open)
+                connection.Open();
+
+            // Get all columns from tables we care about (those in ColumnToMigrationMap)
+            var trackedTables = ColumnToMigrationMap.Keys.Select(k => k.Table).Distinct().ToList();
+            if (trackedTables.Count == 0)
+                return columns;
+
+            // Build query - table names come from our hardcoded dictionary so safe to use string formatting
+            // Escape table names properly for SQL
+            var escapedTableNames = trackedTables.Select(t => $"'{t.Replace("'", "''")}'");
+            var tableList = string.Join(", ", escapedTableNames);
+            
+            using var command = connection.CreateCommand();
+            command.CommandText = $@"
+                SELECT table_name, column_name 
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' 
+                AND table_name IN ({tableList})
+                ORDER BY table_name, column_name;
+            ";
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var tableName = reader.GetString(0);
+                var columnName = reader.GetString(1);
+                columns.Add((tableName, columnName));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Error getting existing columns");
+        }
+
+        return columns;
     }
 }
 
