@@ -545,12 +545,14 @@ export async function getAvailableYears(): Promise<number[]> {
 export interface UpdateWorkoutRequest {
   runType?: string | null;
   notes?: string | null;
+  name?: string | null;
 }
 
 export interface UpdateWorkoutResponse {
   id: string;
   runType: string | null;
   notes: string | null;
+  name: string | null;
 }
 
 export async function updateWorkout(
