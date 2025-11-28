@@ -7,6 +7,17 @@
 ![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 
+## Screenshots
+
+![Dashboard](https://i.imgur.com/pURdx2e.png)
+*Dashboard view*
+
+![My Activities](https://i.imgur.com/nZEt9mN.png)
+*Activities list*
+
+![Activity Details](https://i.imgur.com/aj671gl.png)
+*Activity details view*
+
 ## Quick Start
 
 Get Tempo running in minutes with Docker Compose:
