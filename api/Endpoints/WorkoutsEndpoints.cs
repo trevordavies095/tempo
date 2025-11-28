@@ -718,6 +718,171 @@ public static class WorkoutsEndpoints
         .WithSummary("Recalculate Splits")
         .WithDescription("Recalculates splits for a workout using current unit preference");
 
+        group.MapPost("/{id:guid}/crop", async (
+            Guid id,
+            HttpRequest request,
+            TempoDbContext db,
+            WorkoutCropService cropService,
+            SplitRecalculationService splitRecalculationService,
+            HeartRateZoneService zoneService,
+            RelativeEffortService relativeEffortService,
+            ILogger<Program> logger) =>
+        {
+            // Parse request body
+            JsonDocument? jsonDoc;
+            try
+            {
+                jsonDoc = await JsonDocument.ParseAsync(request.Body);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to parse crop request body");
+                return Results.BadRequest(new { error = "Invalid request body" });
+            }
+
+            if (jsonDoc == null)
+            {
+                return Results.BadRequest(new { error = "Request body is required" });
+            }
+
+            var root = jsonDoc.RootElement;
+
+            // Extract trim values
+            if (!root.TryGetProperty("startTrimSeconds", out var startTrimElement) ||
+                !startTrimElement.TryGetInt32(out var startTrimSeconds))
+            {
+                return Results.BadRequest(new { error = "startTrimSeconds is required and must be an integer" });
+            }
+
+            if (!root.TryGetProperty("endTrimSeconds", out var endTrimElement) ||
+                !endTrimElement.TryGetInt32(out var endTrimSeconds))
+            {
+                return Results.BadRequest(new { error = "endTrimSeconds is required and must be an integer" });
+            }
+
+            // Validate trim values
+            if (startTrimSeconds < 0 || endTrimSeconds < 0)
+            {
+                return Results.BadRequest(new { error = "Trim values must be non-negative" });
+            }
+
+            // Load workout with related data
+            var workout = await db.Workouts
+                .Include(w => w.Route)
+                .FirstOrDefaultAsync(w => w.Id == id);
+
+            if (workout == null)
+            {
+                return Results.NotFound(new { error = "Workout not found" });
+            }
+
+            if (workout.Route == null)
+            {
+                return Results.BadRequest(new { error = "Workout has no route data. Cannot crop workout without route." });
+            }
+
+            // Validate crop parameters
+            if (startTrimSeconds + endTrimSeconds >= workout.DurationS)
+            {
+                return Results.BadRequest(new { error = $"Cannot crop entire workout. Trim values ({startTrimSeconds}s + {endTrimSeconds}s) must be less than workout duration ({workout.DurationS}s)" });
+            }
+
+            try
+            {
+                // Perform crop
+                await cropService.CropWorkoutAsync(workout, startTrimSeconds, endTrimSeconds);
+
+                // Recalculate splits
+                var settings = await db.UserSettings.FirstOrDefaultAsync();
+                var unitPreference = settings?.UnitPreference ?? "metric";
+                await splitRecalculationService.RecalculateSplitsForWorkoutAsync(workout, unitPreference);
+
+                // Recalculate relative effort if heart rate zones are configured
+                if (settings != null)
+                {
+                    var zones = zoneService.GetZonesFromUserSettings(settings);
+                    var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                    workout.RelativeEffort = relativeEffort;
+                    await db.SaveChangesAsync();
+                }
+
+                // Reload workout with updated data
+                await db.Entry(workout).ReloadAsync();
+                await db.Entry(workout).Reference(w => w.Route).LoadAsync();
+                await db.Entry(workout).Collection(w => w.Splits).LoadAsync();
+
+                // Parse route GeoJSON for response
+                object? routeGeoJson = null;
+                if (workout.Route != null && !string.IsNullOrEmpty(workout.Route.RouteGeoJson))
+                {
+                    try
+                    {
+                        routeGeoJson = JsonSerializer.Deserialize<object>(workout.Route.RouteGeoJson);
+                    }
+                    catch (JsonException ex)
+                    {
+                        logger.LogWarning(ex, "Failed to parse route GeoJSON for workout {WorkoutId}", workout.Id);
+                    }
+                }
+
+                // Map splits
+                var splits = workout.Splits.Select(s => new
+                {
+                    idx = s.Idx,
+                    distanceM = s.DistanceM,
+                    durationS = s.DurationS,
+                    paceS = s.PaceS
+                }).ToList();
+
+                return Results.Ok(new
+                {
+                    id = workout.Id,
+                    startedAt = workout.StartedAt,
+                    durationS = workout.DurationS,
+                    distanceM = workout.DistanceM,
+                    avgPaceS = workout.AvgPaceS,
+                    elevGainM = workout.ElevGainM,
+                    elevLossM = workout.ElevLossM,
+                    minElevM = workout.MinElevM,
+                    maxElevM = workout.MaxElevM,
+                    maxSpeedMps = workout.MaxSpeedMps,
+                    avgSpeedMps = workout.AvgSpeedMps,
+                    movingTimeS = workout.MovingTimeS,
+                    maxHeartRateBpm = workout.MaxHeartRateBpm,
+                    avgHeartRateBpm = workout.AvgHeartRateBpm,
+                    minHeartRateBpm = workout.MinHeartRateBpm,
+                    maxCadenceRpm = workout.MaxCadenceRpm,
+                    avgCadenceRpm = workout.AvgCadenceRpm,
+                    maxPowerWatts = workout.MaxPowerWatts,
+                    avgPowerWatts = workout.AvgPowerWatts,
+                    calories = workout.Calories,
+                    relativeEffort = workout.RelativeEffort,
+                    runType = workout.RunType,
+                    notes = workout.Notes,
+                    source = workout.Source,
+                    device = workout.Device,
+                    name = workout.Name,
+                    route = routeGeoJson,
+                    splits = splits
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                logger.LogWarning(ex, "Invalid crop operation for workout {WorkoutId}", id);
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error cropping workout {WorkoutId}", id);
+                return Results.Problem("Failed to crop workout");
+            }
+        })
+        .Produces(200)
+        .Produces(400)
+        .Produces(404)
+        .WithSummary("Crop Workout")
+        .WithDescription("Crops/trims a workout by removing time from the beginning and/or end, updating all derived data");
+
         group.MapGet("/{id:guid}", async (
             Guid id,
             TempoDbContext db,

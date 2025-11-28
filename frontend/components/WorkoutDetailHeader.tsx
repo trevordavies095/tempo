@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { getWorkoutDisplayName, formatDateTime } from '@/lib/format';
 import type { WorkoutDetail } from '@/lib/api';
 import { useWorkoutMutations } from '@/hooks/useWorkoutMutations';
+import { CropWorkoutDialog } from './CropWorkoutDialog';
 
 interface WorkoutDetailHeaderProps {
   workout: WorkoutDetail;
@@ -12,7 +13,8 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameValue, setNameValue] = useState<string>('');
-  const { deleteWorkoutMutation, handleDeleteWorkout, updateWorkoutMutation } = useWorkoutMutations(workout.id);
+  const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
+  const { deleteWorkoutMutation, handleDeleteWorkout, updateWorkoutMutation, cropWorkoutMutation } = useWorkoutMutations(workout.id);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -53,6 +55,17 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
   const handleCancelName = () => {
     setIsEditingName(false);
     setNameValue(workout.name || '');
+  };
+
+  const handleCropWorkout = (startTrimSeconds: number, endTrimSeconds: number) => {
+    cropWorkoutMutation.mutate(
+      { startTrimSeconds, endTrimSeconds },
+      {
+        onSuccess: () => {
+          setIsCropDialogOpen(false);
+        },
+      }
+    );
   };
 
   return (
@@ -156,6 +169,33 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
           {isMenuOpen && (
             <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-10">
               <div className="py-1">
+                {workout.route && (
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsCropDialogOpen(true);
+                    }}
+                    disabled={cropWorkoutMutation.isPending}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                    type="button"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243 4.243 3 3 0 004.243-4.243zm0-5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z"
+                      />
+                    </svg>
+                    Crop Workout
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setIsMenuOpen(false);
@@ -205,9 +245,23 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
           </span>
         </div>
       )}
+      {cropWorkoutMutation.isError && (
+        <div className="mb-2">
+          <span className="text-xs text-red-600 dark:text-red-400">
+            {cropWorkoutMutation.error instanceof Error ? cropWorkoutMutation.error.message : 'Failed to crop workout'}
+          </span>
+        </div>
+      )}
       <p className="text-base text-gray-600 dark:text-gray-400">
         {formatDateTime(workout.startedAt)}
       </p>
+      <CropWorkoutDialog
+        open={isCropDialogOpen}
+        onClose={() => setIsCropDialogOpen(false)}
+        onConfirm={handleCropWorkout}
+        workout={workout}
+        isLoading={cropWorkoutMutation.isPending}
+      />
     </div>
   );
 }
