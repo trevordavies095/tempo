@@ -109,10 +109,21 @@ app.MapVersionEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 // Apply database migrations automatically on startup
-using (var scope = app.Services.CreateScope())
+try
 {
-    var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-    DatabaseMigrationHelper.ApplyMigrations(db);
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        DatabaseMigrationHelper.ApplyMigrations(db);
+    }
+    Log.Information("Database migrations completed successfully");
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Failed to apply database migrations. Application cannot start.");
+    // Re-throw to prevent app from starting with broken database state
+    // This will cause the container to exit, but with a clear error message
+    throw;
 }
 
 app.Run();
