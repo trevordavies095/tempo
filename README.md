@@ -23,6 +23,9 @@
 
 Get Tempo running in minutes with Docker Compose:
 
+**Prerequisites:**
+- Docker and Docker Compose installed
+
 ```bash
 # Clone the repository
 git clone https://github.com/trevordavies095/tempo.git
@@ -34,9 +37,10 @@ docker-compose up -d
 # Access the application
 # Frontend: http://localhost:3000
 # API: http://localhost:5001
+# API Swagger UI (development): http://localhost:5001/swagger
 ```
 
-That's it! The database migrations run automatically on first startup.
+That's it! The database migrations run automatically on first startup. Your data is persisted in Docker volumes, so it will survive container restarts.
 
 ## Features
 
@@ -45,7 +49,12 @@ That's it! The database migrations run automatically on first startup.
 - **Interactive Maps** - Visualize routes with elevation profiles
 - **Media Support** - Attach photos and videos to workouts
 - **Weather Data** - Automatic weather conditions for each workout
-- **Bulk Import** - Import multiple workouts at once via ZIP file
+- **Bulk Import** - Import multiple workouts at once via ZIP file (up to 500MB)
+- **Heart Rate Zones** - Calculate zones using Age-based, Karvonen, or Custom methods
+- **Relative Effort** - Automatic calculation of workout intensity based on heart rate zones
+- **Workout Editing** - Crop/trim workouts and edit activity names
+- **Statistics Dashboards** - Weekly and yearly statistics with relative effort tracking
+- **Unit Preferences** - Switch between metric and imperial units
 - **100% Local** - All data stays on your machine, no cloud sync required
 
 ## Tech Stack
@@ -132,19 +141,237 @@ your-strava-export.zip
 1. Request your data export from Strava (Settings → My Account → Download or Delete Your Account → Request Archive)
 2. Extract and re-zip if needed to match the structure above
 3. Go to the Import page in Tempo
-4. Upload the ZIP file under "Bulk Import Strava Export"
+4. Upload the ZIP file under "Bulk Import Strava Export" (files up to 500MB are supported)
 5. Wait for processing to complete (you'll see a summary of imported/skipped workouts)
+
+## Configuration
+
+Tempo can be configured via `appsettings.json` (for local development) or environment variables (for Docker deployments).
+
+### Database Connection
+
+**Local Development (`appsettings.json`):**
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres"
+  }
+}
+```
+
+**Docker (Environment Variable):**
+```bash
+ConnectionStrings__DefaultConnection="Host=postgres;Port=5432;Database=tempo;Username=postgres;Password=postgres"
+```
+
+### Media Storage
+
+**Local Development (`appsettings.json`):**
+```json
+{
+  "MediaStorage": {
+    "RootPath": "./media",
+    "MaxFileSizeBytes": 52428800
+  }
+}
+```
+
+**Docker (Environment Variables):**
+```bash
+MediaStorage__RootPath="/app/media"
+MediaStorage__MaxFileSizeBytes="52428800"  # 50MB default
+```
+
+### Elevation Calculation
+
+Configure elevation smoothing thresholds:
+```json
+{
+  "ElevationCalculation": {
+    "NoiseThresholdMeters": 2.0,
+    "MinDistanceMeters": 10.0
+  }
+}
+```
+
+### CORS Configuration
+
+Allow specific origins for API access:
+```json
+{
+  "CORS": {
+    "AllowedOrigins": "http://localhost:3000,http://localhost:3004"
+  }
+}
+```
+
+In Docker, use: `CORS__AllowedOrigins="http://localhost:3000,http://localhost:3004"`
+
+## Data Management
+
+### Storage Locations
+
+**Database:**
+- PostgreSQL data is stored in Docker volumes (`postgres_data`) or your configured PostgreSQL instance
+- Contains all workout metadata, routes, splits, time series data, and settings
+
+**Media Files:**
+- Stored in the `media/` directory (or configured `MediaStorage:RootPath`)
+- Organized by workout GUID: `media/{workoutId}/filename.ext`
+- Includes photos and videos attached to workouts
+
+### Backup Recommendations
+
+**Database Backup:**
+```bash
+# Using Docker
+docker exec tempo-postgres pg_dump -U postgres tempo > backup.sql
+
+# Restore
+docker exec -i tempo-postgres psql -U postgres tempo < backup.sql
+```
+
+**Media Backup:**
+- Copy the entire `media/` directory to your backup location
+- Media files are referenced by workout GUID, so maintain the directory structure
+
+**Complete Backup:**
+For a complete backup, save both:
+1. Database dump (as shown above)
+2. Media directory (`./media`)
+
+### Data Migration
+
+Database migrations run automatically on API startup. If you need to manually apply migrations:
+
+```bash
+cd api
+dotnet ef database update
+```
 
 ## Deployment
 
-For production deployment, use Docker Compose with the provided `docker-compose.prod.yml` file. Configure environment variables as needed for your deployment environment.
+For production deployment, use Docker Compose with the provided `docker-compose.prod.yml` file.
+
+**Key differences from development:**
+- Uses pre-built images from `ghcr.io/trevordavies095/tempo/api` and `ghcr.io/trevordavies095/tempo/frontend`
+- Images are tagged with version numbers (e.g., `v1.2.0`) for stability
+- Uses a dedicated Docker network (`tempo-network`) for service isolation
+- Frontend runs on port 3004 by default (configurable)
+
+**Environment Variables:**
+Configure the following in `docker-compose.prod.yml` or via environment files:
+- `ConnectionStrings__DefaultConnection` - PostgreSQL connection string
+- `MediaStorage__RootPath` - Media storage path (default: `/app/media`)
+- `MediaStorage__MaxFileSizeBytes` - Maximum upload size (default: 50MB)
+- `CORS__AllowedOrigins` - Comma-separated list of allowed origins
+- `ElevationCalculation__NoiseThresholdMeters` - Elevation smoothing threshold
+- `ElevationCalculation__MinDistanceMeters` - Minimum distance for elevation calculation
+
+**Data Persistence:**
+- Database data is stored in the `postgres_data` Docker volume
+- Media files are stored in the `./media` directory (mounted as a volume)
+- Back up both the database volume and media directory for complete data protection
 
 ## API
 
-- `POST /workouts/import` - Import GPX, FIT, or CSV workout files
-- `GET /workouts` - List all workouts
-- `GET /workouts/{id}` - Get workout details
+Tempo provides a RESTful API for managing workouts, settings, and statistics. In development mode, interactive API documentation is available at `http://localhost:5001/swagger`.
+
+### Workouts Endpoints
+
+**Import:**
+- `POST /workouts/import` - Import single or multiple GPX, FIT, or CSV workout files
+- `POST /workouts/import/bulk` - Bulk import from Strava export ZIP file (up to 500MB)
+
+**Workout Management:**
+- `GET /workouts` - List all workouts with filtering and pagination
+- `GET /workouts/{id}` - Get detailed workout information
+- `PATCH /workouts/{id}` - Update workout (e.g., activity name)
+- `DELETE /workouts/{id}` - Delete workout and associated data
+
+**Workout Operations:**
+- `POST /workouts/{id}/crop` - Crop/trim workout by removing time from start and/or end
+- `POST /workouts/{id}/recalculate-effort` - Recalculate relative effort for a workout
+- `POST /workouts/{id}/recalculate-splits` - Recalculate splits for a workout
+
+**Statistics:**
+- `GET /workouts/stats/weekly` - Get weekly statistics
+- `GET /workouts/stats/yearly` - Get yearly statistics
+- `GET /workouts/stats/relative-effort` - Get relative effort statistics
+- `GET /workouts/stats/yearly-weekly` - Get combined yearly and weekly stats
+- `GET /workouts/stats/available-periods` - Get available time periods for stats
+- `GET /workouts/stats/available-years` - Get available years for stats
+
+**Media:**
+- `POST /workouts/{id}/media` - Upload media (photos/videos) to a workout
+- `GET /workouts/{id}/media` - List all media for a workout
+- `GET /workouts/{id}/media/{mediaId}` - Get/download specific media file
+- `DELETE /workouts/{id}/media/{mediaId}` - Delete media file
+
+### Settings Endpoints
+
+- `GET /settings/heart-rate-zones` - Get current heart rate zone configuration
+- `PUT /settings/heart-rate-zones` - Update heart rate zones (Age-based, Karvonen, or Custom)
+- `POST /settings/heart-rate-zones/update-with-recalc` - Update zones and optionally recalculate all workouts
+- `GET /settings/recalculate-relative-effort/count` - Get count of workouts eligible for recalculation
+- `POST /settings/recalculate-relative-effort` - Recalculate relative effort for all qualifying workouts
+- `GET /settings/unit-preference` - Get unit preference (metric/imperial)
+- `PUT /settings/unit-preference` - Update unit preference
+- `GET /settings/recalculate-splits/count` - Get count of workouts eligible for split recalculation
+- `POST /settings/recalculate-splits` - Recalculate splits for all workouts
+
+### System Endpoints
+
+- `GET /version` - Get application version, build date, and git commit
 - `GET /health` - Health check endpoint
+
+## Troubleshooting
+
+### Database Migration Errors
+
+If you encounter migration errors on startup:
+- Ensure PostgreSQL is running and accessible
+- Check connection string configuration
+- Migrations are idempotent and handle existing tables gracefully
+- For manual migration: `cd api && dotnet ef database update`
+
+### Large File Upload Issues
+
+- Bulk import supports files up to 500MB
+- Ensure sufficient disk space for media storage
+- Check `MediaStorage:MaxFileSizeBytes` configuration
+- For very large imports, monitor API logs for progress
+
+### CORS Errors
+
+If you see CORS errors in the browser:
+- Verify `CORS:AllowedOrigins` includes your frontend URL
+- In Docker, use double underscores: `CORS__AllowedOrigins`
+- Restart the API container after changing CORS settings
+
+### Media Storage Permissions
+
+If media uploads fail:
+- Ensure the media directory exists and is writable
+- Check `MediaStorage:RootPath` configuration
+- In Docker, verify volume mount permissions
+
+### Connection Issues
+
+**Port Conflicts:**
+- Default ports: Frontend (3000), API (5001), PostgreSQL (5432)
+- Change ports in `docker-compose.yml` if conflicts occur
+
+**Database Connection:**
+- Verify PostgreSQL is running: `docker ps` or `pg_isready`
+- Check connection string matches your setup
+- Ensure network connectivity between services
+
+## Support
+
+- **Discord**: Join our community on [Discord](https://discord.gg/9Svd99npyj) for support and discussions
+- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/trevordavies095/tempo/issues)
+- **Changelog**: See [CHANGELOG.md](CHANGELOG.md) for version history and updates
 
 ## License
 
