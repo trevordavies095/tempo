@@ -6,6 +6,7 @@
 ![Version](https://img.shields.io/badge/version-1.2.0-green.svg)
 ![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
 
 ## Screenshots
 
