@@ -1,0 +1,99 @@
+site_name: Tempo Documentation
+site_description: Comprehensive documentation for Tempo - A self-hostable running tracker
+site_url: https://trevordavies095.github.io/tempo
+repo_url: https://github.com/trevordavies095/tempo
+repo_name: trevordavies095/tempo
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - tables
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+plugins:
+  - search:
+      lang: en
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+    - getting-started/quick-start.md
+    - getting-started/installation.md
+    - getting-started/configuration.md
+  - User Guide:
+    - user-guide/index.md
+    - user-guide/importing-workouts.md
+    - user-guide/bulk-import.md
+    - user-guide/viewing-workouts.md
+    - user-guide/media.md
+    - user-guide/analytics.md
+    - user-guide/settings.md
+  - Developer Documentation:
+    - developers/index.md
+    - developers/architecture.md
+    - developers/setup.md
+    - developers/api-reference.md
+    - developers/database.md
+    - developers/contributing.md
+  - Deployment:
+    - deployment/index.md
+    - deployment/docker.md
+    - deployment/production.md
+    - deployment/security.md
+    - deployment/backup-restore.md
+  - Troubleshooting:
+    - troubleshooting/index.md
+    - troubleshooting/common-issues.md
+    - troubleshooting/faq.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/trevordavies095/tempo
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/9Svd99npyj
+
+copyright: Copyright &copy; 2025 Tempo Contributors
+
