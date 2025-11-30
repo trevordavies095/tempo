@@ -41,6 +41,12 @@ services:
       ASPNETCORE_ENVIRONMENT: "Production"
       # CORS - Allow multiple origins (comma-separated)
       CORS__AllowedOrigins: "http://localhost:3000,http://localhost:3004,http://192.168.4.205:3004"
+      # JWT Authentication - REQUIRED: Set a secure random key in production
+      # Generate with: openssl rand -base64 32
+      JWT__SecretKey: "${JWT_SECRET_KEY:-CHANGE_THIS_IN_PRODUCTION}"
+      JWT__Issuer: "Tempo"
+      JWT__Audience: "Tempo"
+      JWT__ExpirationDays: "7"
     ports:
       - "5001:5001"
     volumes:
