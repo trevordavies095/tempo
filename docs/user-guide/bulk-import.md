@@ -68,6 +68,8 @@ Bulk import processing may take several minutes depending on:
 
 You'll see progress updates during processing.
 
+**Note**: If you've set a default shoe in Settings, all imported workouts will automatically be assigned to that shoe. You can change or remove shoe assignments later from individual workout details pages.
+
 ### Step 5: Review Import Summary
 
 After processing completes, you'll see a summary showing:

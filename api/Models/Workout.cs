@@ -126,9 +126,16 @@ public class Workout
     public string? Weather { get; set; }
 
     // ============================================
+    // SHOE TRACKING
+    // ============================================
+
+    public Guid? ShoeId { get; set; }
+
+    // ============================================
     // NAVIGATION PROPERTIES
     // ============================================
 
+    public Shoe? Shoe { get; set; }
     public WorkoutRoute? Route { get; set; }
     public ICollection<WorkoutSplit> Splits { get; set; } = new List<WorkoutSplit>();
     public ICollection<WorkoutMedia> Media { get; set; } = new List<WorkoutMedia>();

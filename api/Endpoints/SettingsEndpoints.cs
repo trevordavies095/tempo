@@ -676,6 +676,20 @@ public static class SettingsEndpoints
             .Produces(400)
             .WithSummary("Recalculate splits for all workouts")
             .WithDescription("Recalculates splits for all workouts that have route data using the current unit preference");
+
+        group.MapGet("/default-shoe", GetDefaultShoe)
+            .WithName("GetDefaultShoe")
+            .Produces(200)
+            .WithSummary("Get default shoe")
+            .WithDescription("Returns the current default shoe, or null if none is set");
+
+        group.MapPut("/default-shoe", SetDefaultShoe)
+            .WithName("SetDefaultShoe")
+            .Produces(200)
+            .Produces(400)
+            .Produces(404)
+            .WithSummary("Set default shoe")
+            .WithDescription("Sets the default shoe for automatic assignment to new workouts. Pass null to clear the default.");
     }
 
     /// <summary>
@@ -754,5 +768,109 @@ public static class SettingsEndpoints
         /// Unit preference: "metric" or "imperial"
         /// </summary>
         public string UnitPreference { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Get default shoe
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>Default shoe information or null</returns>
+    private static async Task<IResult> GetDefaultShoe(
+        TempoDbContext db,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            var settings = await db.UserSettings
+                .Include(s => s.DefaultShoe)
+                .FirstOrDefaultAsync();
+
+            if (settings == null || settings.DefaultShoeId == null)
+            {
+                return Results.Ok(new { defaultShoeId = (Guid?)null });
+            }
+
+            return Results.Ok(new
+            {
+                defaultShoeId = settings.DefaultShoeId,
+                brand = settings.DefaultShoe?.Brand,
+                model = settings.DefaultShoe?.Model
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error getting default shoe");
+            return Results.Problem("Failed to retrieve default shoe");
+        }
+    }
+
+    /// <summary>
+    /// Set default shoe
+    /// </summary>
+    /// <param name="request">Set default shoe request</param>
+    /// <param name="db">Database context</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>Updated default shoe information</returns>
+    private static async Task<IResult> SetDefaultShoe(
+        [FromBody] SetDefaultShoeRequest request,
+        TempoDbContext db,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            if (settings == null)
+            {
+                settings = new UserSettings();
+                db.UserSettings.Add(settings);
+            }
+
+            if (request.DefaultShoeId.HasValue)
+            {
+                // Validate that the shoe exists
+                var shoe = await db.Shoes.FindAsync(request.DefaultShoeId.Value);
+                if (shoe == null)
+                {
+                    return Results.NotFound(new { error = "Shoe not found" });
+                }
+
+                settings.DefaultShoeId = request.DefaultShoeId.Value;
+            }
+            else
+            {
+                // Clear default shoe
+                settings.DefaultShoeId = null;
+            }
+
+            settings.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            // Reload with navigation property
+            await db.Entry(settings).Reference(s => s.DefaultShoe).LoadAsync();
+
+            return Results.Ok(new
+            {
+                defaultShoeId = settings.DefaultShoeId,
+                brand = settings.DefaultShoe?.Brand,
+                model = settings.DefaultShoe?.Model
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error setting default shoe");
+            return Results.Problem("Failed to set default shoe");
+        }
+    }
+
+    /// <summary>
+    /// Request model for setting default shoe
+    /// </summary>
+    public class SetDefaultShoeRequest
+    {
+        /// <summary>
+        /// Shoe ID to set as default, or null to clear the default
+        /// </summary>
+        public Guid? DefaultShoeId { get; set; }
     }
 }

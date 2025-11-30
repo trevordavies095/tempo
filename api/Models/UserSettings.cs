@@ -47,7 +47,12 @@ public class UserSettings
     [MaxLength(20)]
     public string? UnitPreference { get; set; } // "metric" or "imperial", default "metric"
 
+    public Guid? DefaultShoeId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    // Navigation properties
+    public Shoe? DefaultShoe { get; set; }
 }
 

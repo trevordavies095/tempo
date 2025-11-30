@@ -17,6 +17,7 @@ public class TempoDbContext : DbContext
     public DbSet<UserSettings> UserSettings { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<BestEffort> BestEfforts { get; set; }
+    public DbSet<Shoe> Shoes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +30,13 @@ public class TempoDbContext : DbContext
             entity.HasIndex(e => new { e.StartedAt, e.DistanceM, e.DurationS }); // Duplicate detection
             entity.HasIndex(e => e.Source);
             entity.HasIndex(e => e.RunType);
+            entity.HasIndex(e => e.ShoeId);
+            
+            // Foreign key relationship to Shoe
+            entity.HasOne(e => e.Shoe)
+                .WithMany(s => s.Workouts)
+                .HasForeignKey(e => e.ShoeId)
+                .OnDelete(DeleteBehavior.SetNull);
             
             // GIN indexes for JSONB fields (enables efficient JSON queries)
             entity.HasIndex(e => e.RawGpxData)
@@ -85,6 +93,13 @@ public class TempoDbContext : DbContext
             // Single-row table pattern - ensure only one settings record exists
             // We'll enforce this in application logic, but add a unique constraint on Id
             entity.HasIndex(e => e.Id).IsUnique();
+            entity.HasIndex(e => e.DefaultShoeId);
+            
+            // Foreign key relationship to Shoe
+            entity.HasOne(e => e.DefaultShoe)
+                .WithMany()
+                .HasForeignKey(e => e.DefaultShoeId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<User>(entity =>

@@ -22,7 +22,9 @@ public static class DatabaseMigrationHelper
         // AddUserSettings migration
         { "UserSettings", "20251122003646_AddUserSettings" },
         // AddUsersTable migration
-        { "Users", "20251130165413_AddUsersTable" }
+        { "Users", "20251130165413_AddUsersTable" },
+        // AddShoeTracking migration
+        { "Shoes", "20251201120000_AddShoeTracking" }
     };
 
     // Map of (table, column) pairs to their corresponding migration IDs
@@ -37,7 +39,10 @@ public static class DatabaseMigrationHelper
         { ("Workouts", "RawFileName"), "20251124171046_AddRawFileStorage" },
         { ("Workouts", "RawFileType"), "20251124171046_AddRawFileStorage" },
         // AddUnitPreferenceToUserSettings migration
-        { ("UserSettings", "UnitPreference"), "20251127020615_AddUnitPreferenceToUserSettings" }
+        { ("UserSettings", "UnitPreference"), "20251127020615_AddUnitPreferenceToUserSettings" },
+        // AddShoeTracking migration
+        { ("Workouts", "ShoeId"), "20251201120000_AddShoeTracking" },
+        { ("UserSettings", "DefaultShoeId"), "20251201120000_AddShoeTracking" }
     };
 
     private const string ProductVersion = "9.0.10";

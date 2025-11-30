@@ -110,6 +110,7 @@ builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();
 builder.Services.AddScoped<JwtService>();
+builder.Services.AddScoped<ShoeMileageService>();
 builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage
@@ -169,6 +170,7 @@ app.UseSerilogRequestLogging();
 app.MapAuthEndpoints();
 app.MapWorkoutsEndpoints();
 app.MapSettingsEndpoints();
+app.MapShoesEndpoints();
 app.MapVersionEndpoints();
 
 // Health check endpoint

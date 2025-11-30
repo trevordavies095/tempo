@@ -60,6 +60,9 @@ Tempo will:
 - Calculate statistics (distance, pace, elevation, etc.)
 - Fetch weather data based on location and time
 - Generate splits and time-series data
+- Assign your default shoe (if you have one set in Settings)
+
+**Note**: If you've set a default shoe in Settings, new workouts will automatically be assigned to that shoe. You can change or remove the shoe assignment later from the workout details page.
 
 ### Step 4: View Your Workout
 

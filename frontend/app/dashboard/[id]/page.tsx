@@ -13,6 +13,7 @@ import WorkoutDetailHeader from '@/components/WorkoutDetailHeader';
 import WorkoutDetailSplits from '@/components/WorkoutDetailSplits';
 import { useWorkoutMutations } from '@/hooks/useWorkoutMutations';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
+import { ShoeSelector } from '@/components/ShoeSelector';
 import { MediaModal } from '@/components/MediaModal';
 import { MediaUpload } from '@/components/MediaUpload';
 import { AuthGuard } from '@/components/AuthGuard';
@@ -43,6 +44,7 @@ function WorkoutDetailPageContent() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditingRunType, setIsEditingRunType] = useState(false);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [isEditingShoe, setIsEditingShoe] = useState(false);
   const [notesValue, setNotesValue] = useState<string>('');
   const [hoveredSplitIdx, setHoveredSplitIdx] = useState<number | null>(null);
   const { unitPreference } = useSettings();
@@ -290,6 +292,85 @@ function WorkoutDetailPageContent() {
                       type="button"
                     >
                       <span>{data.runType || 'None'}</span>
+                      <svg
+                        className="w-4 h-4 opacity-50"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                  {updateWorkoutMutation.isPending && (
+                    <span className="ml-2 text-xs text-gray-500">Saving...</span>
+                  )}
+                  {updateWorkoutMutation.isError && (
+                    <span className="ml-2 text-xs text-red-600 dark:text-red-400">
+                      Error: {updateWorkoutMutation.error instanceof Error ? updateWorkoutMutation.error.message : 'Failed to update'}
+                    </span>
+                  )}
+                </dd>
+              </div>
+
+              {/* Shoe */}
+              <div>
+                <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Shoe</dt>
+                <dd className="text-sm text-gray-900 dark:text-gray-100">
+                  {isEditingShoe ? (
+                    <div className="flex items-center gap-2">
+                      <ShoeSelector
+                        value={data.shoeId}
+                        onChange={(shoeId) => {
+                          updateWorkoutMutation.mutate(
+                            { shoeId },
+                            {
+                              onSuccess: () => {
+                                setIsEditingShoe(false);
+                              },
+                            }
+                          );
+                        }}
+                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <button
+                        onClick={() => setIsEditingShoe(false)}
+                        className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        type="button"
+                        disabled={updateWorkoutMutation.isPending}
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditingShoe(true)}
+                      className="flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                      type="button"
+                    >
+                      <span>
+                        {data.shoe
+                          ? `${data.shoe.brand} ${data.shoe.model}`
+                          : 'None'}
+                      </span>
                       <svg
                         className="w-4 h-4 opacity-50"
                         fill="none"

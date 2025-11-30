@@ -1088,6 +1088,7 @@ public static class WorkoutsEndpoints
         var workout = await db.Workouts
             .Include(w => w.Route)
             .Include(w => w.Splits.OrderBy(s => s.Idx))
+            .Include(w => w.Shoe)
             .AsNoTracking()
             .FirstOrDefaultAsync(w => w.Id == id);
 
@@ -1201,6 +1202,18 @@ public static class WorkoutsEndpoints
             }
         }
 
+        // Include shoe information if assigned
+        object? shoe = null;
+        if (workout.Shoe != null)
+        {
+            shoe = new
+            {
+                id = workout.Shoe.Id,
+                brand = workout.Shoe.Brand,
+                model = workout.Shoe.Model
+            };
+        }
+
         return Results.Ok(new
         {
             id = workout.Id,
@@ -1229,6 +1242,8 @@ public static class WorkoutsEndpoints
             source = workout.Source,
             device = workout.Device,
             name = workout.Name,
+            shoeId = workout.ShoeId,
+            shoe = shoe,
             weather = weather,
             rawGpxData = rawGpxData,
             rawFitData = rawFitData,
@@ -1383,6 +1398,22 @@ public static class WorkoutsEndpoints
                         var media = await bulkImportService.ProcessMediaFilesAsync(result.Workout.Id, result.MediaPaths, tempDir);
                         mediaToAdd.AddRange(media);
                     }
+                }
+            }
+
+            // Assign default shoe to all new workouts if set
+            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            if (settings != null && settings.DefaultShoeId.HasValue)
+            {
+                // Verify the shoe still exists
+                var defaultShoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
+                if (defaultShoe != null)
+                {
+                    foreach (var workout in workoutsToAdd)
+                    {
+                        workout.ShoeId = settings.DefaultShoeId.Value;
+                    }
+                    logger.LogInformation("Assigned default shoe {ShoeId} to {Count} workouts", settings.DefaultShoeId.Value, workoutsToAdd.Count);
                 }
             }
 
@@ -2140,21 +2171,55 @@ public static class WorkoutsEndpoints
             workout.Name = nameValue;
         }
 
+        // Validate and update ShoeId if provided
+        if (root.TryGetProperty("shoeId", out var shoeIdElement))
+        {
+            Guid? shoeIdValue = null;
+            if (shoeIdElement.ValueKind == JsonValueKind.String)
+            {
+                if (Guid.TryParse(shoeIdElement.GetString(), out var parsedGuid))
+                {
+                    shoeIdValue = parsedGuid;
+                    // Validate that the shoe exists
+                    var shoe = await db.Shoes.FindAsync(shoeIdValue.Value);
+                    if (shoe == null)
+                    {
+                        return Results.BadRequest(new { error = "Shoe not found" });
+                    }
+                }
+                else
+                {
+                    return Results.BadRequest(new { error = "shoeId must be a valid GUID" });
+                }
+            }
+            else if (shoeIdElement.ValueKind == JsonValueKind.Null)
+            {
+                shoeIdValue = null;
+            }
+            else
+            {
+                return Results.BadRequest(new { error = "shoeId must be a string GUID or null" });
+            }
+            workout.ShoeId = shoeIdValue;
+        }
+
         // Save changes
         var runTypeUpdated = root.TryGetProperty("runType", out _);
         var notesUpdated = root.TryGetProperty("notes", out _);
         var nameUpdated = root.TryGetProperty("name", out _);
+        var shoeIdUpdated = root.TryGetProperty("shoeId", out _);
         await db.SaveChangesAsync();
 
-        logger.LogInformation("Updated workout {WorkoutId}: RunType={RunType}, RunTypeUpdated={RunTypeUpdated}, NotesUpdated={NotesUpdated}, NameUpdated={NameUpdated}",
-            workout.Id, workout.RunType ?? "null", runTypeUpdated, notesUpdated, nameUpdated);
+        logger.LogInformation("Updated workout {WorkoutId}: RunType={RunType}, RunTypeUpdated={RunTypeUpdated}, NotesUpdated={NotesUpdated}, NameUpdated={NameUpdated}, ShoeIdUpdated={ShoeIdUpdated}",
+            workout.Id, workout.RunType ?? "null", runTypeUpdated, notesUpdated, nameUpdated, shoeIdUpdated);
 
         return Results.Ok(new
         {
             id = workout.Id,
             runType = workout.RunType,
             notes = workout.Notes,
-            name = workout.Name
+            name = workout.Name,
+            shoeId = workout.ShoeId
         });
     }
 
@@ -2998,6 +3063,19 @@ public static class WorkoutsEndpoints
 
             // Fetch weather data
             await FetchAndAttachWeatherAsync(workout, trackPoints, rawFitDataJson, startedAtUtc, weatherService, logger);
+
+            // Assign default shoe if set
+            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            if (settings != null && settings.DefaultShoeId.HasValue)
+            {
+                // Verify the shoe still exists
+                var defaultShoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
+                if (defaultShoe != null)
+                {
+                    workout.ShoeId = settings.DefaultShoeId.Value;
+                    logger.LogInformation("Assigned default shoe {ShoeId} to workout {WorkoutId}", settings.DefaultShoeId.Value, workout.Id);
+                }
+            }
 
             // Save to database
             db.Workouts.Add(workout);

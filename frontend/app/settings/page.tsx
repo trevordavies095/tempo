@@ -16,6 +16,7 @@ import { RecalculateEffortDialog } from '@/components/RecalculateEffortDialog';
 import { ZoneUpdateDialog } from '@/components/ZoneUpdateDialog';
 import { RecalculateSplitsDialog } from '@/components/RecalculateSplitsDialog';
 import UnitPreferenceSection from '@/components/UnitPreferenceSection';
+import { ShoeManagementSection } from '@/components/ShoeManagementSection';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -267,6 +268,8 @@ function SettingsPageContent() {
 
         <div className="w-full space-y-8">
           <UnitPreferenceSection />
+
+          <ShoeManagementSection />
 
           {/* Recalculate Splits Button */}
           <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">

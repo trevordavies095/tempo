@@ -116,16 +116,21 @@ GET /workouts/{id}
 
 ### Update Workout
 
-Update workout details (e.g., activity name):
+Update workout details (e.g., activity name, shoe assignment):
 
 ```http
 PATCH /workouts/{id}
 Content-Type: application/json
 
 {
-  "activityName": "New Activity Name"
+  "activityName": "New Activity Name",
+  "shoeId": "guid-here"
 }
 ```
+
+Fields:
+- `activityName` (string, optional) - New activity name
+- `shoeId` (Guid, optional, nullable) - Shoe ID to assign to this workout. Set to `null` to remove shoe assignment.
 
 ### Delete Workout
 
@@ -351,6 +356,103 @@ GET /settings/recalculate-splits/count
 ```http
 POST /settings/recalculate-splits
 ```
+
+### Get Default Shoe
+
+Get the currently set default shoe:
+
+```http
+GET /settings/default-shoe
+```
+
+Returns the default shoe object or `null` if no default is set.
+
+### Set Default Shoe
+
+Set a shoe as the default for automatic assignment to new workouts:
+
+```http
+PUT /settings/default-shoe
+Content-Type: application/json
+
+{
+  "shoeId": "guid-here"
+}
+```
+
+Set `shoeId` to `null` to remove the default shoe.
+
+## Shoes
+
+### List Shoes
+
+Get all shoes with calculated mileage:
+
+```http
+GET /shoes
+```
+
+Returns a list of all shoes with their current total mileage (calculated from assigned workouts plus initial mileage).
+
+### Create Shoe
+
+Create a new shoe:
+
+```http
+POST /shoes
+Content-Type: application/json
+
+{
+  "brand": "Nike",
+  "model": "Pegasus 40",
+  "initialMileageM": 0.0
+}
+```
+
+Fields:
+- `brand` (string, required, max 100 chars) - Shoe manufacturer
+- `model` (string, required, max 100 chars) - Shoe model name
+- `initialMileageM` (double, optional) - Initial mileage in meters when adding the shoe
+
+### Update Shoe
+
+Update shoe details:
+
+```http
+PATCH /shoes/{id}
+Content-Type: application/json
+
+{
+  "brand": "Nike",
+  "model": "Pegasus 41",
+  "initialMileageM": 50.0
+}
+```
+
+All fields are optional. Only provided fields will be updated.
+
+### Delete Shoe
+
+Delete a shoe:
+
+```http
+DELETE /shoes/{id}
+```
+
+When a shoe is deleted, all workouts assigned to that shoe will have their `shoeId` set to `null`. The workouts themselves are not deleted.
+
+### Get Shoe Mileage
+
+Get calculated total mileage for a specific shoe:
+
+```http
+GET /shoes/{id}/mileage?unitPreference=metric
+```
+
+Query parameters:
+- `unitPreference` (string, optional) - "metric" or "imperial" (defaults to user's preference)
+
+Returns the total mileage in the requested units (sum of all assigned workout distances plus initial mileage).
 
 ## System
 
