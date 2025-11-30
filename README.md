@@ -8,6 +8,8 @@
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
 
+**[View Full Documentation](https://trevordavies095.github.io/tempo/)** - Complete guides for installation, configuration, usage, deployment, and more.
+
 ## Screenshots
 
 ![Dashboard](https://i.imgur.com/pURdx2e.png)
@@ -23,9 +25,6 @@
 
 Get Tempo running in minutes with Docker Compose:
 
-**Prerequisites:**
-- Docker and Docker Compose installed
-
 ```bash
 # Clone the repository
 git clone https://github.com/trevordavies095/tempo.git
@@ -33,61 +32,13 @@ cd tempo
 
 # Start all services
 docker-compose up -d
-
-# Access the application
-# Frontend: http://localhost:3000
-# API: http://localhost:5001
-# API Swagger UI (development): http://localhost:5001/swagger
 ```
 
-That's it! The database migrations run automatically on first startup. Your data is persisted in Docker volumes, so it will survive container restarts.
+Access the application at:
+- **Frontend**: http://localhost:3000
+- **API**: http://localhost:5001
 
-## Authentication
-
-Tempo uses JWT-based authentication with username/password login. All workout and settings endpoints require authentication.
-
-### First-Time Setup
-
-1. Start the application (see Quick Start above)
-2. Navigate to `http://localhost:3000` - you'll be redirected to the login page
-3. Register your account (only available when no users exist)
-   - Choose a username and password
-   - Confirm your password
-   - After registration, you'll be automatically logged in
-4. After registration, login is required for all features
-
-**Note:** Registration is automatically locked after the first user is created. This is a security feature for single-user deployments.
-
-### Production Configuration
-
-**Important:** Before deploying to production, you must set the JWT secret key via environment variable. The default placeholder value in `appsettings.json` should never be used in production.
-
-**Generate a secure JWT secret key:**
-```bash
-# Using OpenSSL (recommended)
-openssl rand -base64 32
-
-# Or using .NET user-secrets (for local development)
-dotnet user-secrets set "JWT:SecretKey" "$(openssl rand -base64 32)"
-```
-
-**Set in Docker Compose:**
-```yaml
-environment:
-  JWT__SecretKey: "your-very-long-random-secret-key-here"
-```
-
-**Security Requirements:**
-- The JWT secret key should be at least 32 characters and cryptographically random
-- Use HTTPS in production (required for secure cookie transmission)
-- Change the default database password in production
-- Store the JWT secret key securely (environment variables, secrets manager, etc.)
-
-**JWT Configuration Options:**
-- `JWT__SecretKey` - JWT signing key (REQUIRED in production)
-- `JWT__Issuer` - JWT issuer (default: "Tempo")
-- `JWT__Audience` - JWT audience (default: "Tempo")
-- `JWT__ExpirationDays` - Token expiration in days (default: 7)
+That's it! The database migrations run automatically on first startup. For detailed setup instructions, authentication, and configuration, see the [full documentation](https://trevordavies095.github.io/tempo/).
 
 ## Features
 
@@ -111,326 +62,15 @@ environment:
 - **Database**: PostgreSQL 16
 - **State Management**: TanStack Query
 
-## Local Development
-
-For development without Docker:
-
-### Prerequisites
-
-- .NET 9 SDK
-- Node.js 18+ and npm
-- PostgreSQL (or use Docker Compose for database only)
-
-### Setup
-
-1. **Start PostgreSQL** (if not using Docker):
-   ```bash
-   docker-compose up -d postgres
-   ```
-
-2. **Configure Backend**:
-   Update `api/appsettings.json` with your database connection string if needed.
-
-3. **Run Migrations**:
-   ```bash
-   cd api
-   dotnet ef database update
-   ```
-
-4. **Start Backend**:
-   ```bash
-   cd api
-   dotnet watch run
-   ```
-   API runs at `http://localhost:5001`
-
-5. **Start Frontend**:
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-   Frontend runs at `http://localhost:3000`
-
-## Usage
-
-### Single Workout Import
-
-1. Export a workout file from your device:
-   - **Garmin**: Export FIT files (.fit) directly from your device
-   - **Apple Watch**: Export GPX files from the Health app
-   - **Strava**: Download individual GPX files
-2. Open `http://localhost:3000` in your browser
-3. Drag and drop your file (GPX, FIT, or CSV) or use the import page
-4. View your workout with maps, analytics, and splits
-
-### Bulk Import from Strava
-
-Import your entire Strava history at once using a Strava data export ZIP file.
-
-**ZIP File Structure:**
-```
-your-strava-export.zip
-├── activities.csv          # Required: CSV file with activity metadata
-└── activities/            # Folder containing workout files
-    ├── 1234567890.gpx     # GPX files (supported)
-    ├── 1234567891.fit.gz  # Gzipped FIT files (supported)
-    └── ...
-```
-
-**Requirements:**
-- `activities.csv` must be in the root of the ZIP file
-- Workout files (`.gpx` or `.fit.gz`) should be in the `activities/` folder
-- The CSV `Filename` column should reference the file path (e.g., `activities/1234567890.gpx`)
-- Only "Run" activities are imported (other activity types are skipped)
-
-**Steps:**
-1. Request your data export from Strava (Settings → My Account → Download or Delete Your Account → Request Archive)
-2. Extract and re-zip if needed to match the structure above
-3. Go to the Import page in Tempo
-4. Upload the ZIP file under "Bulk Import Strava Export" (files up to 500MB are supported)
-5. Wait for processing to complete (you'll see a summary of imported/skipped workouts)
-
-## Configuration
-
-Tempo can be configured via `appsettings.json` (for local development) or environment variables (for Docker deployments).
-
-### Database Connection
-
-**Local Development (`appsettings.json`):**
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres"
-  }
-}
-```
-
-**Docker (Environment Variable):**
-```bash
-ConnectionStrings__DefaultConnection="Host=postgres;Port=5432;Database=tempo;Username=postgres;Password=postgres"
-```
-
-### Media Storage
-
-**Local Development (`appsettings.json`):**
-```json
-{
-  "MediaStorage": {
-    "RootPath": "./media",
-    "MaxFileSizeBytes": 52428800
-  }
-}
-```
-
-**Docker (Environment Variables):**
-```bash
-MediaStorage__RootPath="/app/media"
-MediaStorage__MaxFileSizeBytes="52428800"  # 50MB default
-```
-
-### Elevation Calculation
-
-Configure elevation smoothing thresholds:
-```json
-{
-  "ElevationCalculation": {
-    "NoiseThresholdMeters": 2.0,
-    "MinDistanceMeters": 10.0
-  }
-}
-```
-
-### CORS Configuration
-
-Allow specific origins for API access:
-```json
-{
-  "CORS": {
-    "AllowedOrigins": "http://localhost:3000,http://localhost:3004"
-  }
-}
-```
-
-In Docker, use: `CORS__AllowedOrigins="http://localhost:3000,http://localhost:3004"`
-
-## Data Management
-
-### Storage Locations
-
-**Database:**
-- PostgreSQL data is stored in Docker volumes (`postgres_data`) or your configured PostgreSQL instance
-- Contains all workout metadata, routes, splits, time series data, and settings
-
-**Media Files:**
-- Stored in the `media/` directory (or configured `MediaStorage:RootPath`)
-- Organized by workout GUID: `media/{workoutId}/filename.ext`
-- Includes photos and videos attached to workouts
-
-### Backup Recommendations
-
-**Database Backup:**
-```bash
-# Using Docker
-docker exec tempo-postgres pg_dump -U postgres tempo > backup.sql
-
-# Restore
-docker exec -i tempo-postgres psql -U postgres tempo < backup.sql
-```
-
-**Media Backup:**
-- Copy the entire `media/` directory to your backup location
-- Media files are referenced by workout GUID, so maintain the directory structure
-
-**Complete Backup:**
-For a complete backup, save both:
-1. Database dump (as shown above)
-2. Media directory (`./media`)
-
-### Data Migration
-
-Database migrations run automatically on API startup. If you need to manually apply migrations:
-
-```bash
-cd api
-dotnet ef database update
-```
-
-## Deployment
-
-For production deployment, use Docker Compose with the provided `docker-compose.prod.yml` file.
-
-**Key differences from development:**
-- Uses pre-built images from `ghcr.io/trevordavies095/tempo/api` and `ghcr.io/trevordavies095/tempo/frontend`
-- Images are tagged with version numbers (e.g., `v1.3.0`) for stability
-- Uses a dedicated Docker network (`tempo-network`) for service isolation
-- Frontend runs on port 3004 by default (configurable)
-
-**Environment Variables:**
-Configure the following in `docker-compose.prod.yml` or via environment files:
-- `ConnectionStrings__DefaultConnection` - PostgreSQL connection string
-- `MediaStorage__RootPath` - Media storage path (default: `/app/media`)
-- `MediaStorage__MaxFileSizeBytes` - Maximum upload size (default: 50MB)
-- `CORS__AllowedOrigins` - Comma-separated list of allowed origins
-- `ElevationCalculation__NoiseThresholdMeters` - Elevation smoothing threshold
-- `ElevationCalculation__MinDistanceMeters` - Minimum distance for elevation calculation
-- `JWT__SecretKey` - JWT signing key (REQUIRED in production, see Authentication section)
-- `JWT__Issuer` - JWT issuer (default: "Tempo")
-- `JWT__Audience` - JWT audience (default: "Tempo")
-- `JWT__ExpirationDays` - Token expiration in days (default: 7)
-
-**Data Persistence:**
-- Database data is stored in the `postgres_data` Docker volume
-- Media files are stored in the `./media` directory (mounted as a volume)
-- Back up both the database volume and media directory for complete data protection
-
-## API
-
-Tempo provides a RESTful API for managing workouts, settings, and statistics. In development mode, interactive API documentation is available at `http://localhost:5001/swagger`.
-
-### Workouts Endpoints
-
-**Import:**
-- `POST /workouts/import` - Import single or multiple GPX, FIT, or CSV workout files
-- `POST /workouts/import/bulk` - Bulk import from Strava export ZIP file (up to 500MB)
-
-**Workout Management:**
-- `GET /workouts` - List all workouts with filtering and pagination
-- `GET /workouts/{id}` - Get detailed workout information
-- `PATCH /workouts/{id}` - Update workout (e.g., activity name)
-- `DELETE /workouts/{id}` - Delete workout and associated data
-
-**Workout Operations:**
-- `POST /workouts/{id}/crop` - Crop/trim workout by removing time from start and/or end
-- `POST /workouts/{id}/recalculate-effort` - Recalculate relative effort for a workout
-- `POST /workouts/{id}/recalculate-splits` - Recalculate splits for a workout
-
-**Statistics:**
-- `GET /workouts/stats/weekly` - Get weekly statistics
-- `GET /workouts/stats/yearly` - Get yearly statistics
-- `GET /workouts/stats/relative-effort` - Get relative effort statistics
-- `GET /workouts/stats/yearly-weekly` - Get combined yearly and weekly stats
-- `GET /workouts/stats/available-periods` - Get available time periods for stats
-- `GET /workouts/stats/available-years` - Get available years for stats
-
-**Media:**
-- `POST /workouts/{id}/media` - Upload media (photos/videos) to a workout
-- `GET /workouts/{id}/media` - List all media for a workout
-- `GET /workouts/{id}/media/{mediaId}` - Get/download specific media file
-- `DELETE /workouts/{id}/media/{mediaId}` - Delete media file
-
-### Settings Endpoints
-
-- `GET /settings/heart-rate-zones` - Get current heart rate zone configuration
-- `PUT /settings/heart-rate-zones` - Update heart rate zones (Age-based, Karvonen, or Custom)
-- `POST /settings/heart-rate-zones/update-with-recalc` - Update zones and optionally recalculate all workouts
-- `GET /settings/recalculate-relative-effort/count` - Get count of workouts eligible for recalculation
-- `POST /settings/recalculate-relative-effort` - Recalculate relative effort for all qualifying workouts
-- `GET /settings/unit-preference` - Get unit preference (metric/imperial)
-- `PUT /settings/unit-preference` - Update unit preference
-- `GET /settings/recalculate-splits/count` - Get count of workouts eligible for split recalculation
-- `POST /settings/recalculate-splits` - Recalculate splits for all workouts
-
-### Authentication Endpoints
-
-- `POST /auth/register` - Register a new user account (only available when no users exist)
-- `POST /auth/login` - Authenticate and receive JWT token (stored in httpOnly cookie)
-- `GET /auth/me` - Get current user information (requires authentication)
-- `POST /auth/logout` - Logout and clear authentication cookie
-- `GET /auth/registration-available` - Check if registration is available
-
-**Note:** All workout and settings endpoints require authentication. Only `/health` and `/version` endpoints are public.
-
-### System Endpoints
-
-- `GET /version` - Get application version, build date, and git commit
-- `GET /health` - Health check endpoint
-
-### API Testing
-
-A Bruno API testing collection is included in `api/bruno/Tempo.Api/` with test requests for all endpoints. Open the collection in [Bruno](https://www.usebruno.com/) to interactively test the API without requiring the frontend.
-
-## Troubleshooting
-
-### Database Migration Errors
-
-If you encounter migration errors on startup:
-- Ensure PostgreSQL is running and accessible
-- Check connection string configuration
-- Migrations are idempotent and handle existing tables gracefully
-- For manual migration: `cd api && dotnet ef database update`
-
-### Large File Upload Issues
-
-- Bulk import supports files up to 500MB
-- Ensure sufficient disk space for media storage
-- Check `MediaStorage:MaxFileSizeBytes` configuration
-- For very large imports, monitor API logs for progress
-
-### CORS Errors
-
-If you see CORS errors in the browser:
-- Verify `CORS:AllowedOrigins` includes your frontend URL
-- In Docker, use double underscores: `CORS__AllowedOrigins`
-- Restart the API container after changing CORS settings
-
-### Media Storage Permissions
-
-If media uploads fail:
-- Ensure the media directory exists and is writable
-- Check `MediaStorage:RootPath` configuration
-- In Docker, verify volume mount permissions
-
-### Connection Issues
-
-**Port Conflicts:**
-- Default ports: Frontend (3000), API (5001), PostgreSQL (5432)
-- Change ports in `docker-compose.yml` if conflicts occur
-
-**Database Connection:**
-- Verify PostgreSQL is running: `docker ps` or `pg_isready`
-- Check connection string matches your setup
-- Ensure network connectivity between services
+## Documentation
+
+Comprehensive documentation is available at **[https://trevordavies095.github.io/tempo/](https://trevordavies095.github.io/tempo/)**:
+
+- **[Getting Started](https://trevordavies095.github.io/tempo/getting-started/)** - Installation, quick start, and configuration guides
+- **[User Guide](https://trevordavies095.github.io/tempo/user-guide/)** - Importing workouts, viewing analytics, managing media, and settings
+- **[Developer Documentation](https://trevordavies095.github.io/tempo/developers/)** - Architecture, local development setup, API reference, and database schema
+- **[Deployment](https://trevordavies095.github.io/tempo/deployment/)** - Production deployment, security best practices, and backup/restore procedures
+- **[Troubleshooting](https://trevordavies095.github.io/tempo/troubleshooting/)** - Common issues, solutions, and frequently asked questions
 
 ## Support
 
