@@ -50,6 +50,7 @@ That's it! The database migrations run automatically on first startup. For detai
 - **Bulk Import** - Import multiple workouts at once via ZIP file (up to 500MB)
 - **Heart Rate Zones** - Calculate zones using Age-based, Karvonen, or Custom methods
 - **Relative Effort** - Automatic calculation of workout intensity based on heart rate zones
+- **Best Efforts** - Track your fastest times for standard distances (400m to Marathon) from any segment within workouts
 - **Workout Editing** - Crop/trim workouts and edit activity names
 - **Statistics Dashboards** - Weekly and yearly statistics with relative effort tracking
 - **Unit Preferences** - Switch between metric and imperial units

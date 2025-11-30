@@ -43,6 +43,41 @@ Tempo provides comprehensive analytics to help you understand and improve your r
 - Helps compare workout difficulty across different activities
 - Automatically recalculated when heart rate zones change
 
+### Best Efforts
+
+Best Efforts track your fastest times for standard distances across all your workouts. Unlike traditional personal records that only count workouts of a specific distance, Best Efforts can find your fastest time for any distance from any segment within any workout.
+
+**Supported Distances:**
+- 400m
+- 1/2 mile
+- 1K
+- 1 mile
+- 2 mile
+- 5K
+- 10K
+- 15K
+- 10 mile
+- 20K
+- Half-Marathon
+- 30K
+- Marathon
+
+**How It Works:**
+- Best Efforts are calculated by analyzing all segments within all your workouts
+- For example, your fastest 5K might come from miles 15-18 of a marathon, not just from dedicated 5K races
+- Uses time series data when available (most accurate), or falls back to route coordinates
+- Only displays distances where you have at least one qualifying effort
+- Automatically updated when new workouts are imported
+- Can be manually recalculated if needed
+
+**Viewing Best Efforts:**
+- Displayed on the Dashboard below the Relative Effort graph
+- Shows your fastest time for each distance
+- Click on any time to view the workout where that best effort was achieved
+- Use the recalculate button to refresh all best efforts
+
+For more information on viewing Best Efforts, see the [Viewing Workouts](viewing-workouts.md) guide.
+
 ## Statistics Dashboards
 
 ### Weekly Statistics

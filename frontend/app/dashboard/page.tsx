@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
 import WeeklyStatsWidget from '@/components/WeeklyStatsWidget';
 import RelativeEffortGraph from '@/components/RelativeEffortGraph';
+import BestEffortsChart from '@/components/BestEffortsChart';
 import WorkoutCard from '@/components/WorkoutCard';
 import YearlyWeeklyChart from '@/components/YearlyWeeklyChart';
 import Pagination from '@/components/Pagination';
@@ -152,6 +153,7 @@ function DashboardPageContent() {
           <div className="flex flex-col gap-6 md:w-80 flex-shrink-0">
             <WeeklyStatsWidget />
             <RelativeEffortGraph />
+            <BestEffortsChart />
           </div>
           <div className="flex-1 min-w-0">
             {!data || data.items.length === 0 ? (

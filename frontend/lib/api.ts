@@ -473,6 +473,56 @@ export async function getRelativeEffortStats(timezoneOffsetMinutes?: number): Pr
   return response.json();
 }
 
+export interface BestEffortItem {
+  distance: string;
+  distanceM: number;
+  timeS: number;
+  workoutId: string;
+  workoutDate: string;
+}
+
+export interface BestEffortsResponse {
+  distances: BestEffortItem[];
+}
+
+export async function getBestEfforts(): Promise<BestEffortsResponse> {
+  const url = `${API_BASE_URL}/workouts/stats/best-efforts`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch best efforts: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface RecalculateBestEffortsResponse {
+  message: string;
+  count: number;
+}
+
+export async function recalculateBestEfforts(): Promise<RecalculateBestEffortsResponse> {
+  const url = `${API_BASE_URL}/workouts/stats/best-efforts/recalculate`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to recalculate best efforts: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function getYearlyStats(timezoneOffsetMinutes?: number): Promise<YearlyStatsResponse> {
   const searchParams = new URLSearchParams();
   if (timezoneOffsetMinutes !== undefined) {

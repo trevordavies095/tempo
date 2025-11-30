@@ -44,6 +44,7 @@ public static class WorkoutsEndpoints
         WeatherService weatherService,
         HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
+        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         if (!request.HasFormContentType)
@@ -86,6 +87,7 @@ public static class WorkoutsEndpoints
                 weatherService,
                 zoneService,
                 relativeEffortService,
+                bestEffortService,
                 splitDistanceMeters,
                 logger);
 
@@ -116,6 +118,7 @@ public static class WorkoutsEndpoints
                     weatherService,
                     zoneService,
                     relativeEffortService,
+                    bestEffortService,
                     splitDistanceMeters,
                     logger);
 
@@ -809,6 +812,7 @@ public static class WorkoutsEndpoints
         SplitRecalculationService splitRecalculationService,
         HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
+        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         // Parse request body
@@ -870,6 +874,13 @@ public static class WorkoutsEndpoints
             return Results.BadRequest(new { error = $"Cannot crop entire workout. Trim values ({startTrimSeconds}s + {endTrimSeconds}s) must be less than workout duration ({workout.DurationS}s)" });
         }
 
+        // Check which best efforts reference this workout before cropping
+        // This is needed to recalculate best efforts for distances the workout may no longer qualify for after cropping
+        var affectedBestEfforts = await db.BestEfforts
+            .Where(be => be.WorkoutId == id)
+            .Select(be => be.Distance)
+            .ToListAsync();
+
         try
         {
             // Perform crop
@@ -887,6 +898,101 @@ public static class WorkoutsEndpoints
                 var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
                 workout.RelativeEffort = relativeEffort;
                 await db.SaveChangesAsync();
+            }
+
+            // Update best efforts since distance/duration changed
+            try
+            {
+                await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to update best efforts after cropping workout {WorkoutId}", workout.Id);
+                // Don't fail crop if best effort update fails
+            }
+
+            // Recalculate affected best efforts if this workout previously held records
+            // for distances it may no longer qualify for after cropping
+            if (affectedBestEfforts.Any())
+            {
+                try
+                {
+                    // Reload workout to get updated distance after crop
+                    await db.Entry(workout).ReloadAsync();
+                    
+                    // For each affected distance, check if workout still qualifies
+                    foreach (var distanceName in affectedBestEfforts)
+                    {
+                        if (BestEffortService.StandardDistances.TryGetValue(distanceName, out var targetDistanceM))
+                        {
+                            // Check if workout still qualifies for this distance
+                            var stillQualifies = workout.DistanceM >= targetDistanceM;
+                            
+                            // Check if this workout still holds the record
+                            var currentBestEffort = await db.BestEfforts
+                                .FirstOrDefaultAsync(be => be.Distance == distanceName);
+                            
+                            var workoutStillHoldsRecord = currentBestEffort != null && currentBestEffort.WorkoutId == id;
+                            
+                            // If workout no longer qualifies OR no longer holds the record, recalculate from all workouts
+                            if (!stillQualifies || !workoutStillHoldsRecord)
+                            {
+                                var qualifyingWorkouts = await db.Workouts
+                                    .Include(w => w.Route)
+                                    .Where(w => w.DistanceM >= targetDistanceM)
+                                    .ToListAsync();
+
+                                BestEffortService.BestEffortResult? newBestEffort = null;
+                                foreach (var remainingWorkout in qualifyingWorkouts)
+                                {
+                                    var result = await bestEffortService.CalculateBestEffortForWorkoutAsync(
+                                        db, remainingWorkout, distanceName, targetDistanceM);
+                                    if (result != null && (newBestEffort == null || result.TimeS < newBestEffort.TimeS))
+                                    {
+                                        newBestEffort = result;
+                                    }
+                                }
+
+                                // Update or remove best effort
+                                if (newBestEffort != null)
+                                {
+                                    if (currentBestEffort != null)
+                                    {
+                                        currentBestEffort.TimeS = newBestEffort.TimeS;
+                                        currentBestEffort.WorkoutId = Guid.Parse(newBestEffort.WorkoutId);
+                                        currentBestEffort.WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc);
+                                        currentBestEffort.CalculatedAt = DateTime.UtcNow;
+                                    }
+                                    else
+                                    {
+                                        db.BestEfforts.Add(new BestEffort
+                                        {
+                                            Distance = distanceName,
+                                            DistanceM = targetDistanceM,
+                                            TimeS = newBestEffort.TimeS,
+                                            WorkoutId = Guid.Parse(newBestEffort.WorkoutId),
+                                            WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc),
+                                            CalculatedAt = DateTime.UtcNow
+                                        });
+                                    }
+                                }
+                                else if (currentBestEffort != null)
+                                {
+                                    // No qualifying workouts remain, remove best effort
+                                    db.BestEfforts.Remove(currentBestEffort);
+                                }
+                            }
+                        }
+                    }
+
+                    await db.SaveChangesAsync();
+                    logger.LogInformation("Recalculated affected best efforts after cropping workout {WorkoutId}", id);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to recalculate affected best efforts after cropping workout {WorkoutId}", id);
+                    // Don't fail crop if best effort recalculation fails
+                }
             }
 
             // Reload workout with updated data
@@ -1520,6 +1626,66 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
+    /// Get best efforts for all standard distances
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="bestEffortService">Best effort service</param>
+    /// <returns>List of best effort times for each standard distance</returns>
+    /// <remarks>
+    /// Returns the fastest time achieved for each standard running distance (400m through Marathon).
+    /// Best efforts are calculated from any segment within any workout, not just workouts of that exact distance.
+    /// </remarks>
+    private static async Task<IResult> GetBestEfforts(
+        TempoDbContext db,
+        BestEffortService bestEffortService)
+    {
+        try
+        {
+            var bestEfforts = await bestEffortService.GetBestEffortsAsync(db);
+            return Results.Ok(new { distances = bestEfforts });
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem($"Failed to retrieve best efforts: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Recalculate all best efforts
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="bestEffortService">Best effort service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>Success message with count of best efforts calculated</returns>
+    /// <remarks>
+    /// Performs a full recalculation of all best efforts across all workouts.
+    /// This may take some time depending on the number of workouts and time series data.
+    /// </remarks>
+    private static async Task<IResult> RecalculateBestEfforts(
+        TempoDbContext db,
+        BestEffortService bestEffortService,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            logger.LogInformation("Starting manual recalculation of best efforts");
+            var bestEfforts = await bestEffortService.CalculateAllBestEffortsAsync(db);
+            logger.LogInformation("Completed manual recalculation of best efforts. Found {Count} best efforts", bestEfforts.Count);
+            
+            return Results.Ok(new
+            {
+                message = "Best efforts recalculated successfully",
+                count = bestEfforts.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error recalculating best efforts");
+            return Results.Problem($"Failed to recalculate best efforts: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Get yearly stats
     /// </summary>
     /// <param name="db">Database context</param>
@@ -2008,6 +2174,7 @@ public static class WorkoutsEndpoints
         Guid id,
         TempoDbContext db,
         MediaStorageConfig mediaConfig,
+        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         // Find workout with related media
@@ -2019,6 +2186,12 @@ public static class WorkoutsEndpoints
         {
             return Results.NotFound(new { error = "Workout not found" });
         }
+
+        // Check which best efforts reference this workout before deletion
+        var affectedBestEfforts = await db.BestEfforts
+            .Where(be => be.WorkoutId == id)
+            .Select(be => be.Distance)
+            .ToListAsync();
 
         // Delete all media files from filesystem
         foreach (var media in workout.Media)
@@ -2061,6 +2234,77 @@ public static class WorkoutsEndpoints
         // Delete workout (cascade will handle route, splits, and media records)
         db.Workouts.Remove(workout);
         await db.SaveChangesAsync();
+
+        // Recalculate affected best efforts if this workout was referenced
+        if (affectedBestEfforts.Any())
+        {
+            try
+            {
+                // For each affected distance, recalculate from all remaining workouts
+                foreach (var distanceName in affectedBestEfforts)
+                {
+                    if (BestEffortService.StandardDistances.TryGetValue(distanceName, out var targetDistanceM))
+                    {
+                        // Find best effort from remaining workouts for this distance
+                        var qualifyingWorkouts = await db.Workouts
+                            .Include(w => w.Route)
+                            .Where(w => w.DistanceM >= targetDistanceM && w.Id != id)
+                            .ToListAsync();
+
+                        BestEffortService.BestEffortResult? newBestEffort = null;
+                        foreach (var remainingWorkout in qualifyingWorkouts)
+                        {
+                            var result = await bestEffortService.CalculateBestEffortForWorkoutAsync(
+                                db, remainingWorkout, distanceName, targetDistanceM);
+                            if (result != null && (newBestEffort == null || result.TimeS < newBestEffort.TimeS))
+                            {
+                                newBestEffort = result;
+                            }
+                        }
+
+                        // Update or remove best effort
+                        var existingBestEffort = await db.BestEfforts
+                            .FirstOrDefaultAsync(be => be.Distance == distanceName);
+
+                        if (newBestEffort != null)
+                        {
+                            if (existingBestEffort != null)
+                            {
+                                existingBestEffort.TimeS = newBestEffort.TimeS;
+                                existingBestEffort.WorkoutId = Guid.Parse(newBestEffort.WorkoutId);
+                                existingBestEffort.WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc);
+                                existingBestEffort.CalculatedAt = DateTime.UtcNow;
+                            }
+                            else
+                            {
+                                db.BestEfforts.Add(new BestEffort
+                                {
+                                    Distance = distanceName,
+                                    DistanceM = targetDistanceM,
+                                    TimeS = newBestEffort.TimeS,
+                                    WorkoutId = Guid.Parse(newBestEffort.WorkoutId),
+                                    WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc),
+                                    CalculatedAt = DateTime.UtcNow
+                                });
+                            }
+                        }
+                        else if (existingBestEffort != null)
+                        {
+                            // No qualifying workouts remain, remove best effort
+                            db.BestEfforts.Remove(existingBestEffort);
+                        }
+                    }
+                }
+
+                await db.SaveChangesAsync();
+                logger.LogInformation("Recalculated {Count} best efforts after deleting workout {WorkoutId}", affectedBestEfforts.Count, id);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to recalculate best efforts after deleting workout {WorkoutId}", id);
+                // Don't fail deletion if best effort recalculation fails
+            }
+        }
 
         logger.LogInformation("Deleted workout {WorkoutId}", id);
 
@@ -2170,6 +2414,19 @@ public static class WorkoutsEndpoints
         .Produces(200)
         .WithSummary("Get relative effort stats")
         .WithDescription("Returns cumulative relative effort for the current week and 3-week average range");
+
+        group.MapGet("/stats/best-efforts", GetBestEfforts)
+        .WithName("GetBestEfforts")
+        .Produces(200)
+        .WithSummary("Get best efforts")
+        .WithDescription("Returns the fastest time achieved for each standard running distance (400m through Marathon). Best efforts are calculated from any segment within any workout.");
+
+        group.MapPost("/stats/best-efforts/recalculate", RecalculateBestEfforts)
+        .WithName("RecalculateBestEfforts")
+        .Produces(200)
+        .Produces(500)
+        .WithSummary("Recalculate best efforts")
+        .WithDescription("Performs a full recalculation of all best efforts across all workouts. This may take some time depending on the number of workouts.");
 
         group.MapGet("/stats/yearly", GetYearlyStats)
         .WithName("GetYearlyStats")
@@ -2674,6 +2931,7 @@ public static class WorkoutsEndpoints
         WeatherService weatherService,
         HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
+        BestEffortService bestEffortService,
         double splitDistanceMeters,
         ILogger logger)
     {
@@ -2749,6 +3007,17 @@ public static class WorkoutsEndpoints
 
             // Calculate Relative Effort after workout is saved
             await CalculateAndSaveRelativeEffortAsync(workout, db, zoneService, relativeEffortService, logger);
+
+            // Update best efforts incrementally for new workout
+            try
+            {
+                await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to update best efforts for workout {WorkoutId}", workout.Id);
+                // Don't fail the import if best effort update fails
+            }
 
             logger.LogInformation("Imported workout {WorkoutId} with {Distance} meters", workout.Id, workout.DistanceM);
 
