@@ -326,6 +326,7 @@ export async function getWorkoutMedia(workoutId: string): Promise<WorkoutMedia[]
   const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   // If workout not found, return empty array (no media)
