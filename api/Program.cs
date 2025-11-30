@@ -49,6 +49,15 @@ builder.Services.AddCors(options =>
 // Configure JWT Authentication
 var jwtSecretKey = builder.Configuration["JWT:SecretKey"] 
     ?? throw new InvalidOperationException("JWT:SecretKey is not configured");
+
+// Validate that the secret key is not the default placeholder value
+const string placeholderValue = "CHANGE_THIS_IN_PRODUCTION_USE_ENVIRONMENT_VARIABLE";
+if (jwtSecretKey == placeholderValue)
+{
+    throw new InvalidOperationException(
+        "JWT:SecretKey must be changed from the default placeholder value. " +
+        "Set the JWT__SecretKey environment variable with a secure random key.");
+}
 var jwtIssuer = builder.Configuration["JWT:Issuer"] ?? "Tempo";
 var jwtAudience = builder.Configuration["JWT:Audience"] ?? "Tempo";
 
