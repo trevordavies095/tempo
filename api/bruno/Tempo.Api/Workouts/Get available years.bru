@@ -1,0 +1,36 @@
+meta {
+  name: Get available years
+  type: http
+  seq: 19
+}
+
+get {
+  url: {{baseUrl}}/workouts/stats/available-years
+  body: none
+  auth: inherit
+}
+
+example {
+  name: 200 Response
+  description: OK
+  
+  request: {
+    url: {{baseUrl}}/workouts/stats/available-years
+    method: GET
+    mode: none
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}

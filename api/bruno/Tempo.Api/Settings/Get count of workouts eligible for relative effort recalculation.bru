@@ -1,0 +1,36 @@
+meta {
+  name: Get count of workouts eligible for relative effort recalculation
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/settings/recalculate-relative-effort/count
+  body: none
+  auth: inherit
+}
+
+example {
+  name: 200 Response
+  description: OK
+  
+  request: {
+    url: {{baseUrl}}/settings/recalculate-relative-effort/count
+    method: GET
+    mode: none
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}

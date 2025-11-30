@@ -223,18 +223,38 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
 
     // Cleanup function
     return () => {
-      if (highlightedPolylineRef.current && mapRef.current) {
-        mapRef.current.removeLayer(highlightedPolylineRef.current);
+      const mapToCleanup = mapRef.current;
+      if (!mapToCleanup) {
+        return;
+      }
+
+      // Remove layers before removing the map
+      if (highlightedPolylineRef.current) {
+        try {
+          mapToCleanup.removeLayer(highlightedPolylineRef.current);
+        } catch (e) {
+          // Ignore errors if layer was already removed
+        }
         highlightedPolylineRef.current = null;
       }
       if (polylineRef.current) {
-        map.removeLayer(polylineRef.current);
+        try {
+          mapToCleanup.removeLayer(polylineRef.current);
+        } catch (e) {
+          // Ignore errors if layer was already removed
+        }
         polylineRef.current = null;
       }
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
+      
+      // Remove the map
+      try {
+        mapToCleanup.remove();
+      } catch (e) {
+        // Ignore errors if map was already removed
       }
+      mapRef.current = null;
+
+      // Clean up container references
       if (container && (container as any)._leaflet_id) {
         delete (container as any)._leaflet_id;
       }

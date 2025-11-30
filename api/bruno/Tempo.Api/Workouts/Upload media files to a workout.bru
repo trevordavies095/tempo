@@ -1,0 +1,99 @@
+meta {
+  name: Upload media files to a workout
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/workouts/:id/media
+  body: multipartForm
+  auth: inherit
+}
+
+params:path {
+  id: 
+}
+
+example {
+  name: 200 Response
+  description: OK
+  
+  request: {
+    url: {{baseUrl}}/workouts/:id/media
+    method: POST
+    mode: multipartForm
+    params:path: {
+      id: 
+    }
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}
+
+example {
+  name: 400 Response
+  description: Bad Request
+  
+  request: {
+    url: {{baseUrl}}/workouts/:id/media
+    method: POST
+    mode: multipartForm
+    params:path: {
+      id: 
+    }
+  }
+  
+  response: {
+    status: {
+      code: 400
+      text: Bad Request
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}
+
+example {
+  name: 404 Response
+  description: Not Found
+  
+  request: {
+    url: {{baseUrl}}/workouts/:id/media
+    method: POST
+    mode: multipartForm
+    params:path: {
+      id: 
+    }
+  }
+  
+  response: {
+    status: {
+      code: 404
+      text: Not Found
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}

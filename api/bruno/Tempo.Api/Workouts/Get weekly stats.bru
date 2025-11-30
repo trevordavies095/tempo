@@ -1,0 +1,43 @@
+meta {
+  name: Get weekly stats
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{baseUrl}}/workouts/stats/weekly
+  body: none
+  auth: inherit
+}
+
+params:query {
+  ~timezoneOffsetMinutes: 
+}
+
+example {
+  name: 200 Response
+  description: OK
+  
+  request: {
+    url: {{baseUrl}}/workouts/stats/weekly
+    method: GET
+    mode: none
+    params:query: {
+      ~timezoneOffsetMinutes: 
+    }
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}
