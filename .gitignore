@@ -47,3 +47,4 @@ RELEASES.md
 
 # MkDocs build output
 site/
+docker-compose.yml

@@ -16,6 +16,7 @@ public class TempoDbContext : DbContext
     public DbSet<WorkoutTimeSeries> WorkoutTimeSeries { get; set; }
     public DbSet<UserSettings> UserSettings { get; set; }
     public DbSet<User> Users { get; set; }
+    public DbSet<BestEffort> BestEfforts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -89,6 +90,20 @@ public class TempoDbContext : DbContext
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasIndex(e => e.Username).IsUnique();
+        });
+
+        modelBuilder.Entity<BestEffort>(entity =>
+        {
+            entity.HasOne(e => e.Workout)
+                .WithMany()
+                .HasForeignKey(e => e.WorkoutId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Unique constraint: one best effort per distance
+            entity.HasIndex(e => e.Distance).IsUnique();
+            
+            // Index for efficient queries
+            entity.HasIndex(e => e.DistanceM);
         });
     }
 }
