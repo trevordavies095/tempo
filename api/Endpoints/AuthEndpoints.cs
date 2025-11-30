@@ -101,13 +101,17 @@ public static class AuthEndpoints
         // Generate token
         var token = jwtService.GenerateToken(user);
 
+        // Get expiration days from JWT service to ensure consistency
+        var expirationDays = jwtService.ExpirationDays;
+        var expirationDate = DateTime.UtcNow.AddDays(expirationDays);
+
         // Set httpOnly cookie
         var cookieOptions = new CookieOptions
         {
             HttpOnly = true,
             Secure = httpContext.Request.IsHttps,
             SameSite = SameSiteMode.Lax,
-            Expires = DateTime.UtcNow.AddDays(7)
+            Expires = expirationDate
         };
         httpContext.Response.Cookies.Append("authToken", token, cookieOptions);
 
@@ -117,7 +121,7 @@ public static class AuthEndpoints
         {
             userId = user.Id,
             username = user.Username,
-            expiresAt = DateTime.UtcNow.AddDays(7)
+            expiresAt = expirationDate
         });
     }
 

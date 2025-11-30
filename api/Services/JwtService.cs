@@ -17,6 +17,11 @@ public class JwtService
     private readonly int _expirationDays;
     private readonly ILogger<JwtService> _logger;
 
+    /// <summary>
+    /// Gets the configured JWT token expiration in days
+    /// </summary>
+    public int ExpirationDays => _expirationDays;
+
     public JwtService(IConfiguration configuration, ILogger<JwtService> logger)
     {
         _secretKey = configuration["JWT:SecretKey"] 
