@@ -44,8 +44,9 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { error = "Registration is disabled. An account already exists." });
             }
 
-            // Check if username already exists
-            var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
+            // Check if username already exists (trim before comparison)
+            var trimmedUsername = request.Username.Trim();
+            var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == trimmedUsername);
             if (existingUser != null)
             {
                 await transaction.RollbackAsync();
@@ -55,7 +56,7 @@ public static class AuthEndpoints
             // Create new user
             var user = new User
             {
-                Username = request.Username.Trim(),
+                Username = trimmedUsername,
                 PasswordHash = passwordService.HashPassword(request.Password),
                 CreatedAt = DateTime.UtcNow
             };
@@ -103,8 +104,9 @@ public static class AuthEndpoints
             return Results.BadRequest(new { error = "Username and password are required" });
         }
 
-        // Find user
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
+        // Find user (trim username before lookup to match how it's stored)
+        var trimmedUsername = request.Username.Trim();
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == trimmedUsername);
         if (user == null)
         {
             // Don't reveal if user exists or not
