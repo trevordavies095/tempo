@@ -12,8 +12,9 @@ import Pagination from '@/components/Pagination';
 import LoadingState from '@/components/LoadingState';
 import ErrorState from '@/components/ErrorState';
 import { calculateWeekFromInterval, generateIntervalFromWeek } from '@/utils/weekUtils';
+import { AuthGuard } from '@/components/AuthGuard';
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [selectedPeriodEndDate, setSelectedPeriodEndDate] = useState<string | null>(null);
@@ -189,3 +190,10 @@ export default function DashboardPage() {
   );
 }
 
+export default function DashboardPage() {
+  return (
+    <AuthGuard>
+      <DashboardPageContent />
+    </AuthGuard>
+  );
+}

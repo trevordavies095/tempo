@@ -42,6 +42,53 @@ docker-compose up -d
 
 That's it! The database migrations run automatically on first startup. Your data is persisted in Docker volumes, so it will survive container restarts.
 
+## Authentication
+
+Tempo uses JWT-based authentication with username/password login. All workout and settings endpoints require authentication.
+
+### First-Time Setup
+
+1. Start the application (see Quick Start above)
+2. Navigate to `http://localhost:3000` - you'll be redirected to the login page
+3. Register your account (only available when no users exist)
+   - Choose a username and password
+   - Confirm your password
+   - After registration, you'll be automatically logged in
+4. After registration, login is required for all features
+
+**Note:** Registration is automatically locked after the first user is created. This is a security feature for single-user deployments.
+
+### Production Configuration
+
+**Important:** Before deploying to production, you must set the JWT secret key via environment variable. The default placeholder value in `appsettings.json` should never be used in production.
+
+**Generate a secure JWT secret key:**
+```bash
+# Using OpenSSL (recommended)
+openssl rand -base64 32
+
+# Or using .NET user-secrets (for local development)
+dotnet user-secrets set "JWT:SecretKey" "$(openssl rand -base64 32)"
+```
+
+**Set in Docker Compose:**
+```yaml
+environment:
+  JWT__SecretKey: "your-very-long-random-secret-key-here"
+```
+
+**Security Requirements:**
+- The JWT secret key should be at least 32 characters and cryptographically random
+- Use HTTPS in production (required for secure cookie transmission)
+- Change the default database password in production
+- Store the JWT secret key securely (environment variables, secrets manager, etc.)
+
+**JWT Configuration Options:**
+- `JWT__SecretKey` - JWT signing key (REQUIRED in production)
+- `JWT__Issuer` - JWT issuer (default: "Tempo")
+- `JWT__Audience` - JWT audience (default: "Tempo")
+- `JWT__ExpirationDays` - Token expiration in days (default: 7)
+
 ## Features
 
 - **Multi-Format Support** - Import GPX, FIT (.fit, .fit.gz), and Strava CSV files from Garmin, Apple Watch, and other devices
@@ -267,6 +314,10 @@ Configure the following in `docker-compose.prod.yml` or via environment files:
 - `CORS__AllowedOrigins` - Comma-separated list of allowed origins
 - `ElevationCalculation__NoiseThresholdMeters` - Elevation smoothing threshold
 - `ElevationCalculation__MinDistanceMeters` - Minimum distance for elevation calculation
+- `JWT__SecretKey` - JWT signing key (REQUIRED in production, see Authentication section)
+- `JWT__Issuer` - JWT issuer (default: "Tempo")
+- `JWT__Audience` - JWT audience (default: "Tempo")
+- `JWT__ExpirationDays` - Token expiration in days (default: 7)
 
 **Data Persistence:**
 - Database data is stored in the `postgres_data` Docker volume
@@ -319,6 +370,16 @@ Tempo provides a RESTful API for managing workouts, settings, and statistics. In
 - `PUT /settings/unit-preference` - Update unit preference
 - `GET /settings/recalculate-splits/count` - Get count of workouts eligible for split recalculation
 - `POST /settings/recalculate-splits` - Recalculate splits for all workouts
+
+### Authentication Endpoints
+
+- `POST /auth/register` - Register a new user account (only available when no users exist)
+- `POST /auth/login` - Authenticate and receive JWT token (stored in httpOnly cookie)
+- `GET /auth/me` - Get current user information (requires authentication)
+- `POST /auth/logout` - Logout and clear authentication cookie
+- `GET /auth/registration-available` - Check if registration is available
+
+**Note:** All workout and settings endpoints require authentication. Only `/health` and `/version` endpoints are public.
 
 ### System Endpoints
 

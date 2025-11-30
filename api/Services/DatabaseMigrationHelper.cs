@@ -20,7 +20,9 @@ public static class DatabaseMigrationHelper
         { "WorkoutTimeSeries", "20251111150526_InitialCreate" },
         { "WorkoutMedia", "20251111150526_InitialCreate" },
         // AddUserSettings migration
-        { "UserSettings", "20251122003646_AddUserSettings" }
+        { "UserSettings", "20251122003646_AddUserSettings" },
+        // AddUsersTable migration
+        { "Users", "20251130165413_AddUsersTable" }
     };
 
     // Map of (table, column) pairs to their corresponding migration IDs

@@ -1,30 +1,22 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { getWorkouts } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Home() {
   const router = useRouter();
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['workouts', 'count'],
-    queryFn: () => getWorkouts({ page: 1, pageSize: 1 }),
-  });
+  const { isAuthenticated, isLoading } = useAuth();
 
   useEffect(() => {
-    if (data) {
-      if (data.totalCount > 0) {
+    if (!isLoading) {
+      if (isAuthenticated) {
         router.push('/dashboard');
       } else {
-        router.push('/import');
+        router.push('/login');
       }
-    } else if (isError) {
-      // On error, redirect to import page as fallback
-      router.push('/import');
     }
-  }, [data, isError, router]);
+  }, [isAuthenticated, isLoading, router]);
 
   // Show loading state while checking
   return (

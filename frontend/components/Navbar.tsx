@@ -3,10 +3,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 export function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { isAuthenticated, isLoading, logout } = useAuth();
 
   const isActive = (path: string) => {
     if (path === '/dashboard') {
@@ -41,7 +43,7 @@ export function Navbar() {
           {/* Logo/Brand */}
           <div className="flex-shrink-0">
             <Link
-              href="/dashboard"
+              href={isAuthenticated ? "/dashboard" : "/login"}
               className="text-2xl font-bold text-gray-900 dark:text-gray-100 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
             >
               Tempo
@@ -50,20 +52,34 @@ export function Navbar() {
 
           <div className="flex items-center">
             {/* Desktop Navigation Links */}
-            <div className="hidden md:flex items-center space-x-1">
-              <Link href="/dashboard" className={navLinkClasses('/dashboard')}>
-                Dashboard
-              </Link>
-              <Link href="/activities" className={navLinkClasses('/activities')}>
-                Activities
-              </Link>
-              <Link href="/import" className={navLinkClasses('/import')}>
-                Import
-              </Link>
-              <Link href="/settings" className={navLinkClasses('/settings')}>
-                Settings
-              </Link>
-            </div>
+            {isAuthenticated && (
+              <div className="hidden md:flex items-center space-x-1">
+                <Link href="/dashboard" className={navLinkClasses('/dashboard')}>
+                  Dashboard
+                </Link>
+                <Link href="/activities" className={navLinkClasses('/activities')}>
+                  Activities
+                </Link>
+                <Link href="/import" className={navLinkClasses('/import')}>
+                  Import
+                </Link>
+                <Link href="/settings" className={navLinkClasses('/settings')}>
+                  Settings
+                </Link>
+              </div>
+            )}
+
+            {/* Logout button */}
+            {isAuthenticated && (
+              <div className="hidden md:flex items-center ml-4">
+                <button
+                  onClick={logout}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md transition-colors"
+                >
+                  Logout
+                </button>
+              </div>
+            )}
 
             {/* Mobile menu button */}
             <button
@@ -95,41 +111,52 @@ export function Navbar() {
         </div>
 
         {/* Mobile Navigation Panel */}
-        <div
-          id="mobile-menu"
-          className={`md:hidden pb-3 space-y-1 ${
-            mobileOpen ? 'block' : 'hidden'
-          }`}
-        >
-          <Link
-            href="/dashboard"
-            className={navLinkClasses('/dashboard')}
-            onClick={() => setMobileOpen(false)}
+        {isAuthenticated && (
+          <div
+            id="mobile-menu"
+            className={`md:hidden pb-3 space-y-1 ${
+              mobileOpen ? 'block' : 'hidden'
+            }`}
           >
-            Dashboard
-          </Link>
-          <Link
-            href="/activities"
-            className={navLinkClasses('/activities')}
-            onClick={() => setMobileOpen(false)}
-          >
-            Activities
-          </Link>
-          <Link
-            href="/import"
-            className={navLinkClasses('/import')}
-            onClick={() => setMobileOpen(false)}
-          >
-            Import
-          </Link>
-          <Link
-            href="/settings"
-            className={navLinkClasses('/settings')}
-            onClick={() => setMobileOpen(false)}
-          >
-            Settings
-          </Link>
-        </div>
+            <Link
+              href="/dashboard"
+              className={navLinkClasses('/dashboard')}
+              onClick={() => setMobileOpen(false)}
+            >
+              Dashboard
+            </Link>
+            <Link
+              href="/activities"
+              className={navLinkClasses('/activities')}
+              onClick={() => setMobileOpen(false)}
+            >
+              Activities
+            </Link>
+            <Link
+              href="/import"
+              className={navLinkClasses('/import')}
+              onClick={() => setMobileOpen(false)}
+            >
+              Import
+            </Link>
+            <Link
+              href="/settings"
+              className={navLinkClasses('/settings')}
+              onClick={() => setMobileOpen(false)}
+            >
+              Settings
+            </Link>
+            <button
+              onClick={() => {
+                logout();
+                setMobileOpen(false);
+              }}
+              className="w-full text-left px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md transition-colors"
+            >
+              Logout
+            </button>
+          </div>
+        )}
       </div>
     </nav>
   );

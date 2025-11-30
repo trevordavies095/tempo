@@ -15,6 +15,7 @@ public class TempoDbContext : DbContext
     public DbSet<WorkoutMedia> WorkoutMedia { get; set; }
     public DbSet<WorkoutTimeSeries> WorkoutTimeSeries { get; set; }
     public DbSet<UserSettings> UserSettings { get; set; }
+    public DbSet<User> Users { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -83,6 +84,11 @@ public class TempoDbContext : DbContext
             // Single-row table pattern - ensure only one settings record exists
             // We'll enforce this in application logic, but add a unique constraint on Id
             entity.HasIndex(e => e.Id).IsUnique();
+        });
+
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.HasIndex(e => e.Username).IsUnique();
         });
     }
 }
