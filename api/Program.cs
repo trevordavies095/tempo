@@ -1,5 +1,8 @@
 using System.Data;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Tempo.Api.Data;
 using Tempo.Api.Endpoints;
@@ -38,9 +41,47 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(origins)
               .AllowAnyMethod()
               .AllowAnyHeader()
+              .AllowCredentials()
               .SetPreflightMaxAge(TimeSpan.FromSeconds(86400));
     });
 });
+
+// Configure JWT Authentication
+var jwtSecretKey = builder.Configuration["JWT:SecretKey"] 
+    ?? throw new InvalidOperationException("JWT:SecretKey is not configured");
+var jwtIssuer = builder.Configuration["JWT:Issuer"] ?? "Tempo";
+var jwtAudience = builder.Configuration["JWT:Audience"] ?? "Tempo";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey)),
+        ValidateIssuer = true,
+        ValidIssuer = jwtIssuer,
+        ValidateAudience = true,
+        ValidAudience = jwtAudience,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+    // Support token from cookie
+    options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            context.Token = context.Request.Cookies["authToken"];
+            return Task.CompletedTask;
+        }
+    };
+});
+
+builder.Services.AddAuthorization();
 
 // Configure Entity Framework
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -57,6 +98,8 @@ builder.Services.AddScoped<RelativeEffortService>();
 builder.Services.AddScoped<BulkImportService>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
+builder.Services.AddScoped<PasswordService>();
+builder.Services.AddScoped<JwtService>();
 builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage
@@ -107,9 +150,13 @@ if (app.Environment.IsDevelopment())
 // Minimal APIs handle routing implicitly, so explicit UseRouting() is not needed
 app.UseCors();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.UseSerilogRequestLogging();
 
 // Map endpoints
+app.MapAuthEndpoints();
 app.MapWorkoutsEndpoints();
 app.MapSettingsEndpoints();
 app.MapVersionEndpoints();

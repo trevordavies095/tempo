@@ -2070,7 +2070,8 @@ public static class WorkoutsEndpoints
     public static void MapWorkoutsEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/workouts")
-            .WithTags("Workouts");
+            .WithTags("Workouts")
+            .RequireAuthorization();
 
         group.MapPost("/import", ImportWorkout)
             .WithName("ImportWorkout")

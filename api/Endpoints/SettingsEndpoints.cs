@@ -613,7 +613,8 @@ public static class SettingsEndpoints
     public static void MapSettingsEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/settings")
-            .WithTags("Settings");
+            .WithTags("Settings")
+            .RequireAuthorization();
 
         group.MapGet("/heart-rate-zones", GetHeartRateZones)
             .WithName("GetHeartRateZones")

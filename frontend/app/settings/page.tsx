@@ -22,8 +22,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVersion } from '@/lib/api';
 import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
+import { AuthGuard } from '@/components/AuthGuard';
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const queryClient = useQueryClient();
   const [hrZones, setHrZones] = useState<HeartRateZoneSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -589,6 +590,14 @@ export default function SettingsPage() {
         isLoading={isRecalculatingSplits}
       />
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <AuthGuard>
+      <SettingsPageContent />
+    </AuthGuard>
   );
 }
 
