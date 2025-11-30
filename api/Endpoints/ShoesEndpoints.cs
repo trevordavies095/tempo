@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
@@ -132,47 +133,122 @@ public static class ShoesEndpoints
     /// <returns>Updated shoe</returns>
     private static async Task<IResult> UpdateShoe(
         Guid id,
-        [FromBody] UpdateShoeRequest request,
+        HttpRequest request,
         TempoDbContext db,
         ILogger<Program> logger)
     {
         try
         {
+            // Parse JSON body to check which properties are provided
+            JsonDocument? jsonDoc;
+            try
+            {
+                jsonDoc = await JsonDocument.ParseAsync(request.Body);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to parse update request body");
+                return Results.BadRequest(new { error = "Invalid request body" });
+            }
+
+            if (jsonDoc == null)
+            {
+                return Results.BadRequest(new { error = "Request body is required" });
+            }
+
+            var root = jsonDoc.RootElement;
+
             var shoe = await db.Shoes.FindAsync(id);
             if (shoe == null)
             {
                 return Results.NotFound(new { error = "Shoe not found" });
             }
 
-            if (request.Brand != null)
+            // Update Brand if provided
+            if (root.TryGetProperty("brand", out var brandElement))
             {
-                if (string.IsNullOrWhiteSpace(request.Brand))
+                string? brandValue = null;
+                if (brandElement.ValueKind == JsonValueKind.String)
+                {
+                    brandValue = brandElement.GetString();
+                }
+                else if (brandElement.ValueKind == JsonValueKind.Null)
+                {
+                    return Results.BadRequest(new { error = "Brand cannot be null" });
+                }
+                else
+                {
+                    return Results.BadRequest(new { error = "Brand must be a string" });
+                }
+
+                if (string.IsNullOrWhiteSpace(brandValue))
                 {
                     return Results.BadRequest(new { error = "Brand cannot be empty" });
                 }
-                if (request.Brand.Length > 100)
+                if (brandValue.Length > 100)
                 {
                     return Results.BadRequest(new { error = "Brand must be 100 characters or less" });
                 }
-                shoe.Brand = request.Brand.Trim();
+                shoe.Brand = brandValue.Trim();
             }
 
-            if (request.Model != null)
+            // Update Model if provided
+            if (root.TryGetProperty("model", out var modelElement))
             {
-                if (string.IsNullOrWhiteSpace(request.Model))
+                string? modelValue = null;
+                if (modelElement.ValueKind == JsonValueKind.String)
+                {
+                    modelValue = modelElement.GetString();
+                }
+                else if (modelElement.ValueKind == JsonValueKind.Null)
+                {
+                    return Results.BadRequest(new { error = "Model cannot be null" });
+                }
+                else
+                {
+                    return Results.BadRequest(new { error = "Model must be a string" });
+                }
+
+                if (string.IsNullOrWhiteSpace(modelValue))
                 {
                     return Results.BadRequest(new { error = "Model cannot be empty" });
                 }
-                if (request.Model.Length > 100)
+                if (modelValue.Length > 100)
                 {
                     return Results.BadRequest(new { error = "Model must be 100 characters or less" });
                 }
-                shoe.Model = request.Model.Trim();
+                shoe.Model = modelValue.Trim();
             }
 
-            if (request.InitialMileageM.HasValue)
+            // Update InitialMileageM if provided (including explicit null to clear the value)
+            if (root.TryGetProperty("initialMileageM", out var initialMileageElement))
             {
-                shoe.InitialMileageM = request.InitialMileageM.Value;
+                double? initialMileageValue = null;
+                if (initialMileageElement.ValueKind == JsonValueKind.Number)
+                {
+                    if (initialMileageElement.TryGetDouble(out var doubleValue))
+                    {
+                        if (doubleValue < 0)
+                        {
+                            return Results.BadRequest(new { error = "Initial mileage cannot be negative" });
+                        }
+                        initialMileageValue = doubleValue;
+                    }
+                    else
+                    {
+                        return Results.BadRequest(new { error = "Initial mileage must be a valid number" });
+                    }
+                }
+                else if (initialMileageElement.ValueKind == JsonValueKind.Null)
+                {
+                    initialMileageValue = null; // Explicitly clear the value
+                }
+                else
+                {
+                    return Results.BadRequest(new { error = "Initial mileage must be a number or null" });
+                }
+
+                shoe.InitialMileageM = initialMileageValue;
             }
 
             shoe.UpdatedAt = DateTime.UtcNow;
