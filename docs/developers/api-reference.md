@@ -199,6 +199,49 @@ GET /workouts/stats/available-periods
 GET /workouts/stats/available-years
 ```
 
+### Best Efforts
+
+Get your fastest times for standard distances:
+
+```http
+GET /workouts/stats/best-efforts
+```
+
+Returns your best effort times for all supported distances (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, Half-Marathon, 30K, Marathon). Best efforts are calculated from any segment within any workout, not just workouts of that exact distance.
+
+Response format:
+```json
+{
+  "distances": [
+    {
+      "distance": "5K",
+      "distanceM": 5000,
+      "timeS": 1200,
+      "workoutId": "guid-here",
+      "workoutDate": "2025-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+### Recalculate Best Efforts
+
+Recalculate all best efforts across all workouts:
+
+```http
+POST /workouts/stats/best-efforts/recalculate
+```
+
+Performs a full recalculation of all best efforts. This may take some time depending on the number of workouts and time series data.
+
+Response format:
+```json
+{
+  "message": "Best efforts recalculated successfully",
+  "count": 13
+}
+```
+
 ## Media
 
 ### Upload Media
