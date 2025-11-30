@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 export function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { isAuthenticated, isLoading, logout, user } = useAuth();
+  const { isAuthenticated, isLoading, logout } = useAuth();
 
   const isActive = (path: string) => {
     if (path === '/dashboard') {
@@ -69,14 +69,9 @@ export function Navbar() {
               </div>
             )}
 
-            {/* User info and logout */}
+            {/* Logout button */}
             {isAuthenticated && (
-              <div className="hidden md:flex items-center space-x-4 ml-4">
-                {user && (
-                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {user.username}
-                  </span>
-                )}
+              <div className="hidden md:flex items-center ml-4">
                 <button
                   onClick={logout}
                   className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md transition-colors"
@@ -151,11 +146,6 @@ export function Navbar() {
             >
               Settings
             </Link>
-            {user && (
-              <div className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400">
-                {user.username}
-              </div>
-            )}
             <button
               onClick={() => {
                 logout();

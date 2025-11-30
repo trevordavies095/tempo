@@ -8,6 +8,7 @@ import * as api from '@/lib/api';
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -41,6 +42,15 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // Validate password confirmation when registering
+    if (isRegistering) {
+      if (password !== confirmPassword) {
+        setError('Passwords do not match');
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     try {
@@ -102,7 +112,9 @@ export default function LoginPage() {
                 name="password"
                 type="password"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                className={`appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 ${
+                  isRegistering ? 'rounded-none' : 'rounded-b-md'
+                } focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm`}
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -110,6 +122,25 @@ export default function LoginPage() {
                 minLength={6}
               />
             </div>
+            {isRegistering && (
+              <div>
+                <label htmlFor="confirmPassword" className="sr-only">
+                  Confirm Password
+                </label>
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  required
+                  className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                  placeholder="Confirm Password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={isLoading}
+                  minLength={6}
+                />
+              </div>
+            )}
           </div>
 
           <div>
@@ -126,10 +157,30 @@ export default function LoginPage() {
             <div className="text-center">
               <button
                 type="button"
-                onClick={() => setIsRegistering(true)}
+                onClick={() => {
+                  setIsRegistering(true);
+                  setPassword('');
+                  setConfirmPassword('');
+                }}
                 className="text-sm text-indigo-600 hover:text-indigo-500"
               >
                 Don't have an account? Register
+              </button>
+            </div>
+          )}
+
+          {isRegistering && (
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRegistering(false);
+                  setPassword('');
+                  setConfirmPassword('');
+                }}
+                className="text-sm text-indigo-600 hover:text-indigo-500"
+              >
+                Already have an account? Sign in
               </button>
             </div>
           )}
