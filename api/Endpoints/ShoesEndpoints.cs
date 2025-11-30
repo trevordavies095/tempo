@@ -92,6 +92,11 @@ public static class ShoesEndpoints
                 return Results.BadRequest(new { error = "Model must be 100 characters or less" });
             }
 
+            if (request.InitialMileageM.HasValue && request.InitialMileageM.Value < 0)
+            {
+                return Results.BadRequest(new { error = "Initial mileage cannot be negative" });
+            }
+
             var shoe = new Shoe
             {
                 Brand = request.Brand.Trim(),
