@@ -1,0 +1,36 @@
+meta {
+  name: Check if registration is available (no users exist)
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/auth/registration-available
+  body: none
+  auth: inherit
+}
+
+example {
+  name: 200 Response
+  description: OK
+  
+  request: {
+    url: {{baseUrl}}/auth/registration-available
+    method: GET
+    mode: none
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}
