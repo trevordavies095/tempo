@@ -65,6 +65,7 @@ export function ShoeManagementSection() {
       queryClient.invalidateQueries({ queryKey: ['shoes'] });
       setIsCreating(false);
       setNewShoe({ brand: '', model: '', initialMileageM: null });
+      setNewShoeInitialMileageInput('');
     },
   });
 
