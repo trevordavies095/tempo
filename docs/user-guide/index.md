@@ -13,7 +13,7 @@ Tempo is a self-hosted running tracker that helps you track and analyze your wor
 - **[Viewing Workouts](viewing-workouts.md)** - Explore the dashboard, activity list, and detailed workout views
 - **[Media](media.md)** - Add photos and videos to your workouts
 - **[Analytics](analytics.md)** - Understand metrics, statistics, and performance data
-- **[Settings](settings.md)** - Configure preferences, heart rate zones, and unit preferences
+- **[Settings](settings.md)** - Configure preferences, heart rate zones, unit preferences, and shoe tracking
 
 ## Getting Started
 

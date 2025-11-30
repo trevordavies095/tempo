@@ -23,6 +23,7 @@ Tempo is a self-hostable running tracker that gives you complete control over yo
 - **Heart Rate Zones** - Calculate zones using Age-based, Karvonen, or Custom methods
 - **Relative Effort** - Automatic calculation of workout intensity based on heart rate zones
 - **Best Efforts** - Track your fastest times for standard distances (400m to Marathon) from any segment within workouts
+- **Shoe Tracking** - Track mileage on your running shoes and know when to replace them
 - **Workout Editing** - Crop/trim workouts and edit activity names
 - **Statistics Dashboards** - Weekly and yearly statistics with relative effort tracking
 - **Unit Preferences** - Switch between metric and imperial units

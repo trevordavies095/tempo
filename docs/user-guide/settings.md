@@ -8,6 +8,7 @@ Tempo settings allow you to customize:
 - Unit preferences (metric/imperial)
 - Heart rate zones
 - Relative effort calculation
+- Shoe tracking and management
 
 ## Unit Preferences
 
@@ -112,6 +113,85 @@ You can manually recalculate relative effort:
 
 **Note**: This operation may take several minutes for large workout collections.
 
+## Shoe Management
+
+Track the mileage on your running shoes to know when it's time to replace them. Tempo automatically calculates total mileage for each shoe based on assigned workouts.
+
+### Adding a Shoe
+
+To add a new shoe to your collection:
+
+1. Navigate to Settings
+2. Find the "Shoe Management" section
+3. Click "Add Shoe"
+4. Enter the shoe details:
+   - **Brand** - Shoe manufacturer (e.g., "Nike", "Adidas")
+   - **Model** - Shoe model name (e.g., "Pegasus 40", "Ultraboost 22")
+   - **Initial Mileage** (optional) - If the shoe already has miles on it when you add it
+5. Click "Save"
+
+**Note**: Initial mileage is optional. If you're adding a brand new shoe, you can leave this blank. If you're adding a shoe that already has some miles, enter the current mileage so Tempo can track it accurately.
+
+### Viewing Your Shoes
+
+The Shoe Management section displays all your shoes with:
+- Brand and model name
+- Current total mileage (calculated automatically)
+- Number of workouts assigned to each shoe
+
+Mileage is displayed in your preferred units (kilometers for metric, miles for imperial).
+
+### Mileage Calculation
+
+Total mileage for each shoe is calculated as:
+- Sum of all workout distances assigned to that shoe
+- Plus any initial mileage you entered when adding the shoe
+
+Mileage updates automatically whenever you:
+- Assign a shoe to a workout
+- Change a workout's shoe assignment
+- Remove a shoe assignment from a workout
+
+### Editing a Shoe
+
+You can update shoe details at any time:
+
+1. Find the shoe in the Shoe Management section
+2. Click "Edit"
+3. Update the brand, model, or initial mileage
+4. Click "Save"
+
+**Note**: Changing initial mileage will recalculate the total mileage for that shoe.
+
+### Setting a Default Shoe
+
+You can set one shoe as your default shoe:
+
+1. Find the shoe in the Shoe Management section
+2. Click "Set as Default"
+
+When a default shoe is set:
+- New workouts imported into Tempo will automatically be assigned to your default shoe
+- You can still change the shoe assignment on any workout after import
+- You can change or remove the default shoe at any time
+
+### Deleting a Shoe
+
+To remove a shoe from your collection:
+
+1. Find the shoe in the Shoe Management section
+2. Click "Delete"
+3. Confirm the deletion
+
+**Note**: When you delete a shoe, all workouts that were assigned to that shoe will have their shoe assignment removed (set to "No Shoe"). The workouts themselves are not deleted.
+
+### Best Practices
+
+- **Add shoes when you get them** - Add new shoes to your collection as soon as you start using them
+- **Set a default shoe** - If you primarily use one pair of shoes, set it as default for automatic assignment
+- **Update initial mileage** - If you're adding a shoe that already has miles, enter the current mileage for accurate tracking
+- **Regular review** - Check shoe mileage regularly to know when it's time to replace them (most running shoes last 300-500 miles)
+
 ## Settings Management
 
 ### Viewing Settings
@@ -120,6 +200,7 @@ All settings are accessible from the Settings page:
 - Unit preferences
 - Heart rate zone configuration
 - Relative effort management
+- Shoe tracking and management
 
 ### Saving Changes
 
