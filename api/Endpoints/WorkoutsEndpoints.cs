@@ -874,6 +874,13 @@ public static class WorkoutsEndpoints
             return Results.BadRequest(new { error = $"Cannot crop entire workout. Trim values ({startTrimSeconds}s + {endTrimSeconds}s) must be less than workout duration ({workout.DurationS}s)" });
         }
 
+        // Check which best efforts reference this workout before cropping
+        // This is needed to recalculate best efforts for distances the workout may no longer qualify for after cropping
+        var affectedBestEfforts = await db.BestEfforts
+            .Where(be => be.WorkoutId == id)
+            .Select(be => be.Distance)
+            .ToListAsync();
+
         try
         {
             // Perform crop
@@ -902,6 +909,90 @@ public static class WorkoutsEndpoints
             {
                 logger.LogWarning(ex, "Failed to update best efforts after cropping workout {WorkoutId}", workout.Id);
                 // Don't fail crop if best effort update fails
+            }
+
+            // Recalculate affected best efforts if this workout previously held records
+            // for distances it may no longer qualify for after cropping
+            if (affectedBestEfforts.Any())
+            {
+                try
+                {
+                    // Reload workout to get updated distance after crop
+                    await db.Entry(workout).ReloadAsync();
+                    
+                    // For each affected distance, check if workout still qualifies
+                    foreach (var distanceName in affectedBestEfforts)
+                    {
+                        if (BestEffortService.StandardDistances.TryGetValue(distanceName, out var targetDistanceM))
+                        {
+                            // Check if workout still qualifies for this distance
+                            var stillQualifies = workout.DistanceM >= targetDistanceM;
+                            
+                            // Check if this workout still holds the record
+                            var currentBestEffort = await db.BestEfforts
+                                .FirstOrDefaultAsync(be => be.Distance == distanceName);
+                            
+                            var workoutStillHoldsRecord = currentBestEffort != null && currentBestEffort.WorkoutId == id;
+                            
+                            // If workout no longer qualifies OR no longer holds the record, recalculate from all workouts
+                            if (!stillQualifies || !workoutStillHoldsRecord)
+                            {
+                                var qualifyingWorkouts = await db.Workouts
+                                    .Include(w => w.Route)
+                                    .Where(w => w.DistanceM >= targetDistanceM)
+                                    .ToListAsync();
+
+                                BestEffortService.BestEffortResult? newBestEffort = null;
+                                foreach (var remainingWorkout in qualifyingWorkouts)
+                                {
+                                    var result = await bestEffortService.CalculateBestEffortForWorkoutAsync(
+                                        db, remainingWorkout, distanceName, targetDistanceM);
+                                    if (result != null && (newBestEffort == null || result.TimeS < newBestEffort.TimeS))
+                                    {
+                                        newBestEffort = result;
+                                    }
+                                }
+
+                                // Update or remove best effort
+                                if (newBestEffort != null)
+                                {
+                                    if (currentBestEffort != null)
+                                    {
+                                        currentBestEffort.TimeS = newBestEffort.TimeS;
+                                        currentBestEffort.WorkoutId = Guid.Parse(newBestEffort.WorkoutId);
+                                        currentBestEffort.WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc);
+                                        currentBestEffort.CalculatedAt = DateTime.UtcNow;
+                                    }
+                                    else
+                                    {
+                                        db.BestEfforts.Add(new BestEffort
+                                        {
+                                            Distance = distanceName,
+                                            DistanceM = targetDistanceM,
+                                            TimeS = newBestEffort.TimeS,
+                                            WorkoutId = Guid.Parse(newBestEffort.WorkoutId),
+                                            WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc),
+                                            CalculatedAt = DateTime.UtcNow
+                                        });
+                                    }
+                                }
+                                else if (currentBestEffort != null)
+                                {
+                                    // No qualifying workouts remain, remove best effort
+                                    db.BestEfforts.Remove(currentBestEffort);
+                                }
+                            }
+                        }
+                    }
+
+                    await db.SaveChangesAsync();
+                    logger.LogInformation("Recalculated affected best efforts after cropping workout {WorkoutId}", id);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to recalculate affected best efforts after cropping workout {WorkoutId}", id);
+                    // Don't fail crop if best effort recalculation fails
+                }
             }
 
             // Reload workout with updated data
@@ -2181,7 +2272,7 @@ public static class WorkoutsEndpoints
                             {
                                 existingBestEffort.TimeS = newBestEffort.TimeS;
                                 existingBestEffort.WorkoutId = Guid.Parse(newBestEffort.WorkoutId);
-                                existingBestEffort.WorkoutDate = DateTime.Parse(newBestEffort.WorkoutDate);
+                                existingBestEffort.WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc);
                                 existingBestEffort.CalculatedAt = DateTime.UtcNow;
                             }
                             else
