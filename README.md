@@ -302,7 +302,7 @@ For production deployment, use Docker Compose with the provided `docker-compose.
 
 **Key differences from development:**
 - Uses pre-built images from `ghcr.io/trevordavies095/tempo/api` and `ghcr.io/trevordavies095/tempo/frontend`
-- Images are tagged with version numbers (e.g., `v1.2.0`) for stability
+- Images are tagged with version numbers (e.g., `v1.3.0`) for stability
 - Uses a dedicated Docker network (`tempo-network`) for service isolation
 - Frontend runs on port 3004 by default (configurable)
 

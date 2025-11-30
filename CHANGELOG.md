@@ -10,11 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.3.0] - 2025-11-30
 
 ### Added
+- **JWT-based authentication system** - Complete authentication system for securing the application
+  - User registration (single-user deployment pattern - registration locked after first user)
+  - Login/logout functionality with JWT tokens stored in httpOnly cookies
+  - Password hashing using BCrypt for secure password storage
+  - Authentication endpoints: `/auth/register`, `/auth/login`, `/auth/logout`, `/auth/me`, `/auth/registration-available`
+  - Frontend authentication context and AuthGuard component for protected routes
+  - Login/registration pages with improved UX (password confirmation, form validation)
+  - All workout and settings endpoints now require authentication (except `/health` and `/version`)
+  - JWT secret key validation on startup (prevents deployment with default placeholder)
+  - Serializable database transactions to prevent race conditions during registration
+- **Comprehensive documentation site** - Full MkDocs documentation deployed to GitHub Pages
+  - Complete documentation covering getting started, user guides, developer docs, deployment, and troubleshooting
+  - Automated deployment workflow for GitHub Pages
+  - Material for MkDocs theme with search, navigation, and code highlighting
+  - Guides for installation, configuration, API reference, security best practices, and more
 - Bruno API testing collection - Comprehensive interactive API testing collection with 30+ test requests covering all endpoints
-  - Organized by endpoint groups (Workouts, Settings, Version, Health)
+  - Organized by endpoint groups (Workouts, Settings, Version, Health, Authentication)
   - Environment configuration for local development
   - Enables API testing and exploration without requiring the frontend
-  - Test files for all CRUD operations, imports, stats, media, and configuration endpoints
+  - Test files for all CRUD operations, imports, stats, media, configuration, and authentication endpoints
+  - Updated to handle authentication with JWT tokens
 
 ### Changed
 - Refactored API endpoints from inline lambdas to private static methods with XML documentation
@@ -25,9 +41,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enabled XML documentation generation in project
   - Configured Swagger to include XML comments for improved API docs
   - Added comprehensive parameter and return type documentation
+- **Security improvements**
+  - JWT secret key must be configured in production (startup fails with default placeholder)
+  - Username trimming consistency between registration and login
+  - JWT expiration configuration consistency fixes
+  - Added credentials to media API calls for authenticated requests
 
 ### Fixed
 - Minor frontend component updates (RelativeEffortGraph, WorkoutMap)
+- Fixed username trimming mismatch between Register and Login endpoints
+- Fixed JWT expiration inconsistency in Login endpoint
+- Fixed JWT secret key validation bypass in docker-compose.prod.yml
+- Fixed race condition in user registration using serializable transactions
 
 ## [1.2.0] - 2025-01-27
 
