@@ -1,0 +1,43 @@
+meta {
+  name: Get yearly stats
+  type: http
+  seq: 16
+}
+
+get {
+  url: {{baseUrl}}/workouts/stats/yearly
+  body: none
+  auth: inherit
+}
+
+params:query {
+  ~timezoneOffsetMinutes: 
+}
+
+example {
+  name: 200 Response
+  description: OK
+  
+  request: {
+    url: {{baseUrl}}/workouts/stats/yearly
+    method: GET
+    mode: none
+    params:query: {
+      ~timezoneOffsetMinutes: 
+    }
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}

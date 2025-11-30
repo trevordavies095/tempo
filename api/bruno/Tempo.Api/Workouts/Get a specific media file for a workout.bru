@@ -1,0 +1,74 @@
+meta {
+  name: Get a specific media file for a workout
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/workouts/:id/media/:mediaId
+  body: none
+  auth: inherit
+}
+
+params:path {
+  id: 
+  mediaId: 
+}
+
+example {
+  name: 200 Response
+  description: OK
+  
+  request: {
+    url: {{baseUrl}}/workouts/:id/media/:mediaId
+    method: GET
+    mode: none
+    params:path: {
+      id: 
+      mediaId: 
+    }
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}
+
+example {
+  name: 404 Response
+  description: Not Found
+  
+  request: {
+    url: {{baseUrl}}/workouts/:id/media/:mediaId
+    method: GET
+    mode: none
+    params:path: {
+      id: 
+      mediaId: 
+    }
+  }
+  
+  response: {
+    status: {
+      code: 404
+      text: Not Found
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}
