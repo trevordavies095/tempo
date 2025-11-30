@@ -44,3 +44,6 @@ logs/
 test_data/
 media/
 RELEASES.md
+
+# MkDocs build output
+site/

@@ -1,5 +1,33 @@
 const API_BASE_URL = '/api';
 
+// Auth interfaces
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  username: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  userId: string;
+  username: string;
+  expiresAt: string;
+}
+
+export interface UserInfo {
+  userId: string;
+  username: string;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
+export interface RegistrationAvailableResponse {
+  registrationAvailable: boolean;
+}
+
 export interface WorkoutImportResponse {
   id: string;
   startedAt: string;
@@ -148,6 +176,7 @@ export async function importWorkoutFile(
   const response = await fetch(`${API_BASE_URL}/workouts/import`, {
     method: 'POST',
     body: formData,
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -210,6 +239,7 @@ export async function getWorkouts(
   const response = await fetch(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -226,6 +256,7 @@ export async function getWorkout(id: string): Promise<WorkoutDetail> {
   const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (response.status === 404) {
@@ -280,6 +311,7 @@ export async function importBulkStravaExport(zipFile: File, unitPreference?: 'me
   const response = await fetch(`${directApiUrl}/workouts/import/bulk`, {
     method: 'POST',
     body: formData,
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -294,6 +326,7 @@ export async function getWorkoutMedia(workoutId: string): Promise<WorkoutMedia[]
   const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   // If workout not found, return empty array (no media)
@@ -319,6 +352,7 @@ export async function deleteWorkoutMedia(
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media/${mediaId}`, {
     method: 'DELETE',
+    credentials: 'include',
   });
 
   if (response.status === 404) {
@@ -347,6 +381,7 @@ export async function uploadWorkoutMedia(
   const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media`, {
     method: 'POST',
     body: formData,
+    credentials: 'include',
   });
 
   if (response.status === 404) {
@@ -406,6 +441,7 @@ export async function getWeeklyStats(timezoneOffsetMinutes?: number): Promise<We
   const response = await fetch(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -427,6 +463,7 @@ export async function getRelativeEffortStats(timezoneOffsetMinutes?: number): Pr
   const response = await fetch(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -448,6 +485,7 @@ export async function getYearlyStats(timezoneOffsetMinutes?: number): Promise<Ye
   const response = await fetch(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -488,6 +526,7 @@ export async function getYearlyWeeklyStats(
   const response = await fetch(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -518,6 +557,7 @@ export async function getAvailablePeriods(
   const response = await fetch(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -533,6 +573,7 @@ export async function getAvailableYears(): Promise<number[]> {
   const response = await fetch(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -562,6 +603,7 @@ export async function updateWorkout(
   const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(updates),
   });
 
@@ -580,6 +622,7 @@ export async function updateWorkout(
 export async function deleteWorkout(id: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
     method: 'DELETE',
+    credentials: 'include',
   });
 
   if (response.status === 404) {
@@ -622,6 +665,7 @@ export async function getHeartRateZones(): Promise<HeartRateZoneSettings> {
   const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -637,6 +681,7 @@ export async function updateHeartRateZones(
   const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(settings),
   });
 
@@ -663,6 +708,7 @@ export async function updateHeartRateZonesWithRecalc(
   const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones/update-with-recalc`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(settings),
   });
 
@@ -686,6 +732,7 @@ export async function getQualifyingWorkoutCount(): Promise<{ count: number }> {
   const response = await fetch(`${API_BASE_URL}/settings/recalculate-relative-effort/count`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -699,6 +746,7 @@ export async function recalculateAllRelativeEffort(): Promise<RecalculateRelativ
   const response = await fetch(`${API_BASE_URL}/settings/recalculate-relative-effort`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -713,6 +761,7 @@ export async function getUnitPreference(): Promise<{ unitPreference: 'metric' | 
   const response = await fetch(`${API_BASE_URL}/settings/unit-preference`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -726,6 +775,7 @@ export async function updateUnitPreference(unitPreference: 'metric' | 'imperial'
   const response = await fetch(`${API_BASE_URL}/settings/unit-preference`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ unitPreference }),
   });
 
@@ -741,6 +791,7 @@ export async function getQualifyingWorkoutCountForSplits(): Promise<{ count: num
   const response = await fetch(`${API_BASE_URL}/settings/recalculate-splits/count`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -761,6 +812,7 @@ export async function recalculateAllSplits(): Promise<RecalculateSplitsResponse>
   const response = await fetch(`${API_BASE_URL}/settings/recalculate-splits`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -775,6 +827,7 @@ export async function recalculateWorkoutSplits(workoutId: string): Promise<{ id:
   const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/recalculate-splits`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -798,6 +851,7 @@ export async function cropWorkout(
   const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/crop`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ startTrimSeconds, endTrimSeconds }),
   });
 
@@ -823,10 +877,91 @@ export async function getVersion(): Promise<VersionResponse> {
   const response = await fetch(`${API_BASE_URL}/version`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
 
   if (!response.ok) {
     throw new Error(`Failed to fetch version: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+// Authentication functions
+export async function login(username: string, password: string): Promise<AuthResponse> {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Invalid username or password');
+    }
+    const error = await response.json().catch(() => ({ error: 'Login failed' }));
+    throw new Error(error.error || `Login failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function register(username: string, password: string): Promise<{ message: string; userId: string }> {
+  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Registration failed' }));
+    throw new Error(error.error || `Registration failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCurrentUser(): Promise<UserInfo> {
+  const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (response.status === 401) {
+    throw new Error('Not authenticated');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to get current user: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function logout(): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/auth/logout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Logout failed: ${response.status}`);
+  }
+}
+
+export async function checkRegistrationAvailable(): Promise<RegistrationAvailableResponse> {
+  const response = await fetch(`${API_BASE_URL}/auth/registration-available`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to check registration availability: ${response.status}`);
   }
 
   return response.json();

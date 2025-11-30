@@ -9,8 +9,9 @@ import ErrorState from '@/components/ErrorState';
 import ActivitiesFilters from '@/components/ActivitiesFilters';
 import ActivitiesTable from '@/components/ActivitiesTable';
 import { useActivitiesFilters } from '@/hooks/useActivitiesFilters';
+import { AuthGuard } from '@/components/AuthGuard';
 
-export default function ActivitiesPage() {
+function ActivitiesPageContent() {
   const { unitPreference } = useSettings();
   const {
     page,
@@ -95,6 +96,14 @@ export default function ActivitiesPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function ActivitiesPage() {
+  return (
+    <AuthGuard>
+      <ActivitiesPageContent />
+    </AuthGuard>
   );
 }
 

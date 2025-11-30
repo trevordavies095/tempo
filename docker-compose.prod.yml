@@ -25,7 +25,7 @@ services:
     # Available tags: latest (stable), v1.0.0 (specific version)
     # Update the version tag below when deploying a new release
     # Example: ghcr.io/trevordavies095/tempo/api:v1.0.0
-    image: ghcr.io/trevordavies095/tempo/api:v1.2.0
+    image: ghcr.io/trevordavies095/tempo/api:v1.3.0
     container_name: tempo-api
     environment:
       # Database connection
@@ -41,6 +41,12 @@ services:
       ASPNETCORE_ENVIRONMENT: "Production"
       # CORS - Allow multiple origins (comma-separated)
       CORS__AllowedOrigins: "http://localhost:3000,http://localhost:3004,http://192.168.4.205:3004"
+      # JWT Authentication - REQUIRED: Set a secure random key in production
+      # Generate with: openssl rand -base64 32
+      JWT__SecretKey: "${JWT_SECRET_KEY:-CHANGE_THIS_IN_PRODUCTION_USE_ENVIRONMENT_VARIABLE}"
+      JWT__Issuer: "Tempo"
+      JWT__Audience: "Tempo"
+      JWT__ExpirationDays: "7"
     ports:
       - "5001:5001"
     volumes:
@@ -62,7 +68,7 @@ services:
     # Available tags: latest (stable), v1.0.0 (specific version)
     # Update the version tag below when deploying a new release
     # Example: ghcr.io/trevordavies095/tempo/frontend:v1.0.0
-    image: ghcr.io/trevordavies095/tempo/frontend:v1.2.0
+    image: ghcr.io/trevordavies095/tempo/frontend:v1.3.0
     container_name: tempo-frontend
     ports:
       - "3004:3000"

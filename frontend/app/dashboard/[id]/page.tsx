@@ -15,6 +15,7 @@ import { useWorkoutMutations } from '@/hooks/useWorkoutMutations';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
 import { MediaModal } from '@/components/MediaModal';
 import { MediaUpload } from '@/components/MediaUpload';
+import { AuthGuard } from '@/components/AuthGuard';
 import {
   getWeatherSymbol,
   formatTemperature,
@@ -35,7 +36,7 @@ const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
   ),
 });
 
-export default function WorkoutDetailPage() {
+function WorkoutDetailPageContent() {
   const params = useParams();
   const id = params.id as string;
   const [selectedMediaIndex, setSelectedMediaIndex] = useState<number | null>(null);
@@ -618,6 +619,14 @@ export default function WorkoutDetailPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function WorkoutDetailPage() {
+  return (
+    <AuthGuard>
+      <WorkoutDetailPageContent />
+    </AuthGuard>
   );
 }
 

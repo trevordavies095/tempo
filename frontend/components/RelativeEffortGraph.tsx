@@ -51,7 +51,7 @@ export default function RelativeEffortGraph() {
   }
 
   // If no data available, show empty state
-  const hasData = data.currentWeek.some(val => val > 0) || data.previousWeeks.some(val => val > 0);
+  const hasData = (data.currentWeek?.some(val => val > 0) || false) || (data.previousWeeks?.some(val => val > 0) || false);
   if (!hasData) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
@@ -70,8 +70,8 @@ export default function RelativeEffortGraph() {
   const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   
   // Prepare chart data - mark which days have data (where effort changed from previous day)
-  const chartData = data.currentWeek.map((value, index) => {
-    const prevValue = index > 0 ? data.currentWeek[index - 1] : 0;
+  const chartData = (data.currentWeek || []).map((value, index) => {
+    const prevValue = index > 0 ? (data.currentWeek?.[index - 1] || 0) : 0;
     const hasData = value !== prevValue; // Day has data if cumulative effort changed
     return {
       day: days[index],
@@ -84,20 +84,20 @@ export default function RelativeEffortGraph() {
   });
 
   // Calculate max value for Y-axis
-  const maxEffort = Math.max(...data.currentWeek, data.rangeMax, 1);
+  const maxEffort = Math.max(...(data.currentWeek || []), data.rangeMax || 0, 1);
   const adjustedYAxisMax = calculateYAxisMax(maxEffort);
   const yAxisTicks = calculateYAxisTicks(maxEffort, 3);
 
   // Determine status relative to range
-  const currentTotal = data.currentWeekTotal;
-  const status = currentTotal < data.rangeMin 
+  const currentTotal = data.currentWeekTotal || 0;
+  const status = currentTotal < (data.rangeMin || 0)
     ? 'below' 
-    : currentTotal > data.rangeMax 
+    : currentTotal > (data.rangeMax || 0)
     ? 'above' 
     : 'within';
 
   // Calculate week-over-week comparison
-  const lastWeekTotal = data.previousWeeks[0] || 0;
+  const lastWeekTotal = data.previousWeeks?.[0] || 0;
   const weekOverWeekChange = lastWeekTotal > 0 
     ? ((currentTotal - lastWeekTotal) / lastWeekTotal) * 100 
     : 0;
@@ -170,7 +170,7 @@ export default function RelativeEffortGraph() {
           )}
         </div>
         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          3-week avg: {data.threeWeekAverage.toFixed(0)} (range: {data.rangeMin} - {data.rangeMax})
+          3-week avg: {(data.threeWeekAverage || 0).toFixed(0)} (range: {data.rangeMin || 0} - {data.rangeMax || 0})
         </div>
       </div>
 
@@ -186,8 +186,8 @@ export default function RelativeEffortGraph() {
             </defs>
             {/* Range band using ReferenceArea - horizontal band showing suggested range */}
             <ReferenceArea 
-              y1={data.rangeMin} 
-              y2={data.rangeMax}
+              y1={data.rangeMin || 0} 
+              y2={data.rangeMax || 0}
               fill="url(#rangeGradient)"
               stroke="none"
             />

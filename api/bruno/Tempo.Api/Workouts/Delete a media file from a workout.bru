@@ -1,0 +1,74 @@
+meta {
+  name: Delete a media file from a workout
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/workouts/:id/media/:mediaId
+  body: none
+  auth: inherit
+}
+
+params:path {
+  id: 
+  mediaId: 
+}
+
+example {
+  name: 204 Response
+  description: No Content
+  
+  request: {
+    url: {{baseUrl}}/workouts/:id/media/:mediaId
+    method: DELETE
+    mode: none
+    params:path: {
+      id: 
+      mediaId: 
+    }
+  }
+  
+  response: {
+    status: {
+      code: 204
+      text: No Content
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}
+
+example {
+  name: 404 Response
+  description: Not Found
+  
+  request: {
+    url: {{baseUrl}}/workouts/:id/media/:mediaId
+    method: DELETE
+    mode: none
+    params:path: {
+      id: 
+      mediaId: 
+    }
+  }
+  
+  response: {
+    status: {
+      code: 404
+      text: Not Found
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}

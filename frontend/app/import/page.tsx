@@ -1,7 +1,10 @@
+'use client';
+
 import { FileUpload } from '@/components/FileUpload';
 import { BulkImport } from '@/components/BulkImport';
+import { AuthGuard } from '@/components/AuthGuard';
 
-export default function ImportPage() {
+function ImportPageContent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-4xl flex-col items-center justify-start py-16 px-8">
@@ -37,6 +40,14 @@ export default function ImportPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function ImportPage() {
+  return (
+    <AuthGuard>
+      <ImportPageContent />
+    </AuthGuard>
   );
 }
 

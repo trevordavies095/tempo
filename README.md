@@ -3,7 +3,7 @@
 > A privacy-first, self-hosted Strava alternative. Import GPX, FIT, and CSV files from Garmin, Apple Watch, Strava, and more. Keep all your data local—no subscriptions, no cloud required.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-1.2.0-green.svg)
+![Version](https://img.shields.io/badge/version-1.3.0-green.svg)
 ![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
@@ -41,6 +41,53 @@ docker-compose up -d
 ```
 
 That's it! The database migrations run automatically on first startup. Your data is persisted in Docker volumes, so it will survive container restarts.
+
+## Authentication
+
+Tempo uses JWT-based authentication with username/password login. All workout and settings endpoints require authentication.
+
+### First-Time Setup
+
+1. Start the application (see Quick Start above)
+2. Navigate to `http://localhost:3000` - you'll be redirected to the login page
+3. Register your account (only available when no users exist)
+   - Choose a username and password
+   - Confirm your password
+   - After registration, you'll be automatically logged in
+4. After registration, login is required for all features
+
+**Note:** Registration is automatically locked after the first user is created. This is a security feature for single-user deployments.
+
+### Production Configuration
+
+**Important:** Before deploying to production, you must set the JWT secret key via environment variable. The default placeholder value in `appsettings.json` should never be used in production.
+
+**Generate a secure JWT secret key:**
+```bash
+# Using OpenSSL (recommended)
+openssl rand -base64 32
+
+# Or using .NET user-secrets (for local development)
+dotnet user-secrets set "JWT:SecretKey" "$(openssl rand -base64 32)"
+```
+
+**Set in Docker Compose:**
+```yaml
+environment:
+  JWT__SecretKey: "your-very-long-random-secret-key-here"
+```
+
+**Security Requirements:**
+- The JWT secret key should be at least 32 characters and cryptographically random
+- Use HTTPS in production (required for secure cookie transmission)
+- Change the default database password in production
+- Store the JWT secret key securely (environment variables, secrets manager, etc.)
+
+**JWT Configuration Options:**
+- `JWT__SecretKey` - JWT signing key (REQUIRED in production)
+- `JWT__Issuer` - JWT issuer (default: "Tempo")
+- `JWT__Audience` - JWT audience (default: "Tempo")
+- `JWT__ExpirationDays` - Token expiration in days (default: 7)
 
 ## Features
 
@@ -255,7 +302,7 @@ For production deployment, use Docker Compose with the provided `docker-compose.
 
 **Key differences from development:**
 - Uses pre-built images from `ghcr.io/trevordavies095/tempo/api` and `ghcr.io/trevordavies095/tempo/frontend`
-- Images are tagged with version numbers (e.g., `v1.2.0`) for stability
+- Images are tagged with version numbers (e.g., `v1.3.0`) for stability
 - Uses a dedicated Docker network (`tempo-network`) for service isolation
 - Frontend runs on port 3004 by default (configurable)
 
@@ -267,6 +314,10 @@ Configure the following in `docker-compose.prod.yml` or via environment files:
 - `CORS__AllowedOrigins` - Comma-separated list of allowed origins
 - `ElevationCalculation__NoiseThresholdMeters` - Elevation smoothing threshold
 - `ElevationCalculation__MinDistanceMeters` - Minimum distance for elevation calculation
+- `JWT__SecretKey` - JWT signing key (REQUIRED in production, see Authentication section)
+- `JWT__Issuer` - JWT issuer (default: "Tempo")
+- `JWT__Audience` - JWT audience (default: "Tempo")
+- `JWT__ExpirationDays` - Token expiration in days (default: 7)
 
 **Data Persistence:**
 - Database data is stored in the `postgres_data` Docker volume
@@ -320,10 +371,24 @@ Tempo provides a RESTful API for managing workouts, settings, and statistics. In
 - `GET /settings/recalculate-splits/count` - Get count of workouts eligible for split recalculation
 - `POST /settings/recalculate-splits` - Recalculate splits for all workouts
 
+### Authentication Endpoints
+
+- `POST /auth/register` - Register a new user account (only available when no users exist)
+- `POST /auth/login` - Authenticate and receive JWT token (stored in httpOnly cookie)
+- `GET /auth/me` - Get current user information (requires authentication)
+- `POST /auth/logout` - Logout and clear authentication cookie
+- `GET /auth/registration-available` - Check if registration is available
+
+**Note:** All workout and settings endpoints require authentication. Only `/health` and `/version` endpoints are public.
+
 ### System Endpoints
 
 - `GET /version` - Get application version, build date, and git commit
 - `GET /health` - Health check endpoint
+
+### API Testing
+
+A Bruno API testing collection is included in `api/bruno/Tempo.Api/` with test requests for all endpoints. Open the collection in [Bruno](https://www.usebruno.com/) to interactively test the API without requiring the frontend.
 
 ## Troubleshooting
 
