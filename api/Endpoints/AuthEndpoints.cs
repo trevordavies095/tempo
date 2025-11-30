@@ -18,13 +18,6 @@ public static class AuthEndpoints
         PasswordService passwordService,
         ILogger<Program> logger)
     {
-        // Check if any users exist - if so, registration is locked
-        var userExists = await db.Users.AnyAsync();
-        if (userExists)
-        {
-            return Results.BadRequest(new { error = "Registration is disabled. An account already exists." });
-        }
-
         // Validate username
         if (string.IsNullOrWhiteSpace(request.Username) || request.Username.Length > 50)
         {
@@ -37,31 +30,61 @@ public static class AuthEndpoints
             return Results.BadRequest(new { error = "Password must be at least 6 characters" });
         }
 
-        // Check if username already exists
-        var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
-        if (existingUser != null)
+        // Use a serializable transaction to atomically check and create user
+        // This prevents race conditions where multiple concurrent requests could both
+        // pass the "no users exist" check before either commits
+        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        try
         {
-            return Results.BadRequest(new { error = "Username already exists" });
+            // Check if any users exist - if so, registration is locked
+            var userExists = await db.Users.AnyAsync();
+            if (userExists)
+            {
+                await transaction.RollbackAsync();
+                return Results.BadRequest(new { error = "Registration is disabled. An account already exists." });
+            }
+
+            // Check if username already exists
+            var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
+            if (existingUser != null)
+            {
+                await transaction.RollbackAsync();
+                return Results.BadRequest(new { error = "Username already exists" });
+            }
+
+            // Create new user
+            var user = new User
+            {
+                Username = request.Username.Trim(),
+                PasswordHash = passwordService.HashPassword(request.Password),
+                CreatedAt = DateTime.UtcNow
+            };
+
+            db.Users.Add(user);
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            logger.LogInformation("User registered: {Username}", user.Username);
+
+            return Results.Ok(new
+            {
+                message = "User registered successfully",
+                userId = user.Id
+            });
         }
-
-        // Create new user
-        var user = new User
+        catch (DbUpdateException ex) when (ex.InnerException?.Message?.Contains("serialization") == true || 
+                                            ex.InnerException?.Message?.Contains("could not serialize") == true)
         {
-            Username = request.Username.Trim(),
-            PasswordHash = passwordService.HashPassword(request.Password),
-            CreatedAt = DateTime.UtcNow
-        };
-
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
-
-        logger.LogInformation("User registered: {Username}", user.Username);
-
-        return Results.Ok(new
+            // Handle serialization failure (concurrent registration attempt)
+            await transaction.RollbackAsync();
+            logger.LogWarning("Registration failed due to concurrent attempt: {Username}", request.Username);
+            return Results.BadRequest(new { error = "Registration is disabled. An account already exists." });
+        }
+        catch
         {
-            message = "User registered successfully",
-            userId = user.Id
-        });
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     /// <summary>
