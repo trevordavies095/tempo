@@ -3,7 +3,7 @@
 > A privacy-first, self-hosted Strava alternative. Import GPX, FIT, and CSV files from Garmin, Apple Watch, Strava, and more. Keep all your data local—no subscriptions, no cloud required.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-1.2.0-green.svg)
+![Version](https://img.shields.io/badge/version-1.3.0-green.svg)
 ![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
@@ -324,6 +324,10 @@ Tempo provides a RESTful API for managing workouts, settings, and statistics. In
 
 - `GET /version` - Get application version, build date, and git commit
 - `GET /health` - Health check endpoint
+
+### API Testing
+
+A Bruno API testing collection is included in `api/bruno/Tempo.Api/` with test requests for all endpoints. Open the collection in [Bruno](https://www.usebruno.com/) to interactively test the API without requiring the frontend.
 
 ## Troubleshooting
 

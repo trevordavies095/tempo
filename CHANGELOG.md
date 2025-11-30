@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2025-11-30
+
+### Added
+- Bruno API testing collection - Comprehensive interactive API testing collection with 30+ test requests covering all endpoints
+  - Organized by endpoint groups (Workouts, Settings, Version, Health)
+  - Environment configuration for local development
+  - Enables API testing and exploration without requiring the frontend
+  - Test files for all CRUD operations, imports, stats, media, and configuration endpoints
+
+### Changed
+- Refactored API endpoints from inline lambdas to private static methods with XML documentation
+  - Improves code organization and maintainability
+  - Enables better Swagger documentation integration
+  - All endpoint behavior remains unchanged (backward compatible)
+- Enhanced API documentation with XML comments
+  - Enabled XML documentation generation in project
+  - Configured Swagger to include XML comments for improved API docs
+  - Added comprehensive parameter and return type documentation
+
+### Fixed
+- Minor frontend component updates (RelativeEffortGraph, WorkoutMap)
+
 ## [1.2.0] - 2025-01-27
 
 ### Added
