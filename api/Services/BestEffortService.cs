@@ -352,7 +352,7 @@ public class BestEffortService
     /// </summary>
     public async Task UpdateBestEffortsForNewWorkoutAsync(TempoDbContext db, Workout workout)
     {
-        _logger.LogDebug("Updating best efforts for new workout {WorkoutId}", workout.Id);
+        _logger.LogDebug("Updating best efforts for new workout {WorkoutId} (distance: {DistanceM}m)", workout.Id, workout.DistanceM);
 
         // Load workout with route
         var workoutWithRoute = await db.Workouts
@@ -361,10 +361,25 @@ public class BestEffortService
 
         if (workoutWithRoute == null)
         {
+            _logger.LogWarning("Workout {WorkoutId} not found when updating best efforts", workout.Id);
             return;
         }
 
+        // Get all existing best efforts BEFORE making any changes to ensure we preserve them
+        // Use AsNoTracking() to avoid change tracking issues, then query fresh when needed
+        var allExistingBestEfforts = await db.BestEfforts
+            .AsNoTracking()
+            .Select(be => be.Distance)
+            .ToListAsync();
+
+        _logger.LogDebug("Found {Count} existing best efforts before update: {Distances}", 
+            allExistingBestEfforts.Count, 
+            string.Join(", ", allExistingBestEfforts));
+
+        var createdCount = 0;
         var updatedCount = 0;
+        var preservedCount = 0;
+        var processedDistances = new List<string>();
 
         foreach (var distanceEntry in StandardDistances)
         {
@@ -374,17 +389,24 @@ public class BestEffortService
             // Skip if workout is too short
             if (workoutWithRoute.DistanceM < targetDistanceM)
             {
+                _logger.LogDebug("Skipping {Distance} ({DistanceM}m) - workout too short ({WorkoutDistanceM}m)", 
+                    distanceName, targetDistanceM, workoutWithRoute.DistanceM);
                 continue;
             }
+
+            processedDistances.Add(distanceName);
 
             // Calculate best effort for this distance from the new workout
             var newBestEffort = await CalculateBestEffortForWorkoutAsync(db, workoutWithRoute, distanceName, targetDistanceM);
             if (newBestEffort == null)
             {
+                _logger.LogDebug("Could not calculate best effort for {Distance} from workout {WorkoutId}", 
+                    distanceName, workoutWithRoute.Id);
                 continue;
             }
 
-            // Check existing best effort for this distance
+            // Query for existing best effort using AsNoTracking first to check existence,
+            // then load with tracking only if we need to update it
             var existingBestEffort = await db.BestEfforts
                 .FirstOrDefaultAsync(be => be.Distance == distanceName);
 
@@ -406,7 +428,9 @@ public class BestEffortService
                     CalculatedAt = DateTime.UtcNow
                 };
                 db.BestEfforts.Add(bestEffort);
-                updatedCount++;
+                createdCount++;
+                _logger.LogDebug("Created new best effort for {Distance}: {TimeS}s from workout {WorkoutId}", 
+                    distanceName, newBestEffort.TimeS, workoutWithRoute.Id);
             }
             else if (newBestEffort.TimeS < existingBestEffort.TimeS)
             {
@@ -416,18 +440,59 @@ public class BestEffortService
                     ? workoutWithRoute.StartedAt
                     : DateTime.SpecifyKind(workoutWithRoute.StartedAt, DateTimeKind.Utc);
                 
+                _logger.LogDebug("Updating best effort for {Distance}: {OldTimeS}s -> {NewTimeS}s (workout {WorkoutId})", 
+                    distanceName, existingBestEffort.TimeS, newBestEffort.TimeS, workoutWithRoute.Id);
+                
                 existingBestEffort.TimeS = newBestEffort.TimeS;
                 existingBestEffort.WorkoutId = workoutWithRoute.Id;
                 existingBestEffort.WorkoutDate = workoutDate;
                 existingBestEffort.CalculatedAt = DateTime.UtcNow;
                 updatedCount++;
             }
+            else
+            {
+                // Existing best effort is faster, preserve it
+                preservedCount++;
+                _logger.LogDebug("Preserving existing best effort for {Distance}: {TimeS}s (new workout: {NewTimeS}s)", 
+                    distanceName, existingBestEffort.TimeS, newBestEffort.TimeS);
+            }
         }
 
-        if (updatedCount > 0)
+        if (createdCount > 0 || updatedCount > 0)
         {
             await db.SaveChangesAsync();
-            _logger.LogInformation("Updated {Count} best efforts for workout {WorkoutId}", updatedCount, workout.Id);
+            _logger.LogInformation("Updated best efforts for workout {WorkoutId}: {Created} created, {Updated} updated, {Preserved} preserved", 
+                workout.Id, createdCount, updatedCount, preservedCount);
+        }
+        else
+        {
+            _logger.LogDebug("No best efforts updated for workout {WorkoutId} (all preserved or none qualified)", workout.Id);
+        }
+
+        // Verification: Ensure all existing best efforts for unprocessed distances are still present
+        // Only verify distances that actually existed before the update (intersect with allExistingBestEfforts)
+        var unprocessedDistances = StandardDistances.Keys.Except(processedDistances).ToList();
+        var unprocessedDistancesThatExisted = unprocessedDistances.Intersect(allExistingBestEfforts).ToList();
+        
+        if (unprocessedDistancesThatExisted.Any())
+        {
+            var verificationBestEfforts = await db.BestEfforts
+                .AsNoTracking()
+                .Where(be => unprocessedDistancesThatExisted.Contains(be.Distance))
+                .Select(be => be.Distance)
+                .ToListAsync();
+
+            var missingDistances = unprocessedDistancesThatExisted.Except(verificationBestEfforts).ToList();
+            if (missingDistances.Any())
+            {
+                _logger.LogWarning("Best efforts missing for unprocessed distances after update: {Distances}", 
+                    string.Join(", ", missingDistances));
+            }
+            else
+            {
+                _logger.LogDebug("Verification passed: All {Count} unprocessed best efforts are preserved", 
+                    verificationBestEfforts.Count);
+            }
         }
     }
 
