@@ -470,16 +470,19 @@ public class BestEffortService
         }
 
         // Verification: Ensure all existing best efforts for unprocessed distances are still present
+        // Only verify distances that actually existed before the update (intersect with allExistingBestEfforts)
         var unprocessedDistances = StandardDistances.Keys.Except(processedDistances).ToList();
-        if (unprocessedDistances.Any())
+        var unprocessedDistancesThatExisted = unprocessedDistances.Intersect(allExistingBestEfforts).ToList();
+        
+        if (unprocessedDistancesThatExisted.Any())
         {
             var verificationBestEfforts = await db.BestEfforts
                 .AsNoTracking()
-                .Where(be => unprocessedDistances.Contains(be.Distance))
+                .Where(be => unprocessedDistancesThatExisted.Contains(be.Distance))
                 .Select(be => be.Distance)
                 .ToListAsync();
 
-            var missingDistances = unprocessedDistances.Except(verificationBestEfforts).ToList();
+            var missingDistances = unprocessedDistancesThatExisted.Except(verificationBestEfforts).ToList();
             if (missingDistances.Any())
             {
                 _logger.LogWarning("Best efforts missing for unprocessed distances after update: {Distances}", 
