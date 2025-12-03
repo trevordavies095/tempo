@@ -222,7 +222,7 @@ public class ExportService
             statistics.TotalSizeBytes = totalSizeBytes;
 
             // 10. Create manifest
-            var manifest = CreateManifest(exportDate, statistics);
+            var manifest = CreateManifest(exportDate, statistics, settings != null);
             var manifestEntry = archive.CreateEntry("manifest.json");
             await WriteJsonEntryAsync(manifestEntry, manifest, jsonOptions);
 
@@ -317,7 +317,7 @@ public class ExportService
         }
     }
 
-    private ExportManifest CreateManifest(DateTime exportDate, ExportStatistics statistics)
+    private ExportManifest CreateManifest(DateTime exportDate, ExportStatistics statistics, bool hasSettings)
     {
         // Get Tempo version using same logic as VersionEndpoints
         var tempoVersion = Environment.GetEnvironmentVariable("TEMPO_VERSION") ?? "unknown";
@@ -354,7 +354,7 @@ public class ExportService
             Statistics = statistics,
             DataFormat = new ExportDataFormat
             {
-                Settings = "data/settings.json",
+                Settings = hasSettings ? "data/settings.json" : null,
                 Shoes = "data/shoes.json",
                 Workouts = "data/workouts.json",
                 Routes = "data/routes.json",
@@ -426,7 +426,7 @@ For more information, visit: https://github.com/trevordavies095/tempo
 
     private class ExportDataFormat
     {
-        public string Settings { get; set; } = string.Empty;
+        public string? Settings { get; set; }
         public string Shoes { get; set; } = string.Empty;
         public string Workouts { get; set; } = string.Empty;
         public string Routes { get; set; } = string.Empty;
