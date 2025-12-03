@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -1473,6 +1474,7 @@ public static class WorkoutsEndpoints
     /// <summary>
     /// Export all user data to a ZIP file
     /// </summary>
+    /// <param name="user">Current user claims principal</param>
     /// <param name="exportService">Export service</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>ZIP file stream containing all user data</returns>
@@ -1481,41 +1483,37 @@ public static class WorkoutsEndpoints
     /// in a portable ZIP format that can be imported back into Tempo.
     /// </remarks>
     private static async Task<IResult> ExportAllData(
+        ClaimsPrincipal user,
         ExportService exportService,
         ILogger<Program> logger)
     {
-        try
+        // Validate authentication BEFORE creating the stream
+        // This ensures proper error responses instead of corrupted ZIP files
+        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
         {
-            var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
-            var filename = $"tempo-export-{timestamp}.zip";
+            logger.LogWarning("Unauthorized export attempt - invalid user authentication");
+            return Results.Unauthorized();
+        }
 
-            return Results.Stream(async stream =>
-            {
-                try
-                {
-                    await exportService.ExportAllDataAsync(stream);
-                }
-                catch (UnauthorizedAccessException ex)
-                {
-                    logger.LogError(ex, "Unauthorized access attempt during export");
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Error during export");
-                    throw;
-                }
-            }, "application/zip", filename);
-        }
-        catch (Exception ex)
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var filename = $"tempo-export-{timestamp}.zip";
+
+        // Now safe to create the stream - authentication is validated
+        return Results.Stream(async stream =>
         {
-            logger.LogError(ex, "Error initiating export");
-            return Results.Problem(
-                detail: "An error occurred while creating the export",
-                statusCode: 500,
-                title: "Export failed"
-            );
-        }
+            try
+            {
+                await exportService.ExportAllDataAsync(stream);
+            }
+            catch (Exception ex)
+            {
+                // Log errors during streaming (these will result in a corrupted file,
+                // but at least we log them for debugging)
+                logger.LogError(ex, "Error during export streaming");
+                throw;
+            }
+        }, "application/zip", filename);
     }
 
     /// <summary>

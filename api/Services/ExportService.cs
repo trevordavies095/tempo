@@ -62,9 +62,17 @@ public class ExportService
     /// <summary>
     /// Exports all user data to a ZIP file stream.
     /// </summary>
+    /// <remarks>
+    /// Note: Authentication should be validated before calling this method.
+    /// This check is a defensive measure and will throw UnauthorizedAccessException
+    /// if the user is not authenticated, which will result in a corrupted response
+    /// if called from within a streaming context.
+    /// </remarks>
     public async Task ExportAllDataAsync(Stream outputStream)
     {
         // Validate user is authenticated (throws if not)
+        // This is a defensive check - authentication should be validated
+        // before calling this method to avoid corrupted streaming responses
         _ = GetUserId();
 
         var exportDate = DateTime.UtcNow;
