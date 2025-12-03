@@ -98,6 +98,7 @@ builder.Services.AddDbContext<TempoDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 // Register services
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<GpxParserService>();
 builder.Services.AddScoped<StravaCsvParserService>();
 builder.Services.AddScoped<FitParserService>();
@@ -111,6 +112,7 @@ builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<ShoeMileageService>();
+builder.Services.AddScoped<ExportService>();
 builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage

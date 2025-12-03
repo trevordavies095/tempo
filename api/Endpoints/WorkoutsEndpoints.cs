@@ -1471,6 +1471,54 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
+    /// Export all user data to a ZIP file
+    /// </summary>
+    /// <param name="exportService">Export service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>ZIP file stream containing all user data</returns>
+    /// <remarks>
+    /// Exports all user data including workouts, media files, shoes, settings, and best efforts
+    /// in a portable ZIP format that can be imported back into Tempo.
+    /// </remarks>
+    private static async Task<IResult> ExportAllData(
+        ExportService exportService,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+            var filename = $"tempo-export-{timestamp}.zip";
+
+            return Results.Stream(async stream =>
+            {
+                try
+                {
+                    await exportService.ExportAllDataAsync(stream);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    logger.LogError(ex, "Unauthorized access attempt during export");
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error during export");
+                    throw;
+                }
+            }, "application/zip", filename);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error initiating export");
+            return Results.Problem(
+                detail: "An error occurred while creating the export",
+                statusCode: 500,
+                title: "Export failed"
+            );
+        }
+    }
+
+    /// <summary>
     /// Get weekly stats
     /// </summary>
     /// <param name="db">Database context</param>
@@ -2467,6 +2515,13 @@ public static class WorkoutsEndpoints
         .Produces(500)
         .WithSummary("Bulk import Strava export")
         .WithDescription("Uploads and processes a ZIP file containing Strava export (activities.csv + activity files), importing all run activities with duplicate detection");
+
+        group.MapPost("/export", ExportAllData)
+        .WithName("ExportAllData")
+        .Produces(200)
+        .Produces(500)
+        .WithSummary("Export all user data")
+        .WithDescription("Exports all user data including workouts, media files, shoes, settings, and best efforts in a portable ZIP format that can be imported back into Tempo. Returns a ZIP file with Content-Type: application/zip.");
 
         group.MapGet("/stats/weekly", GetWeeklyStats)
         .WithName("GetWeeklyStats")
