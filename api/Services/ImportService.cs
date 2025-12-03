@@ -131,13 +131,24 @@ public class ImportService
     {
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempDir);
+        var tempDirFullPath = Path.GetFullPath(tempDir);
 
         using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Read))
         {
             foreach (var entry in archive.Entries)
             {
+                // Validate path to prevent Zip Slip attacks
                 var entryPath = Path.Combine(tempDir, entry.FullName);
-                var entryDir = Path.GetDirectoryName(entryPath);
+                var entryFullPath = Path.GetFullPath(entryPath);
+                
+                // Ensure the resolved path stays within the temp directory
+                if (!entryFullPath.StartsWith(tempDirFullPath, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"Invalid entry path detected: {entry.FullName}. Path traversal is not allowed.");
+                }
+
+                var entryDir = Path.GetDirectoryName(entryFullPath);
                 if (!string.IsNullOrEmpty(entryDir))
                 {
                     Directory.CreateDirectory(entryDir);
@@ -146,7 +157,7 @@ public class ImportService
                 if (!string.IsNullOrEmpty(entry.Name))
                 {
                     using (var entryStream = entry.Open())
-                    using (var fileStream = new FileStream(entryPath, FileMode.Create))
+                    using (var fileStream = new FileStream(entryFullPath, FileMode.Create))
                     {
                         entryStream.CopyTo(fileStream);
                     }
@@ -529,11 +540,23 @@ public class ImportService
                         continue;
                     }
 
-                    // Check if route already exists
-                    var existing = await _db.WorkoutRoutes.FindAsync(routeData.Id);
-                    if (existing != null)
+                    // Check if route already exists by ID
+                    var existingById = await _db.WorkoutRoutes.FindAsync(routeData.Id);
+                    if (existingById != null)
                     {
                         result.Statistics.Routes.Skipped++;
+                        continue;
+                    }
+
+                    // Check if a route already exists for this WorkoutId (one-to-one relationship constraint)
+                    // This prevents unique constraint violations when importing routes with different IDs
+                    // for workouts that already have routes
+                    var existingByWorkoutId = await _db.WorkoutRoutes
+                        .FirstOrDefaultAsync(r => r.WorkoutId == routeData.WorkoutId);
+                    if (existingByWorkoutId != null)
+                    {
+                        result.Statistics.Routes.Skipped++;
+                        result.Warnings.Add($"Workout {routeData.WorkoutId} already has a route (ID: {existingByWorkoutId.Id}), skipping duplicate route (ID: {routeData.Id})");
                         continue;
                     }
 
@@ -724,6 +747,10 @@ public class ImportService
             var json = await File.ReadAllTextAsync(bestEffortsPath);
             var bestEfforts = JsonSerializer.Deserialize<List<BestEffort>>(json, JsonOptions) ?? new List<BestEffort>();
 
+            // Track best efforts we've already processed in this batch to avoid duplicates within the same import
+            var processedBestEffortIds = new HashSet<Guid>();
+            var processedDistances = new HashSet<string>();
+
             foreach (var bestEffort in bestEfforts)
             {
                 try
@@ -736,6 +763,22 @@ public class ImportService
                         continue;
                     }
 
+                    // Check if we've already processed this best effort in the current batch
+                    if (processedBestEffortIds.Contains(bestEffort.Id))
+                    {
+                        result.Statistics.BestEfforts.Skipped++;
+                        result.Warnings.Add($"Duplicate best effort in export (same GUID): {bestEffort.Distance}");
+                        continue;
+                    }
+
+                    // Check if we've already processed this distance in the current batch
+                    if (processedDistances.Contains(bestEffort.Distance))
+                    {
+                        result.Statistics.BestEfforts.Skipped++;
+                        result.Warnings.Add($"Duplicate best effort in export (same Distance): {bestEffort.Distance}");
+                        continue;
+                    }
+
                     // Validate workout exists
                     var workoutExists = await _db.Workouts.AnyAsync(w => w.Id == bestEffort.WorkoutId);
                     if (!workoutExists)
@@ -745,8 +788,9 @@ public class ImportService
                         continue;
                     }
 
-                    // Check for duplicate by Distance (unique constraint)
+                    // Check for duplicate by Distance (unique constraint) in database
                     var existing = await _db.BestEfforts
+                        .AsNoTracking()
                         .FirstOrDefaultAsync(b => b.Distance == bestEffort.Distance);
 
                     if (existing != null)
@@ -756,8 +800,10 @@ public class ImportService
                         continue;
                     }
 
-                    // Check if GUID already exists
-                    var existingById = await _db.BestEfforts.FindAsync(bestEffort.Id);
+                    // Check if GUID already exists in database
+                    var existingById = await _db.BestEfforts
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(b => b.Id == bestEffort.Id);
                     if (existingById != null)
                     {
                         result.Statistics.BestEfforts.Skipped++;
@@ -769,6 +815,8 @@ public class ImportService
                     bestEffort.Workout = null!;
 
                     _db.BestEfforts.Add(bestEffort);
+                    processedBestEffortIds.Add(bestEffort.Id);
+                    processedDistances.Add(bestEffort.Distance);
                     result.Statistics.BestEfforts.Imported++;
                 }
                 catch (Exception ex)
