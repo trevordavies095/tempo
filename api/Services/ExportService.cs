@@ -114,14 +114,36 @@ public class ExportService
 
             // 4. Export routes (parse GeoJSON strings to objects)
             var routes = await GetRoutesAsync();
-            var routesData = routes.Select(r => new
+            var routesData = new List<object>();
+            foreach (var route in routes)
             {
-                r.Id,
-                r.WorkoutId,
-                RouteGeoJson = string.IsNullOrEmpty(r.RouteGeoJson) 
-                    ? null 
-                    : JsonSerializer.Deserialize<object>(r.RouteGeoJson, jsonOptions)
-            }).ToList();
+                try
+                {
+                    object? routeGeoJson = null;
+                    if (!string.IsNullOrEmpty(route.RouteGeoJson))
+                    {
+                        routeGeoJson = JsonSerializer.Deserialize<object>(route.RouteGeoJson, jsonOptions);
+                    }
+
+                    routesData.Add(new
+                    {
+                        route.Id,
+                        route.WorkoutId,
+                        RouteGeoJson = routeGeoJson
+                    });
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning(ex, "Failed to deserialize GeoJSON for route {RouteId} (workout {WorkoutId}). Exporting as null.", route.Id, route.WorkoutId);
+                    // Continue with null RouteGeoJson to allow export to proceed
+                    routesData.Add(new
+                    {
+                        route.Id,
+                        route.WorkoutId,
+                        RouteGeoJson = (object?)null
+                    });
+                }
+            }
             var routesEntry = archive.CreateEntry("data/routes.json");
             await WriteJsonEntryAsync(routesEntry, routesData, jsonOptions);
             statistics.Routes = routes.Count;
