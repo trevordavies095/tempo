@@ -20,6 +20,7 @@ Tempo is a self-hostable running tracker that gives you complete control over yo
 - **Media Support** - Attach photos and videos to workouts
 - **Weather Data** - Automatic weather conditions for each workout
 - **Bulk Import** - Import multiple workouts at once via ZIP file (up to 500MB)
+- **Data Export** - Export all your data in a portable ZIP format for backup and migration
 - **Heart Rate Zones** - Calculate zones using Age-based, Karvonen, or Custom methods
 - **Relative Effort** - Automatic calculation of workout intensity based on heart rate zones
 - **Best Efforts** - Track your fastest times for standard distances (400m to Marathon) from any segment within workouts

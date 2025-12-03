@@ -305,6 +305,20 @@ function getDirectApiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 }
 
+export async function exportAllData(): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/workouts/export`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to export data: ${response.status}`);
+  }
+
+  return response.blob();
+}
+
 export async function importBulkStravaExport(zipFile: File, unitPreference?: 'metric' | 'imperial'): Promise<BulkImportResponse> {
   const formData = new FormData();
   formData.append('file', zipFile);

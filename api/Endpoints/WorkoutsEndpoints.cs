@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -1471,6 +1472,51 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
+    /// Export all user data to a ZIP file
+    /// </summary>
+    /// <param name="user">Current user claims principal</param>
+    /// <param name="exportService">Export service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>ZIP file stream containing all user data</returns>
+    /// <remarks>
+    /// Exports all user data including workouts, media files, shoes, settings, and best efforts
+    /// in a portable ZIP format that can be imported back into Tempo.
+    /// </remarks>
+    private static async Task<IResult> ExportAllData(
+        ClaimsPrincipal user,
+        ExportService exportService,
+        ILogger<Program> logger)
+    {
+        // Validate authentication BEFORE creating the stream
+        // This ensures proper error responses instead of corrupted ZIP files
+        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            logger.LogWarning("Unauthorized export attempt - invalid user authentication");
+            return Results.Unauthorized();
+        }
+
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var filename = $"tempo-export-{timestamp}.zip";
+
+        // Now safe to create the stream - authentication is validated
+        return Results.Stream(async stream =>
+        {
+            try
+            {
+                await exportService.ExportAllDataAsync(stream);
+            }
+            catch (Exception ex)
+            {
+                // Log errors during streaming (these will result in a corrupted file,
+                // but at least we log them for debugging)
+                logger.LogError(ex, "Error during export streaming");
+                throw;
+            }
+        }, "application/zip", filename);
+    }
+
+    /// <summary>
     /// Get weekly stats
     /// </summary>
     /// <param name="db">Database context</param>
@@ -2467,6 +2513,13 @@ public static class WorkoutsEndpoints
         .Produces(500)
         .WithSummary("Bulk import Strava export")
         .WithDescription("Uploads and processes a ZIP file containing Strava export (activities.csv + activity files), importing all run activities with duplicate detection");
+
+        group.MapPost("/export", ExportAllData)
+        .WithName("ExportAllData")
+        .Produces(200)
+        .Produces(500)
+        .WithSummary("Export all user data")
+        .WithDescription("Exports all user data including workouts, media files, shoes, settings, and best efforts in a portable ZIP format that can be imported back into Tempo. Returns a ZIP file with Content-Type: application/zip.");
 
         group.MapGet("/stats/weekly", GetWeeklyStats)
         .WithName("GetWeeklyStats")

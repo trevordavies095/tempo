@@ -92,6 +92,92 @@ file: [ZIP file]
 
 Supports files up to 500MB.
 
+### Export All Data
+
+Export all user data in a portable ZIP format:
+
+```http
+POST /workouts/export
+```
+
+**Authentication**: Required
+
+**Response**: 
+- Content-Type: `application/zip`
+- Content-Disposition: `attachment; filename="tempo-export-{timestamp}.zip"`
+- Body: ZIP file stream
+
+The export includes:
+- All workouts with complete data (stats, metadata, JSONB fields)
+- Workout routes (GeoJSON)
+- Workout splits and time series data
+- Media files (photos and videos) as binary files
+- Raw workout files (GPX, FIT, CSV) as binary files
+- Shoes with GUIDs and relationships
+- User settings (heart rate zones, unit preferences, default shoe)
+- Best efforts
+
+**Export Format Structure**:
+
+```
+tempo-export-{timestamp}.zip
+├── manifest.json          # Export metadata and version info
+├── data/                  # JSON files with all database records
+│   ├── settings.json
+│   ├── shoes.json
+│   ├── workouts.json
+│   ├── routes.json
+│   ├── splits.json
+│   ├── time-series.json
+│   ├── media-metadata.json
+│   └── best-efforts.json
+├── workouts/              # Binary files organized by workout
+│   ├── {workoutId}/
+│   │   ├── raw/          # Original workout files
+│   │   └── media/        # Photos and videos
+│   │       └── {mediaId}/
+│   │           └── {filename}
+└── README.txt            # Export format documentation
+```
+
+**Manifest File** (`manifest.json`):
+
+```json
+{
+  "version": "1.0.0",
+  "tempoVersion": "1.3.0",
+  "exportDate": "2024-01-15T10:30:00Z",
+  "exportedBy": "username",
+  "statistics": {
+    "workouts": 150,
+    "shoes": 5,
+    "mediaFiles": 45,
+    "totalSizeBytes": 1234567890,
+    "settings": 1,
+    "routes": 150,
+    "splits": 1500,
+    "timeSeries": 45000,
+    "bestEfforts": 10
+  },
+  "dataFormat": {
+    "settings": "data/settings.json",
+    "shoes": "data/shoes.json",
+    "workouts": "data/workouts.json",
+    "routes": "data/routes.json",
+    "splits": "data/splits.json",
+    "timeSeries": "data/time-series.json",
+    "mediaMetadata": "data/media-metadata.json",
+    "bestEfforts": "data/best-efforts.json"
+  }
+}
+```
+
+**Notes**:
+- Export may take several minutes for large datasets
+- Missing media files are logged as warnings but don't fail the export
+- GUIDs are preserved to maintain relationships
+- Export format version is 1.0.0 (compatible with future import feature)
+
 ### List Workouts
 
 Get all workouts with filtering and pagination:
