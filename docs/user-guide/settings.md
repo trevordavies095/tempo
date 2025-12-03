@@ -282,14 +282,111 @@ Export your data for:
 
 ### Importing Data
 
-Import functionality allows you to restore data from a previously exported ZIP file. This feature is coming soon and will allow you to:
+Import functionality allows you to restore data from a previously exported Tempo ZIP file. This enables you to:
 
 - Restore all workouts, media, shoes, and settings
 - Import into a new or existing Tempo instance
-- Handle duplicate detection (skip or update existing data)
-- See detailed import statistics and reports
+- Migrate data between Tempo instances
+- Recover from data loss or accidental deletion
+- Handle duplicate detection automatically
 
-**Note**: Import functionality will be available in a future release. For now, you can use the export feature to create backups of your data.
+#### How to Import
+
+1. Navigate to Settings
+2. Find the "Export / Import" section
+3. In the "Import Data" area, click or drag and drop your Tempo export ZIP file
+4. Wait for the import to complete (may take several minutes for large exports)
+5. Review the import summary showing what was imported, skipped, or had errors
+
+**Note**: The import process may take several minutes if you have many workouts or large media files. The page will show "Importing..." while the process is running.
+
+#### What Gets Imported
+
+The import restores all data from the export file:
+
+- **User Settings** - Heart rate zones, unit preferences, default shoe
+- **Shoes** - All shoe records with brand, model, and initial mileage
+- **Workouts** - Complete workout data including:
+  - All core stats (distance, pace, elevation, heart rate, etc.)
+  - Metadata (name, run type, notes, source, device)
+  - Raw workout files (GPX, FIT, CSV) stored in database
+  - All JSONB fields (RawGpxData, RawFitData, RawStravaData, Weather)
+  - Relative effort calculations
+  - Shoe assignments
+  - Created timestamps (preserved from export)
+- **Workout Routes** - GeoJSON LineString data for all workouts
+- **Workout Splits** - All distance-based splits
+- **Workout Time Series** - All time-series data points
+- **Media Files** - All photos and videos attached to workouts
+- **Best Efforts** - All best effort records for standard distances
+
+#### Duplicate Detection
+
+Tempo automatically detects and skips duplicates during import:
+
+- **Workouts**: Detected by start time, distance, and duration (within small tolerance)
+- **Shoes**: Detected by brand and model (exact match)
+- **Best Efforts**: Detected by distance (one best effort per distance)
+- **Settings**: Only one settings record exists (replaces existing)
+
+Duplicates are automatically skipped and reported in the import summary. You can view detailed warnings and errors in the import results.
+
+#### Import Statistics
+
+After import completes, you'll see a detailed summary including:
+
+- **Imported** - Count of successfully imported items for each data type
+- **Skipped** - Count of duplicates or items that couldn't be imported
+- **Errors** - Count of items that failed to import
+- **Warnings** - Expandable list of warnings (duplicates, missing references, etc.)
+- **Errors** - Expandable list of errors with details
+
+#### Import Requirements
+
+- **File Format**: Must be a Tempo export ZIP file (created using the Export feature)
+- **File Size**: Up to 500MB supported
+- **Version**: Currently supports export format version 1.0.0
+- **Authentication**: Must be logged in to import
+
+#### Import Behavior
+
+- **GUIDs Preserved**: All IDs from the export are preserved (allows true restoration)
+- **Timestamps Preserved**: Created and updated timestamps from export are maintained
+- **Relationships Maintained**: Shoe assignments, media attachments, and other relationships are restored
+- **Settings Refresh**: Unit preferences and other settings are automatically refreshed in the UI after import
+
+#### Troubleshooting
+
+**Import Fails Immediately**
+- Verify the file is a valid Tempo export ZIP file
+- Check that the file size is under 500MB
+- Ensure you're logged in
+- Check API logs for specific error messages
+
+**Some Items Not Imported**
+- Check the import summary for skipped items
+- Review warnings for duplicate detection
+- Verify the export file is complete and not corrupted
+- Check that referenced entities exist (e.g., shoes referenced by workouts)
+
+**Settings Not Refreshing**
+- Refresh the page if unit preferences don't update immediately
+- Check that settings were successfully imported (check import statistics)
+- Verify the export included settings data
+
+**Media Files Missing**
+- Check that media files exist in the export ZIP file
+- Verify file paths in the export match the expected structure
+- Review import warnings for missing media file references
+
+#### Use Cases
+
+Import your data for:
+
+- **Backup Restoration** - Restore from a previously created backup
+- **Migration** - Move your data to a new Tempo instance
+- **Data Recovery** - Recover from accidental deletion or system failure
+- **Testing** - Import test data into a development instance
 
 ## Settings Management
 
