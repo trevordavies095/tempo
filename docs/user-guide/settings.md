@@ -9,6 +9,7 @@ Tempo settings allow you to customize:
 - Heart rate zones
 - Relative effort calculation
 - Shoe tracking and management
+- Data export and import
 
 ## Unit Preferences
 
@@ -192,6 +193,104 @@ To remove a shoe from your collection:
 - **Update initial mileage** - If you're adding a shoe that already has miles, enter the current mileage for accurate tracking
 - **Regular review** - Check shoe mileage regularly to know when it's time to replace them (most running shoes last 300-500 miles)
 
+## Export / Import
+
+Tempo allows you to export all your data in a portable ZIP format for backup, migration, or data portability. You can also import previously exported data to restore your workouts, settings, and media files.
+
+### Exporting Your Data
+
+To export all your Tempo data:
+
+1. Navigate to Settings
+2. Find the "Export / Import" section
+3. Click "Export All Data"
+4. Wait for the export to complete (may take a moment for large datasets)
+5. Your browser will download a ZIP file named `tempo-export-{timestamp}.zip`
+
+**Note**: The export process may take several minutes if you have many workouts or large media files. The page will show "Exporting..." while the process is running.
+
+### What's Included in the Export
+
+The export includes everything in your Tempo instance:
+
+- **All Workouts** - Complete workout data including:
+  - All core stats (distance, pace, elevation, heart rate, etc.)
+  - Metadata (name, run type, notes, source, device)
+  - Raw workout files (GPX, FIT, CSV) as binary files
+  - All JSONB fields (RawGpxData, RawFitData, RawStravaData, Weather)
+  - Relative effort calculations
+  - Shoe assignments
+  - Created timestamps
+
+- **Workout Routes** - GeoJSON LineString data for all workouts with routes
+
+- **Workout Splits** - All distance-based splits for each workout
+
+- **Workout Time Series** - All time-series data points (heart rate, pace, elevation over time)
+
+- **Media Files** - All photos and videos attached to workouts
+
+- **Shoes** - All shoe records with brand, model, initial mileage, and timestamps
+
+- **User Settings** - Complete settings including:
+  - Heart rate calculation method and zones
+  - Unit preferences (metric/imperial)
+  - Default shoe reference
+
+- **Best Efforts** - All best effort records for standard distances
+
+- **Manifest File** - Metadata about the export including:
+  - Export format version
+  - Tempo version
+  - Export date and user
+  - Statistics (counts of all data types)
+  - Data format paths
+
+### Export Format
+
+The export is a ZIP file with the following structure:
+
+```
+tempo-export-{timestamp}.zip
+├── manifest.json          # Export metadata and version info
+├── data/                  # JSON files with all database records
+│   ├── settings.json
+│   ├── shoes.json
+│   ├── workouts.json
+│   ├── routes.json
+│   ├── splits.json
+│   ├── time-series.json
+│   ├── media-metadata.json
+│   └── best-efforts.json
+├── workouts/              # Binary files organized by workout
+│   ├── {workoutId}/
+│   │   ├── raw/          # Original workout files (GPX/FIT/CSV)
+│   │   └── media/        # Photos and videos
+│   │       └── {mediaId}/
+│   │           └── {filename}
+└── README.txt            # Export format documentation
+```
+
+### Use Cases
+
+Export your data for:
+
+- **Backup** - Create regular backups of your running data
+- **Migration** - Move your data to a new Tempo instance
+- **Data Portability** - Keep a portable copy of all your data
+- **Recovery** - Restore data after accidental deletion or system failure
+
+### Importing Data
+
+Import functionality allows you to restore data from a previously exported ZIP file. This feature is coming soon and will allow you to:
+
+- Restore all workouts, media, shoes, and settings
+- Import into a new or existing Tempo instance
+- Handle duplicate detection (skip or update existing data)
+- See detailed import statistics and reports
+
+**Note**: Import functionality will be available in a future release. For now, you can use the export feature to create backups of your data.
+
 ## Settings Management
 
 ### Viewing Settings
@@ -201,6 +300,7 @@ All settings are accessible from the Settings page:
 - Heart rate zone configuration
 - Relative effort management
 - Shoe tracking and management
+- Data export and import
 
 ### Saving Changes
 
