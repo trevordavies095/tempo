@@ -1075,11 +1075,34 @@ public class ImportService
                     }
 
                     // Find media file in ZIP
-                    var mediaZipPath = Path.Combine(tempDir, "workouts", media.WorkoutId.ToString(), "media", media.Id.ToString(), media.Filename);
+                    // Sanitize filename to prevent path traversal attacks
+                    // Extract just the filename portion, removing any directory components
+                    var safeFilename = Path.GetFileName(media.Filename);
+                    if (string.IsNullOrWhiteSpace(safeFilename))
+                    {
+                        result.Statistics.Media.Errors++;
+                        result.Errors.Add($"Invalid filename for media {media.Id}");
+                        continue;
+                    }
+                    
+                    // Construct the expected path within the temp directory
+                    var expectedMediaDir = Path.Combine(tempDir, "workouts", media.WorkoutId.ToString(), "media", media.Id.ToString());
+                    var mediaZipPath = Path.Combine(expectedMediaDir, safeFilename);
+                    
+                    // Validate that the resolved path stays within the expected directory
+                    var mediaZipPathFull = Path.GetFullPath(mediaZipPath);
+                    var expectedMediaDirFull = Path.GetFullPath(expectedMediaDir);
+                    if (!mediaZipPathFull.StartsWith(expectedMediaDirFull, StringComparison.Ordinal))
+                    {
+                        result.Statistics.Media.Errors++;
+                        result.Errors.Add($"Path traversal detected in media filename: {media.Filename}");
+                        continue;
+                    }
+                    
                     if (!File.Exists(mediaZipPath))
                     {
                         result.Statistics.Media.Skipped++;
-                        result.Warnings.Add($"Media file not found in ZIP: workouts/{media.WorkoutId}/media/{media.Id}/{media.Filename}");
+                        result.Warnings.Add($"Media file not found in ZIP: workouts/{media.WorkoutId}/media/{media.Id}/{safeFilename}");
                         continue;
                     }
 
