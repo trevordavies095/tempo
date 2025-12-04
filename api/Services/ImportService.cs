@@ -96,9 +96,19 @@ public class ImportService
             await ImportMediaFilesAsync(tempDir, manifest, result);
             await ImportRawFilesAsync(tempDir, manifest, result);
 
-            result.Success = true;
-            _logger.LogInformation("Import completed successfully. Imported: {Workouts} workouts, {Shoes} shoes, {Media} media files",
-                result.Statistics.Workouts.Imported, result.Statistics.Shoes.Imported, result.Statistics.Media.Imported);
+            // Set success based on whether any errors were accumulated
+            result.Success = result.Errors.Count == 0;
+            
+            if (result.Success)
+            {
+                _logger.LogInformation("Import completed successfully. Imported: {Workouts} workouts, {Shoes} shoes, {Media} media files",
+                    result.Statistics.Workouts.Imported, result.Statistics.Shoes.Imported, result.Statistics.Media.Imported);
+            }
+            else
+            {
+                _logger.LogWarning("Import completed with {ErrorCount} errors. Imported: {Workouts} workouts, {Shoes} shoes, {Media} media files",
+                    result.Errors.Count, result.Statistics.Workouts.Imported, result.Statistics.Shoes.Imported, result.Statistics.Media.Imported);
+            }
         }
         catch (Exception ex)
         {
@@ -298,7 +308,26 @@ public class ImportService
                 existing.Zone5MinBpm = settings.Zone5MinBpm;
                 existing.Zone5MaxBpm = settings.Zone5MaxBpm;
                 existing.UnitPreference = settings.UnitPreference;
-                existing.DefaultShoeId = settings.DefaultShoeId; // Shoes are imported before settings, so this reference should be valid
+                
+                // Validate shoe reference if present
+                if (settings.DefaultShoeId.HasValue)
+                {
+                    var shoeExists = await _db.Shoes.AnyAsync(s => s.Id == settings.DefaultShoeId.Value);
+                    if (!shoeExists)
+                    {
+                        result.Warnings.Add($"Settings references non-existent shoe {settings.DefaultShoeId}, clearing reference");
+                        existing.DefaultShoeId = null;
+                    }
+                    else
+                    {
+                        existing.DefaultShoeId = settings.DefaultShoeId;
+                    }
+                }
+                else
+                {
+                    existing.DefaultShoeId = null;
+                }
+                
                 existing.CreatedAt = settings.CreatedAt;
                 existing.UpdatedAt = settings.UpdatedAt;
                 
@@ -308,6 +337,17 @@ public class ImportService
             }
             else
             {
+                // Validate shoe reference if present
+                if (settings.DefaultShoeId.HasValue)
+                {
+                    var shoeExists = await _db.Shoes.AnyAsync(s => s.Id == settings.DefaultShoeId.Value);
+                    if (!shoeExists)
+                    {
+                        result.Warnings.Add($"Settings references non-existent shoe {settings.DefaultShoeId}, clearing reference");
+                        settings.DefaultShoeId = null;
+                    }
+                }
+                
                 // Create new settings
                 _db.UserSettings.Add(settings);
                 await _db.SaveChangesAsync();
