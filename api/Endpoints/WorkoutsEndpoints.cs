@@ -920,6 +920,8 @@ public static class WorkoutsEndpoints
                 {
                     // Reload workout to get updated distance after crop
                     await db.Entry(workout).ReloadAsync();
+                    // Reload Route navigation property (needed for best effort calculation fallback)
+                    await db.Entry(workout).Reference(w => w.Route).LoadAsync();
                     
                     // For each affected distance, check if workout still qualifies
                     foreach (var distanceName in affectedBestEfforts)
