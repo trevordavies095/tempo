@@ -716,6 +716,11 @@ public class ImportService
             var json = await File.ReadAllTextAsync(routesPath);
             var routesData = JsonSerializer.Deserialize<List<RouteImportData>>(json, JsonOptions) ?? new List<RouteImportData>();
 
+            // Track WorkoutIds we've already processed in this batch to avoid duplicates within the same import
+            // This prevents unique constraint violations when the export file contains multiple routes
+            // for the same workout (with different IDs)
+            var processedWorkoutIds = new HashSet<Guid>();
+
             foreach (var routeData in routesData)
             {
                 // Skip null elements (can occur when deserializing JSON arrays)
@@ -745,6 +750,16 @@ public class ImportService
                         continue;
                     }
 
+                    // Check if we've already processed a route for this WorkoutId in the current batch
+                    // This prevents unique constraint violations when the export file contains multiple routes
+                    // for the same workout (with different IDs)
+                    if (processedWorkoutIds.Contains(routeData.WorkoutId))
+                    {
+                        result.Statistics.Routes.Skipped++;
+                        result.Warnings.Add($"Duplicate route in export for workout {routeData.WorkoutId}, skipping route (ID: {routeData.Id})");
+                        continue;
+                    }
+
                     // Check if route already exists by ID
                     var existingById = await _db.WorkoutRoutes.FindAsync(routeData.Id);
                     if (existingById != null)
@@ -753,7 +768,7 @@ public class ImportService
                         continue;
                     }
 
-                    // Check if a route already exists for this WorkoutId (one-to-one relationship constraint)
+                    // Check if a route already exists for this WorkoutId in the database (one-to-one relationship constraint)
                     // This prevents unique constraint violations when importing routes with different IDs
                     // for workouts that already have routes
                     var existingByWorkoutId = await _db.WorkoutRoutes
@@ -784,6 +799,7 @@ public class ImportService
                     };
 
                     _db.WorkoutRoutes.Add(route);
+                    processedWorkoutIds.Add(routeData.WorkoutId);
                     result.Statistics.Routes.Imported++;
                 }
                 catch (Exception ex)
