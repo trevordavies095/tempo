@@ -92,13 +92,13 @@ public class ImportService
             // Import shoes first so that settings can reference them via DefaultShoeId
             await ImportShoesAsync(tempDir, manifest, result);
             await ImportUserSettingsAsync(tempDir, manifest, result);
-            await ImportWorkoutsAsync(tempDir, manifest, result);
+            var importedWorkoutIds = await ImportWorkoutsAsync(tempDir, manifest, result);
             await ImportRoutesAsync(tempDir, manifest, result);
             await ImportSplitsAsync(tempDir, manifest, result);
             await ImportTimeSeriesAsync(tempDir, manifest, result);
             await ImportBestEffortsAsync(tempDir, manifest, result);
             await ImportMediaFilesAsync(tempDir, manifest, result);
-            await ImportRawFilesAsync(tempDir, manifest, result);
+            await ImportRawFilesAsync(tempDir, manifest, result, importedWorkoutIds);
 
             // Set success based on whether any errors were accumulated
             result.Success = result.Errors.Count == 0;
@@ -486,19 +486,21 @@ public class ImportService
         }
     }
 
-    private async Task ImportWorkoutsAsync(string tempDir, ExportManifest manifest, ImportResult result)
+    private async Task<HashSet<Guid>> ImportWorkoutsAsync(string tempDir, ExportManifest manifest, ImportResult result)
     {
+        var importedWorkoutIds = new HashSet<Guid>();
+
         if (string.IsNullOrEmpty(manifest.DataFormat.Workouts))
         {
             result.Errors.Add("Workouts file path is missing in export manifest");
-            return;
+            return importedWorkoutIds;
         }
 
         var workoutsPath = Path.Combine(tempDir, manifest.DataFormat.Workouts);
         if (!File.Exists(workoutsPath))
         {
             result.Errors.Add("Workouts file not found in export");
-            return;
+            return importedWorkoutIds;
         }
 
         try
@@ -588,6 +590,7 @@ public class ImportService
                     _db.Workouts.Add(workout);
                     processedWorkoutIds.Add(workout.Id);
                     processedWorkoutKeys.Add(workoutKey);
+                    importedWorkoutIds.Add(workout.Id); // Track only actually imported workouts
                     result.Statistics.Workouts.Imported++;
                 }
                 catch (Exception ex)
@@ -609,6 +612,8 @@ public class ImportService
             result.Errors.Add($"Error reading workouts file: {ex.Message}");
             _logger.LogError(ex, "Error reading workouts file");
         }
+
+        return importedWorkoutIds;
     }
 
     private async Task ImportRoutesAsync(string tempDir, ExportManifest manifest, ImportResult result)
@@ -1115,7 +1120,7 @@ public class ImportService
         }
     }
 
-    private async Task ImportRawFilesAsync(string tempDir, ExportManifest manifest, ImportResult result)
+    private async Task ImportRawFilesAsync(string tempDir, ExportManifest manifest, ImportResult result, HashSet<Guid> importedWorkoutIds)
     {
         // Raw files are stored in workouts/{workoutId}/raw/{filename}
         var workoutsDir = Path.Combine(tempDir, "workouts");
@@ -1132,6 +1137,15 @@ public class ImportService
                 var workoutIdStr = Path.GetFileName(workoutDir);
                 if (!Guid.TryParse(workoutIdStr, out var workoutId))
                 {
+                    continue;
+                }
+
+                // Only import raw files for workouts that were actually imported in this session
+                // Skip if the workout was skipped during import (e.g., duplicate or already exists)
+                if (!importedWorkoutIds.Contains(workoutId))
+                {
+                    result.Statistics.RawFiles.Skipped++;
+                    result.Warnings.Add($"Raw file found for workout {workoutId} that was skipped during import, skipping raw file");
                     continue;
                 }
 
