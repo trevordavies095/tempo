@@ -67,8 +67,12 @@ public class ImportService
         string? tempDir = null;
         try
         {
+            // Create temp directory first so it's always tracked for cleanup
+            tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tempDir);
+            
             // Extract ZIP archive
-            tempDir = ExtractZipArchive(zipStream);
+            ExtractZipArchive(zipStream, tempDir);
             _logger.LogInformation("Extracted export ZIP to {TempDir}", tempDir);
 
             // Validate and load manifest
@@ -137,10 +141,8 @@ public class ImportService
         return result;
     }
 
-    private string ExtractZipArchive(Stream zipStream)
+    private void ExtractZipArchive(Stream zipStream, string tempDir)
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(tempDir);
         var tempDirFullPath = Path.GetFullPath(tempDir);
 
         using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Read))
@@ -174,8 +176,6 @@ public class ImportService
                 }
             }
         }
-
-        return tempDir;
     }
 
     private async Task<ExportManifest> LoadAndValidateManifestAsync(string manifestPath)
