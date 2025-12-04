@@ -126,7 +126,19 @@ public class BestEffortService
             var startPoint = timeSeries[startIndex];
             var endPoint = timeSeries[endIndex];
 
-            if (!startPoint.DistanceM.HasValue || !endPoint.DistanceM.HasValue)
+            // If start point has no distance, advance startIndex and skip this iteration
+            if (!startPoint.DistanceM.HasValue)
+            {
+                // Only advance if we haven't caught up to endIndex
+                if (startIndex < endIndex - 1)
+                {
+                    startIndex++;
+                }
+                continue;
+            }
+
+            // If end point has no distance, skip this iteration (but don't advance startIndex)
+            if (!endPoint.DistanceM.HasValue)
             {
                 continue;
             }
