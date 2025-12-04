@@ -505,6 +505,8 @@ public class ImportService
                     }
 
                     // Clear navigation properties (they will be resolved by EF based on foreign keys)
+                    // Initialize collection if null (can happen when JSON contains explicit null values)
+                    shoe.Workouts ??= new List<Workout>();
                     shoe.Workouts.Clear();
 
                     // Import shoe
@@ -652,6 +654,10 @@ public class ImportService
                     // Clear navigation properties (they will be imported separately)
                     workout.Shoe = null;
                     workout.Route = null;
+                    // Initialize collections if null (can happen when JSON contains explicit null values)
+                    workout.Splits ??= new List<WorkoutSplit>();
+                    workout.Media ??= new List<WorkoutMedia>();
+                    workout.TimeSeries ??= new List<WorkoutTimeSeries>();
                     workout.Splits.Clear();
                     workout.Media.Clear();
                     workout.TimeSeries.Clear();
