@@ -399,6 +399,14 @@ public class ImportService
 
             foreach (var shoe in shoes)
             {
+                // Skip null elements (can occur when deserializing JSON arrays)
+                if (shoe == null)
+                {
+                    result.Statistics.Shoes.Errors++;
+                    result.Errors.Add("Null shoe element found in export, skipping");
+                    continue;
+                }
+
                 try
                 {
                     // Validate GUID
@@ -460,8 +468,11 @@ public class ImportService
                 catch (Exception ex)
                 {
                     result.Statistics.Shoes.Errors++;
-                    result.Errors.Add($"Error importing shoe {shoe.Brand} {shoe.Model}: {ex.Message}");
-                    _logger.LogError(ex, "Error importing shoe {ShoeId}", shoe.Id);
+                    var shoeInfo = shoe != null 
+                        ? $"{shoe.Brand} {shoe.Model} (ID: {shoe.Id})" 
+                        : "null shoe";
+                    result.Errors.Add($"Error importing shoe {shoeInfo}: {ex.Message}");
+                    _logger.LogError(ex, "Error importing shoe {ShoeId}", shoe?.Id);
                 }
             }
 
@@ -501,6 +512,14 @@ public class ImportService
 
             foreach (var workout in workouts)
             {
+                // Skip null elements (can occur when deserializing JSON arrays)
+                if (workout == null)
+                {
+                    result.Statistics.Workouts.Errors++;
+                    result.Errors.Add("Null workout element found in export, skipping");
+                    continue;
+                }
+
                 try
                 {
                     // Validate GUID
@@ -574,8 +593,11 @@ public class ImportService
                 catch (Exception ex)
                 {
                     result.Statistics.Workouts.Errors++;
-                    result.Errors.Add($"Error importing workout {workout.Id}: {ex.Message}");
-                    _logger.LogError(ex, "Error importing workout {WorkoutId}", workout.Id);
+                    var workoutInfo = workout != null 
+                        ? $"ID: {workout.Id}" 
+                        : "null workout";
+                    result.Errors.Add($"Error importing workout {workoutInfo}: {ex.Message}");
+                    _logger.LogError(ex, "Error importing workout {WorkoutId}", workout?.Id);
                 }
             }
 
@@ -611,6 +633,14 @@ public class ImportService
 
             foreach (var routeData in routesData)
             {
+                // Skip null elements (can occur when deserializing JSON arrays)
+                if (routeData == null)
+                {
+                    result.Statistics.Routes.Errors++;
+                    result.Errors.Add("Null route element found in export, skipping");
+                    continue;
+                }
+
                 try
                 {
                     // Validate GUID
@@ -674,8 +704,11 @@ public class ImportService
                 catch (Exception ex)
                 {
                     result.Statistics.Routes.Errors++;
-                    result.Errors.Add($"Error importing route {routeData.Id}: {ex.Message}");
-                    _logger.LogError(ex, "Error importing route {RouteId}", routeData.Id);
+                    var routeInfo = routeData != null 
+                        ? $"ID: {routeData.Id}" 
+                        : "null route";
+                    result.Errors.Add($"Error importing route {routeInfo}: {ex.Message}");
+                    _logger.LogError(ex, "Error importing route {RouteId}", routeData?.Id);
                 }
             }
 
@@ -711,6 +744,14 @@ public class ImportService
 
             foreach (var split in splits)
             {
+                // Skip null elements (can occur when deserializing JSON arrays)
+                if (split == null)
+                {
+                    result.Statistics.Splits.Errors++;
+                    result.Errors.Add("Null split element found in export, skipping");
+                    continue;
+                }
+
                 try
                 {
                     // Validate GUID
@@ -747,8 +788,11 @@ public class ImportService
                 catch (Exception ex)
                 {
                     result.Statistics.Splits.Errors++;
-                    result.Errors.Add($"Error importing split {split.Id}: {ex.Message}");
-                    _logger.LogError(ex, "Error importing split {SplitId}", split.Id);
+                    var splitInfo = split != null 
+                        ? $"ID: {split.Id}" 
+                        : "null split";
+                    result.Errors.Add($"Error importing split {splitInfo}: {ex.Message}");
+                    _logger.LogError(ex, "Error importing split {SplitId}", split?.Id);
                 }
             }
 
@@ -784,6 +828,14 @@ public class ImportService
 
             foreach (var ts in timeSeries)
             {
+                // Skip null elements (can occur when deserializing JSON arrays)
+                if (ts == null)
+                {
+                    result.Statistics.TimeSeries.Errors++;
+                    result.Errors.Add("Null time series element found in export, skipping");
+                    continue;
+                }
+
                 try
                 {
                     // Validate GUID
@@ -820,8 +872,11 @@ public class ImportService
                 catch (Exception ex)
                 {
                     result.Statistics.TimeSeries.Errors++;
-                    result.Errors.Add($"Error importing time series {ts.Id}: {ex.Message}");
-                    _logger.LogError(ex, "Error importing time series {TimeSeriesId}", ts.Id);
+                    var tsInfo = ts != null 
+                        ? $"ID: {ts.Id}" 
+                        : "null time series";
+                    result.Errors.Add($"Error importing time series {tsInfo}: {ex.Message}");
+                    _logger.LogError(ex, "Error importing time series {TimeSeriesId}", ts?.Id);
                 }
             }
 
@@ -861,6 +916,14 @@ public class ImportService
 
             foreach (var bestEffort in bestEfforts)
             {
+                // Skip null elements (can occur when deserializing JSON arrays)
+                if (bestEffort == null)
+                {
+                    result.Statistics.BestEfforts.Errors++;
+                    result.Errors.Add("Null best effort element found in export, skipping");
+                    continue;
+                }
+
                 try
                 {
                     // Validate GUID
@@ -930,8 +993,11 @@ public class ImportService
                 catch (Exception ex)
                 {
                     result.Statistics.BestEfforts.Errors++;
-                    result.Errors.Add($"Error importing best effort {bestEffort.Id}: {ex.Message}");
-                    _logger.LogError(ex, "Error importing best effort {BestEffortId}", bestEffort.Id);
+                    var bestEffortInfo = bestEffort != null 
+                        ? $"ID: {bestEffort.Id}" 
+                        : "null best effort";
+                    result.Errors.Add($"Error importing best effort {bestEffortInfo}: {ex.Message}");
+                    _logger.LogError(ex, "Error importing best effort {BestEffortId}", bestEffort?.Id);
                 }
             }
 
@@ -967,6 +1033,14 @@ public class ImportService
 
             foreach (var media in mediaMetadata)
             {
+                // Skip null elements (can occur when deserializing JSON arrays)
+                if (media == null)
+                {
+                    result.Statistics.Media.Errors++;
+                    result.Errors.Add("Null media element found in export, skipping");
+                    continue;
+                }
+
                 try
                 {
                     // Validate GUID
@@ -1023,8 +1097,11 @@ public class ImportService
                 catch (Exception ex)
                 {
                     result.Statistics.Media.Errors++;
-                    result.Errors.Add($"Error importing media {media.Id}: {ex.Message}");
-                    _logger.LogError(ex, "Error importing media {MediaId}", media.Id);
+                    var mediaInfo = media != null 
+                        ? $"ID: {media.Id}" 
+                        : "null media";
+                    result.Errors.Add($"Error importing media {mediaInfo}: {ex.Message}");
+                    _logger.LogError(ex, "Error importing media {MediaId}", media?.Id);
                 }
             }
 
