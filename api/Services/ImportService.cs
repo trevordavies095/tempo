@@ -1154,6 +1154,9 @@ public class ImportService
             var json = await File.ReadAllTextAsync(mediaMetadataPath);
             var mediaMetadata = JsonSerializer.Deserialize<List<WorkoutMedia>>(json, JsonOptions) ?? new List<WorkoutMedia>();
 
+            // Track successfully copied media files for cleanup if SaveChangesAsync fails
+            var copiedMediaFiles = new List<string>();
+
             foreach (var media in mediaMetadata)
             {
                 // Skip null elements (can occur when deserializing JSON arrays)
@@ -1233,6 +1236,12 @@ public class ImportService
                         continue;
                     }
 
+                    // Track the copied file path for cleanup if SaveChangesAsync fails
+                    if (!string.IsNullOrEmpty(copiedMedia.FilePath))
+                    {
+                        copiedMediaFiles.Add(copiedMedia.FilePath);
+                    }
+
                     // Update with original GUID and metadata
                     copiedMedia.Id = media.Id;
                     copiedMedia.CreatedAt = media.CreatedAt;
@@ -1260,6 +1269,25 @@ public class ImportService
             {
                 // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
                 _db.ChangeTracker.Clear();
+                
+                // Clean up orphaned media files that were copied but not saved to database
+                foreach (var filePath in copiedMediaFiles)
+                {
+                    try
+                    {
+                        if (File.Exists(filePath))
+                        {
+                            File.Delete(filePath);
+                            _logger.LogInformation("Deleted orphaned media file after SaveChangesAsync failure: {FilePath}", filePath);
+                        }
+                    }
+                    catch (Exception deleteEx)
+                    {
+                        // Log but don't throw - we want to clean up as many files as possible
+                        _logger.LogWarning(deleteEx, "Failed to delete orphaned media file: {FilePath}", filePath);
+                    }
+                }
+                
                 result.Statistics.Media.Errors++;
                 result.Errors.Add($"Error saving media to database: {saveEx.Message}");
                 _logger.LogError(saveEx, "Error saving media to database");
