@@ -23,6 +23,8 @@ public static class DatabaseMigrationHelper
         { "UserSettings", "20251122003646_AddUserSettings" },
         // AddUsersTable migration
         { "Users", "20251130165413_AddUsersTable" },
+        // AddBestEffortsTable migration
+        { "BestEfforts", "20251130201906_AddBestEffortsTable" },
         // AddShoeTracking migration
         { "Shoes", "20251201120000_AddShoeTracking" }
     };
