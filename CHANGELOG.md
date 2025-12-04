@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2025-12-04
+
+### Added
+- **Best efforts tracking and visualization**
+  - Track personal best efforts across common distances
+  - New Best Efforts chart on the dashboard for visualizing performance over time
+  - Backend support for storing and querying best effort records
+- **Shoe tracking**
+  - Manage running shoes, including name, brand, and initial mileage
+  - Assign shoes to workouts and automatically track cumulative mileage
+  - Shoe selection integrated into workout import flow and workout editing
+  - Settings page section for creating, updating, and deactivating shoes
+- **Complete data export functionality**
+  - Export all Tempo data (workouts, routes, splits, time series, media metadata, settings) to a portable archive
+  - Includes a manifest file and JSON representations of all core entities
+  - Designed for backup, migration, and offline analysis use cases
+- **Tempo export import functionality**
+  - Import a Tempo export archive into another Tempo instance
+  - Validates manifest structure, raw file references, and shoe references
+  - Supports merging data into an existing installation while avoiding duplicates
+- **Settings layout improvements**
+  - Reorganized settings screen into logical sections (units, heart rate zones, export/import, shoes, etc.)
+  - New UI components for export/import and shoe management
+
 ## [1.3.0] - 2025-11-30
 
 ### Added

@@ -145,7 +145,7 @@ tempo-export-{timestamp}.zip
 ```json
 {
   "version": "1.0.0",
-  "tempoVersion": "1.3.0",
+  "tempoVersion": "1.4.0",
   "exportDate": "2024-01-15T10:30:00Z",
   "exportedBy": "username",
   "statistics": {
