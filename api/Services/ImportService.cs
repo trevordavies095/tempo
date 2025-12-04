@@ -442,6 +442,8 @@ public class ImportService
             // Track shoes we've already processed in this batch to avoid duplicates within the same import
             var processedShoeIds = new HashSet<Guid>();
             var processedShoeKeys = new HashSet<(string Brand, string Model)>();
+            // Track shoes added in this batch - only update statistics after successful save
+            var shoesImportedCount = 0;
 
             foreach (var shoe in shoes)
             {
@@ -509,7 +511,7 @@ public class ImportService
                     _db.Shoes.Add(shoe);
                     processedShoeIds.Add(shoe.Id);
                     processedShoeKeys.Add(shoeKey);
-                    result.Statistics.Shoes.Imported++;
+                    shoesImportedCount++;
                 }
                 catch (Exception ex)
                 {
@@ -525,7 +527,9 @@ public class ImportService
             try
             {
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Imported {Count} shoes", result.Statistics.Shoes.Imported);
+                // Only update statistics after successful save
+                result.Statistics.Shoes.Imported += shoesImportedCount;
+                _logger.LogInformation("Imported {Count} shoes", shoesImportedCount);
             }
             catch (Exception saveEx)
             {
@@ -539,8 +543,13 @@ public class ImportService
         }
         catch (Exception ex)
         {
-            result.Errors.Add($"Error reading shoes file: {ex.Message}");
-            _logger.LogError(ex, "Error reading shoes file");
+            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
+            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
+            if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
+            {
+                result.Errors.Add($"Error reading shoes file: {ex.Message}");
+                _logger.LogError(ex, "Error reading shoes file");
+            }
         }
     }
 
@@ -689,8 +698,13 @@ public class ImportService
         }
         catch (Exception ex)
         {
-            result.Errors.Add($"Error reading workouts file: {ex.Message}");
-            _logger.LogError(ex, "Error reading workouts file");
+            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
+            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
+            if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
+            {
+                result.Errors.Add($"Error reading workouts file: {ex.Message}");
+                _logger.LogError(ex, "Error reading workouts file");
+            }
         }
 
         return importedWorkoutIds;
@@ -720,6 +734,8 @@ public class ImportService
             // This prevents unique constraint violations when the export file contains multiple routes
             // for the same workout (with different IDs)
             var processedWorkoutIds = new HashSet<Guid>();
+            // Track routes added in this batch - only update statistics after successful save
+            var routesImportedCount = 0;
 
             foreach (var routeData in routesData)
             {
@@ -800,7 +816,7 @@ public class ImportService
 
                     _db.WorkoutRoutes.Add(route);
                     processedWorkoutIds.Add(routeData.WorkoutId);
-                    result.Statistics.Routes.Imported++;
+                    routesImportedCount++;
                 }
                 catch (Exception ex)
                 {
@@ -816,7 +832,9 @@ public class ImportService
             try
             {
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Imported {Count} routes", result.Statistics.Routes.Imported);
+                // Only update statistics after successful save
+                result.Statistics.Routes.Imported += routesImportedCount;
+                _logger.LogInformation("Imported {Count} routes", routesImportedCount);
             }
             catch (Exception saveEx)
             {
@@ -830,8 +848,13 @@ public class ImportService
         }
         catch (Exception ex)
         {
-            result.Errors.Add($"Error reading routes file: {ex.Message}");
-            _logger.LogError(ex, "Error reading routes file");
+            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
+            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
+            if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
+            {
+                result.Errors.Add($"Error reading routes file: {ex.Message}");
+                _logger.LogError(ex, "Error reading routes file");
+            }
         }
     }
 
@@ -854,6 +877,9 @@ public class ImportService
         {
             var json = await File.ReadAllTextAsync(splitsPath);
             var splits = JsonSerializer.Deserialize<List<WorkoutSplit>>(json, JsonOptions) ?? new List<WorkoutSplit>();
+
+            // Track splits added in this batch - only update statistics after successful save
+            var splitsImportedCount = 0;
 
             foreach (var split in splits)
             {
@@ -896,7 +922,7 @@ public class ImportService
                     split.Workout = null!;
 
                     _db.WorkoutSplits.Add(split);
-                    result.Statistics.Splits.Imported++;
+                    splitsImportedCount++;
                 }
                 catch (Exception ex)
                 {
@@ -912,7 +938,9 @@ public class ImportService
             try
             {
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Imported {Count} splits", result.Statistics.Splits.Imported);
+                // Only update statistics after successful save
+                result.Statistics.Splits.Imported += splitsImportedCount;
+                _logger.LogInformation("Imported {Count} splits", splitsImportedCount);
             }
             catch (Exception saveEx)
             {
@@ -926,8 +954,13 @@ public class ImportService
         }
         catch (Exception ex)
         {
-            result.Errors.Add($"Error reading splits file: {ex.Message}");
-            _logger.LogError(ex, "Error reading splits file");
+            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
+            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
+            if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
+            {
+                result.Errors.Add($"Error reading splits file: {ex.Message}");
+                _logger.LogError(ex, "Error reading splits file");
+            }
         }
     }
 
@@ -950,6 +983,9 @@ public class ImportService
         {
             var json = await File.ReadAllTextAsync(timeSeriesPath);
             var timeSeries = JsonSerializer.Deserialize<List<WorkoutTimeSeries>>(json, JsonOptions) ?? new List<WorkoutTimeSeries>();
+
+            // Track time series added in this batch - only update statistics after successful save
+            var timeSeriesImportedCount = 0;
 
             foreach (var ts in timeSeries)
             {
@@ -992,7 +1028,7 @@ public class ImportService
                     ts.Workout = null!;
 
                     _db.WorkoutTimeSeries.Add(ts);
-                    result.Statistics.TimeSeries.Imported++;
+                    timeSeriesImportedCount++;
                 }
                 catch (Exception ex)
                 {
@@ -1008,7 +1044,9 @@ public class ImportService
             try
             {
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Imported {Count} time series records", result.Statistics.TimeSeries.Imported);
+                // Only update statistics after successful save
+                result.Statistics.TimeSeries.Imported += timeSeriesImportedCount;
+                _logger.LogInformation("Imported {Count} time series records", timeSeriesImportedCount);
             }
             catch (Exception saveEx)
             {
@@ -1022,8 +1060,13 @@ public class ImportService
         }
         catch (Exception ex)
         {
-            result.Errors.Add($"Error reading time series file: {ex.Message}");
-            _logger.LogError(ex, "Error reading time series file");
+            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
+            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
+            if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
+            {
+                result.Errors.Add($"Error reading time series file: {ex.Message}");
+                _logger.LogError(ex, "Error reading time series file");
+            }
         }
     }
 
@@ -1050,6 +1093,8 @@ public class ImportService
             // Track best efforts we've already processed in this batch to avoid duplicates within the same import
             var processedBestEffortIds = new HashSet<Guid>();
             var processedDistances = new HashSet<string>();
+            // Track best efforts added in this batch - only update statistics after successful save
+            var bestEffortsImportedCount = 0;
 
             foreach (var bestEffort in bestEfforts)
             {
@@ -1125,7 +1170,7 @@ public class ImportService
                     _db.BestEfforts.Add(bestEffort);
                     processedBestEffortIds.Add(bestEffort.Id);
                     processedDistances.Add(bestEffort.Distance);
-                    result.Statistics.BestEfforts.Imported++;
+                    bestEffortsImportedCount++;
                 }
                 catch (Exception ex)
                 {
@@ -1141,7 +1186,9 @@ public class ImportService
             try
             {
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Imported {Count} best efforts", result.Statistics.BestEfforts.Imported);
+                // Only update statistics after successful save
+                result.Statistics.BestEfforts.Imported += bestEffortsImportedCount;
+                _logger.LogInformation("Imported {Count} best efforts", bestEffortsImportedCount);
             }
             catch (Exception saveEx)
             {
@@ -1155,8 +1202,13 @@ public class ImportService
         }
         catch (Exception ex)
         {
-            result.Errors.Add($"Error reading best efforts file: {ex.Message}");
-            _logger.LogError(ex, "Error reading best efforts file");
+            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
+            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
+            if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
+            {
+                result.Errors.Add($"Error reading best efforts file: {ex.Message}");
+                _logger.LogError(ex, "Error reading best efforts file");
+            }
         }
     }
 
@@ -1182,6 +1234,8 @@ public class ImportService
 
             // Track successfully copied media files for cleanup if SaveChangesAsync fails
             var copiedMediaFiles = new List<string>();
+            // Track media added in this batch - only update statistics after successful save
+            var mediaImportedCount = 0;
 
             foreach (var media in mediaMetadata)
             {
@@ -1273,7 +1327,7 @@ public class ImportService
                     copiedMedia.CreatedAt = media.CreatedAt;
 
                     _db.WorkoutMedia.Add(copiedMedia);
-                    result.Statistics.Media.Imported++;
+                    mediaImportedCount++;
                 }
                 catch (Exception ex)
                 {
@@ -1289,7 +1343,9 @@ public class ImportService
             try
             {
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Imported {Count} media files", result.Statistics.Media.Imported);
+                // Only update statistics after successful save
+                result.Statistics.Media.Imported += mediaImportedCount;
+                _logger.LogInformation("Imported {Count} media files", mediaImportedCount);
             }
             catch (Exception saveEx)
             {
@@ -1322,8 +1378,13 @@ public class ImportService
         }
         catch (Exception ex)
         {
-            result.Errors.Add($"Error reading media metadata file: {ex.Message}");
-            _logger.LogError(ex, "Error reading media metadata file");
+            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
+            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
+            if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
+            {
+                result.Errors.Add($"Error reading media metadata file: {ex.Message}");
+                _logger.LogError(ex, "Error reading media metadata file");
+            }
         }
     }
 
@@ -1339,6 +1400,9 @@ public class ImportService
         try
         {
             var workoutDirs = Directory.GetDirectories(workoutsDir);
+            // Track raw files added in this batch - only update statistics after successful save
+            var rawFilesImportedCount = 0;
+
             foreach (var workoutDir in workoutDirs)
             {
                 var workoutIdStr = Path.GetFileName(workoutDir);
@@ -1390,7 +1454,7 @@ public class ImportService
                     workout.RawFileName = rawFileName;
                     workout.RawFileType = rawFileType;
 
-                    result.Statistics.RawFiles.Imported++;
+                    rawFilesImportedCount++;
                     _logger.LogInformation("Imported raw file for workout {WorkoutId}: {FileName}", workoutId, rawFileName);
                 }
                 catch (Exception ex)
@@ -1404,7 +1468,9 @@ public class ImportService
             try
             {
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Imported {Count} raw files", result.Statistics.RawFiles.Imported);
+                // Only update statistics after successful save
+                result.Statistics.RawFiles.Imported += rawFilesImportedCount;
+                _logger.LogInformation("Imported {Count} raw files", rawFilesImportedCount);
             }
             catch (Exception saveEx)
             {
@@ -1418,8 +1484,13 @@ public class ImportService
         }
         catch (Exception ex)
         {
-            result.Errors.Add($"Error processing raw files: {ex.Message}");
-            _logger.LogError(ex, "Error processing raw files");
+            // Only add "processing" error if it's not already a save error (which was handled in inner catch)
+            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
+            if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
+            {
+                result.Errors.Add($"Error processing raw files: {ex.Message}");
+                _logger.LogError(ex, "Error processing raw files");
+            }
         }
     }
 
