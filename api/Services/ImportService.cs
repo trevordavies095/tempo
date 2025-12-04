@@ -569,6 +569,9 @@ public class ImportService
             // Track workouts we've already processed in this batch to avoid duplicates within the same import
             var processedWorkoutIds = new HashSet<Guid>();
             var processedWorkoutKeys = new HashSet<(DateTime StartedAt, double DistanceM, int DurationS)>();
+            // Track workouts added in this batch - only add to importedWorkoutIds after successful save
+            var workoutsAddedInBatch = new List<Guid>();
+            var workoutsImportedCount = 0;
 
             foreach (var workout in workouts)
             {
@@ -648,8 +651,8 @@ public class ImportService
                     _db.Workouts.Add(workout);
                     processedWorkoutIds.Add(workout.Id);
                     processedWorkoutKeys.Add(workoutKey);
-                    importedWorkoutIds.Add(workout.Id); // Track only actually imported workouts
-                    result.Statistics.Workouts.Imported++;
+                    workoutsAddedInBatch.Add(workout.Id); // Track for later addition to importedWorkoutIds
+                    workoutsImportedCount++;
                 }
                 catch (Exception ex)
                 {
@@ -665,7 +668,13 @@ public class ImportService
             try
             {
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Imported {Count} workouts", result.Statistics.Workouts.Imported);
+                // Only add to importedWorkoutIds and update counter after successful save
+                foreach (var workoutId in workoutsAddedInBatch)
+                {
+                    importedWorkoutIds.Add(workoutId);
+                }
+                result.Statistics.Workouts.Imported += workoutsImportedCount;
+                _logger.LogInformation("Imported {Count} workouts", workoutsImportedCount);
             }
             catch (Exception saveEx)
             {
@@ -674,6 +683,7 @@ public class ImportService
                 result.Statistics.Workouts.Errors++;
                 result.Errors.Add($"Error saving workouts to database: {saveEx.Message}");
                 _logger.LogError(saveEx, "Error saving workouts to database");
+                // Don't add workoutsAddedInBatch to importedWorkoutIds since save failed
                 throw; // Re-throw to be caught by outer catch block
             }
         }
