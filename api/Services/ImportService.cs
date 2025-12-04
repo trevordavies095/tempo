@@ -280,12 +280,8 @@ public class ImportService
             }
         }
 
-        // Validate workouts directory exists
-        var workoutsDir = Path.Combine(tempDir, "workouts");
-        if (!Directory.Exists(workoutsDir))
-        {
-            throw new InvalidOperationException("workouts/ directory not found in export ZIP");
-        }
+        // Note: workouts/ directory is optional - it's only created when there are raw files or media to export.
+        // ImportRawFilesAsync and ImportMediaAsync handle the missing directory gracefully.
     }
 
     private async Task ImportUserSettingsAsync(string tempDir, ExportManifest manifest, ImportResult result)
