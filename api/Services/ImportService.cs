@@ -218,6 +218,16 @@ public class ImportService
             throw new InvalidOperationException("data/ directory not found in export ZIP");
         }
 
+        // Validate required file paths are present (Shoes and Workouts are mandatory)
+        if (string.IsNullOrEmpty(manifest.DataFormat.Shoes))
+        {
+            throw new InvalidOperationException("Shoes file path is missing in export manifest");
+        }
+        if (string.IsNullOrEmpty(manifest.DataFormat.Workouts))
+        {
+            throw new InvalidOperationException("Workouts file path is missing in export manifest");
+        }
+
         // Validate required JSON files exist
         var requiredFiles = new[]
         {
@@ -365,6 +375,12 @@ public class ImportService
 
     private async Task ImportShoesAsync(string tempDir, ExportManifest manifest, ImportResult result)
     {
+        if (string.IsNullOrEmpty(manifest.DataFormat.Shoes))
+        {
+            result.Errors.Add("Shoes file path is missing in export manifest");
+            return;
+        }
+
         var shoesPath = Path.Combine(tempDir, manifest.DataFormat.Shoes);
         if (!File.Exists(shoesPath))
         {
@@ -461,6 +477,12 @@ public class ImportService
 
     private async Task ImportWorkoutsAsync(string tempDir, ExportManifest manifest, ImportResult result)
     {
+        if (string.IsNullOrEmpty(manifest.DataFormat.Workouts))
+        {
+            result.Errors.Add("Workouts file path is missing in export manifest");
+            return;
+        }
+
         var workoutsPath = Path.Combine(tempDir, manifest.DataFormat.Workouts);
         if (!File.Exists(workoutsPath))
         {
@@ -569,6 +591,12 @@ public class ImportService
 
     private async Task ImportRoutesAsync(string tempDir, ExportManifest manifest, ImportResult result)
     {
+        if (string.IsNullOrEmpty(manifest.DataFormat.Routes))
+        {
+            result.Warnings.Add("Routes file path is missing in export manifest");
+            return;
+        }
+
         var routesPath = Path.Combine(tempDir, manifest.DataFormat.Routes);
         if (!File.Exists(routesPath))
         {
@@ -663,6 +691,12 @@ public class ImportService
 
     private async Task ImportSplitsAsync(string tempDir, ExportManifest manifest, ImportResult result)
     {
+        if (string.IsNullOrEmpty(manifest.DataFormat.Splits))
+        {
+            result.Warnings.Add("Splits file path is missing in export manifest");
+            return;
+        }
+
         var splitsPath = Path.Combine(tempDir, manifest.DataFormat.Splits);
         if (!File.Exists(splitsPath))
         {
@@ -730,6 +764,12 @@ public class ImportService
 
     private async Task ImportTimeSeriesAsync(string tempDir, ExportManifest manifest, ImportResult result)
     {
+        if (string.IsNullOrEmpty(manifest.DataFormat.TimeSeries))
+        {
+            result.Warnings.Add("Time series file path is missing in export manifest");
+            return;
+        }
+
         var timeSeriesPath = Path.Combine(tempDir, manifest.DataFormat.TimeSeries);
         if (!File.Exists(timeSeriesPath))
         {
@@ -797,6 +837,12 @@ public class ImportService
 
     private async Task ImportBestEffortsAsync(string tempDir, ExportManifest manifest, ImportResult result)
     {
+        if (string.IsNullOrEmpty(manifest.DataFormat.BestEfforts))
+        {
+            result.Warnings.Add("Best efforts file path is missing in export manifest");
+            return;
+        }
+
         var bestEffortsPath = Path.Combine(tempDir, manifest.DataFormat.BestEfforts);
         if (!File.Exists(bestEffortsPath))
         {
@@ -901,6 +947,12 @@ public class ImportService
 
     private async Task ImportMediaFilesAsync(string tempDir, ExportManifest manifest, ImportResult result)
     {
+        if (string.IsNullOrEmpty(manifest.DataFormat.MediaMetadata))
+        {
+            result.Warnings.Add("Media metadata file path is missing in export manifest");
+            return;
+        }
+
         var mediaMetadataPath = Path.Combine(tempDir, manifest.DataFormat.MediaMetadata);
         if (!File.Exists(mediaMetadataPath))
         {
