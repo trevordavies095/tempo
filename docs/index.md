@@ -3,7 +3,7 @@
 > A privacy-first, self-hosted Strava alternative. Import GPX, FIT, and CSV files from Garmin, Apple Watch, Strava, and more. Keep all your data local—no subscriptions, no cloud required.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-1.3.0-green.svg)
+![Version](https://img.shields.io/badge/version-1.4.0-green.svg)
 ![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
@@ -20,8 +20,12 @@ Tempo is a self-hostable running tracker that gives you complete control over yo
 - **Media Support** - Attach photos and videos to workouts
 - **Weather Data** - Automatic weather conditions for each workout
 - **Bulk Import** - Import multiple workouts at once via ZIP file (up to 500MB)
+- **Data Export** - Export all your data in a portable ZIP format for backup and migration
+- **Data Import** - Restore complete backups, migrate between instances, and recover from data loss
 - **Heart Rate Zones** - Calculate zones using Age-based, Karvonen, or Custom methods
 - **Relative Effort** - Automatic calculation of workout intensity based on heart rate zones
+- **Best Efforts** - Track your fastest times for standard distances (400m to Marathon) from any segment within workouts
+- **Shoe Tracking** - Track mileage on your running shoes and know when to replace them
 - **Workout Editing** - Crop/trim workouts and edit activity names
 - **Statistics Dashboards** - Weekly and yearly statistics with relative effort tracking
 - **Unit Preferences** - Switch between metric and imperial units

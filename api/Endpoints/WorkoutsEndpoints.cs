@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -44,6 +45,7 @@ public static class WorkoutsEndpoints
         WeatherService weatherService,
         HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
+        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         if (!request.HasFormContentType)
@@ -86,6 +88,7 @@ public static class WorkoutsEndpoints
                 weatherService,
                 zoneService,
                 relativeEffortService,
+                bestEffortService,
                 splitDistanceMeters,
                 logger);
 
@@ -116,6 +119,7 @@ public static class WorkoutsEndpoints
                     weatherService,
                     zoneService,
                     relativeEffortService,
+                    bestEffortService,
                     splitDistanceMeters,
                     logger);
 
@@ -809,6 +813,7 @@ public static class WorkoutsEndpoints
         SplitRecalculationService splitRecalculationService,
         HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
+        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         // Parse request body
@@ -828,49 +833,58 @@ public static class WorkoutsEndpoints
             return Results.BadRequest(new { error = "Request body is required" });
         }
 
-        var root = jsonDoc.RootElement;
-
-        // Extract trim values
-        if (!root.TryGetProperty("startTrimSeconds", out var startTrimElement) ||
-            !startTrimElement.TryGetInt32(out var startTrimSeconds))
+        using (jsonDoc)
         {
-            return Results.BadRequest(new { error = "startTrimSeconds is required and must be an integer" });
-        }
+            var root = jsonDoc.RootElement;
 
-        if (!root.TryGetProperty("endTrimSeconds", out var endTrimElement) ||
-            !endTrimElement.TryGetInt32(out var endTrimSeconds))
-        {
-            return Results.BadRequest(new { error = "endTrimSeconds is required and must be an integer" });
-        }
+            // Extract trim values
+            if (!root.TryGetProperty("startTrimSeconds", out var startTrimElement) ||
+                !startTrimElement.TryGetInt32(out var startTrimSeconds))
+            {
+                return Results.BadRequest(new { error = "startTrimSeconds is required and must be an integer" });
+            }
 
-        // Validate trim values
-        if (startTrimSeconds < 0 || endTrimSeconds < 0)
-        {
-            return Results.BadRequest(new { error = "Trim values must be non-negative" });
-        }
+            if (!root.TryGetProperty("endTrimSeconds", out var endTrimElement) ||
+                !endTrimElement.TryGetInt32(out var endTrimSeconds))
+            {
+                return Results.BadRequest(new { error = "endTrimSeconds is required and must be an integer" });
+            }
 
-        // Load workout with related data
-        var workout = await db.Workouts
-            .Include(w => w.Route)
-            .FirstOrDefaultAsync(w => w.Id == id);
+            // Validate trim values
+            if (startTrimSeconds < 0 || endTrimSeconds < 0)
+            {
+                return Results.BadRequest(new { error = "Trim values must be non-negative" });
+            }
 
-        if (workout == null)
-        {
-            return Results.NotFound(new { error = "Workout not found" });
-        }
+            // Load workout with related data
+            var workout = await db.Workouts
+                .Include(w => w.Route)
+                .FirstOrDefaultAsync(w => w.Id == id);
 
-        if (workout.Route == null)
-        {
-            return Results.BadRequest(new { error = "Workout has no route data. Cannot crop workout without route." });
-        }
+            if (workout == null)
+            {
+                return Results.NotFound(new { error = "Workout not found" });
+            }
 
-        // Validate crop parameters
-        if (startTrimSeconds + endTrimSeconds >= workout.DurationS)
-        {
-            return Results.BadRequest(new { error = $"Cannot crop entire workout. Trim values ({startTrimSeconds}s + {endTrimSeconds}s) must be less than workout duration ({workout.DurationS}s)" });
-        }
+            if (workout.Route == null)
+            {
+                return Results.BadRequest(new { error = "Workout has no route data. Cannot crop workout without route." });
+            }
 
-        try
+            // Validate crop parameters
+            if (startTrimSeconds + endTrimSeconds >= workout.DurationS)
+            {
+                return Results.BadRequest(new { error = $"Cannot crop entire workout. Trim values ({startTrimSeconds}s + {endTrimSeconds}s) must be less than workout duration ({workout.DurationS}s)" });
+            }
+
+            // Check which best efforts reference this workout before cropping
+            // This is needed to recalculate best efforts for distances the workout may no longer qualify for after cropping
+            var affectedBestEfforts = await db.BestEfforts
+                .Where(be => be.WorkoutId == id)
+                .Select(be => be.Distance)
+                .ToListAsync();
+
+            try
         {
             // Perform crop
             await cropService.CropWorkoutAsync(workout, startTrimSeconds, endTrimSeconds);
@@ -887,6 +901,119 @@ public static class WorkoutsEndpoints
                 var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
                 workout.RelativeEffort = relativeEffort;
                 await db.SaveChangesAsync();
+            }
+
+            // Update best efforts since distance/duration changed
+            try
+            {
+                await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to update best efforts after cropping workout {WorkoutId}", workout.Id);
+                // Don't fail crop if best effort update fails
+            }
+
+            // Recalculate affected best efforts if this workout previously held records
+            // for distances it may no longer qualify for after cropping
+            if (affectedBestEfforts.Any())
+            {
+                try
+                {
+                    // Reload workout to get updated distance after crop
+                    await db.Entry(workout).ReloadAsync();
+                    // Reload Route navigation property (needed for best effort calculation fallback)
+                    await db.Entry(workout).Reference(w => w.Route).LoadAsync();
+                    
+                    // For each affected distance, check if workout still qualifies
+                    foreach (var distanceName in affectedBestEfforts)
+                    {
+                        if (BestEffortService.StandardDistances.TryGetValue(distanceName, out var targetDistanceM))
+                        {
+                            // Check if workout still qualifies for this distance
+                            var stillQualifies = workout.DistanceM >= targetDistanceM;
+                            
+                            // Check if this workout still holds the record
+                            var currentBestEffort = await db.BestEfforts
+                                .FirstOrDefaultAsync(be => be.Distance == distanceName);
+                            
+                            var workoutStillHoldsRecord = currentBestEffort != null && currentBestEffort.WorkoutId == id;
+                            
+                            // If workout still holds the record, verify it can actually achieve the stored time
+                            // This handles the case where cropping removed the fast segment that set the record
+                            var storedTimeNoLongerAchievable = false;
+                            if (workoutStillHoldsRecord && currentBestEffort != null && stillQualifies)
+                            {
+                                var croppedWorkoutBestEffort = await bestEffortService.CalculateBestEffortForWorkoutAsync(
+                                    db, workout, distanceName, targetDistanceM);
+                                
+                                // If the cropped workout's best effort is slower than the stored time,
+                                // the stored time is no longer achievable and we need to recalculate
+                                if (croppedWorkoutBestEffort == null || croppedWorkoutBestEffort.TimeS > currentBestEffort.TimeS)
+                                {
+                                    storedTimeNoLongerAchievable = true;
+                                }
+                            }
+                            
+                            // If workout no longer qualifies OR no longer holds the record OR stored time is no longer achievable, recalculate from all workouts
+                            if (!stillQualifies || !workoutStillHoldsRecord || storedTimeNoLongerAchievable)
+                            {
+                                var qualifyingWorkouts = await db.Workouts
+                                    .Include(w => w.Route)
+                                    .Where(w => w.DistanceM >= targetDistanceM)
+                                    .ToListAsync();
+
+                                BestEffortService.BestEffortResult? newBestEffort = null;
+                                foreach (var remainingWorkout in qualifyingWorkouts)
+                                {
+                                    var result = await bestEffortService.CalculateBestEffortForWorkoutAsync(
+                                        db, remainingWorkout, distanceName, targetDistanceM);
+                                    if (result != null && (newBestEffort == null || result.TimeS < newBestEffort.TimeS))
+                                    {
+                                        newBestEffort = result;
+                                    }
+                                }
+
+                                // Update or remove best effort
+                                if (newBestEffort != null)
+                                {
+                                    if (currentBestEffort != null)
+                                    {
+                                        currentBestEffort.TimeS = newBestEffort.TimeS;
+                                        currentBestEffort.WorkoutId = Guid.Parse(newBestEffort.WorkoutId);
+                                        currentBestEffort.WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc);
+                                        currentBestEffort.CalculatedAt = DateTime.UtcNow;
+                                    }
+                                    else
+                                    {
+                                        db.BestEfforts.Add(new BestEffort
+                                        {
+                                            Distance = distanceName,
+                                            DistanceM = targetDistanceM,
+                                            TimeS = newBestEffort.TimeS,
+                                            WorkoutId = Guid.Parse(newBestEffort.WorkoutId),
+                                            WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc),
+                                            CalculatedAt = DateTime.UtcNow
+                                        });
+                                    }
+                                }
+                                else if (currentBestEffort != null)
+                                {
+                                    // No qualifying workouts remain, remove best effort
+                                    db.BestEfforts.Remove(currentBestEffort);
+                                }
+                            }
+                        }
+                    }
+
+                    await db.SaveChangesAsync();
+                    logger.LogInformation("Recalculated affected best efforts after cropping workout {WorkoutId}", id);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to recalculate affected best efforts after cropping workout {WorkoutId}", id);
+                    // Don't fail crop if best effort recalculation fails
+                }
             }
 
             // Reload workout with updated data
@@ -948,16 +1075,17 @@ public static class WorkoutsEndpoints
                 route = routeGeoJson,
                 splits = splits
             });
-        }
-        catch (InvalidOperationException ex)
-        {
-            logger.LogWarning(ex, "Invalid crop operation for workout {WorkoutId}", id);
-            return Results.BadRequest(new { error = ex.Message });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error cropping workout {WorkoutId}", id);
-            return Results.Problem("Failed to crop workout");
+            }
+            catch (InvalidOperationException ex)
+            {
+                logger.LogWarning(ex, "Invalid crop operation for workout {WorkoutId}", id);
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error cropping workout {WorkoutId}", id);
+                return Results.Problem("Failed to crop workout");
+            }
         }
     }
 
@@ -982,6 +1110,7 @@ public static class WorkoutsEndpoints
         var workout = await db.Workouts
             .Include(w => w.Route)
             .Include(w => w.Splits.OrderBy(s => s.Idx))
+            .Include(w => w.Shoe)
             .AsNoTracking()
             .FirstOrDefaultAsync(w => w.Id == id);
 
@@ -1095,6 +1224,18 @@ public static class WorkoutsEndpoints
             }
         }
 
+        // Include shoe information if assigned
+        object? shoe = null;
+        if (workout.Shoe != null)
+        {
+            shoe = new
+            {
+                id = workout.Shoe.Id,
+                brand = workout.Shoe.Brand,
+                model = workout.Shoe.Model
+            };
+        }
+
         return Results.Ok(new
         {
             id = workout.Id,
@@ -1123,6 +1264,8 @@ public static class WorkoutsEndpoints
             source = workout.Source,
             device = workout.Device,
             name = workout.Name,
+            shoeId = workout.ShoeId,
+            shoe = shoe,
             weather = weather,
             rawGpxData = rawGpxData,
             rawFitData = rawFitData,
@@ -1150,6 +1293,7 @@ public static class WorkoutsEndpoints
         HttpRequest request,
         BulkImportService bulkImportService,
         TempoDbContext db,
+        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         if (!request.HasFormContentType)
@@ -1280,11 +1424,41 @@ public static class WorkoutsEndpoints
                 }
             }
 
+            // Assign default shoe to all new workouts if set
+            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            if (settings != null && settings.DefaultShoeId.HasValue)
+            {
+                // Verify the shoe still exists
+                var defaultShoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
+                if (defaultShoe != null)
+                {
+                    foreach (var workout in workoutsToAdd)
+                    {
+                        workout.ShoeId = settings.DefaultShoeId.Value;
+                    }
+                    logger.LogInformation("Assigned default shoe {ShoeId} to {Count} workouts", settings.DefaultShoeId.Value, workoutsToAdd.Count);
+                }
+            }
+
             // Batch save workouts
             await bulkImportService.BatchSaveWorkoutsAsync(workoutsToAdd, routesToAdd, splitsToAdd);
 
             // Calculate relative effort
             await bulkImportService.CalculateAndSaveRelativeEffortAsync(workoutsToAdd);
+
+            // Update best efforts for all newly created workouts
+            foreach (var workout in workoutsToAdd)
+            {
+                try
+                {
+                    await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to update best efforts for workout {WorkoutId}", workout.Id);
+                    // Don't fail the bulk import if best effort update fails for individual workouts
+                }
+            }
 
             // Save media records
             if (mediaToAdd.Count > 0)
@@ -1330,6 +1504,142 @@ public static class WorkoutsEndpoints
                 logger.LogWarning(ex, "Failed to clean up temporary directory {TempDir}", tempDir);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Export all user data to a ZIP file
+    /// </summary>
+    /// <param name="user">Current user claims principal</param>
+    /// <param name="exportService">Export service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>ZIP file stream containing all user data</returns>
+    /// <remarks>
+    /// Exports all user data including workouts, media files, shoes, settings, and best efforts
+    /// in a portable ZIP format that can be imported back into Tempo.
+    /// </remarks>
+    private static async Task<IResult> ExportAllData(
+        ClaimsPrincipal user,
+        ExportService exportService,
+        ILogger<Program> logger)
+    {
+        // Validate authentication BEFORE creating the stream
+        // This ensures proper error responses instead of corrupted ZIP files
+        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            logger.LogWarning("Unauthorized export attempt - invalid user authentication");
+            return Results.Unauthorized();
+        }
+
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var filename = $"tempo-export-{timestamp}.zip";
+
+        // Now safe to create the stream - authentication is validated
+        return Results.Stream(async stream =>
+        {
+            try
+            {
+                await exportService.ExportAllDataAsync(stream);
+            }
+            catch (Exception ex)
+            {
+                // Log errors during streaming (these will result in a corrupted file,
+                // but at least we log them for debugging)
+                logger.LogError(ex, "Error during export streaming");
+                throw;
+            }
+        }, "application/zip", filename);
+    }
+
+    /// <summary>
+    /// Import Tempo export ZIP file
+    /// </summary>
+    /// <param name="request">HTTP request containing multipart/form-data with ZIP file</param>
+    /// <param name="importService">Import service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>Import results with counts of imported, skipped, and error details</returns>
+    /// <remarks>
+    /// Uploads and processes a ZIP file containing a complete Tempo export, restoring all user data
+    /// including workouts, media files, settings, shoes, routes, splits, time series, and best efforts.
+    /// Duplicates are skipped by default. GUIDs and timestamps from the export are preserved.
+    /// </remarks>
+    private static async Task<IResult> ImportExport(
+        HttpRequest request,
+        ImportService importService,
+        ILogger<Program> logger)
+    {
+        if (!request.HasFormContentType)
+        {
+            return Results.BadRequest(new { error = "Request must be multipart/form-data" });
+        }
+
+        // Enable request body buffering to ensure the full request is received before processing
+        // Use 500MB buffer size to match MaxRequestBodySize and MultipartBodyLengthLimit
+        request.EnableBuffering(500_000_000);
+
+        Microsoft.AspNetCore.Http.IFormCollection form;
+        try
+        {
+            form = await request.ReadFormAsync();
+        }
+        catch (Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
+        {
+            logger.LogError(ex, "Request body was incomplete or connection was closed prematurely during export import");
+            return Results.BadRequest(new { error = "Upload failed: The request was incomplete. This may be due to a timeout or connection issue. Please try again with a stable connection." });
+        }
+
+        var file = form.Files.GetFile("file");
+
+        if (file == null || file.Length == 0)
+        {
+            return Results.BadRequest(new { error = "No file uploaded" });
+        }
+
+        if (!file.FileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new { error = "File must be a ZIP file" });
+        }
+
+        try
+        {
+            using (var zipStream = file.OpenReadStream())
+            {
+                var result = await importService.ImportExportAsync(zipStream);
+
+                return Results.Ok(new
+                {
+                    success = result.Success,
+                    importedAt = result.ImportedAt,
+                    statistics = new
+                    {
+                        settings = new { imported = result.Statistics.Settings.Imported, skipped = result.Statistics.Settings.Skipped, errors = result.Statistics.Settings.Errors },
+                        shoes = new { imported = result.Statistics.Shoes.Imported, skipped = result.Statistics.Shoes.Skipped, errors = result.Statistics.Shoes.Errors },
+                        workouts = new { imported = result.Statistics.Workouts.Imported, skipped = result.Statistics.Workouts.Skipped, errors = result.Statistics.Workouts.Errors },
+                        routes = new { imported = result.Statistics.Routes.Imported, skipped = result.Statistics.Routes.Skipped, errors = result.Statistics.Routes.Errors },
+                        splits = new { imported = result.Statistics.Splits.Imported, skipped = result.Statistics.Splits.Skipped, errors = result.Statistics.Splits.Errors },
+                        timeSeries = new { imported = result.Statistics.TimeSeries.Imported, skipped = result.Statistics.TimeSeries.Skipped, errors = result.Statistics.TimeSeries.Errors },
+                        media = new { imported = result.Statistics.Media.Imported, skipped = result.Statistics.Media.Skipped, errors = result.Statistics.Media.Errors },
+                        bestEfforts = new { imported = result.Statistics.BestEfforts.Imported, skipped = result.Statistics.BestEfforts.Skipped, errors = result.Statistics.BestEfforts.Errors },
+                        rawFiles = new { imported = result.Statistics.RawFiles.Imported, skipped = result.Statistics.RawFiles.Skipped, errors = result.Statistics.RawFiles.Errors }
+                    },
+                    warnings = result.Warnings,
+                    errors = result.Errors
+                });
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Invalid export format");
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error importing export file");
+            return Results.Problem(
+                title: "Import failed",
+                detail: ex.Message,
+                statusCode: 500);
         }
     }
 
@@ -1517,6 +1827,66 @@ public static class WorkoutsEndpoints
             rangeMax = rangeMax,
             currentWeekTotal = currentWeekTotal
         });
+    }
+
+    /// <summary>
+    /// Get best efforts for all standard distances
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="bestEffortService">Best effort service</param>
+    /// <returns>List of best effort times for each standard distance</returns>
+    /// <remarks>
+    /// Returns the fastest time achieved for each standard running distance (400m through Marathon).
+    /// Best efforts are calculated from any segment within any workout, not just workouts of that exact distance.
+    /// </remarks>
+    private static async Task<IResult> GetBestEfforts(
+        TempoDbContext db,
+        BestEffortService bestEffortService)
+    {
+        try
+        {
+            var bestEfforts = await bestEffortService.GetBestEffortsAsync(db);
+            return Results.Ok(new { distances = bestEfforts });
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem($"Failed to retrieve best efforts: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Recalculate all best efforts
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="bestEffortService">Best effort service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>Success message with count of best efforts calculated</returns>
+    /// <remarks>
+    /// Performs a full recalculation of all best efforts across all workouts.
+    /// This may take some time depending on the number of workouts and time series data.
+    /// </remarks>
+    private static async Task<IResult> RecalculateBestEfforts(
+        TempoDbContext db,
+        BestEffortService bestEffortService,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            logger.LogInformation("Starting manual recalculation of best efforts");
+            var bestEfforts = await bestEffortService.CalculateAllBestEffortsAsync(db);
+            logger.LogInformation("Completed manual recalculation of best efforts. Found {Count} best efforts", bestEfforts.Count);
+            
+            return Results.Ok(new
+            {
+                message = "Best efforts recalculated successfully",
+                count = bestEfforts.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error recalculating best efforts");
+            return Results.Problem($"Failed to recalculate best efforts: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -1899,7 +2269,9 @@ public static class WorkoutsEndpoints
             return Results.BadRequest(new { error = "Request body is required" });
         }
 
-        var root = jsonDoc.RootElement;
+        using (jsonDoc)
+        {
+            var root = jsonDoc.RootElement;
 
         // Find workout
         var workout = await db.Workouts.FindAsync(id);
@@ -1974,22 +2346,57 @@ public static class WorkoutsEndpoints
             workout.Name = nameValue;
         }
 
+        // Validate and update ShoeId if provided
+        if (root.TryGetProperty("shoeId", out var shoeIdElement))
+        {
+            Guid? shoeIdValue = null;
+            if (shoeIdElement.ValueKind == JsonValueKind.String)
+            {
+                if (Guid.TryParse(shoeIdElement.GetString(), out var parsedGuid))
+                {
+                    shoeIdValue = parsedGuid;
+                    // Validate that the shoe exists
+                    var shoe = await db.Shoes.FindAsync(shoeIdValue.Value);
+                    if (shoe == null)
+                    {
+                        return Results.BadRequest(new { error = "Shoe not found" });
+                    }
+                }
+                else
+                {
+                    return Results.BadRequest(new { error = "shoeId must be a valid GUID" });
+                }
+            }
+            else if (shoeIdElement.ValueKind == JsonValueKind.Null)
+            {
+                shoeIdValue = null;
+            }
+            else
+            {
+                return Results.BadRequest(new { error = "shoeId must be a string GUID or null" });
+            }
+            workout.ShoeId = shoeIdValue;
+        }
+
         // Save changes
         var runTypeUpdated = root.TryGetProperty("runType", out _);
         var notesUpdated = root.TryGetProperty("notes", out _);
         var nameUpdated = root.TryGetProperty("name", out _);
+        var shoeIdUpdated = root.TryGetProperty("shoeId", out _);
         await db.SaveChangesAsync();
 
-        logger.LogInformation("Updated workout {WorkoutId}: RunType={RunType}, RunTypeUpdated={RunTypeUpdated}, NotesUpdated={NotesUpdated}, NameUpdated={NameUpdated}",
-            workout.Id, workout.RunType ?? "null", runTypeUpdated, notesUpdated, nameUpdated);
+        logger.LogInformation("Updated workout {WorkoutId}: RunType={RunType}, RunTypeUpdated={RunTypeUpdated}, NotesUpdated={NotesUpdated}, NameUpdated={NameUpdated}, ShoeIdUpdated={ShoeIdUpdated}",
+            workout.Id, workout.RunType ?? "null", runTypeUpdated, notesUpdated, nameUpdated, shoeIdUpdated);
 
         return Results.Ok(new
         {
             id = workout.Id,
             runType = workout.RunType,
             notes = workout.Notes,
-            name = workout.Name
+            name = workout.Name,
+            shoeId = workout.ShoeId
         });
+        }
     }
 
     /// <summary>
@@ -2008,6 +2415,7 @@ public static class WorkoutsEndpoints
         Guid id,
         TempoDbContext db,
         MediaStorageConfig mediaConfig,
+        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         // Find workout with related media
@@ -2019,6 +2427,12 @@ public static class WorkoutsEndpoints
         {
             return Results.NotFound(new { error = "Workout not found" });
         }
+
+        // Check which best efforts reference this workout before deletion
+        var affectedBestEfforts = await db.BestEfforts
+            .Where(be => be.WorkoutId == id)
+            .Select(be => be.Distance)
+            .ToListAsync();
 
         // Delete all media files from filesystem
         foreach (var media in workout.Media)
@@ -2061,6 +2475,77 @@ public static class WorkoutsEndpoints
         // Delete workout (cascade will handle route, splits, and media records)
         db.Workouts.Remove(workout);
         await db.SaveChangesAsync();
+
+        // Recalculate affected best efforts if this workout was referenced
+        if (affectedBestEfforts.Any())
+        {
+            try
+            {
+                // For each affected distance, recalculate from all remaining workouts
+                foreach (var distanceName in affectedBestEfforts)
+                {
+                    if (BestEffortService.StandardDistances.TryGetValue(distanceName, out var targetDistanceM))
+                    {
+                        // Find best effort from remaining workouts for this distance
+                        var qualifyingWorkouts = await db.Workouts
+                            .Include(w => w.Route)
+                            .Where(w => w.DistanceM >= targetDistanceM && w.Id != id)
+                            .ToListAsync();
+
+                        BestEffortService.BestEffortResult? newBestEffort = null;
+                        foreach (var remainingWorkout in qualifyingWorkouts)
+                        {
+                            var result = await bestEffortService.CalculateBestEffortForWorkoutAsync(
+                                db, remainingWorkout, distanceName, targetDistanceM);
+                            if (result != null && (newBestEffort == null || result.TimeS < newBestEffort.TimeS))
+                            {
+                                newBestEffort = result;
+                            }
+                        }
+
+                        // Update or remove best effort
+                        var existingBestEffort = await db.BestEfforts
+                            .FirstOrDefaultAsync(be => be.Distance == distanceName);
+
+                        if (newBestEffort != null)
+                        {
+                            if (existingBestEffort != null)
+                            {
+                                existingBestEffort.TimeS = newBestEffort.TimeS;
+                                existingBestEffort.WorkoutId = Guid.Parse(newBestEffort.WorkoutId);
+                                existingBestEffort.WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc);
+                                existingBestEffort.CalculatedAt = DateTime.UtcNow;
+                            }
+                            else
+                            {
+                                db.BestEfforts.Add(new BestEffort
+                                {
+                                    Distance = distanceName,
+                                    DistanceM = targetDistanceM,
+                                    TimeS = newBestEffort.TimeS,
+                                    WorkoutId = Guid.Parse(newBestEffort.WorkoutId),
+                                    WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc),
+                                    CalculatedAt = DateTime.UtcNow
+                                });
+                            }
+                        }
+                        else if (existingBestEffort != null)
+                        {
+                            // No qualifying workouts remain, remove best effort
+                            db.BestEfforts.Remove(existingBestEffort);
+                        }
+                    }
+                }
+
+                await db.SaveChangesAsync();
+                logger.LogInformation("Recalculated {Count} best efforts after deleting workout {WorkoutId}", affectedBestEfforts.Count, id);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to recalculate best efforts after deleting workout {WorkoutId}", id);
+                // Don't fail deletion if best effort recalculation fails
+            }
+        }
 
         logger.LogInformation("Deleted workout {WorkoutId}", id);
 
@@ -2159,6 +2644,22 @@ public static class WorkoutsEndpoints
         .WithSummary("Bulk import Strava export")
         .WithDescription("Uploads and processes a ZIP file containing Strava export (activities.csv + activity files), importing all run activities with duplicate detection");
 
+        group.MapPost("/export", ExportAllData)
+        .WithName("ExportAllData")
+        .Produces(200)
+        .Produces(500)
+        .WithSummary("Export all user data")
+        .WithDescription("Exports all user data including workouts, media files, shoes, settings, and best efforts in a portable ZIP format that can be imported back into Tempo. Returns a ZIP file with Content-Type: application/zip.");
+
+        group.MapPost("/import/export", ImportExport)
+        .WithName("ImportExport")
+        .Accepts<IFormFile>("multipart/form-data")
+        .Produces(200)
+        .Produces(400)
+        .Produces(500)
+        .WithSummary("Import Tempo export ZIP file")
+        .WithDescription("Uploads and processes a ZIP file containing a complete Tempo export, restoring all user data including workouts, media files, settings, shoes, routes, splits, time series, and best efforts. Duplicates are skipped by default.");
+
         group.MapGet("/stats/weekly", GetWeeklyStats)
         .WithName("GetWeeklyStats")
         .Produces(200)
@@ -2170,6 +2671,19 @@ public static class WorkoutsEndpoints
         .Produces(200)
         .WithSummary("Get relative effort stats")
         .WithDescription("Returns cumulative relative effort for the current week and 3-week average range");
+
+        group.MapGet("/stats/best-efforts", GetBestEfforts)
+        .WithName("GetBestEfforts")
+        .Produces(200)
+        .WithSummary("Get best efforts")
+        .WithDescription("Returns the fastest time achieved for each standard running distance (400m through Marathon). Best efforts are calculated from any segment within any workout.");
+
+        group.MapPost("/stats/best-efforts/recalculate", RecalculateBestEfforts)
+        .WithName("RecalculateBestEfforts")
+        .Produces(200)
+        .Produces(500)
+        .WithSummary("Recalculate best efforts")
+        .WithDescription("Performs a full recalculation of all best efforts across all workouts. This may take some time depending on the number of workouts.");
 
         group.MapGet("/stats/yearly", GetYearlyStats)
         .WithName("GetYearlyStats")
@@ -2674,6 +3188,7 @@ public static class WorkoutsEndpoints
         WeatherService weatherService,
         HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
+        BestEffortService bestEffortService,
         double splitDistanceMeters,
         ILogger logger)
     {
@@ -2741,6 +3256,19 @@ public static class WorkoutsEndpoints
             // Fetch weather data
             await FetchAndAttachWeatherAsync(workout, trackPoints, rawFitDataJson, startedAtUtc, weatherService, logger);
 
+            // Assign default shoe if set
+            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            if (settings != null && settings.DefaultShoeId.HasValue)
+            {
+                // Verify the shoe still exists
+                var defaultShoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
+                if (defaultShoe != null)
+                {
+                    workout.ShoeId = settings.DefaultShoeId.Value;
+                    logger.LogInformation("Assigned default shoe {ShoeId} to workout {WorkoutId}", settings.DefaultShoeId.Value, workout.Id);
+                }
+            }
+
             // Save to database
             db.Workouts.Add(workout);
             db.WorkoutRoutes.Add(route);
@@ -2749,6 +3277,17 @@ public static class WorkoutsEndpoints
 
             // Calculate Relative Effort after workout is saved
             await CalculateAndSaveRelativeEffortAsync(workout, db, zoneService, relativeEffortService, logger);
+
+            // Update best efforts incrementally for new workout
+            try
+            {
+                await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to update best efforts for workout {WorkoutId}", workout.Id);
+                // Don't fail the import if best effort update fails
+            }
 
             logger.LogInformation("Imported workout {WorkoutId} with {Distance} meters", workout.Id, workout.DistanceM);
 

@@ -35,6 +35,7 @@ Endpoints are organized in static extension methods that extend `WebApplication`
 
 - `MapWorkoutsEndpoints` - Workout management endpoints
 - `MapSettingsEndpoints` - Settings and configuration endpoints
+- `MapShoesEndpoints` - Shoe management endpoints
 - `MapAuthEndpoints` - Authentication endpoints
 - `MapVersionEndpoints` - Version information endpoints
 
@@ -94,8 +95,9 @@ This ensures migrations can be safely applied even when database state doesn't m
 - **WorkoutSplit**: One-to-many relationship for distance-based splits (km or mile)
 - **WorkoutTimeSeries**: One-to-many relationship for time-series data (heart rate, pace, elevation over time)
 - **WorkoutMedia**: One-to-many relationship for photos/videos attached to workouts
+- **Shoe**: Running shoe entity for tracking shoe mileage and assignments
 - **User**: User accounts for authentication
-- **UserSettings**: Single-row table for user preferences (heart rate zones, unit preferences)
+- **UserSettings**: Single-row table for user preferences (heart rate zones, unit preferences, default shoe)
 
 ## Data Flow
 
@@ -107,8 +109,9 @@ This ensures migrations can be safely applied even when database state doesn't m
 4. Weather data fetched from Open-Meteo API based on workout location/time
 5. Elevation data smoothed using configurable thresholds
 6. Splits calculated based on unit preference (1km for metric, 1 mile for imperial)
-7. Workout saved to database with raw data in JSONB fields
-8. Route stored as GeoJSON LineString in `WorkoutRoute` table
+7. Default shoe assigned (if configured in UserSettings)
+8. Workout saved to database with raw data in JSONB fields
+9. Route stored as GeoJSON LineString in `WorkoutRoute` table
 
 ### Bulk Import Flow
 
@@ -118,7 +121,8 @@ This ensures migrations can be safely applied even when database state doesn't m
 4. Workout files processed from `activities/` folder
 5. Only "Run" activities imported
 6. Duplicate detection using `StartedAt`, `DistanceM`, and `DurationS`
-7. All workouts saved to database
+7. Default shoe assigned to each workout (if configured in UserSettings)
+8. All workouts saved to database
 
 ## Authentication
 

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Tempo.Api.Data;
@@ -11,9 +12,11 @@ using Tempo.Api.Data;
 namespace Tempo.Api.Migrations
 {
     [DbContext(typeof(TempoDbContext))]
-    partial class TempoDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251130201906_AddBestEffortsTable")]
+    partial class AddBestEffortsTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -89,36 +92,6 @@ namespace Tempo.Api.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("Tempo.Api.Models.Shoe", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Brand")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<double?>("InitialMileageM")
-                        .HasColumnType("double precision");
-
-                    b.Property<string>("Model")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Shoes");
-                });
-
             modelBuilder.Entity("Tempo.Api.Models.UserSettings", b =>
                 {
                     b.Property<Guid>("Id")
@@ -133,9 +106,6 @@ namespace Tempo.Api.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DefaultShoeId")
-                        .HasColumnType("uuid");
 
                     b.Property<int?>("MaxHeartRateBpm")
                         .HasColumnType("integer");
@@ -181,8 +151,6 @@ namespace Tempo.Api.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("DefaultShoeId");
 
                     b.HasIndex("Id")
                         .IsUnique();
@@ -298,9 +266,6 @@ namespace Tempo.Api.Migrations
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("ShoeId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("Weather")
                         .HasColumnType("jsonb");
 
@@ -321,8 +286,6 @@ namespace Tempo.Api.Migrations
                     b.HasIndex("RunType");
 
                     b.HasIndex("Source");
-
-                    b.HasIndex("ShoeId");
 
                     b.HasIndex("StartedAt");
 
@@ -481,16 +444,6 @@ namespace Tempo.Api.Migrations
                     b.Navigation("Workout");
                 });
 
-            modelBuilder.Entity("Tempo.Api.Models.UserSettings", b =>
-                {
-                    b.HasOne("Tempo.Api.Models.Shoe", "DefaultShoe")
-                        .WithMany()
-                        .HasForeignKey("DefaultShoeId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("DefaultShoe");
-                });
-
             modelBuilder.Entity("Tempo.Api.Models.WorkoutMedia", b =>
                 {
                     b.HasOne("Tempo.Api.Models.Workout", "Workout")
@@ -537,25 +490,13 @@ namespace Tempo.Api.Migrations
 
             modelBuilder.Entity("Tempo.Api.Models.Workout", b =>
                 {
-                    b.HasOne("Tempo.Api.Models.Shoe", "Shoe")
-                        .WithMany("Workouts")
-                        .HasForeignKey("ShoeId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Media");
 
                     b.Navigation("Route");
 
-                    b.Navigation("Shoe");
-
                     b.Navigation("Splits");
 
                     b.Navigation("TimeSeries");
-                });
-
-            modelBuilder.Entity("Tempo.Api.Models.Shoe", b =>
-                {
-                    b.Navigation("Workouts");
                 });
 #pragma warning restore 612, 618
         }

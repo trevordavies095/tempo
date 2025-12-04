@@ -28,6 +28,7 @@ Core workout entity with statistics and metadata.
 - `Source` (string, nullable) - Device or source identifier
 - `RunType` (string, nullable)
 - `Device` (string, nullable)
+- `ShoeId` (Guid, nullable, Foreign Key to Shoe) - Assigned running shoe
 - `RawGpxData` (JSONB, nullable) - Raw GPX XML data
 - `RawFitData` (JSONB, nullable) - Raw FIT file data
 - `RawStravaData` (JSONB, nullable) - Raw Strava CSV data
@@ -38,6 +39,7 @@ Core workout entity with statistics and metadata.
 - Composite index on `(StartedAt, DistanceM, DurationS)` for duplicate detection
 - `Source`
 - `RunType`
+- `ShoeId` - Foreign key index for efficient shoe queries
 - GIN indexes on JSONB fields: `RawGpxData`, `RawFitData`, `RawStravaData`, `Weather`
 
 ### WorkoutRoute
@@ -128,12 +130,32 @@ Single-row table for user preferences.
 - `RestingHeartRate` (int, nullable)
 - `CustomZones` (JSONB, nullable) - Custom zone boundaries
 - `UnitPreference` (string) - "metric" or "imperial"
+- `DefaultShoeId` (Guid, nullable, Foreign Key to Shoe) - Default shoe for automatic assignment to new workouts
 
 **Indexes:**
 - Unique index on `Id` (ensures single row)
 
 **Relationship:**
-- Single-row table (no foreign keys)
+- Many-to-one with `Shoe` (via `DefaultShoeId`)
+
+### Shoe
+
+Running shoe entity for tracking shoe mileage.
+
+**Columns:**
+- `Id` (Guid, Primary Key)
+- `Brand` (string, max 100 chars) - Shoe manufacturer
+- `Model` (string, max 100 chars) - Shoe model name
+- `InitialMileageM` (double, nullable) - Initial mileage in meters when shoe was added
+- `CreatedAt` (DateTime)
+- `UpdatedAt` (DateTime)
+
+**Indexes:**
+- No specific indexes (relatively small table, queries typically by Id)
+
+**Relationship:**
+- One-to-many with `Workout` (via `Workout.ShoeId`)
+- One-to-many with `UserSettings` (via `UserSettings.DefaultShoeId`)
 
 ## Relationships
 
@@ -142,6 +164,8 @@ Workout (1) ── (1) WorkoutRoute
 Workout (1) ── (N) WorkoutSplit
 Workout (1) ── (N) WorkoutTimeSeries
 Workout (1) ── (N) WorkoutMedia
+Workout (N) ── (1) Shoe (via ShoeId, nullable)
+UserSettings (1) ── (1) Shoe (via DefaultShoeId, nullable)
 ```
 
 ## Migrations

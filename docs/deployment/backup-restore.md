@@ -10,7 +10,48 @@ Tempo stores data in two locations:
 
 Both must be backed up for a complete backup.
 
+Tempo also provides a **Data Export** feature that creates a user-friendly backup in a portable ZIP format. This can be used as an alternative or supplement to database backups.
+
 ## Backup Procedures
+
+### Data Export as Backup
+
+Tempo's export feature provides a user-friendly way to backup your data directly from the web interface. This method is ideal for:
+
+- **User-level backups** - No database access required
+- **Portable backups** - Single ZIP file contains everything
+- **Quick backups** - Simple one-click export from Settings page
+- **Migration** - Easy to move data between instances
+
+#### Using the Export Feature
+
+1. Log into Tempo
+2. Navigate to Settings
+3. Find the "Export / Import" section
+4. Click "Export All Data"
+5. Wait for the download to complete
+
+The export includes:
+- All workouts with complete data
+- All media files (photos and videos)
+- All shoes and settings
+- Best efforts and calculated data
+- Raw workout files (GPX, FIT, CSV)
+
+#### Export vs. Database Backup
+
+| Feature | Data Export | Database Backup |
+|---------|-------------|-----------------|
+| **Ease of Use** | User-friendly, web interface | Requires database access |
+| **Portability** | Single ZIP file | SQL dump + media files |
+| **Completeness** | All data included | All data included |
+| **Format** | Structured JSON + binary files | SQL + filesystem files |
+| **Restore** | Import feature (user-friendly) | Direct database restore |
+| **Automation** | Manual only | Can be automated |
+
+**Recommendation**: Use both methods for comprehensive backup strategy:
+- **Data Export** - Regular user-level backups, easy to create and store, can be restored via import feature
+- **Database Backup** - System-level backups, can be automated, faster restore for large datasets
 
 ### Database Backup
 
@@ -93,6 +134,47 @@ crontab -e
 Create a systemd service and timer for automated backups.
 
 ## Restore Procedures
+
+### Data Import as Restore
+
+Tempo's import feature provides a user-friendly way to restore data from an export ZIP file. This method is ideal for:
+
+- **User-level restore** - No database access required
+- **Selective restore** - Can import into existing instance with duplicate detection
+- **Cross-instance migration** - Easy to move data between Tempo instances
+- **Quick restore** - Simple drag-and-drop interface from Settings page
+
+#### Using the Import Feature
+
+1. Log into Tempo
+2. Navigate to Settings
+3. Find the "Export / Import" section
+4. In the "Import Data" area, click or drag and drop your export ZIP file
+5. Wait for the import to complete
+6. Review the import summary
+
+The import will:
+- Restore all workouts, media, shoes, and settings
+- Preserve GUIDs and timestamps from the export
+- Automatically skip duplicates
+- Provide detailed statistics and error reporting
+
+**Note**: Import supports export format version 1.0.0. Files up to 500MB are supported.
+
+#### Import vs. Database Restore
+
+| Feature | Data Import | Database Restore |
+|---------|-------------|------------------|
+| **Ease of Use** | User-friendly, web interface | Requires database access |
+| **Selective Restore** | Can import into existing data | Replaces entire database |
+| **Duplicate Handling** | Automatic duplicate detection | No duplicate handling |
+| **Cross-Instance** | Easy migration between instances | Requires database compatibility |
+| **Speed** | Slower for very large datasets | Faster for large datasets |
+| **Automation** | Manual only | Can be automated |
+
+**Recommendation**: 
+- Use **Data Import** for user-level restores, migrations, and selective restores
+- Use **Database Restore** for complete system restores and automated backup strategies
 
 ### Database Restore
 

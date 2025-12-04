@@ -98,17 +98,22 @@ builder.Services.AddDbContext<TempoDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 // Register services
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<GpxParserService>();
 builder.Services.AddScoped<StravaCsvParserService>();
 builder.Services.AddScoped<FitParserService>();
 builder.Services.AddScoped<MediaService>();
 builder.Services.AddScoped<HeartRateZoneService>();
 builder.Services.AddScoped<RelativeEffortService>();
+builder.Services.AddScoped<BestEffortService>();
 builder.Services.AddScoped<BulkImportService>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();
 builder.Services.AddScoped<JwtService>();
+builder.Services.AddScoped<ShoeMileageService>();
+builder.Services.AddScoped<ExportService>();
+builder.Services.AddScoped<ImportService>();
 builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage
@@ -168,6 +173,7 @@ app.UseSerilogRequestLogging();
 app.MapAuthEndpoints();
 app.MapWorkoutsEndpoints();
 app.MapSettingsEndpoints();
+app.MapShoesEndpoints();
 app.MapVersionEndpoints();
 
 // Health check endpoint

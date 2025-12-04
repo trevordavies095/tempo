@@ -2,7 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 
 /**
  * Invalidates all workout-related queries after a mutation.
- * This includes workout lists, individual workouts, and all stats queries.
+ * This includes workout lists, individual workouts, all stats queries, shoe queries, and best efforts.
  * 
  * @param queryClient - The React Query client instance
  * @param workoutId - Optional specific workout ID to invalidate
@@ -26,5 +26,11 @@ export function invalidateWorkoutQueries(queryClient: QueryClient, workoutId?: s
   queryClient.invalidateQueries({ queryKey: ['yearlyWeeklyStats'] });
   queryClient.invalidateQueries({ queryKey: ['availablePeriods'] });
   queryClient.invalidateQueries({ queryKey: ['relativeEffortStats'] });
+  
+  // Invalidate shoes query (mileage is calculated from workouts)
+  queryClient.invalidateQueries({ queryKey: ['shoes'] });
+  
+  // Invalidate best efforts query (calculated from workout segments)
+  queryClient.invalidateQueries({ queryKey: ['bestEfforts'] });
 }
 

@@ -125,6 +125,12 @@ export interface WorkoutDetail {
   rawFitData: any | null;
   rawStravaData: any | null;
   createdAt: string;
+  shoeId: string | null;
+  shoe: {
+    id: string;
+    brand: string;
+    model: string;
+  } | null;
   route: {
     type: string;
     coordinates: [number, number][];
@@ -297,6 +303,58 @@ function getDirectApiUrl(): string {
   }
   // Server-side fallback
   return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+}
+
+export async function exportAllData(): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/workouts/export`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to export data: ${response.status}`);
+  }
+
+  return response.blob();
+}
+
+export interface ExportImportResponse {
+  success: boolean;
+  importedAt: string;
+  statistics: {
+    settings: { imported: number; skipped: number; errors: number };
+    shoes: { imported: number; skipped: number; errors: number };
+    workouts: { imported: number; skipped: number; errors: number };
+    routes: { imported: number; skipped: number; errors: number };
+    splits: { imported: number; skipped: number; errors: number };
+    timeSeries: { imported: number; skipped: number; errors: number };
+    media: { imported: number; skipped: number; errors: number };
+    bestEfforts: { imported: number; skipped: number; errors: number };
+    rawFiles: { imported: number; skipped: number; errors: number };
+  };
+  warnings: string[];
+  errors: string[];
+}
+
+export async function importTempoExport(zipFile: File): Promise<ExportImportResponse> {
+  const formData = new FormData();
+  formData.append('file', zipFile);
+
+  // Use direct API URL to bypass Next.js rewrites and avoid 10MB body size limit
+  const directApiUrl = getDirectApiUrl();
+  const response = await fetch(`${directApiUrl}/workouts/import/export`, {
+    method: 'POST',
+    body: formData,
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to import Tempo export' }));
+    throw new Error(error.error || `HTTP error! status: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 export async function importBulkStravaExport(zipFile: File, unitPreference?: 'metric' | 'imperial'): Promise<BulkImportResponse> {
@@ -473,6 +531,56 @@ export async function getRelativeEffortStats(timezoneOffsetMinutes?: number): Pr
   return response.json();
 }
 
+export interface BestEffortItem {
+  distance: string;
+  distanceM: number;
+  timeS: number;
+  workoutId: string;
+  workoutDate: string;
+}
+
+export interface BestEffortsResponse {
+  distances: BestEffortItem[];
+}
+
+export async function getBestEfforts(): Promise<BestEffortsResponse> {
+  const url = `${API_BASE_URL}/workouts/stats/best-efforts`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch best efforts: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface RecalculateBestEffortsResponse {
+  message: string;
+  count: number;
+}
+
+export async function recalculateBestEfforts(): Promise<RecalculateBestEffortsResponse> {
+  const url = `${API_BASE_URL}/workouts/stats/best-efforts/recalculate`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to recalculate best efforts: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function getYearlyStats(timezoneOffsetMinutes?: number): Promise<YearlyStatsResponse> {
   const searchParams = new URLSearchParams();
   if (timezoneOffsetMinutes !== undefined) {
@@ -587,6 +695,7 @@ export interface UpdateWorkoutRequest {
   runType?: string | null;
   notes?: string | null;
   name?: string | null;
+  shoeId?: string | null;
 }
 
 export interface UpdateWorkoutResponse {
@@ -594,6 +703,7 @@ export interface UpdateWorkoutResponse {
   runType: string | null;
   notes: string | null;
   name: string | null;
+  shoeId: string | null;
 }
 
 export async function updateWorkout(
@@ -962,6 +1072,165 @@ export async function checkRegistrationAvailable(): Promise<RegistrationAvailabl
 
   if (!response.ok) {
     throw new Error(`Failed to check registration availability: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+// Shoe interfaces
+export interface Shoe {
+  id: string;
+  brand: string;
+  model: string;
+  initialMileageM: number | null;
+  totalMileage: number;
+  unit: 'km' | 'miles';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShoeWithMileage {
+  id: string;
+  brand: string;
+  model: string;
+  totalMileage: number;
+  unit: 'km' | 'miles';
+}
+
+export interface CreateShoeRequest {
+  brand: string;
+  model: string;
+  initialMileageM?: number | null;
+}
+
+export interface UpdateShoeRequest {
+  brand?: string;
+  model?: string;
+  initialMileageM?: number | null;
+}
+
+export interface ShoeMileageResponse {
+  shoeId: string;
+  totalMileage: number;
+  unit: 'km' | 'miles';
+}
+
+export interface DefaultShoeResponse {
+  defaultShoeId: string | null;
+  brand?: string;
+  model?: string;
+}
+
+// Shoe API functions
+export async function getShoes(): Promise<Shoe[]> {
+  const response = await fetch(`${API_BASE_URL}/shoes`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch shoes: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function createShoe(shoe: CreateShoeRequest): Promise<Shoe> {
+  const response = await fetch(`${API_BASE_URL}/shoes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(shoe),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to create shoe: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function updateShoe(id: string, shoe: UpdateShoeRequest): Promise<Shoe> {
+  const response = await fetch(`${API_BASE_URL}/shoes/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(shoe),
+  });
+
+  if (response.status === 404) {
+    throw new Error('Shoe not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update shoe: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteShoe(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/shoes/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+
+  if (response.status === 404) {
+    throw new Error('Shoe not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to delete shoe: ${response.status}`);
+  }
+}
+
+export async function getShoeMileage(id: string): Promise<ShoeMileageResponse> {
+  const response = await fetch(`${API_BASE_URL}/shoes/${id}/mileage`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (response.status === 404) {
+    throw new Error('Shoe not found');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch shoe mileage: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getDefaultShoe(): Promise<DefaultShoeResponse> {
+  const response = await fetch(`${API_BASE_URL}/settings/default-shoe`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch default shoe: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function setDefaultShoe(shoeId: string | null): Promise<DefaultShoeResponse> {
+  const response = await fetch(`${API_BASE_URL}/settings/default-shoe`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ defaultShoeId: shoeId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to set default shoe: ${response.status}`);
   }
 
   return response.json();

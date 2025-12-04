@@ -9,7 +9,9 @@ The dashboard provides an overview of your running activity:
 - **Weekly Statistics** - Distance, time, and relative effort for the current week
 - **Yearly Statistics** - Annual totals and trends
 - **Recent Workouts** - Quick access to your latest activities
-- **Charts and Graphs** - Visual representation of your progress
+- **Relative Effort Graph** - Visual representation of workout intensity over time
+- **Best Efforts Chart** - Your fastest times for standard distances (displayed below the Relative Effort graph)
+- **Charts and Graphs** - Additional visual representations of your progress
 
 ## Activities List
 
@@ -51,6 +53,7 @@ Detailed metrics including:
 - **Elevation** - Gain, loss, min, and max elevation
 - **Heart Rate** - Average, max, and zones
 - **Relative Effort** - Calculated intensity score
+- **Shoe** - Assigned running shoe (if any), showing brand, model, and current total mileage
 
 ### Splits
 
@@ -85,7 +88,20 @@ Automatic weather data for the workout:
 
 You can edit workout details:
 - **Activity Name** - Change the name of the workout
+- **Shoe Assignment** - Assign, change, or remove the shoe associated with this workout
 - Use the edit button on the workout details page
+
+#### Assigning a Shoe to a Workout
+
+To assign or change the shoe for a workout:
+
+1. Go to the workout details page
+2. Click the edit button
+3. Find the "Shoe" field
+4. Select a shoe from the dropdown list, or select "No Shoe" to remove the assignment
+5. Save your changes
+
+**Note**: Changing a workout's shoe assignment will automatically update the total mileage for both the old and new shoes (if applicable). The workout's distance is added to the new shoe's total and removed from the old shoe's total.
 
 ### Crop Workout
 
