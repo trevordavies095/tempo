@@ -55,6 +55,34 @@ public class ImportService
     }
 
     /// <summary>
+    /// Validates that a path from the manifest stays within the temp directory to prevent path traversal attacks.
+    /// </summary>
+    /// <param name="tempDir">The temporary directory where files are extracted</param>
+    /// <param name="relativePath">The relative path from the manifest</param>
+    /// <returns>The validated full path</returns>
+    /// <exception cref="InvalidOperationException">Thrown if path traversal is detected</exception>
+    private string ValidateManifestPath(string tempDir, string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            throw new InvalidOperationException("Path from manifest cannot be null or empty");
+        }
+
+        var tempDirFullPath = Path.GetFullPath(tempDir);
+        var combinedPath = Path.Combine(tempDir, relativePath);
+        var resolvedPath = Path.GetFullPath(combinedPath);
+
+        // Ensure the resolved path stays within the temp directory
+        if (!resolvedPath.StartsWith(tempDirFullPath, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Path traversal detected in manifest path: {relativePath}. Paths must stay within the export directory.");
+        }
+
+        return resolvedPath;
+    }
+
+    /// <summary>
     /// Imports a complete Tempo export ZIP file.
     /// </summary>
     public async Task<ImportResult> ImportExportAsync(Stream zipStream)
@@ -245,7 +273,7 @@ public class ImportService
             if (string.IsNullOrEmpty(file))
                 continue;
 
-            var filePath = Path.Combine(tempDir, file);
+            var filePath = ValidateManifestPath(tempDir, file);
             if (!File.Exists(filePath))
             {
                 throw new InvalidOperationException($"Required file not found: {file}");
@@ -268,7 +296,7 @@ public class ImportService
             return;
         }
 
-        var settingsPath = Path.Combine(tempDir, manifest.DataFormat.Settings);
+        var settingsPath = ValidateManifestPath(tempDir, manifest.DataFormat.Settings);
         if (!File.Exists(settingsPath))
         {
             result.Warnings.Add("Settings file not found in export");
@@ -341,9 +369,21 @@ public class ImportService
                 existing.CreatedAt = settings.CreatedAt;
                 existing.UpdatedAt = settings.UpdatedAt;
                 
-                await _db.SaveChangesAsync();
-                result.Statistics.Settings.Imported++;
-                _logger.LogInformation("Updated existing user settings");
+                try
+                {
+                    await _db.SaveChangesAsync();
+                    result.Statistics.Settings.Imported++;
+                    _logger.LogInformation("Updated existing user settings");
+                }
+                catch (Exception saveEx)
+                {
+                    // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
+                    _db.ChangeTracker.Clear();
+                    result.Statistics.Settings.Errors++;
+                    result.Errors.Add($"Error saving settings to database: {saveEx.Message}");
+                    _logger.LogError(saveEx, "Error saving settings to database");
+                    throw; // Re-throw to be caught by outer catch block
+                }
             }
             else
             {
@@ -360,9 +400,21 @@ public class ImportService
                 
                 // Create new settings
                 _db.UserSettings.Add(settings);
-                await _db.SaveChangesAsync();
-                result.Statistics.Settings.Imported++;
-                _logger.LogInformation("Imported user settings");
+                try
+                {
+                    await _db.SaveChangesAsync();
+                    result.Statistics.Settings.Imported++;
+                    _logger.LogInformation("Imported user settings");
+                }
+                catch (Exception saveEx)
+                {
+                    // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
+                    _db.ChangeTracker.Clear();
+                    result.Statistics.Settings.Errors++;
+                    result.Errors.Add($"Error saving settings to database: {saveEx.Message}");
+                    _logger.LogError(saveEx, "Error saving settings to database");
+                    throw; // Re-throw to be caught by outer catch block
+                }
             }
         }
         catch (Exception ex)
@@ -381,7 +433,7 @@ public class ImportService
             return;
         }
 
-        var shoesPath = Path.Combine(tempDir, manifest.DataFormat.Shoes);
+        var shoesPath = ValidateManifestPath(tempDir, manifest.DataFormat.Shoes);
         if (!File.Exists(shoesPath))
         {
             result.Errors.Add("Shoes file not found in export");
@@ -476,8 +528,20 @@ public class ImportService
                 }
             }
 
-            await _db.SaveChangesAsync();
-            _logger.LogInformation("Imported {Count} shoes", result.Statistics.Shoes.Imported);
+            try
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Imported {Count} shoes", result.Statistics.Shoes.Imported);
+            }
+            catch (Exception saveEx)
+            {
+                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
+                _db.ChangeTracker.Clear();
+                result.Statistics.Shoes.Errors++;
+                result.Errors.Add($"Error saving shoes to database: {saveEx.Message}");
+                _logger.LogError(saveEx, "Error saving shoes to database");
+                throw; // Re-throw to be caught by outer catch block
+            }
         }
         catch (Exception ex)
         {
@@ -496,7 +560,7 @@ public class ImportService
             return importedWorkoutIds;
         }
 
-        var workoutsPath = Path.Combine(tempDir, manifest.DataFormat.Workouts);
+        var workoutsPath = ValidateManifestPath(tempDir, manifest.DataFormat.Workouts);
         if (!File.Exists(workoutsPath))
         {
             result.Errors.Add("Workouts file not found in export");
@@ -604,8 +668,20 @@ public class ImportService
                 }
             }
 
-            await _db.SaveChangesAsync();
-            _logger.LogInformation("Imported {Count} workouts", result.Statistics.Workouts.Imported);
+            try
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Imported {Count} workouts", result.Statistics.Workouts.Imported);
+            }
+            catch (Exception saveEx)
+            {
+                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
+                _db.ChangeTracker.Clear();
+                result.Statistics.Workouts.Errors++;
+                result.Errors.Add($"Error saving workouts to database: {saveEx.Message}");
+                _logger.LogError(saveEx, "Error saving workouts to database");
+                throw; // Re-throw to be caught by outer catch block
+            }
         }
         catch (Exception ex)
         {
@@ -624,7 +700,7 @@ public class ImportService
             return;
         }
 
-        var routesPath = Path.Combine(tempDir, manifest.DataFormat.Routes);
+        var routesPath = ValidateManifestPath(tempDir, manifest.DataFormat.Routes);
         if (!File.Exists(routesPath))
         {
             result.Warnings.Add("Routes file not found in export");
@@ -717,8 +793,20 @@ public class ImportService
                 }
             }
 
-            await _db.SaveChangesAsync();
-            _logger.LogInformation("Imported {Count} routes", result.Statistics.Routes.Imported);
+            try
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Imported {Count} routes", result.Statistics.Routes.Imported);
+            }
+            catch (Exception saveEx)
+            {
+                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
+                _db.ChangeTracker.Clear();
+                result.Statistics.Routes.Errors++;
+                result.Errors.Add($"Error saving routes to database: {saveEx.Message}");
+                _logger.LogError(saveEx, "Error saving routes to database");
+                throw; // Re-throw to be caught by outer catch block
+            }
         }
         catch (Exception ex)
         {
@@ -735,7 +823,7 @@ public class ImportService
             return;
         }
 
-        var splitsPath = Path.Combine(tempDir, manifest.DataFormat.Splits);
+        var splitsPath = ValidateManifestPath(tempDir, manifest.DataFormat.Splits);
         if (!File.Exists(splitsPath))
         {
             result.Warnings.Add("Splits file not found in export");
@@ -801,8 +889,20 @@ public class ImportService
                 }
             }
 
-            await _db.SaveChangesAsync();
-            _logger.LogInformation("Imported {Count} splits", result.Statistics.Splits.Imported);
+            try
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Imported {Count} splits", result.Statistics.Splits.Imported);
+            }
+            catch (Exception saveEx)
+            {
+                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
+                _db.ChangeTracker.Clear();
+                result.Statistics.Splits.Errors++;
+                result.Errors.Add($"Error saving splits to database: {saveEx.Message}");
+                _logger.LogError(saveEx, "Error saving splits to database");
+                throw; // Re-throw to be caught by outer catch block
+            }
         }
         catch (Exception ex)
         {
@@ -819,7 +919,7 @@ public class ImportService
             return;
         }
 
-        var timeSeriesPath = Path.Combine(tempDir, manifest.DataFormat.TimeSeries);
+        var timeSeriesPath = ValidateManifestPath(tempDir, manifest.DataFormat.TimeSeries);
         if (!File.Exists(timeSeriesPath))
         {
             result.Warnings.Add("Time series file not found in export");
@@ -885,8 +985,20 @@ public class ImportService
                 }
             }
 
-            await _db.SaveChangesAsync();
-            _logger.LogInformation("Imported {Count} time series records", result.Statistics.TimeSeries.Imported);
+            try
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Imported {Count} time series records", result.Statistics.TimeSeries.Imported);
+            }
+            catch (Exception saveEx)
+            {
+                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
+                _db.ChangeTracker.Clear();
+                result.Statistics.TimeSeries.Errors++;
+                result.Errors.Add($"Error saving time series to database: {saveEx.Message}");
+                _logger.LogError(saveEx, "Error saving time series to database");
+                throw; // Re-throw to be caught by outer catch block
+            }
         }
         catch (Exception ex)
         {
@@ -903,7 +1015,7 @@ public class ImportService
             return;
         }
 
-        var bestEffortsPath = Path.Combine(tempDir, manifest.DataFormat.BestEfforts);
+        var bestEffortsPath = ValidateManifestPath(tempDir, manifest.DataFormat.BestEfforts);
         if (!File.Exists(bestEffortsPath))
         {
             result.Warnings.Add("Best efforts file not found in export");
@@ -1006,8 +1118,20 @@ public class ImportService
                 }
             }
 
-            await _db.SaveChangesAsync();
-            _logger.LogInformation("Imported {Count} best efforts", result.Statistics.BestEfforts.Imported);
+            try
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Imported {Count} best efforts", result.Statistics.BestEfforts.Imported);
+            }
+            catch (Exception saveEx)
+            {
+                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
+                _db.ChangeTracker.Clear();
+                result.Statistics.BestEfforts.Errors++;
+                result.Errors.Add($"Error saving best efforts to database: {saveEx.Message}");
+                _logger.LogError(saveEx, "Error saving best efforts to database");
+                throw; // Re-throw to be caught by outer catch block
+            }
         }
         catch (Exception ex)
         {
@@ -1024,7 +1148,7 @@ public class ImportService
             return;
         }
 
-        var mediaMetadataPath = Path.Combine(tempDir, manifest.DataFormat.MediaMetadata);
+        var mediaMetadataPath = ValidateManifestPath(tempDir, manifest.DataFormat.MediaMetadata);
         if (!File.Exists(mediaMetadataPath))
         {
             result.Warnings.Add("Media metadata file not found in export");
@@ -1133,8 +1257,20 @@ public class ImportService
                 }
             }
 
-            await _db.SaveChangesAsync();
-            _logger.LogInformation("Imported {Count} media files", result.Statistics.Media.Imported);
+            try
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Imported {Count} media files", result.Statistics.Media.Imported);
+            }
+            catch (Exception saveEx)
+            {
+                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
+                _db.ChangeTracker.Clear();
+                result.Statistics.Media.Errors++;
+                result.Errors.Add($"Error saving media to database: {saveEx.Message}");
+                _logger.LogError(saveEx, "Error saving media to database");
+                throw; // Re-throw to be caught by outer catch block
+            }
         }
         catch (Exception ex)
         {
@@ -1215,8 +1351,20 @@ public class ImportService
                 }
             }
 
-            await _db.SaveChangesAsync();
-            _logger.LogInformation("Imported {Count} raw files", result.Statistics.RawFiles.Imported);
+            try
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Imported {Count} raw files", result.Statistics.RawFiles.Imported);
+            }
+            catch (Exception saveEx)
+            {
+                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
+                _db.ChangeTracker.Clear();
+                result.Statistics.RawFiles.Errors++;
+                result.Errors.Add($"Error saving raw files to database: {saveEx.Message}");
+                _logger.LogError(saveEx, "Error saving raw files to database");
+                throw; // Re-throw to be caught by outer catch block
+            }
         }
         catch (Exception ex)
         {
