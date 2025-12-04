@@ -200,6 +200,14 @@ public class BestEffortService
         try
         {
             var geoJson = JsonSerializer.Deserialize<JsonElement>(workout.Route.RouteGeoJson);
+            
+            // Handle case where deserialization results in null JsonElement (e.g., from literal "null" string)
+            // This can happen with corrupted data from earlier imports
+            if (geoJson.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
+            
             if (!geoJson.TryGetProperty("coordinates", out var coordinatesElement))
             {
                 return null;

@@ -802,7 +802,9 @@ public class ImportService
                     string routeGeoJsonString;
                     if (routeData.RouteGeoJson == null)
                     {
-                        routeGeoJsonString = "null";
+                        // Store empty string instead of literal "null" to avoid issues with deserialization
+                        // BestEffortService checks string.IsNullOrEmpty, which will catch empty strings
+                        routeGeoJsonString = string.Empty;
                     }
                     else
                     {
