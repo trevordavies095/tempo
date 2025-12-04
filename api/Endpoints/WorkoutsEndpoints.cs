@@ -837,54 +837,54 @@ public static class WorkoutsEndpoints
         {
             var root = jsonDoc.RootElement;
 
-        // Extract trim values
-        if (!root.TryGetProperty("startTrimSeconds", out var startTrimElement) ||
-            !startTrimElement.TryGetInt32(out var startTrimSeconds))
-        {
-            return Results.BadRequest(new { error = "startTrimSeconds is required and must be an integer" });
-        }
+            // Extract trim values
+            if (!root.TryGetProperty("startTrimSeconds", out var startTrimElement) ||
+                !startTrimElement.TryGetInt32(out var startTrimSeconds))
+            {
+                return Results.BadRequest(new { error = "startTrimSeconds is required and must be an integer" });
+            }
 
-        if (!root.TryGetProperty("endTrimSeconds", out var endTrimElement) ||
-            !endTrimElement.TryGetInt32(out var endTrimSeconds))
-        {
-            return Results.BadRequest(new { error = "endTrimSeconds is required and must be an integer" });
-        }
+            if (!root.TryGetProperty("endTrimSeconds", out var endTrimElement) ||
+                !endTrimElement.TryGetInt32(out var endTrimSeconds))
+            {
+                return Results.BadRequest(new { error = "endTrimSeconds is required and must be an integer" });
+            }
 
-        // Validate trim values
-        if (startTrimSeconds < 0 || endTrimSeconds < 0)
-        {
-            return Results.BadRequest(new { error = "Trim values must be non-negative" });
-        }
+            // Validate trim values
+            if (startTrimSeconds < 0 || endTrimSeconds < 0)
+            {
+                return Results.BadRequest(new { error = "Trim values must be non-negative" });
+            }
 
-        // Load workout with related data
-        var workout = await db.Workouts
-            .Include(w => w.Route)
-            .FirstOrDefaultAsync(w => w.Id == id);
+            // Load workout with related data
+            var workout = await db.Workouts
+                .Include(w => w.Route)
+                .FirstOrDefaultAsync(w => w.Id == id);
 
-        if (workout == null)
-        {
-            return Results.NotFound(new { error = "Workout not found" });
-        }
+            if (workout == null)
+            {
+                return Results.NotFound(new { error = "Workout not found" });
+            }
 
-        if (workout.Route == null)
-        {
-            return Results.BadRequest(new { error = "Workout has no route data. Cannot crop workout without route." });
-        }
+            if (workout.Route == null)
+            {
+                return Results.BadRequest(new { error = "Workout has no route data. Cannot crop workout without route." });
+            }
 
-        // Validate crop parameters
-        if (startTrimSeconds + endTrimSeconds >= workout.DurationS)
-        {
-            return Results.BadRequest(new { error = $"Cannot crop entire workout. Trim values ({startTrimSeconds}s + {endTrimSeconds}s) must be less than workout duration ({workout.DurationS}s)" });
-        }
+            // Validate crop parameters
+            if (startTrimSeconds + endTrimSeconds >= workout.DurationS)
+            {
+                return Results.BadRequest(new { error = $"Cannot crop entire workout. Trim values ({startTrimSeconds}s + {endTrimSeconds}s) must be less than workout duration ({workout.DurationS}s)" });
+            }
 
-        // Check which best efforts reference this workout before cropping
-        // This is needed to recalculate best efforts for distances the workout may no longer qualify for after cropping
-        var affectedBestEfforts = await db.BestEfforts
-            .Where(be => be.WorkoutId == id)
-            .Select(be => be.Distance)
-            .ToListAsync();
+            // Check which best efforts reference this workout before cropping
+            // This is needed to recalculate best efforts for distances the workout may no longer qualify for after cropping
+            var affectedBestEfforts = await db.BestEfforts
+                .Where(be => be.WorkoutId == id)
+                .Select(be => be.Distance)
+                .ToListAsync();
 
-        try
+            try
         {
             // Perform crop
             await cropService.CropWorkoutAsync(workout, startTrimSeconds, endTrimSeconds);
@@ -1076,16 +1076,16 @@ public static class WorkoutsEndpoints
                 splits = splits
             });
             }
-        }
-        catch (InvalidOperationException ex)
-        {
-            logger.LogWarning(ex, "Invalid crop operation for workout {WorkoutId}", id);
-            return Results.BadRequest(new { error = ex.Message });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error cropping workout {WorkoutId}", id);
-            return Results.Problem("Failed to crop workout");
+            catch (InvalidOperationException ex)
+            {
+                logger.LogWarning(ex, "Invalid crop operation for workout {WorkoutId}", id);
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error cropping workout {WorkoutId}", id);
+                return Results.Problem("Failed to crop workout");
+            }
         }
     }
 
