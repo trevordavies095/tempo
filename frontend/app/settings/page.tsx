@@ -18,7 +18,6 @@ import { RecalculateSplitsDialog } from '@/components/RecalculateSplitsDialog';
 import UnitPreferenceSection from '@/components/UnitPreferenceSection';
 import { ShoeManagementSection } from '@/components/ShoeManagementSection';
 import { ExportImportSection } from '@/components/ExportImportSection';
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVersion } from '@/lib/api';
@@ -253,12 +252,6 @@ function SettingsPageContent() {
     <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-4xl flex-col items-start py-16 px-8">
         <div className="w-full mb-8">
-          <Link
-            href="/dashboard"
-            className="text-blue-600 dark:text-blue-400 hover:underline mb-4 inline-block"
-          >
-            ← Back to Dashboard
-          </Link>
           <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             Settings
           </h1>
@@ -267,301 +260,329 @@ function SettingsPageContent() {
           </p>
         </div>
 
-        <div className="w-full space-y-8">
-          <UnitPreferenceSection />
-
-          <ShoeManagementSection />
-
-          <ExportImportSection />
-
-          {/* Recalculate Splits Button */}
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Recalculate Splits
+        <div className="w-full space-y-12">
+          {/* Display Preferences */}
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
+              Display Preferences
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Recalculate splits for all existing workouts based on your current unit preference. New workouts will automatically use your current preference.
-            </p>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={handleRecalculateSplitsClick}
-                disabled={isRecalculatingSplits}
-                className={`px-6 py-3 rounded-lg font-medium transition-colors w-fit ${
-                  isRecalculatingSplits
-                    ? 'bg-gray-400 text-white cursor-not-allowed'
-                    : 'bg-orange-600 text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600'
-                }`}
-              >
-                {isRecalculatingSplits ? 'Recalculating...' : 'Recalculate Splits'}
-              </button>
-              {recalcSplitsSuccess && (
-                <span className="text-sm text-green-600 dark:text-green-400">
-                  Successfully recalculated splits for {recalcSplitsWorkoutCount} workout{recalcSplitsWorkoutCount !== 1 ? 's' : ''}!
-                </span>
-              )}
-              {recalcSplitsError && (
-                <span className="text-sm text-red-600 dark:text-red-400">
-                  {recalcSplitsError}
-                </span>
-              )}
-            </div>
+            <UnitPreferenceSection />
           </div>
 
-          {/* Heart Rate Zones */}
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Heart Rate Zones
+          {/* Equipment Management */}
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
+              Equipment Management
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-              Configure your heart rate zones for training analysis. Choose a calculation method or set custom zones.
-            </p>
+            <ShoeManagementSection />
+          </div>
 
-            {isLoading ? (
-              <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-            ) : (
-              <>
-                {/* Calculation Method Selection */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                    Calculation Method
-                  </label>
-                  <div className="space-y-2">
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="calculationMethod"
-                        value="AgeBased"
-                        checked={calculationMethod === 'AgeBased'}
-                        onChange={(e) => setCalculationMethod(e.target.value as HeartRateCalculationMethod)}
-                        className="mr-2"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        220 - Age (Default)
-                      </span>
-                    </label>
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="calculationMethod"
-                        value="Karvonen"
-                        checked={calculationMethod === 'Karvonen'}
-                        onChange={(e) => setCalculationMethod(e.target.value as HeartRateCalculationMethod)}
-                        className="mr-2"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        Karvonen (Heart Rate Reserve)
-                      </span>
-                    </label>
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="calculationMethod"
-                        value="Custom"
-                        checked={calculationMethod === 'Custom'}
-                        onChange={(e) => setCalculationMethod(e.target.value as HeartRateCalculationMethod)}
-                        className="mr-2"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        Custom Zones
-                      </span>
-                    </label>
-                  </div>
-                </div>
+          {/* Training Configuration */}
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
+              Training Configuration
+            </h2>
+            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                Heart Rate Zones
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                Configure your heart rate zones for training analysis. Choose a calculation method or set custom zones.
+              </p>
 
-                {/* Input Fields Based on Method */}
-                {calculationMethod === 'AgeBased' && (
+              {isLoading ? (
+                <div className="text-gray-600 dark:text-gray-400">Loading...</div>
+              ) : (
+                <>
+                  {/* Calculation Method Selection */}
                   <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Age
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                      Calculation Method
                     </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="120"
-                      value={age}
-                      onChange={(e) => setAge(parseInt(e.target.value) || 30)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                    />
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Max HR will be calculated as 220 - age = {220 - age} BPM
-                    </p>
-                  </div>
-                )}
-
-                {calculationMethod === 'Karvonen' && (
-                  <div className="mb-6 space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Resting Heart Rate (BPM)
+                    <div className="space-y-2">
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="calculationMethod"
+                          value="AgeBased"
+                          checked={calculationMethod === 'AgeBased'}
+                          onChange={(e) => setCalculationMethod(e.target.value as HeartRateCalculationMethod)}
+                          className="mr-2"
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          220 - Age (Default)
+                        </span>
                       </label>
-                      <input
-                        type="number"
-                        min="30"
-                        max="120"
-                        value={restingHr}
-                        onChange={(e) => setRestingHr(parseInt(e.target.value) || 60)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                      />
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="calculationMethod"
+                          value="Karvonen"
+                          checked={calculationMethod === 'Karvonen'}
+                          onChange={(e) => setCalculationMethod(e.target.value as HeartRateCalculationMethod)}
+                          className="mr-2"
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          Karvonen (Heart Rate Reserve)
+                        </span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="calculationMethod"
+                          value="Custom"
+                          checked={calculationMethod === 'Custom'}
+                          onChange={(e) => setCalculationMethod(e.target.value as HeartRateCalculationMethod)}
+                          className="mr-2"
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          Custom Zones
+                        </span>
+                      </label>
                     </div>
-                    <div>
+                  </div>
+
+                  {/* Input Fields Based on Method */}
+                  {calculationMethod === 'AgeBased' && (
+                    <div className="mb-6">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Maximum Heart Rate (BPM)
+                        Age
                       </label>
                       <input
                         type="number"
-                        min="60"
-                        max="250"
-                        value={maxHr}
-                        onChange={(e) => setMaxHr(parseInt(e.target.value) || 190)}
+                        min="1"
+                        max="120"
+                        value={age}
+                        onChange={(e) => setAge(parseInt(e.target.value) || 30)}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                       />
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Heart Rate Reserve = {maxHr} - {restingHr} = {maxHr - restingHr} BPM
+                        Max HR will be calculated as 220 - age = {220 - age} BPM
                       </p>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {calculationMethod === 'Custom' && (
-                  <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                      Custom Zone Boundaries (BPM)
-                    </label>
-                    <div className="space-y-3">
-                      {customZones.map((zone, index) => (
-                        <div key={index} className="flex items-center gap-3">
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300 w-16">
-                            Zone {index + 1}:
+                  {calculationMethod === 'Karvonen' && (
+                    <div className="mb-6 space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Resting Heart Rate (BPM)
+                        </label>
+                        <input
+                          type="number"
+                          min="30"
+                          max="120"
+                          value={restingHr}
+                          onChange={(e) => setRestingHr(parseInt(e.target.value) || 60)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Maximum Heart Rate (BPM)
+                        </label>
+                        <input
+                          type="number"
+                          min="60"
+                          max="250"
+                          value={maxHr}
+                          onChange={(e) => setMaxHr(parseInt(e.target.value) || 190)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Heart Rate Reserve = {maxHr} - {restingHr} = {maxHr - restingHr} BPM
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {calculationMethod === 'Custom' && (
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                        Custom Zone Boundaries (BPM)
+                      </label>
+                      <div className="space-y-3">
+                        {customZones.map((zone, index) => (
+                          <div key={index} className="flex items-center gap-3">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 w-16">
+                              Zone {index + 1}:
+                            </span>
+                            <input
+                              type="number"
+                              min="30"
+                              max="250"
+                              value={zone.min}
+                              onChange={(e) => updateCustomZone(index, 'min', parseInt(e.target.value) || 0)}
+                              className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                              placeholder="Min"
+                            />
+                            <span className="text-gray-500 dark:text-gray-400">-</span>
+                            <input
+                              type="number"
+                              min="30"
+                              max="250"
+                              value={zone.max}
+                              onChange={(e) => updateCustomZone(index, 'max', parseInt(e.target.value) || 0)}
+                              className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                              placeholder="Max"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Zone Preview */}
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg mb-6">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                      Zone Preview
+                    </h3>
+                    <div className="space-y-2">
+                      {displayZones.map((zone, index) => (
+                        <div key={index} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-700 dark:text-gray-300 font-medium">
+                            Zone {index + 1}
                           </span>
-                          <input
-                            type="number"
-                            min="30"
-                            max="250"
-                            value={zone.min}
-                            onChange={(e) => updateCustomZone(index, 'min', parseInt(e.target.value) || 0)}
-                            className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                            placeholder="Min"
-                          />
-                          <span className="text-gray-500 dark:text-gray-400">-</span>
-                          <input
-                            type="number"
-                            min="30"
-                            max="250"
-                            value={zone.max}
-                            onChange={(e) => updateCustomZone(index, 'max', parseInt(e.target.value) || 0)}
-                            className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                            placeholder="Max"
-                          />
+                          <span className="text-gray-600 dark:text-gray-400">
+                            {zone.min} - {zone.max} BPM
+                          </span>
                         </div>
                       ))}
                     </div>
                   </div>
-                )}
 
-                {/* Zone Preview */}
-                <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg mb-6">
-                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-                    Zone Preview
-                  </h3>
-                  <div className="space-y-2">
-                    {displayZones.map((zone, index) => (
-                      <div key={index} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-700 dark:text-gray-300 font-medium">
-                          Zone {index + 1}
-                        </span>
-                        <span className="text-gray-600 dark:text-gray-400">
-                          {zone.min} - {zone.max} BPM
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Save Button and Messages */}
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-center gap-4">
-                    <button
-                      onClick={handleSaveHrZones}
-                      disabled={isSaving}
-                      className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-                        isSaving
-                          ? 'bg-gray-400 text-white cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600'
-                      }`}
-                    >
-                      {isSaving ? 'Saving...' : 'Save Heart Rate Zones'}
-                    </button>
-                    {saveSuccess && (
-                      <span className="text-sm text-green-600 dark:text-green-400">
-                        Settings saved successfully!
-                      </span>
-                    )}
-                    {saveError && (
-                      <span className="text-sm text-red-600 dark:text-red-400">
-                        {saveError}
-                      </span>
-                    )}
-                  </div>
-                  
-                  {/* Recalculate Relative Effort Button */}
-                  {hrZones && (
-                    <div className="flex flex-col gap-2">
+                  {/* Save Button and Messages */}
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center gap-4">
                       <button
-                        onClick={handleRecalculateClick}
-                        disabled={isRecalculating || isSaving}
-                        className={`px-6 py-3 rounded-lg font-medium transition-colors w-fit ${
-                          isRecalculating || isSaving
+                        onClick={handleSaveHrZones}
+                        disabled={isSaving}
+                        className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                          isSaving
                             ? 'bg-gray-400 text-white cursor-not-allowed'
-                            : 'bg-orange-600 text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600'
+                            : 'bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600'
                         }`}
                       >
-                        {isRecalculating ? 'Recalculating...' : 'Recalculate Relative Effort'}
+                        {isSaving ? 'Saving...' : 'Save Heart Rate Zones'}
                       </button>
-                      {recalcSuccess && (
+                      {saveSuccess && (
                         <span className="text-sm text-green-600 dark:text-green-400">
-                          Successfully recalculated relative effort for {recalcWorkoutCount} workout{recalcWorkoutCount !== 1 ? 's' : ''}!
+                          Settings saved successfully!
                         </span>
                       )}
-                      {recalcError && (
+                      {saveError && (
                         <span className="text-sm text-red-600 dark:text-red-400">
-                          {recalcError}
+                          {saveError}
                         </span>
                       )}
                     </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Data Management */}
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
+              Data Management
+            </h2>
+            <ExportImportSection />
+          </div>
+
+          {/* Data Recalculation */}
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
+              Data Recalculation
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              These operations will modify existing workout data. Use with caution.
+            </p>
+            
+            {/* Recalculate Splits */}
+            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                Recalculate Splits
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Recalculate splits for all existing workouts based on your current unit preference. New workouts will automatically use your current preference.
+              </p>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={handleRecalculateSplitsClick}
+                  disabled={isRecalculatingSplits}
+                  className={`px-6 py-3 rounded-lg font-medium transition-colors w-fit ${
+                    isRecalculatingSplits
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-orange-600 text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600'
+                  }`}
+                >
+                  {isRecalculatingSplits ? 'Recalculating...' : 'Recalculate Splits'}
+                </button>
+                {recalcSplitsSuccess && (
+                  <span className="text-sm text-green-600 dark:text-green-400">
+                    Successfully recalculated splits for {recalcSplitsWorkoutCount} workout{recalcSplitsWorkoutCount !== 1 ? 's' : ''}!
+                  </span>
+                )}
+                {recalcSplitsError && (
+                  <span className="text-sm text-red-600 dark:text-red-400">
+                    {recalcSplitsError}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Recalculate Relative Effort */}
+            {hrZones && (
+              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                  Recalculate Relative Effort
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Recalculate relative effort for all workouts based on your current heart rate zone settings.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={handleRecalculateClick}
+                    disabled={isRecalculating || isSaving}
+                    className={`px-6 py-3 rounded-lg font-medium transition-colors w-fit ${
+                      isRecalculating || isSaving
+                        ? 'bg-gray-400 text-white cursor-not-allowed'
+                        : 'bg-orange-600 text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600'
+                    }`}
+                  >
+                    {isRecalculating ? 'Recalculating...' : 'Recalculate Relative Effort'}
+                  </button>
+                  {recalcSuccess && (
+                    <span className="text-sm text-green-600 dark:text-green-400">
+                      Successfully recalculated relative effort for {recalcWorkoutCount} workout{recalcWorkoutCount !== 1 ? 's' : ''}!
+                    </span>
+                  )}
+                  {recalcError && (
+                    <span className="text-sm text-red-600 dark:text-red-400">
+                      {recalcError}
+                    </span>
                   )}
                 </div>
-              </>
+              </div>
             )}
           </div>
 
-          {/* Info Section */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-lg border border-blue-200 dark:border-blue-800">
-            <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-2">
-              About Units
-            </h3>
-            <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-disc list-inside">
-              <li>
-                <strong>Metric:</strong> Distances in kilometers (km), pace per kilometer, elevation in meters (m)
-              </li>
-              <li>
-                <strong>Imperial:</strong> Distances in miles (mi), pace per mile, elevation in feet (ft)
-              </li>
-              <li>Your preference is saved and will persist across sessions.</li>
-              <li>New workouts will be imported with splits based on your current unit preference (1 km splits for metric, 1 mile splits for imperial).</li>
-              <li>To update splits for existing workouts, use the "Recalculate Splits" button above.</li>
-            </ul>
-          </div>
-
-          {/* Version Information */}
+          {/* System Information */}
           {versionInfo && (
-            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800">
-              <div className="text-center text-sm text-gray-500 dark:text-gray-400">
-                <div className="font-mono">v{versionInfo.version}</div>
-                {versionInfo.buildDate && versionInfo.buildDate !== 'unknown' && (
-                  <div className="text-xs mt-1">
-                    Built {new Date(versionInfo.buildDate).toLocaleDateString()}
-                  </div>
-                )}
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
+                System Information
+              </h2>
+              <div className="pt-2">
+                <div className="text-center text-sm text-gray-500 dark:text-gray-400">
+                  <div className="font-mono">v{versionInfo.version}</div>
+                  {versionInfo.buildDate && versionInfo.buildDate !== 'unknown' && (
+                    <div className="text-xs mt-1">
+                      Built {new Date(versionInfo.buildDate).toLocaleDateString()}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
