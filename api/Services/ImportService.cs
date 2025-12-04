@@ -379,9 +379,6 @@ public class ImportService
                 {
                     // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
                     _db.ChangeTracker.Clear();
-                    result.Statistics.Settings.Errors++;
-                    result.Errors.Add($"Error saving settings to database: {saveEx.Message}");
-                    _logger.LogError(saveEx, "Error saving settings to database");
                     throw; // Re-throw to be caught by outer catch block
                 }
             }
@@ -410,9 +407,6 @@ public class ImportService
                 {
                     // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
                     _db.ChangeTracker.Clear();
-                    result.Statistics.Settings.Errors++;
-                    result.Errors.Add($"Error saving settings to database: {saveEx.Message}");
-                    _logger.LogError(saveEx, "Error saving settings to database");
                     throw; // Re-throw to be caught by outer catch block
                 }
             }
@@ -1299,24 +1293,26 @@ public class ImportService
                     continue;
                 }
 
-                // Only import raw files for workouts that were actually imported in this session
-                // Skip if the workout was skipped during import (e.g., duplicate or already exists)
-                if (!importedWorkoutIds.Contains(workoutId))
-                {
-                    result.Statistics.RawFiles.Skipped++;
-                    result.Warnings.Add($"Raw file found for workout {workoutId} that was skipped during import, skipping raw file");
-                    continue;
-                }
-
+                // First check if raw directory exists
                 var rawDir = Path.Combine(workoutDir, "raw");
                 if (!Directory.Exists(rawDir))
                 {
                     continue;
                 }
 
+                // Then check if there are any raw files
                 var rawFiles = Directory.GetFiles(rawDir);
                 if (rawFiles.Length == 0)
                 {
+                    continue;
+                }
+
+                // Only import raw files for workouts that were actually imported in this session
+                // Skip if the workout was skipped during import (e.g., duplicate or already exists)
+                if (!importedWorkoutIds.Contains(workoutId))
+                {
+                    result.Statistics.RawFiles.Skipped++;
+                    result.Warnings.Add($"Raw file found for workout {workoutId} that was skipped during import, skipping raw file");
                     continue;
                 }
 
