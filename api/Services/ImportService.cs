@@ -218,16 +218,16 @@ public class ImportService
                 throw new InvalidOperationException("Failed to deserialize manifest.json");
             }
 
+            // Validate required fields first
+            if (string.IsNullOrEmpty(manifest.Version) || manifest.Statistics == null || manifest.DataFormat == null)
+            {
+                throw new InvalidOperationException("Manifest is missing required fields");
+            }
+
             // Validate version
             if (manifest.Version != "1.0.0")
             {
                 throw new InvalidOperationException($"Unsupported export version: {manifest.Version}. Expected 1.0.0");
-            }
-
-            // Validate required fields
-            if (string.IsNullOrEmpty(manifest.Version) || manifest.Statistics == null || manifest.DataFormat == null)
-            {
-                throw new InvalidOperationException("Manifest is missing required fields");
             }
 
             return manifest;
@@ -1438,6 +1438,7 @@ public class ImportService
                 var workout = await _db.Workouts.FindAsync(workoutId);
                 if (workout == null)
                 {
+                    result.Statistics.RawFiles.Skipped++;
                     result.Warnings.Add($"Raw file found for non-existent workout {workoutId}, skipping");
                     continue;
                 }
