@@ -161,7 +161,9 @@ public static class ShoesEndpoints
                 return Results.BadRequest(new { error = "Request body is required" });
             }
 
-            var root = jsonDoc.RootElement;
+            using (jsonDoc)
+            {
+                var root = jsonDoc.RootElement;
 
             var shoe = await db.Shoes.FindAsync(id);
             if (shoe == null)
@@ -270,6 +272,7 @@ public static class ShoesEndpoints
                 createdAt = shoe.CreatedAt,
                 updatedAt = shoe.UpdatedAt
             });
+            }
         }
         catch (Exception ex)
         {

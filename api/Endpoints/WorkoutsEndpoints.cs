@@ -833,7 +833,9 @@ public static class WorkoutsEndpoints
             return Results.BadRequest(new { error = "Request body is required" });
         }
 
-        var root = jsonDoc.RootElement;
+        using (jsonDoc)
+        {
+            var root = jsonDoc.RootElement;
 
         // Extract trim values
         if (!root.TryGetProperty("startTrimSeconds", out var startTrimElement) ||
@@ -1073,6 +1075,7 @@ public static class WorkoutsEndpoints
                 route = routeGeoJson,
                 splits = splits
             });
+            }
         }
         catch (InvalidOperationException ex)
         {
@@ -2266,7 +2269,9 @@ public static class WorkoutsEndpoints
             return Results.BadRequest(new { error = "Request body is required" });
         }
 
-        var root = jsonDoc.RootElement;
+        using (jsonDoc)
+        {
+            var root = jsonDoc.RootElement;
 
         // Find workout
         var workout = await db.Workouts.FindAsync(id);
@@ -2391,6 +2396,7 @@ public static class WorkoutsEndpoints
             name = workout.Name,
             shoeId = workout.ShoeId
         });
+        }
     }
 
     /// <summary>
