@@ -1517,6 +1517,97 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
+    /// Import Tempo export ZIP file
+    /// </summary>
+    /// <param name="request">HTTP request containing multipart/form-data with ZIP file</param>
+    /// <param name="importService">Import service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>Import results with counts of imported, skipped, and error details</returns>
+    /// <remarks>
+    /// Uploads and processes a ZIP file containing a complete Tempo export, restoring all user data
+    /// including workouts, media files, settings, shoes, routes, splits, time series, and best efforts.
+    /// Duplicates are skipped by default. GUIDs and timestamps from the export are preserved.
+    /// </remarks>
+    private static async Task<IResult> ImportExport(
+        HttpRequest request,
+        ImportService importService,
+        ILogger<Program> logger)
+    {
+        if (!request.HasFormContentType)
+        {
+            return Results.BadRequest(new { error = "Request must be multipart/form-data" });
+        }
+
+        // Enable request body buffering to ensure the full request is received before processing
+        // Use 500MB buffer size to match MaxRequestBodySize and MultipartBodyLengthLimit
+        request.EnableBuffering(500_000_000);
+
+        Microsoft.AspNetCore.Http.IFormCollection form;
+        try
+        {
+            form = await request.ReadFormAsync();
+        }
+        catch (Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
+        {
+            logger.LogError(ex, "Request body was incomplete or connection was closed prematurely during export import");
+            return Results.BadRequest(new { error = "Upload failed: The request was incomplete. This may be due to a timeout or connection issue. Please try again with a stable connection." });
+        }
+
+        var file = form.Files.GetFile("file");
+
+        if (file == null || file.Length == 0)
+        {
+            return Results.BadRequest(new { error = "No file uploaded" });
+        }
+
+        if (!file.FileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new { error = "File must be a ZIP file" });
+        }
+
+        try
+        {
+            using (var zipStream = file.OpenReadStream())
+            {
+                var result = await importService.ImportExportAsync(zipStream);
+
+                return Results.Ok(new
+                {
+                    success = result.Success,
+                    importedAt = result.ImportedAt,
+                    statistics = new
+                    {
+                        settings = new { imported = result.Statistics.Settings.Imported, skipped = result.Statistics.Settings.Skipped, errors = result.Statistics.Settings.Errors },
+                        shoes = new { imported = result.Statistics.Shoes.Imported, skipped = result.Statistics.Shoes.Skipped, errors = result.Statistics.Shoes.Errors },
+                        workouts = new { imported = result.Statistics.Workouts.Imported, skipped = result.Statistics.Workouts.Skipped, errors = result.Statistics.Workouts.Errors },
+                        routes = new { imported = result.Statistics.Routes.Imported, skipped = result.Statistics.Routes.Skipped, errors = result.Statistics.Routes.Errors },
+                        splits = new { imported = result.Statistics.Splits.Imported, skipped = result.Statistics.Splits.Skipped, errors = result.Statistics.Splits.Errors },
+                        timeSeries = new { imported = result.Statistics.TimeSeries.Imported, skipped = result.Statistics.TimeSeries.Skipped, errors = result.Statistics.TimeSeries.Errors },
+                        media = new { imported = result.Statistics.Media.Imported, skipped = result.Statistics.Media.Skipped, errors = result.Statistics.Media.Errors },
+                        bestEfforts = new { imported = result.Statistics.BestEfforts.Imported, skipped = result.Statistics.BestEfforts.Skipped, errors = result.Statistics.BestEfforts.Errors },
+                        rawFiles = new { imported = result.Statistics.RawFiles.Imported, skipped = result.Statistics.RawFiles.Skipped, errors = result.Statistics.RawFiles.Errors }
+                    },
+                    warnings = result.Warnings,
+                    errors = result.Errors
+                });
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Invalid export format");
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error importing export file");
+            return Results.Problem(
+                title: "Import failed",
+                detail: ex.Message,
+                statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// Get weekly stats
     /// </summary>
     /// <param name="db">Database context</param>
@@ -2520,6 +2611,15 @@ public static class WorkoutsEndpoints
         .Produces(500)
         .WithSummary("Export all user data")
         .WithDescription("Exports all user data including workouts, media files, shoes, settings, and best efforts in a portable ZIP format that can be imported back into Tempo. Returns a ZIP file with Content-Type: application/zip.");
+
+        group.MapPost("/import/export", ImportExport)
+        .WithName("ImportExport")
+        .Accepts<IFormFile>("multipart/form-data")
+        .Produces(200)
+        .Produces(400)
+        .Produces(500)
+        .WithSummary("Import Tempo export ZIP file")
+        .WithDescription("Uploads and processes a ZIP file containing a complete Tempo export, restoring all user data including workouts, media files, settings, shoes, routes, splits, time series, and best efforts. Duplicates are skipped by default.");
 
         group.MapGet("/stats/weekly", GetWeeklyStats)
         .WithName("GetWeeklyStats")

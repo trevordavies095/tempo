@@ -13,7 +13,7 @@ Tempo is a self-hosted running tracker that helps you track and analyze your wor
 - **[Viewing Workouts](viewing-workouts.md)** - Explore the dashboard, activity list, and detailed workout views
 - **[Media](media.md)** - Add photos and videos to your workouts
 - **[Analytics](analytics.md)** - Understand metrics, statistics, and performance data
-- **[Settings](settings.md)** - Configure preferences, heart rate zones, unit preferences, shoe tracking, and export/import data
+- **[Settings](settings.md)** - Configure preferences, heart rate zones, unit preferences, shoe tracking, and export/import data (including backup restoration)
 
 ## Getting Started
 
@@ -38,6 +38,14 @@ If you're new to Tempo, start with:
 2. Upload the ZIP file via the Bulk Import feature
 3. Wait for processing to complete
 4. Review imported workouts
+
+### Backup and Restore
+
+1. Navigate to Settings → Export / Import
+2. Click "Export All Data" to create a backup
+3. Store the ZIP file safely
+4. To restore, use "Import Data" and upload the export file
+5. Review import statistics to verify restoration
 
 ### Analyzing Performance
 

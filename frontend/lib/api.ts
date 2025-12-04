@@ -319,6 +319,44 @@ export async function exportAllData(): Promise<Blob> {
   return response.blob();
 }
 
+export interface ExportImportResponse {
+  success: boolean;
+  importedAt: string;
+  statistics: {
+    settings: { imported: number; skipped: number; errors: number };
+    shoes: { imported: number; skipped: number; errors: number };
+    workouts: { imported: number; skipped: number; errors: number };
+    routes: { imported: number; skipped: number; errors: number };
+    splits: { imported: number; skipped: number; errors: number };
+    timeSeries: { imported: number; skipped: number; errors: number };
+    media: { imported: number; skipped: number; errors: number };
+    bestEfforts: { imported: number; skipped: number; errors: number };
+    rawFiles: { imported: number; skipped: number; errors: number };
+  };
+  warnings: string[];
+  errors: string[];
+}
+
+export async function importTempoExport(zipFile: File): Promise<ExportImportResponse> {
+  const formData = new FormData();
+  formData.append('file', zipFile);
+
+  // Use direct API URL to bypass Next.js rewrites and avoid 10MB body size limit
+  const directApiUrl = getDirectApiUrl();
+  const response = await fetch(`${directApiUrl}/workouts/import/export`, {
+    method: 'POST',
+    body: formData,
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to import Tempo export' }));
+    throw new Error(error.error || `HTTP error! status: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function importBulkStravaExport(zipFile: File, unitPreference?: 'metric' | 'imperial'): Promise<BulkImportResponse> {
   const formData = new FormData();
   formData.append('file', zipFile);

@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { TempoExportImport } from './TempoExportImport';
+import { exportAllData } from '@/lib/api';
 
 export function ExportImportSection() {
   const [isExporting, setIsExporting] = useState(false);
@@ -13,28 +15,11 @@ export function ExportImportSection() {
     setExportSuccess(false);
 
     try {
-      const response = await fetch('/api/workouts/export', {
-        method: 'POST',
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
-        throw new Error(error.error || `Failed to export data: ${response.status}`);
-      }
-
-      const blob = await response.blob();
+      const blob = await exportAllData();
       
-      // Try to get filename from Content-Disposition header
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `tempo-export-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}.zip`;
-      
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (filenameMatch && filenameMatch[1]) {
-          filename = filenameMatch[1].replace(/['"]/g, '');
-        }
-      }
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const filename = `tempo-export-${timestamp}.zip`;
       
       // Create a download link
       const url = window.URL.createObjectURL(blob);
@@ -103,20 +88,16 @@ export function ExportImportSection() {
           </div>
         </div>
 
-        {/* Import Section - Placeholder for future */}
+        {/* Import Section */}
         <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
           <h3 className="text-md font-medium text-gray-900 dark:text-gray-100 mb-2">
             Import Data
           </h3>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Import a previously exported Tempo backup file to restore your data. This feature will be available soon.
+            Import a previously exported Tempo backup file to restore your data. This will restore all workouts, 
+            media files, shoes, settings, and calculated data. Duplicates will be skipped automatically.
           </p>
-          <button
-            disabled
-            className="px-6 py-3 rounded-lg font-medium transition-colors w-fit bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400"
-          >
-            Import Data (Coming Soon)
-          </button>
+          <TempoExportImport />
         </div>
       </div>
     </div>
