@@ -3,7 +3,7 @@
 > A privacy-first, self-hosted Strava alternative. Import GPX, FIT, and CSV files from Garmin, Apple Watch, Strava, and more. Keep all your data local—no subscriptions, no cloud required.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](httpsimg.shields.io/badge/version-1.4.0-green.svg)
+![Version](https://img.shields.io/badge/version-1.4.0-green.svg)
 ![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
