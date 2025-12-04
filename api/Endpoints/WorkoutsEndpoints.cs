@@ -935,8 +935,24 @@ public static class WorkoutsEndpoints
                             
                             var workoutStillHoldsRecord = currentBestEffort != null && currentBestEffort.WorkoutId == id;
                             
-                            // If workout no longer qualifies OR no longer holds the record, recalculate from all workouts
-                            if (!stillQualifies || !workoutStillHoldsRecord)
+                            // If workout still holds the record, verify it can actually achieve the stored time
+                            // This handles the case where cropping removed the fast segment that set the record
+                            var storedTimeNoLongerAchievable = false;
+                            if (workoutStillHoldsRecord && currentBestEffort != null && stillQualifies)
+                            {
+                                var croppedWorkoutBestEffort = await bestEffortService.CalculateBestEffortForWorkoutAsync(
+                                    db, workout, distanceName, targetDistanceM);
+                                
+                                // If the cropped workout's best effort is slower than the stored time,
+                                // the stored time is no longer achievable and we need to recalculate
+                                if (croppedWorkoutBestEffort == null || croppedWorkoutBestEffort.TimeS > currentBestEffort.TimeS)
+                                {
+                                    storedTimeNoLongerAchievable = true;
+                                }
+                            }
+                            
+                            // If workout no longer qualifies OR no longer holds the record OR stored time is no longer achievable, recalculate from all workouts
+                            if (!stillQualifies || !workoutStillHoldsRecord || storedTimeNoLongerAchievable)
                             {
                                 var qualifyingWorkouts = await db.Workouts
                                     .Include(w => w.Route)
