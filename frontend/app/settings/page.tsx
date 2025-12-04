@@ -544,9 +544,9 @@ function SettingsPageContent() {
                 <div className="flex flex-col gap-2">
                   <button
                     onClick={handleRecalculateClick}
-                    disabled={isRecalculating}
+                    disabled={isRecalculating || isSaving}
                     className={`px-6 py-3 rounded-lg font-medium transition-colors w-fit ${
-                      isRecalculating
+                      isRecalculating || isSaving
                         ? 'bg-gray-400 text-white cursor-not-allowed'
                         : 'bg-orange-600 text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600'
                     }`}
