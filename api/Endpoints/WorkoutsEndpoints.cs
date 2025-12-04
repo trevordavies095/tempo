@@ -1272,6 +1272,7 @@ public static class WorkoutsEndpoints
         HttpRequest request,
         BulkImportService bulkImportService,
         TempoDbContext db,
+        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         if (!request.HasFormContentType)
@@ -1423,6 +1424,20 @@ public static class WorkoutsEndpoints
 
             // Calculate relative effort
             await bulkImportService.CalculateAndSaveRelativeEffortAsync(workoutsToAdd);
+
+            // Update best efforts for all newly created workouts
+            foreach (var workout in workoutsToAdd)
+            {
+                try
+                {
+                    await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to update best efforts for workout {WorkoutId}", workout.Id);
+                    // Don't fail the bulk import if best effort update fails for individual workouts
+                }
+            }
 
             // Save media records
             if (mediaToAdd.Count > 0)
