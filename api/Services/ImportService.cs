@@ -433,6 +433,10 @@ public class ImportService
             var json = await File.ReadAllTextAsync(workoutsPath);
             var workouts = JsonSerializer.Deserialize<List<Workout>>(json, JsonOptions) ?? new List<Workout>();
 
+            // Track workouts we've already processed in this batch to avoid duplicates within the same import
+            var processedWorkoutIds = new HashSet<Guid>();
+            var processedWorkoutKeys = new HashSet<(DateTime StartedAt, double DistanceM, int DurationS)>();
+
             foreach (var workout in workouts)
             {
                 try
@@ -445,7 +449,23 @@ public class ImportService
                         continue;
                     }
 
-                    // Check for duplicate using existing duplicate detection
+                    // Check if we've already processed this workout in the current batch
+                    if (processedWorkoutIds.Contains(workout.Id))
+                    {
+                        result.Statistics.Workouts.Skipped++;
+                        result.Warnings.Add($"Duplicate workout in export (same GUID): {workout.StartedAt} ({workout.DistanceM}m, {workout.DurationS}s)");
+                        continue;
+                    }
+
+                    var workoutKey = (workout.StartedAt, workout.DistanceM, workout.DurationS);
+                    if (processedWorkoutKeys.Contains(workoutKey))
+                    {
+                        result.Statistics.Workouts.Skipped++;
+                        result.Warnings.Add($"Duplicate workout in export (same StartedAt/DistanceM/DurationS): {workout.StartedAt} ({workout.DistanceM}m, {workout.DurationS}s)");
+                        continue;
+                    }
+
+                    // Check for duplicate using existing duplicate detection (checks database)
                     var existing = await WorkoutQueryService.FindDuplicateWorkoutAsync(
                         _db, workout.StartedAt, workout.DistanceM, workout.DurationS);
 
@@ -485,6 +505,8 @@ public class ImportService
 
                     // Import workout
                     _db.Workouts.Add(workout);
+                    processedWorkoutIds.Add(workout.Id);
+                    processedWorkoutKeys.Add(workoutKey);
                     result.Statistics.Workouts.Imported++;
                 }
                 catch (Exception ex)
