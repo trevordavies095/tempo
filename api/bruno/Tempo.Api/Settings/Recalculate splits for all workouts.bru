@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: {{baseUrl}}/settings/recalculate-splits
+  url: {{baseUrl}}/workouts/recalculate-splits
   body: none
   auth: inherit
 }
@@ -15,7 +15,7 @@ example {
   description: OK
   
   request: {
-    url: {{baseUrl}}/settings/recalculate-splits
+    url: {{baseUrl}}/workouts/recalculate-splits
     method: POST
     mode: none
   }
@@ -40,7 +40,7 @@ example {
   description: Bad Request
   
   request: {
-    url: {{baseUrl}}/settings/recalculate-splits
+    url: {{baseUrl}}/workouts/recalculate-splits
     method: POST
     mode: none
   }

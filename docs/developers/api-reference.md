@@ -145,7 +145,7 @@ tempo-export-{timestamp}.zip
 ```json
 {
   "version": "1.0.0",
-  "tempoVersion": "1.4.0",
+  "tempoVersion": "2.0.0",
   "exportDate": "2024-01-15T10:30:00Z",
   "exportedBy": "username",
   "statistics": {
@@ -240,16 +240,48 @@ Content-Type: application/json
 }
 ```
 
-### Recalculate Relative Effort
+### Recalculate Relative Effort (Single Workout)
 
 ```http
 POST /workouts/{id}/recalculate-effort
 ```
 
-### Recalculate Splits
+### Recalculate Splits (Single Workout)
 
 ```http
 POST /workouts/{id}/recalculate-splits
+```
+
+### Get Recalculation Count (Relative Effort)
+
+Get count of workouts eligible for relative effort recalculation:
+
+```http
+GET /workouts/recalculate-relative-effort/count
+```
+
+### Recalculate All Relative Effort
+
+Recalculate relative effort for all qualifying workouts:
+
+```http
+POST /workouts/recalculate-relative-effort
+```
+
+### Get Recalculation Count (Splits)
+
+Get count of workouts eligible for split recalculation:
+
+```http
+GET /workouts/recalculate-splits/count
+```
+
+### Recalculate All Splits
+
+Recalculate splits for all workouts:
+
+```http
+POST /workouts/recalculate-splits
 ```
 
 ## Statistics
@@ -257,37 +289,37 @@ POST /workouts/{id}/recalculate-splits
 ### Weekly Statistics
 
 ```http
-GET /workouts/stats/weekly?startDate=2025-01-01&endDate=2025-01-07
+GET /stats/weekly?startDate=2025-01-01&endDate=2025-01-07
 ```
 
 ### Yearly Statistics
 
 ```http
-GET /workouts/stats/yearly?year=2025
+GET /stats/yearly?year=2025
 ```
 
 ### Relative Effort Statistics
 
 ```http
-GET /workouts/stats/relative-effort?startDate=2025-01-01&endDate=2025-12-31
+GET /stats/relative-effort?startDate=2025-01-01&endDate=2025-12-31
 ```
 
 ### Combined Yearly and Weekly Stats
 
 ```http
-GET /workouts/stats/yearly-weekly?year=2025&weekStartDate=2025-01-01
+GET /stats/yearly-weekly?year=2025&weekStartDate=2025-01-01
 ```
 
 ### Available Periods
 
 ```http
-GET /workouts/stats/available-periods
+GET /stats/available-periods
 ```
 
 ### Available Years
 
 ```http
-GET /workouts/stats/available-years
+GET /stats/available-years
 ```
 
 ### Best Efforts
@@ -295,7 +327,7 @@ GET /workouts/stats/available-years
 Get your fastest times for standard distances:
 
 ```http
-GET /workouts/stats/best-efforts
+GET /stats/best-efforts
 ```
 
 Returns your best effort times for all supported distances (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, Half-Marathon, 30K, Marathon). Best efforts are calculated from any segment within any workout, not just workouts of that exact distance.
@@ -320,7 +352,7 @@ Response format:
 Recalculate all best efforts across all workouts:
 
 ```http
-POST /workouts/stats/best-efforts/recalculate
+POST /stats/best-efforts/recalculate
 ```
 
 Performs a full recalculation of all best efforts. This may take some time depending on the number of workouts and time series data.
@@ -402,18 +434,6 @@ Content-Type: application/json
 }
 ```
 
-### Get Recalculation Count
-
-```http
-GET /settings/recalculate-relative-effort/count
-```
-
-### Recalculate All Relative Effort
-
-```http
-POST /settings/recalculate-relative-effort
-```
-
 ### Get Unit Preference
 
 ```http
@@ -429,18 +449,6 @@ Content-Type: application/json
 {
   "unit": "metric"
 }
-```
-
-### Get Split Recalculation Count
-
-```http
-GET /settings/recalculate-splits/count
-```
-
-### Recalculate All Splits
-
-```http
-POST /settings/recalculate-splits
 ```
 
 ### Get Default Shoe

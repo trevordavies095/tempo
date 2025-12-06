@@ -494,7 +494,7 @@ export async function getWeeklyStats(timezoneOffsetMinutes?: number): Promise<We
   }
 
   const queryString = searchParams.toString();
-  const url = `${API_BASE_URL}/workouts/stats/weekly${queryString ? `?${queryString}` : ''}`;
+  const url = `${API_BASE_URL}/stats/weekly${queryString ? `?${queryString}` : ''}`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -516,7 +516,7 @@ export async function getRelativeEffortStats(timezoneOffsetMinutes?: number): Pr
   }
 
   const queryString = searchParams.toString();
-  const url = `${API_BASE_URL}/workouts/stats/relative-effort${queryString ? `?${queryString}` : ''}`;
+  const url = `${API_BASE_URL}/stats/relative-effort${queryString ? `?${queryString}` : ''}`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -544,7 +544,7 @@ export interface BestEffortsResponse {
 }
 
 export async function getBestEfforts(): Promise<BestEffortsResponse> {
-  const url = `${API_BASE_URL}/workouts/stats/best-efforts`;
+  const url = `${API_BASE_URL}/stats/best-efforts`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -565,7 +565,7 @@ export interface RecalculateBestEffortsResponse {
 }
 
 export async function recalculateBestEfforts(): Promise<RecalculateBestEffortsResponse> {
-  const url = `${API_BASE_URL}/workouts/stats/best-efforts/recalculate`;
+  const url = `${API_BASE_URL}/stats/best-efforts/recalculate`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -588,7 +588,7 @@ export async function getYearlyStats(timezoneOffsetMinutes?: number): Promise<Ye
   }
 
   const queryString = searchParams.toString();
-  const url = `${API_BASE_URL}/workouts/stats/yearly${queryString ? `?${queryString}` : ''}`;
+  const url = `${API_BASE_URL}/stats/yearly${queryString ? `?${queryString}` : ''}`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -629,7 +629,7 @@ export async function getYearlyWeeklyStats(
   }
 
   const queryString = searchParams.toString();
-  const url = `${API_BASE_URL}/workouts/stats/yearly-weekly${queryString ? `?${queryString}` : ''}`;
+  const url = `${API_BASE_URL}/stats/yearly-weekly${queryString ? `?${queryString}` : ''}`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -660,7 +660,7 @@ export async function getAvailablePeriods(
   }
 
   const queryString = searchParams.toString();
-  const url = `${API_BASE_URL}/workouts/stats/available-periods${queryString ? `?${queryString}` : ''}`;
+  const url = `${API_BASE_URL}/stats/available-periods${queryString ? `?${queryString}` : ''}`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -676,7 +676,7 @@ export async function getAvailablePeriods(
 }
 
 export async function getAvailableYears(): Promise<number[]> {
-  const url = `${API_BASE_URL}/workouts/stats/available-years`;
+  const url = `${API_BASE_URL}/stats/available-years`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -839,7 +839,7 @@ export interface RecalculateRelativeEffortResponse {
 }
 
 export async function getQualifyingWorkoutCount(): Promise<{ count: number }> {
-  const response = await fetch(`${API_BASE_URL}/settings/recalculate-relative-effort/count`, {
+  const response = await fetch(`${API_BASE_URL}/workouts/recalculate-relative-effort/count`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -853,7 +853,7 @@ export async function getQualifyingWorkoutCount(): Promise<{ count: number }> {
 }
 
 export async function recalculateAllRelativeEffort(): Promise<RecalculateRelativeEffortResponse> {
-  const response = await fetch(`${API_BASE_URL}/settings/recalculate-relative-effort`, {
+  const response = await fetch(`${API_BASE_URL}/workouts/recalculate-relative-effort`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -898,7 +898,7 @@ export async function updateUnitPreference(unitPreference: 'metric' | 'imperial'
 }
 
 export async function getQualifyingWorkoutCountForSplits(): Promise<{ count: number }> {
-  const response = await fetch(`${API_BASE_URL}/settings/recalculate-splits/count`, {
+  const response = await fetch(`${API_BASE_URL}/workouts/recalculate-splits/count`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -919,7 +919,7 @@ export interface RecalculateSplitsResponse {
 }
 
 export async function recalculateAllSplits(): Promise<RecalculateSplitsResponse> {
-  const response = await fetch(`${API_BASE_URL}/settings/recalculate-splits`, {
+  const response = await fetch(`${API_BASE_URL}/workouts/recalculate-splits`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
