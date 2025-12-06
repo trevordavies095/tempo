@@ -208,131 +208,6 @@ public static class SettingsEndpoints
         }
     }
 
-    /// <summary>
-    /// Get count of workouts eligible for relative effort recalculation
-    /// </summary>
-    /// <param name="db">Database context</param>
-    /// <param name="relativeEffortService">Relative effort service</param>
-    /// <param name="logger">Logger instance</param>
-    /// <returns>Count of workouts with heart rate data</returns>
-    /// <remarks>
-    /// Returns the number of workouts that have heart rate data (time series, raw FIT data, or average HR)
-    /// and are eligible for relative effort calculation.
-    /// </remarks>
-    private static async Task<IResult> GetRecalculateRelativeEffortCount(
-        TempoDbContext db,
-        RelativeEffortService relativeEffortService,
-        ILogger<Program> logger)
-    {
-        try
-        {
-            var allQualifyingIds = await relativeEffortService.GetQualifyingWorkoutIdsAsync(db);
-            return Results.Ok(new { count = allQualifyingIds.Count });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error getting qualifying workout count");
-            return Results.Problem("Failed to get qualifying workout count");
-        }
-    }
-
-    /// <summary>
-    /// Recalculate relative effort for all qualifying workouts
-    /// </summary>
-    /// <param name="db">Database context</param>
-    /// <param name="zoneService">Heart rate zone service</param>
-    /// <param name="relativeEffortService">Relative effort service</param>
-    /// <param name="logger">Logger instance</param>
-    /// <returns>Recalculation results with updated count and any errors</returns>
-    /// <remarks>
-    /// Recalculates relative effort for all workouts that have time series heart rate data using the
-    /// current heart rate zone configuration. Requires heart rate zones to be configured first.
-    /// </remarks>
-    private static async Task<IResult> RecalculateRelativeEffort(
-        TempoDbContext db,
-        HeartRateZoneService zoneService,
-        RelativeEffortService relativeEffortService,
-        ILogger<Program> logger)
-    {
-        try
-        {
-            // Check if heart rate zones are configured
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            if (settings == null)
-            {
-                return Results.BadRequest(new { error = "Heart rate zones not configured. Please configure heart rate zones in settings first." });
-            }
-
-            var zones = zoneService.GetZonesFromUserSettings(settings);
-
-            // Get workouts that can have relative effort calculated
-            var allQualifyingIds = await relativeEffortService.GetQualifyingWorkoutIdsAsync(db);
-
-            if (allQualifyingIds.Count == 0)
-            {
-                return Results.Ok(new
-                {
-                    updatedCount = 0,
-                    totalQualifyingWorkouts = 0,
-                    message = "No workouts with heart rate data found"
-                });
-            }
-
-            // Get all qualifying workouts
-            var qualifyingWorkouts = await db.Workouts
-                .Where(w => allQualifyingIds.Contains(w.Id))
-                .ToListAsync();
-
-            if (qualifyingWorkouts.Count == 0)
-            {
-                return Results.Ok(new
-                {
-                    updatedCount = 0,
-                    message = "No workouts with time series heart rate data found"
-                });
-            }
-
-            int updatedCount = 0;
-            int errorCount = 0;
-            var errors = new List<string>();
-
-            // Recalculate relative effort for each qualifying workout
-            foreach (var workout in qualifyingWorkouts)
-            {
-                try
-                {
-                    var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
-                    if (relativeEffort.HasValue)
-                    {
-                        workout.RelativeEffort = relativeEffort.Value;
-                        updatedCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errorCount++;
-                    logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
-                    errors.Add($"Workout {workout.Id}: {ex.Message}");
-                }
-            }
-
-            // Save all changes
-            await db.SaveChangesAsync();
-
-            return Results.Ok(new
-            {
-                updatedCount = updatedCount,
-                totalQualifyingWorkouts = qualifyingWorkouts.Count,
-                errorCount = errorCount,
-                errors = errors.Count > 0 ? errors : null
-            });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error recalculating Relative Effort for all workouts");
-            return Results.Problem("Failed to recalculate Relative Effort for all workouts");
-        }
-    }
 
     /// <summary>
     /// Update heart rate zones and optionally recalculate relative effort
@@ -544,71 +419,6 @@ public static class SettingsEndpoints
         }
     }
 
-    /// <summary>
-    /// Get count of workouts eligible for split recalculation
-    /// </summary>
-    /// <param name="db">Database context</param>
-    /// <param name="logger">Logger instance</param>
-    /// <returns>Count of workouts with route data</returns>
-    /// <remarks>
-    /// Returns the number of workouts that have route data and can have splits recalculated.
-    /// </remarks>
-    private static async Task<IResult> GetRecalculateSplitsCount(
-        TempoDbContext db,
-        ILogger<Program> logger)
-    {
-        try
-        {
-            var count = await db.Workouts
-                .Where(w => w.Route != null)
-                .CountAsync();
-            return Results.Ok(new { count });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error getting workout count for split recalculation");
-            return Results.Problem("Failed to get workout count");
-        }
-    }
-
-    /// <summary>
-    /// Recalculate splits for all workouts
-    /// </summary>
-    /// <param name="db">Database context</param>
-    /// <param name="splitRecalculationService">Split recalculation service</param>
-    /// <param name="logger">Logger instance</param>
-    /// <returns>Recalculation results with updated count and any errors</returns>
-    /// <remarks>
-    /// Recalculates splits for all workouts that have route data using the current unit preference.
-    /// Splits are calculated as 1km for metric or 1 mile for imperial.
-    /// </remarks>
-    private static async Task<IResult> RecalculateSplits(
-        TempoDbContext db,
-        SplitRecalculationService splitRecalculationService,
-        ILogger<Program> logger)
-    {
-        try
-        {
-            // Get unit preference from settings
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            var unitPreference = settings?.UnitPreference ?? "metric";
-
-            var result = await splitRecalculationService.RecalculateSplitsForAllWorkoutsAsync(unitPreference);
-
-            return Results.Ok(new
-            {
-                updatedCount = result.SuccessCount,
-                totalWorkouts = result.TotalWorkouts,
-                errorCount = result.ErrorCount,
-                errors = result.Errors.Count > 0 ? result.Errors : null
-            });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error recalculating splits for all workouts");
-            return Results.Problem("Failed to recalculate splits for all workouts");
-        }
-    }
 
     public static void MapSettingsEndpoints(this WebApplication app)
     {
@@ -631,19 +441,6 @@ public static class SettingsEndpoints
             .WithSummary("Update heart rate zones")
             .WithDescription("Updates heart rate zones using one of three calculation methods: AgeBased, Karvonen, or Custom.");
 
-        group.MapGet("/recalculate-relative-effort/count", GetRecalculateRelativeEffortCount)
-            .WithName("GetRecalculateRelativeEffortCount")
-            .Produces(200)
-            .WithSummary("Get count of workouts eligible for relative effort recalculation")
-            .WithDescription("Returns the number of workouts that have heart rate data (time series, raw FIT data, or average HR)");
-
-        group.MapPost("/recalculate-relative-effort", RecalculateRelativeEffort)
-            .WithName("RecalculateRelativeEffort")
-            .Produces(200)
-            .Produces(400)
-            .WithSummary("Recalculate relative effort for all qualifying workouts")
-            .WithDescription("Recalculates relative effort for all workouts that have time series heart rate data using the current heart rate zone configuration");
-
         group.MapPost("/heart-rate-zones/update-with-recalc", UpdateHeartRateZonesWithRecalc)
             .WithName("UpdateHeartRateZonesWithRecalc")
             .Produces(200)
@@ -663,19 +460,6 @@ public static class SettingsEndpoints
             .Produces(400)
             .WithSummary("Update unit preference")
             .WithDescription("Updates the unit preference (metric or imperial)");
-
-        group.MapGet("/recalculate-splits/count", GetRecalculateSplitsCount)
-            .WithName("GetRecalculateSplitsCount")
-            .Produces(200)
-            .WithSummary("Get count of workouts eligible for split recalculation")
-            .WithDescription("Returns the number of workouts that have route data and can have splits recalculated");
-
-        group.MapPost("/recalculate-splits", RecalculateSplits)
-            .WithName("RecalculateSplits")
-            .Produces(200)
-            .Produces(400)
-            .WithSummary("Recalculate splits for all workouts")
-            .WithDescription("Recalculates splits for all workouts that have route data using the current unit preference");
 
         group.MapGet("/default-shoe", GetDefaultShoe)
             .WithName("GetDefaultShoe")

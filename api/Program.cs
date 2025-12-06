@@ -174,6 +174,7 @@ app.MapAuthEndpoints();
 app.MapWorkoutsEndpoints();
 app.MapSettingsEndpoints();
 app.MapShoesEndpoints();
+app.MapStatsEndpoints();
 app.MapVersionEndpoints();
 
 // Health check endpoint
