@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2025-12-06
+
+### Changed
+- **API endpoint restructuring for mobile development**
+  - Extracted stats endpoints to separate `/stats` group for better organization
+  - Moved recalculation actions from `/settings` to `/workouts` for logical grouping
+  - Created new `StatsEndpoints.cs` with 8 stats endpoints
+  - Improved API organization for mobile app development
+
+### Breaking Changes
+- **Endpoint URL changes** (functionality remains identical):
+  - Stats endpoints moved: `/workouts/stats/*` → `/stats/*`
+    - `/workouts/stats/weekly` → `/stats/weekly`
+    - `/workouts/stats/yearly` → `/stats/yearly`
+    - `/workouts/stats/relative-effort` → `/stats/relative-effort`
+    - `/workouts/stats/yearly-weekly` → `/stats/yearly-weekly`
+    - `/workouts/stats/available-periods` → `/stats/available-periods`
+    - `/workouts/stats/available-years` → `/stats/available-years`
+    - `/workouts/stats/best-efforts` → `/stats/best-efforts`
+    - `/workouts/stats/best-efforts/recalculate` → `/stats/best-efforts/recalculate`
+  - Recalculation endpoints moved: `/settings/recalculate-*` → `/workouts/recalculate-*`
+    - `/settings/recalculate-relative-effort/count` → `/workouts/recalculate-relative-effort/count`
+    - `/settings/recalculate-relative-effort` → `/workouts/recalculate-relative-effort`
+    - `/settings/recalculate-splits/count` → `/workouts/recalculate-splits/count`
+    - `/settings/recalculate-splits` → `/workouts/recalculate-splits`
+- **Frontend updated**: All frontend API calls have been updated to use new paths
+- **API consumers**: Mobile apps or other API clients must update to new endpoint paths
+
+### Technical
+- New `StatsEndpoints.cs` file with dedicated stats endpoint group
+- Updated `WorkoutsEndpoints.cs` to include recalculation actions
+- Updated `SettingsEndpoints.cs` to contain only configuration endpoints
+- Updated API reference documentation
+- Updated Bruno test collection with new endpoint paths
+
 ## [1.4.0] - 2025-12-04
 
 ### Added

@@ -70,8 +70,8 @@ docker-compose -f docker-compose.prod.yml logs -f
 
 Production images are available from GitHub Container Registry:
 
-- **API**: `ghcr.io/trevordavies095/tempo/api:v1.4.0`
-- **Frontend**: `ghcr.io/trevordavies095/tempo/frontend:v1.4.0`
+- **API**: `ghcr.io/trevordavies095/tempo/api:v2.0.0`
+- **Frontend**: `ghcr.io/trevordavies095/tempo/frontend:v2.0.0`
 
 Update version tags in `docker-compose.prod.yml` when deploying new releases.
 
