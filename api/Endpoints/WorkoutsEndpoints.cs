@@ -1371,6 +1371,7 @@ public static class WorkoutsEndpoints
             var workoutsToAdd = new List<Workout>();
             var routesToAdd = new List<WorkoutRoute>();
             var splitsToAdd = new List<WorkoutSplit>();
+            var timeSeriesToAdd = new List<WorkoutTimeSeries>();
             var mediaToAdd = new List<WorkoutMedia>();
 
             foreach (var activity in runActivities)
@@ -1413,6 +1414,10 @@ public static class WorkoutsEndpoints
                     workoutsToAdd.Add(result.Workout);
                     routesToAdd.Add(result.Route);
                     splitsToAdd.AddRange(result.Splits);
+                    if (result.TimeSeries != null && result.TimeSeries.Count > 0)
+                    {
+                        timeSeriesToAdd.AddRange(result.TimeSeries);
+                    }
                     successful++;
 
                     // Process media files
@@ -1441,7 +1446,7 @@ public static class WorkoutsEndpoints
             }
 
             // Batch save workouts
-            await bulkImportService.BatchSaveWorkoutsAsync(workoutsToAdd, routesToAdd, splitsToAdd);
+            await bulkImportService.BatchSaveWorkoutsAsync(workoutsToAdd, routesToAdd, splitsToAdd, timeSeriesToAdd);
 
             // Calculate relative effort
             await bulkImportService.CalculateAndSaveRelativeEffortAsync(workoutsToAdd);
@@ -2662,6 +2667,85 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
+    /// Creates time-series records from GPX track points with sensor data.
+    /// </summary>
+    private static List<WorkoutTimeSeries> CreateTimeSeriesFromGpxTrackPoints(
+        Guid workoutId,
+        DateTime startTime,
+        List<GpxParserService.GpxPoint> trackPoints)
+    {
+        var timeSeries = new List<WorkoutTimeSeries>();
+
+        foreach (var point in trackPoints)
+        {
+            if (!point.Time.HasValue) continue;
+
+            var elapsedSeconds = (int)(point.Time.Value - startTime).TotalSeconds;
+
+            // Only create record if there's sensor data
+            if (point.HeartRateBpm.HasValue ||
+                point.CadenceRpm.HasValue ||
+                point.PowerWatts.HasValue ||
+                point.TemperatureC.HasValue ||
+                point.Elevation.HasValue)
+            {
+                timeSeries.Add(new WorkoutTimeSeries
+                {
+                    Id = Guid.NewGuid(),
+                    WorkoutId = workoutId,
+                    ElapsedSeconds = elapsedSeconds,
+                    HeartRateBpm = point.HeartRateBpm,
+                    CadenceRpm = point.CadenceRpm,
+                    PowerWatts = point.PowerWatts,
+                    TemperatureC = point.TemperatureC,
+                    ElevationM = point.Elevation
+                });
+            }
+        }
+
+        return timeSeries;
+    }
+
+    /// <summary>
+    /// Calculates aggregate metrics (max/avg/min) from time-series data and updates workout.
+    /// </summary>
+    private static void CalculateAggregateMetricsFromTimeSeries(Workout workout, List<WorkoutTimeSeries> timeSeries)
+    {
+        if (timeSeries == null || timeSeries.Count == 0)
+        {
+            return;
+        }
+
+        // Calculate heart rate aggregates
+        var heartRates = timeSeries.Where(ts => ts.HeartRateBpm.HasValue)
+            .Select(ts => ts.HeartRateBpm!.Value).ToList();
+        if (heartRates.Any())
+        {
+            workout.MaxHeartRateBpm = heartRates.Max();
+            workout.AvgHeartRateBpm = (byte)Math.Round(heartRates.Average(x => (double)x));
+            workout.MinHeartRateBpm = heartRates.Min();
+        }
+
+        // Calculate cadence aggregates
+        var cadences = timeSeries.Where(ts => ts.CadenceRpm.HasValue)
+            .Select(ts => ts.CadenceRpm!.Value).ToList();
+        if (cadences.Any())
+        {
+            workout.MaxCadenceRpm = cadences.Max();
+            workout.AvgCadenceRpm = (byte)Math.Round(cadences.Average(x => (double)x));
+        }
+
+        // Calculate power aggregates
+        var powers = timeSeries.Where(ts => ts.PowerWatts.HasValue)
+            .Select(ts => ts.PowerWatts!.Value).ToList();
+        if (powers.Any())
+        {
+            workout.MaxPowerWatts = powers.Max();
+            workout.AvgPowerWatts = (ushort)Math.Round(powers.Average(x => (double)x));
+        }
+    }
+
+    /// <summary>
     /// Calculates splits for a workout.
     /// </summary>
     private static List<WorkoutSplit> CalculateSplits(
@@ -2832,6 +2916,17 @@ public static class WorkoutsEndpoints
             // Calculate splits
             var splits = CalculateSplits(gpxParser, trackPoints, distanceMeters, durationSeconds, splitDistanceMeters, workout.Id);
 
+            // Create time-series from GPX track points if available
+            List<WorkoutTimeSeries> timeSeries = new List<WorkoutTimeSeries>();
+            if (parseResult != null)
+            {
+                timeSeries = CreateTimeSeriesFromGpxTrackPoints(workout.Id, startedAtUtc, trackPoints);
+                if (timeSeries.Count > 0)
+                {
+                    CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
+                }
+            }
+
             // Fetch weather data
             await FetchAndAttachWeatherAsync(workout, trackPoints, rawFitDataJson, startedAtUtc, weatherService, logger);
 
@@ -2852,6 +2947,10 @@ public static class WorkoutsEndpoints
             db.Workouts.Add(workout);
             db.WorkoutRoutes.Add(route);
             db.WorkoutSplits.AddRange(splits);
+            if (timeSeries.Count > 0)
+            {
+                db.WorkoutTimeSeries.AddRange(timeSeries);
+            }
             await db.SaveChangesAsync();
 
             // Calculate Relative Effort after workout is saved

@@ -31,6 +31,10 @@ public class GpxParserService
         public double Longitude { get; set; }
         public double? Elevation { get; set; }
         public DateTime? Time { get; set; }
+        public byte? HeartRateBpm { get; set; }
+        public byte? CadenceRpm { get; set; }
+        public ushort? PowerWatts { get; set; }
+        public sbyte? TemperatureC { get; set; }
     }
 
     public GpxParseResult ParseGpx(Stream gpxStream)
@@ -40,6 +44,7 @@ public class GpxParserService
 
         var nsManager = new XmlNamespaceManager(doc.NameTable);
         nsManager.AddNamespace("gpx", "http://www.topografix.com/GPX/1/1");
+        nsManager.AddNamespace("gpxtpx", "http://www.garmin.com/xmlschemas/TrackPointExtension/v1");
 
         // Extract metadata
         var metadata = new Dictionary<string, object?>();
@@ -135,6 +140,50 @@ public class GpxParserService
                 endTime = utcTime;
             }
 
+            // Parse TrackPointExtension if present
+            var extensionsNode = trkpt.SelectSingleNode("gpx:extensions", nsManager);
+            if (extensionsNode != null)
+            {
+                var tpxNode = extensionsNode.SelectSingleNode("gpxtpx:TrackPointExtension", nsManager);
+                if (tpxNode != null)
+                {
+                    // Parse heart rate (0-255)
+                    var hrNode = tpxNode.SelectSingleNode("gpxtpx:hr", nsManager);
+                    if (hrNode != null && byte.TryParse(hrNode.InnerText, out var hr) && hr >= 0 && hr <= 255)
+                    {
+                        point.HeartRateBpm = hr;
+                    }
+
+                    // Parse cadence (0-255)
+                    var cadNode = tpxNode.SelectSingleNode("gpxtpx:cad", nsManager);
+                    if (cadNode != null && byte.TryParse(cadNode.InnerText, out var cad) && cad >= 0 && cad <= 255)
+                    {
+                        point.CadenceRpm = cad;
+                    }
+
+                    // Parse power (0-65535)
+                    var powerNode = tpxNode.SelectSingleNode("gpxtpx:power", nsManager);
+                    if (powerNode != null && ushort.TryParse(powerNode.InnerText, out var power) && power >= 0 && power <= 65535)
+                    {
+                        point.PowerWatts = power;
+                    }
+
+                    // Parse temperature (-128 to 127, round decimal to integer)
+                    var tempNode = tpxNode.SelectSingleNode("gpxtpx:atemp", nsManager);
+                    if (tempNode != null)
+                    {
+                        if (double.TryParse(tempNode.InnerText, out var tempDouble))
+                        {
+                            var tempInt = (int)Math.Round(tempDouble);
+                            if (tempInt >= sbyte.MinValue && tempInt <= sbyte.MaxValue)
+                            {
+                                point.TemperatureC = (sbyte)tempInt;
+                            }
+                        }
+                    }
+                }
+            }
+
             trackPoints.Add(point);
         }
 
@@ -177,13 +226,17 @@ public class GpxParserService
         var rawGpxData = new
         {
             metadata = metadata.Count > 0 ? metadata : null,
-            extensions = new Dictionary<string, object>(), // TODO: Extract extensions if needed
+            extensions = new Dictionary<string, object>(),
             trackPoints = trackPoints.Select(p => new
             {
                 lat = p.Latitude,
                 lon = p.Longitude,
                 ele = p.Elevation,
-                time = p.Time?.ToString("O")
+                time = p.Time?.ToString("O"),
+                hr = p.HeartRateBpm,
+                cad = p.CadenceRpm,
+                power = p.PowerWatts,
+                temp = p.TemperatureC
             }).ToList(),
             calculated = calculated,
             source = "gpx_import",
