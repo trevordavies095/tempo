@@ -645,8 +645,7 @@ public class BulkImportService
             if (point.HeartRateBpm.HasValue ||
                 point.CadenceRpm.HasValue ||
                 point.PowerWatts.HasValue ||
-                point.TemperatureC.HasValue ||
-                point.Elevation.HasValue)
+                point.TemperatureC.HasValue)
             {
                 timeSeries.Add(new WorkoutTimeSeries
                 {
