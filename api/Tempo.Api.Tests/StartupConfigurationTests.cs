@@ -31,7 +31,9 @@ public class StartupConfigurationTests
     public void Startup_ThrowsException_WhenJwtSecretKeyIsPlaceholder()
     {
         // Arrange - save original environment variables
-        var originalJwtSecret = Environment.GetEnvironmentVariable("JWT__SecretKey");
+        // Save both JWT__SecretKey (double underscore, standard .NET convention) and JWT:SecretKey (colon, if it exists)
+        var originalJwtSecretDoubleUnderscore = Environment.GetEnvironmentVariable("JWT__SecretKey");
+        var originalJwtSecretColon = Environment.GetEnvironmentVariable("JWT:SecretKey");
         var originalConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
         var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         
@@ -40,6 +42,11 @@ public class StartupConfigurationTests
             // Set placeholder value
             const string placeholderValue = "CHANGE_THIS_IN_PRODUCTION_USE_ENVIRONMENT_VARIABLE";
             Environment.SetEnvironmentVariable("JWT__SecretKey", placeholderValue);
+            // Also clear JWT:SecretKey if it exists to avoid conflicts
+            if (originalJwtSecretColon != null)
+            {
+                Environment.SetEnvironmentVariable("JWT:SecretKey", null);
+            }
             Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=:memory:");
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
@@ -62,8 +69,9 @@ public class StartupConfigurationTests
         }
         finally
         {
-            // Restore original environment variables
-            Environment.SetEnvironmentVariable("JWT__SecretKey", originalJwtSecret);
+            // Restore original environment variables (both variations)
+            Environment.SetEnvironmentVariable("JWT__SecretKey", originalJwtSecretDoubleUnderscore);
+            Environment.SetEnvironmentVariable("JWT:SecretKey", originalJwtSecretColon);
             Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", originalConnectionString);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
         }
@@ -73,7 +81,9 @@ public class StartupConfigurationTests
     public void Startup_Succeeds_WhenJwtSecretKeyIsPlaceholderInTestingEnvironment()
     {
         // Arrange - save original environment variables
-        var originalJwtSecret = Environment.GetEnvironmentVariable("JWT__SecretKey");
+        // Save both JWT__SecretKey (double underscore, standard .NET convention) and JWT:SecretKey (colon, if it exists)
+        var originalJwtSecretDoubleUnderscore = Environment.GetEnvironmentVariable("JWT__SecretKey");
+        var originalJwtSecretColon = Environment.GetEnvironmentVariable("JWT:SecretKey");
         var originalConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
         var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         
@@ -82,6 +92,11 @@ public class StartupConfigurationTests
             // Set placeholder value
             const string placeholderValue = "CHANGE_THIS_IN_PRODUCTION_USE_ENVIRONMENT_VARIABLE";
             Environment.SetEnvironmentVariable("JWT__SecretKey", placeholderValue);
+            // Also clear JWT:SecretKey if it exists to avoid conflicts
+            if (originalJwtSecretColon != null)
+            {
+                Environment.SetEnvironmentVariable("JWT:SecretKey", null);
+            }
             Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=:memory:?cache=shared");
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
 
@@ -103,8 +118,9 @@ public class StartupConfigurationTests
         }
         finally
         {
-            // Restore original environment variables
-            Environment.SetEnvironmentVariable("JWT__SecretKey", originalJwtSecret);
+            // Restore original environment variables (both variations)
+            Environment.SetEnvironmentVariable("JWT__SecretKey", originalJwtSecretDoubleUnderscore);
+            Environment.SetEnvironmentVariable("JWT:SecretKey", originalJwtSecretColon);
             Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", originalConnectionString);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
         }
