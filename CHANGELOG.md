@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2025-12-11
+
+### Security
+- **Fixed React Server Components vulnerabilities**
+  - Updated React from 19.2.1 to 19.2.3 to address security vulnerabilities
+  - Fixed CVE-2025-55184 and CVE-2025-67779: Denial of Service (High - CVSS 7.5)
+  - Fixed CVE-2025-55183: Source Code Exposure (Medium - CVSS 5.3)
+  - Updated Next.js to latest 16.x version with security patches
+  - All users should update immediately by running `npm install` in the frontend directory
+
 ## [2.0.0] - 2025-12-06
 
 ### Changed
