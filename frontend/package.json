@@ -11,7 +11,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.90.7",
     "leaflet": "^1.9.4",
-    "next": "^16.0.7",
+    "next": "^16.0.9",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-leaflet": "^4.2.1",
