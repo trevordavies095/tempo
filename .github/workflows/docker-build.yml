@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for git commit hash
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -58,6 +60,40 @@ jobs:
             echo "push_latest=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Get build metadata
+        id: build_meta
+        run: |
+          # Read version from VERSION file
+          if [[ -f VERSION ]]; then
+            APP_VERSION=$(cat VERSION | tr -d '[:space:]')
+          else
+            # Fallback: use tag version if available, otherwise use "unknown"
+            if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+              APP_VERSION=${GITHUB_REF#refs/tags/v}
+            else
+              APP_VERSION="unknown"
+            fi
+          fi
+          
+          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          GIT_COMMIT=$(git rev-parse HEAD)
+          
+          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
+          echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
+          echo "git_commit=$GIT_COMMIT" >> $GITHUB_OUTPUT
+          echo "App version: $APP_VERSION"
+          echo "Build date: $BUILD_DATE"
+          echo "Git commit: $GIT_COMMIT"
+
+      - name: Copy VERSION file to build contexts
+        run: |
+          # Copy VERSION file into build contexts as fallback
+          if [[ -f VERSION ]]; then
+            cp VERSION api/VERSION
+            cp VERSION frontend/VERSION
+            echo "Copied VERSION file to build contexts"
+          fi
+
       - name: Build and push API image
         uses: docker/build-push-action@v5
         with:
@@ -68,6 +104,10 @@ jobs:
             ${{ steps.meta.outputs.api_tag_version }}
             ${{ steps.meta.outputs.api_tag_latest }}
             ${{ steps.meta.outputs.api_tag_edge }}
+          build-args: |
+            APP_VERSION=${{ steps.build_meta.outputs.app_version }}
+            BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
+            GIT_COMMIT=${{ steps.build_meta.outputs.git_commit }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -78,6 +118,9 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           build-args: |
+            APP_VERSION=${{ steps.build_meta.outputs.app_version }}
+            BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
+            GIT_COMMIT=${{ steps.build_meta.outputs.git_commit }}
             NEXT_PUBLIC_API_URL=http://localhost:5001
           tags: |
             ${{ steps.meta.outputs.frontend_tag_version }}
