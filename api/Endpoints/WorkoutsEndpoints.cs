@@ -2868,6 +2868,25 @@ public static class WorkoutsEndpoints
             workout.MaxPowerWatts = powers.Max();
             workout.AvgPowerWatts = (ushort)Math.Round(powers.Average(x => (double)x));
         }
+
+        // Calculate speed aggregates
+        var speeds = timeSeries.Where(ts => ts.SpeedMps.HasValue)
+            .Select(ts => ts.SpeedMps!.Value).ToList();
+        if (speeds.Any())
+        {
+            // Only set if not already populated (e.g., from Strava CSV or GPX calculated data)
+            if (!workout.MaxSpeedMps.HasValue)
+            {
+                workout.MaxSpeedMps = speeds.Max();
+            }
+        }
+        
+        // Calculate average speed using total distance / duration (matches GPX import behavior)
+        // Only set if not already populated (e.g., from GPX calculated data)
+        if (!workout.AvgSpeedMps.HasValue && workout.DistanceM > 0 && workout.DurationS > 0)
+        {
+            workout.AvgSpeedMps = workout.DistanceM / workout.DurationS;
+        }
     }
 
     /// <summary>
