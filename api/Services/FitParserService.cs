@@ -124,6 +124,8 @@ public class FitParserService
                         Time = timestamp.Value,
                         Elevation = altitude,
                         // Extract sensor data from RecordMesg
+                        // All Get methods return nullable types and never throw exceptions,
+                        // ensuring backward compatibility with FIT files without sensor data
                         HeartRateBpm = record.GetHeartRate(),
                         CadenceRpm = record.GetCadence(),
                         PowerWatts = record.GetPower(),
