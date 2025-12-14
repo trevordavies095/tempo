@@ -680,7 +680,7 @@ public class BulkImportService
     /// </summary>
     private List<WorkoutTimeSeries> CreateTimeSeriesFromFitRecords(
         Guid workoutId,
-        DateTime startTime,
+        System.DateTime startTime,
         ReadOnlyCollection<RecordMesg> records)
     {
         var timeSeries = new List<WorkoutTimeSeries>();
@@ -701,10 +701,39 @@ public class BulkImportService
                                record.GetEnhancedSpeed().HasValue ||
                                record.GetTemperature().HasValue ||
                                record.GetAltitude().HasValue ||
-                               record.GetEnhancedAltitude().HasValue;
+                               record.GetEnhancedAltitude().HasValue ||
+                               record.GetGrade().HasValue ||
+                               record.GetVerticalSpeed().HasValue ||
+                               record.GetDistance().HasValue;
 
             if (hasSensorData)
             {
+                // Extract and validate speed (must be non-negative)
+                var speed = record.GetEnhancedSpeed() ?? record.GetSpeed();
+                double? validatedSpeed = speed.HasValue && speed.Value >= 0 ? (double?)speed.Value : null;
+
+                // Extract and validate grade (clamp to -100 to 100 range)
+                var grade = record.GetGrade();
+                double? validatedGrade = null;
+                if (grade.HasValue)
+                {
+                    var gradeValue = (double)grade.Value;
+                    validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
+                }
+
+                // Extract and validate vertical speed (reasonable range -50 to 50 m/s)
+                var verticalSpeed = record.GetVerticalSpeed();
+                double? validatedVerticalSpeed = null;
+                if (verticalSpeed.HasValue)
+                {
+                    var vsValue = verticalSpeed.Value;
+                    if (vsValue >= -50.0 && vsValue <= 50.0)
+                    {
+                        validatedVerticalSpeed = (double)vsValue;
+                    }
+                    // Otherwise, set to null (invalid data)
+                }
+
                 var timeSeriesRecord = new WorkoutTimeSeries
                 {
                     Id = Guid.NewGuid(),
@@ -713,11 +742,11 @@ public class BulkImportService
                     HeartRateBpm = record.GetHeartRate(),
                     CadenceRpm = record.GetCadence(),
                     PowerWatts = record.GetPower(),
-                    SpeedMps = record.GetEnhancedSpeed().HasValue ? (double?)record.GetEnhancedSpeed().Value : (record.GetSpeed().HasValue ? (double?)record.GetSpeed().Value : null),
+                    SpeedMps = validatedSpeed,
                     TemperatureC = record.GetTemperature(),
                     ElevationM = record.GetEnhancedAltitude().HasValue ? (double?)record.GetEnhancedAltitude().Value : (record.GetAltitude().HasValue ? (double?)record.GetAltitude().Value : null),
-                    GradePercent = record.GetGrade().HasValue ? (double?)record.GetGrade().Value : null,
-                    VerticalSpeedMps = record.GetVerticalSpeed().HasValue ? (double?)record.GetVerticalSpeed().Value : null,
+                    GradePercent = validatedGrade,
+                    VerticalSpeedMps = validatedVerticalSpeed,
                     DistanceM = record.GetDistance().HasValue ? (double?)record.GetDistance().Value : null
                 };
 
