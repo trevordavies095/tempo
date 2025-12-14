@@ -846,7 +846,8 @@ public class BulkImportService
         }
         
         // Calculate average speed using total distance / duration (matches GPX import behavior)
-        if (workout.DistanceM > 0 && workout.DurationS > 0)
+        // Only set if not already populated (e.g., from Strava CSV or GPX calculated data)
+        if (!workout.AvgSpeedMps.HasValue && workout.DistanceM > 0 && workout.DurationS > 0)
         {
             workout.AvgSpeedMps = workout.DistanceM / workout.DurationS;
         }
