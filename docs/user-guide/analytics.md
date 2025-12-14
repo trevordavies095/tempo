@@ -36,6 +36,33 @@ Tempo provides comprehensive analytics to help you understand and improve your r
 - **Heart Rate Zones** - Time spent in each zone (based on your zone configuration)
 - **Heart Rate Chart** - Time-series visualization
 
+### Cadence
+
+- **Average Cadence** - Mean cadence (steps per minute) throughout the workout
+- **Max Cadence** - Highest cadence recorded
+- Available when imported from FIT files or GPX files with TrackPointExtension data
+- Useful for analyzing running form and efficiency
+
+### Power
+
+- **Average Power** - Mean power output (watts) throughout the workout
+- **Max Power** - Highest power output recorded
+- Available when imported from FIT files or GPX files with TrackPointExtension data
+- Useful for analyzing effort and performance, especially for cycling or power-based training
+
+### Temperature
+
+- **Temperature Data** - Environmental temperature recorded during the workout
+- Available when imported from FIT files or GPX files with TrackPointExtension data
+- Displayed in time-series data for analyzing conditions during the workout
+
+### Speed and Grade
+
+- **Speed** - Instantaneous speed at each point in the workout (available in time-series for FIT files)
+- **Grade** - Elevation grade percentage at each point (available in time-series for FIT files)
+- **Vertical Speed** - Rate of elevation change (meters per second) at each point (available in time-series for FIT files)
+- These metrics provide detailed insights into how terrain and conditions affect your performance
+
 ### Relative Effort
 
 - **Score** - Calculated intensity score based on heart rate zones
@@ -129,6 +156,20 @@ Visual representation of elevation changes:
 - Identifies challenging segments
 - Useful for route planning
 
+### Cadence Chart
+
+Visualize cadence throughout the workout (when available):
+- Shows running cadence (steps per minute) over time
+- Helps identify cadence consistency
+- Useful for analyzing running form and efficiency
+
+### Power Chart
+
+Visualize power output throughout the workout (when available):
+- Shows power output (watts) over time
+- Helps identify power variations and effort distribution
+- Useful for power-based training analysis
+
 ## Splits Analysis
 
 Distance-based splits provide detailed segment analysis:
@@ -139,12 +180,16 @@ Distance-based splits provide detailed segment analysis:
 - **Pace** - Average pace for the split
 - **Elevation** - Elevation change in the split
 - **Heart Rate** - Average heart rate (if available)
+- **Cadence** - Average cadence (if available)
+- **Power** - Average power (if available)
 
 Splits help identify:
 - Consistent pacing
 - Performance variations
 - Impact of elevation on pace
 - Heart rate response to effort
+- Cadence patterns
+- Power output variations
 
 ## Interpreting Metrics
 

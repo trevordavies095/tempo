@@ -52,6 +52,8 @@ Detailed metrics including:
 - **Pace** - Average, best, and current pace
 - **Elevation** - Gain, loss, min, and max elevation
 - **Heart Rate** - Average, max, and zones
+- **Cadence** - Average and max cadence (if available from FIT or GPX TrackPointExtension)
+- **Power** - Average and max power (if available from FIT or GPX TrackPointExtension)
 - **Relative Effort** - Calculated intensity score
 - **Shoe** - Assigned running shoe (if any), showing brand, model, and current total mileage
 
@@ -73,6 +75,9 @@ Charts showing data over time:
 - **Heart Rate** - Heart rate throughout the workout
 - **Pace** - Pace variations over time
 - **Elevation** - Elevation profile
+- **Cadence** - Cadence throughout the workout (if available)
+- **Power** - Power output throughout the workout (if available)
+- **Speed, Grade, Vertical Speed** - Additional metrics from FIT files (if available)
 
 ### Weather Information
 

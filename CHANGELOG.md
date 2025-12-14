@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2025-12-14
+
+### Added
+- **Enhanced FIT file support with sensor data extraction**
+  - Extract heart rate, cadence, power, and temperature from FIT RecordMesg messages
+  - Create time-series records from FIT files with sensor data for detailed analysis
+  - Backward compatible with FIT files that don't contain sensor data
+  - Automatically calculate aggregate metrics (max/avg cadence, max/avg power) from time-series data
+- **Additional FIT metrics extraction**
+  - Extract speed, grade, and vertical speed from FIT files
+  - Store speed, grade, and vertical speed in time-series records for detailed analysis
+  - Enhanced speed calculation with fallback to standard speed when enhanced speed is unavailable
+  - Validated and clamped grade values to prevent invalid data (range: -100% to 100%)
+- **GPX TrackPointExtension support**
+  - Extract heart rate, cadence, power, and temperature from GPX TrackPointExtension elements
+  - Support for Garmin's TrackPointExtension namespace (`http://www.garmin.com/xmlschemas/TrackPointExtension/v1`)
+  - Automatically calculate aggregate metrics from GPX sensor data
+  - Enables full sensor data support for GPX files exported from Garmin devices
+- **Enhanced time-series data**
+  - Time-series records now support cadence (rpm), power (watts), and temperature (°C)
+  - Speed, grade, and vertical speed metrics available in time-series for FIT files
+  - Improved data validation to prevent NaN and Infinity values in time-series records
+  - Better handling of missing or invalid sensor data
+
+### Fixed
+- **Version display in Docker builds**
+  - Fixed System Information always showing version 1.0.0 for edge-tagged Docker images
+  - Updated `docker-build.yml` workflow to pass `APP_VERSION`, `BUILD_DATE`, and `GIT_COMMIT` build arguments
+  - Added VERSION file to Docker images as fallback mechanism
+  - Edge images now correctly display the actual version (e.g., 2.0.1, 2.1.0)
+- **Speed metric preservation**
+  - Fixed `MaxSpeedMps` and `AvgSpeedMps` being overwritten during import
+  - Preserve speed values from original data sources (Strava CSV, GPX calculated data)
+  - Improved speed calculation consistency between GPX and FIT imports
+- **Data validation improvements**
+  - Added validation to reject negative and Infinity distance values in time-series
+  - Prevent Infinity values from being clamped to valid grades
+  - Improved NaN value handling in FIT record processing
+  - Enhanced time-series validation logic for better data quality
+
+### Changed
+- **Improved FIT file processing**
+  - Better handling of DateTime ambiguity in FIT time series
+  - Enhanced validation logic for FIT time-series data
+  - More robust error handling for FIT files with missing or incomplete data
+
+### Technical
+- Updated `WorkoutTimeSeries` model with new fields: `SpeedMps`, `GradePercent`, `VerticalSpeedMps`
+- Enhanced `FitParserService` to extract additional metrics from FIT RecordMesg
+- Enhanced `GpxParserService` to parse TrackPointExtension elements
+- Updated `BulkImportService` and `WorkoutsEndpoints` to handle new sensor data fields
+- Improved aggregate metric calculations from time-series data
+
 ## [2.0.1] - 2025-12-11
 
 ### Security
