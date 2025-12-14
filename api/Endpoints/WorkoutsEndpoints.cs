@@ -2708,13 +2708,25 @@ public static class WorkoutsEndpoints
 
     /// <summary>
     /// Creates time-series records from FIT RecordMesg messages with sensor data.
+    /// Returns an empty list if no sensor data is available, ensuring backward compatibility
+    /// with FIT files that don't contain sensor data.
     /// </summary>
+    /// <param name="workoutId">The workout ID to associate time series records with.</param>
+    /// <param name="startTime">The workout start time for calculating elapsed seconds.</param>
+    /// <param name="records">The FIT RecordMesg collection. Can be null or empty for backward compatibility.</param>
+    /// <returns>List of WorkoutTimeSeries records. Empty list if no sensor data is available.</returns>
     private static List<WorkoutTimeSeries> CreateTimeSeriesFromFitRecords(
         Guid workoutId,
         DateTime startTime,
         ReadOnlyCollection<Dynastream.Fit.RecordMesg> records)
     {
         var timeSeries = new List<WorkoutTimeSeries>();
+
+        // Defensive null check for backward compatibility
+        if (records == null || records.Count == 0)
+        {
+            return timeSeries;
+        }
 
         foreach (var record in records)
         {
@@ -3071,13 +3083,24 @@ public static class WorkoutsEndpoints
                 }
             }
             // Create time-series from FIT records if available
-            else if (fitResult != null && fitResult.RecordMesgs.Count > 0)
+            // Defensive null check for backward compatibility with FIT files without sensor data
+            else if (fitResult != null && fitResult.RecordMesgs != null && fitResult.RecordMesgs.Count > 0)
             {
                 timeSeries = CreateTimeSeriesFromFitRecords(workout.Id, startedAtUtc, fitResult.RecordMesgs);
                 if (timeSeries.Count > 0)
                 {
                     CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
                 }
+                else
+                {
+                    // Log when FIT file has no sensor data but workout is still created successfully
+                    logger.LogInformation("FIT file imported with no sensor data. Workout created with available data (GPS, elevation, distance).");
+                }
+            }
+            else if (fitResult != null)
+            {
+                // Log when FIT file has no RecordMesgs or they're empty
+                logger.LogInformation("FIT file imported with no RecordMesg data. Workout created with available data (GPS, elevation, distance).");
             }
 
             // Fetch weather data
