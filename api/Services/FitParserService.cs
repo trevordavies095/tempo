@@ -121,7 +121,12 @@ public class FitParserService
                         Latitude = latitude.Value,
                         Longitude = longitude.Value,
                         Time = timestamp.Value,
-                        Elevation = altitude
+                        Elevation = altitude,
+                        // Extract sensor data from RecordMesg
+                        HeartRateBpm = record.GetHeartRate(),
+                        CadenceRpm = record.GetCadence(),
+                        PowerWatts = record.GetPower(),
+                        TemperatureC = record.GetTemperature()
                     };
 
                     trackPoints.Add(point);
