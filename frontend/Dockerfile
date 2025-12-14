@@ -41,6 +41,10 @@ ENV NODE_ENV=production
 COPY --from=build /app/public ./public
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
+# Copy VERSION file as fallback (ensured by build workflow)
+# This allows the API to read from file if env vars are not set
+# Note: For local builds, ensure VERSION file exists in frontend/ directory or rely on build args
+COPY --from=build /app/VERSION /app/VERSION
 
 # Add version metadata labels
 LABEL org.opencontainers.image.version="${APP_VERSION}" \

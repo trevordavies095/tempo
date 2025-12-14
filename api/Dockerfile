@@ -38,6 +38,11 @@ COPY --from=publish /app/publish .
 # Create media directory
 RUN mkdir -p /app/media
 
+# Copy VERSION file as fallback (ensured by build workflow)
+# This allows VersionEndpoints.cs to read from file if env vars are not set
+# Note: For local builds, ensure VERSION file exists in api/ directory or rely on build args
+COPY --from=build /src/VERSION /app/VERSION
+
 # Add version metadata labels
 LABEL org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.created="${BUILD_DATE}" \

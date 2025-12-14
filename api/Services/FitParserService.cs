@@ -27,6 +27,7 @@ public class FitParserService
         public double? ElevationGainMeters { get; set; }
         public List<GpxParserService.GpxPoint> TrackPoints { get; set; } = new();
         public string? RawFitDataJson { get; set; }  // JSON string for RawFitData field
+        public ReadOnlyCollection<Dynastream.Fit.RecordMesg> RecordMesgs { get; set; } = new ReadOnlyCollection<Dynastream.Fit.RecordMesg>(new List<Dynastream.Fit.RecordMesg>());
     }
 
     public FitParseResult ParseFit(Stream fitStream)
@@ -121,7 +122,14 @@ public class FitParserService
                         Latitude = latitude.Value,
                         Longitude = longitude.Value,
                         Time = timestamp.Value,
-                        Elevation = altitude
+                        Elevation = altitude,
+                        // Extract sensor data from RecordMesg
+                        // All Get methods return nullable types and never throw exceptions,
+                        // ensuring backward compatibility with FIT files without sensor data
+                        HeartRateBpm = record.GetHeartRate(),
+                        CadenceRpm = record.GetCadence(),
+                        PowerWatts = record.GetPower(),
+                        TemperatureC = record.GetTemperature()
                     };
 
                     trackPoints.Add(point);
@@ -181,7 +189,8 @@ public class FitParserService
                 DistanceMeters = totalDistance,
                 ElevationGainMeters = elevationGain,
                 TrackPoints = trackPoints,
-                RawFitDataJson = rawFitData
+                RawFitDataJson = rawFitData,
+                RecordMesgs = records
             };
         }
         catch (FitException ex)

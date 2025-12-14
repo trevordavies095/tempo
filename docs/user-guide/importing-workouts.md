@@ -86,10 +86,16 @@ For each workout, Tempo imports:
 
 - **Route data** - GPS coordinates for map visualization
 - **Statistics** - Distance, duration, pace, elevation gain/loss
-- **Time-series data** - Heart rate, pace, elevation over time
+- **Time-series data** - Heart rate, pace, elevation, cadence, power, temperature over time (when available)
+- **Additional FIT metrics** - Speed, grade, and vertical speed from FIT files (when available)
 - **Splits** - Distance-based splits (km or mile, based on your unit preference)
 - **Weather data** - Automatic weather conditions for the workout
 - **Metadata** - Activity name, date, time, device information
+
+**Sensor Data Support:**
+- FIT files: Extracts heart rate, cadence, power, temperature, speed, grade, and vertical speed from RecordMesg messages
+- GPX files: Extracts heart rate, cadence, power, and temperature from TrackPointExtension elements (Garmin format)
+- Backward compatible: Files without sensor data are imported successfully with available metrics
 
 ## Troubleshooting
 

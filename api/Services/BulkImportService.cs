@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.IO.Compression;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -295,6 +296,37 @@ public class BulkImportService
             // Calculate splits
             var splits = CalculateSplits(trackPoints, distanceMeters, durationSeconds, splitDistanceMeters, workout.Id);
 
+            // Create time-series from GPX track points if available
+            List<WorkoutTimeSeries> timeSeries = new List<WorkoutTimeSeries>();
+            if (parseResult != null)
+            {
+                timeSeries = CreateTimeSeriesFromGpxTrackPoints(workout.Id, startedAtUtc, trackPoints);
+                if (timeSeries.Count > 0)
+                {
+                    CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
+                }
+            }
+            // Create time-series from FIT records if available
+            // Defensive null check for backward compatibility with FIT files without sensor data
+            else if (fitResult != null && fitResult.RecordMesgs != null && fitResult.RecordMesgs.Count > 0)
+            {
+                timeSeries = CreateTimeSeriesFromFitRecords(workout.Id, startedAtUtc, fitResult.RecordMesgs);
+                if (timeSeries.Count > 0)
+                {
+                    CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
+                }
+                else
+                {
+                    // Log when FIT file has no sensor data but workout is still created successfully
+                    _logger.LogInformation("FIT file imported with no sensor data. Workout created with available data (GPS, elevation, distance).");
+                }
+            }
+            else if (fitResult != null)
+            {
+                // Log when FIT file has no RecordMesgs or they're empty
+                _logger.LogInformation("FIT file imported with no RecordMesg data. Workout created with available data (GPS, elevation, distance).");
+            }
+
             // Fetch weather data
             await FetchAndAttachWeatherAsync(workout, trackPoints, activity.RawStravaDataJson, fitResult?.RawFitDataJson, startedAtUtc);
 
@@ -305,6 +337,7 @@ public class BulkImportService
                 Workout = workout,
                 Route = route,
                 Splits = splits,
+                TimeSeries = timeSeries.Count > 0 ? timeSeries : null,
                 MediaPaths = !string.IsNullOrWhiteSpace(activity.Media) 
                     ? activity.Media.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
                     : new List<string>()
@@ -614,6 +647,240 @@ public class BulkImportService
     }
 
     /// <summary>
+    /// Creates time-series records from GPX track points with sensor data.
+    /// </summary>
+    private List<WorkoutTimeSeries> CreateTimeSeriesFromGpxTrackPoints(
+        Guid workoutId,
+        DateTime startTime,
+        List<GpxParserService.GpxPoint> trackPoints)
+    {
+        var timeSeries = new List<WorkoutTimeSeries>();
+
+        foreach (var point in trackPoints)
+        {
+            if (!point.Time.HasValue) continue;
+
+            var elapsedSeconds = (int)(point.Time.Value - startTime).TotalSeconds;
+
+            // Only create record if there's sensor data
+            if (point.HeartRateBpm.HasValue ||
+                point.CadenceRpm.HasValue ||
+                point.PowerWatts.HasValue ||
+                point.TemperatureC.HasValue)
+            {
+                timeSeries.Add(new WorkoutTimeSeries
+                {
+                    Id = Guid.NewGuid(),
+                    WorkoutId = workoutId,
+                    ElapsedSeconds = elapsedSeconds,
+                    HeartRateBpm = point.HeartRateBpm,
+                    CadenceRpm = point.CadenceRpm,
+                    PowerWatts = point.PowerWatts,
+                    TemperatureC = point.TemperatureC,
+                    ElevationM = point.Elevation
+                });
+            }
+        }
+
+        return timeSeries;
+    }
+
+    /// <summary>
+    /// Creates time-series records from FIT RecordMesg messages with sensor data.
+    /// Returns an empty list if no sensor data is available, ensuring backward compatibility
+    /// with FIT files that don't contain sensor data.
+    /// </summary>
+    /// <param name="workoutId">The workout ID to associate time series records with.</param>
+    /// <param name="startTime">The workout start time for calculating elapsed seconds.</param>
+    /// <param name="records">The FIT RecordMesg collection. Can be null or empty for backward compatibility.</param>
+    /// <returns>List of WorkoutTimeSeries records. Empty list if no sensor data is available.</returns>
+    private List<WorkoutTimeSeries> CreateTimeSeriesFromFitRecords(
+        Guid workoutId,
+        DateTime startTime,
+        ReadOnlyCollection<Dynastream.Fit.RecordMesg> records)
+    {
+        var timeSeries = new List<WorkoutTimeSeries>();
+
+        // Defensive null check for backward compatibility
+        if (records == null || records.Count == 0)
+        {
+            return timeSeries;
+        }
+
+        foreach (var record in records)
+        {
+            var timestamp = record.GetTimestamp()?.GetDateTime().ToUniversalTime();
+            if (timestamp == null) continue;
+
+            var elapsedSeconds = (int)(timestamp.Value - startTime).TotalSeconds;
+            if (elapsedSeconds < 0) continue; // Skip records before start time
+
+            // Extract and validate all fields first
+            // Extract and validate speed (must be non-negative, finite, and not NaN)
+            // Prefer enhanced speed if valid, otherwise fall back to standard speed
+            var enhancedSpeed = record.GetEnhancedSpeed();
+            var standardSpeed = record.GetSpeed();
+            double? validatedSpeed = null;
+            if (enhancedSpeed.HasValue && !double.IsNaN(enhancedSpeed.Value) && !double.IsInfinity(enhancedSpeed.Value) && enhancedSpeed.Value >= 0)
+            {
+                validatedSpeed = (double?)enhancedSpeed.Value;
+            }
+            else if (standardSpeed.HasValue && !double.IsNaN(standardSpeed.Value) && !double.IsInfinity(standardSpeed.Value) && standardSpeed.Value >= 0)
+            {
+                validatedSpeed = (double?)standardSpeed.Value;
+            }
+
+            // Extract and validate grade (clamp to -100 to 100 range, exclude NaN and Infinity)
+            var grade = record.GetGrade();
+            double? validatedGrade = null;
+            if (grade.HasValue)
+            {
+                var gradeValue = (double)grade.Value;
+                if (!double.IsNaN(gradeValue) && !double.IsInfinity(gradeValue))
+                {
+                    validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
+                }
+            }
+
+            // Extract and validate vertical speed (reasonable range -50 to 50 m/s, exclude NaN and Infinity)
+            var verticalSpeed = record.GetVerticalSpeed();
+            double? validatedVerticalSpeed = null;
+            if (verticalSpeed.HasValue)
+            {
+                var vsValue = verticalSpeed.Value;
+                if (!double.IsNaN(vsValue) && !double.IsInfinity(vsValue) && vsValue >= -50.0 && vsValue <= 50.0)
+                {
+                    validatedVerticalSpeed = (double)vsValue;
+                }
+                // Otherwise, set to null (invalid data)
+            }
+
+            // Extract other fields (validate NaN for double fields)
+            var heartRate = record.GetHeartRate();
+            var cadence = record.GetCadence();
+            var power = record.GetPower();
+            var temperature = record.GetTemperature();
+            
+            // Extract elevation (prefer enhanced, exclude NaN and Infinity)
+            double? elevation = null;
+            var enhancedAltitude = record.GetEnhancedAltitude();
+            var standardAltitude = record.GetAltitude();
+            if (enhancedAltitude.HasValue && !double.IsNaN(enhancedAltitude.Value) && !double.IsInfinity(enhancedAltitude.Value))
+            {
+                elevation = (double?)enhancedAltitude.Value;
+            }
+            else if (standardAltitude.HasValue && !double.IsNaN(standardAltitude.Value) && !double.IsInfinity(standardAltitude.Value))
+            {
+                elevation = (double?)standardAltitude.Value;
+            }
+            
+            // Extract distance (must be non-negative, finite, and not NaN)
+            double? distance = null;
+            var distanceValue = record.GetDistance();
+            if (distanceValue.HasValue)
+            {
+                var dist = distanceValue.Value;
+                if (!double.IsNaN(dist) && !double.IsInfinity(dist) && dist >= 0)
+                {
+                    distance = (double?)dist;
+                }
+            }
+
+            // Only create record if there's at least one valid data field after validation
+            var hasValidData = heartRate.HasValue ||
+                               cadence.HasValue ||
+                               power.HasValue ||
+                               validatedSpeed.HasValue ||
+                               temperature.HasValue ||
+                               elevation.HasValue ||
+                               validatedGrade.HasValue ||
+                               validatedVerticalSpeed.HasValue ||
+                               distance.HasValue;
+
+            if (hasValidData)
+            {
+                var timeSeriesRecord = new WorkoutTimeSeries
+                {
+                    Id = Guid.NewGuid(),
+                    WorkoutId = workoutId,
+                    ElapsedSeconds = elapsedSeconds,
+                    HeartRateBpm = heartRate,
+                    CadenceRpm = cadence,
+                    PowerWatts = power,
+                    SpeedMps = validatedSpeed,
+                    TemperatureC = temperature,
+                    ElevationM = elevation,
+                    GradePercent = validatedGrade,
+                    VerticalSpeedMps = validatedVerticalSpeed,
+                    DistanceM = distance
+                };
+
+                timeSeries.Add(timeSeriesRecord);
+            }
+        }
+
+        return timeSeries;
+    }
+
+    /// <summary>
+    /// Calculates aggregate metrics (max/avg/min) from time-series data and updates workout.
+    /// </summary>
+    private void CalculateAggregateMetricsFromTimeSeries(Workout workout, List<WorkoutTimeSeries> timeSeries)
+    {
+        if (timeSeries == null || timeSeries.Count == 0)
+        {
+            return;
+        }
+
+        // Calculate heart rate aggregates
+        var heartRates = timeSeries.Where(ts => ts.HeartRateBpm.HasValue)
+            .Select(ts => ts.HeartRateBpm!.Value).ToList();
+        if (heartRates.Any())
+        {
+            workout.MaxHeartRateBpm = heartRates.Max();
+            workout.AvgHeartRateBpm = (byte)Math.Round(heartRates.Average(x => (double)x));
+            workout.MinHeartRateBpm = heartRates.Min();
+        }
+
+        // Calculate cadence aggregates
+        var cadences = timeSeries.Where(ts => ts.CadenceRpm.HasValue)
+            .Select(ts => ts.CadenceRpm!.Value).ToList();
+        if (cadences.Any())
+        {
+            workout.MaxCadenceRpm = cadences.Max();
+            workout.AvgCadenceRpm = (byte)Math.Round(cadences.Average(x => (double)x));
+        }
+
+        // Calculate power aggregates
+        var powers = timeSeries.Where(ts => ts.PowerWatts.HasValue)
+            .Select(ts => ts.PowerWatts!.Value).ToList();
+        if (powers.Any())
+        {
+            workout.MaxPowerWatts = powers.Max();
+            workout.AvgPowerWatts = (ushort)Math.Round(powers.Average(x => (double)x));
+        }
+
+        // Calculate speed aggregates
+        var speeds = timeSeries.Where(ts => ts.SpeedMps.HasValue)
+            .Select(ts => ts.SpeedMps!.Value).ToList();
+        if (speeds.Any())
+        {
+            // Only set if not already populated (e.g., from Strava CSV or GPX calculated data)
+            if (!workout.MaxSpeedMps.HasValue)
+            {
+                workout.MaxSpeedMps = speeds.Max();
+            }
+        }
+        
+        // Calculate average speed using total distance / duration (matches GPX import behavior)
+        // Only set if not already populated (e.g., from Strava CSV or GPX calculated data)
+        if (!workout.AvgSpeedMps.HasValue && workout.DistanceM > 0 && workout.DurationS > 0)
+        {
+            workout.AvgSpeedMps = workout.DistanceM / workout.DurationS;
+        }
+    }
+
+    /// <summary>
     /// Fetches and attaches weather data to a workout.
     /// </summary>
     private async Task FetchAndAttachWeatherAsync(
@@ -714,18 +981,23 @@ public class BulkImportService
     }
 
     /// <summary>
-    /// Batch saves workouts, routes, and splits to the database.
+    /// Batch saves workouts, routes, splits, and time-series to the database.
     /// </summary>
     public async Task BatchSaveWorkoutsAsync(
         List<Workout> workouts,
         List<WorkoutRoute> routes,
-        List<WorkoutSplit> splits)
+        List<WorkoutSplit> splits,
+        List<WorkoutTimeSeries> timeSeries)
     {
         if (workouts.Count > 0)
         {
             _db.Workouts.AddRange(workouts);
             _db.WorkoutRoutes.AddRange(routes);
             _db.WorkoutSplits.AddRange(splits);
+            if (timeSeries.Count > 0)
+            {
+                _db.WorkoutTimeSeries.AddRange(timeSeries);
+            }
             await _db.SaveChangesAsync();
             _logger.LogInformation("Bulk imported {Count} workouts", workouts.Count);
         }
@@ -778,6 +1050,7 @@ public class BulkImportService
         public Workout? Workout { get; set; }
         public WorkoutRoute? Route { get; set; }
         public List<WorkoutSplit>? Splits { get; set; }
+        public List<WorkoutTimeSeries>? TimeSeries { get; set; }
         public List<string> MediaPaths { get; set; } = new();
     }
 }
