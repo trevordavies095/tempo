@@ -2724,61 +2724,78 @@ public static class WorkoutsEndpoints
             var elapsedSeconds = (int)(timestamp.Value - startTime).TotalSeconds;
             if (elapsedSeconds < 0) continue; // Skip records before start time
 
-            // Only create record if there's sensor data or elevation
-            var hasSensorData = record.GetHeartRate().HasValue ||
-                               record.GetCadence().HasValue ||
-                               record.GetPower().HasValue ||
-                               record.GetSpeed().HasValue ||
-                               record.GetEnhancedSpeed().HasValue ||
-                               record.GetTemperature().HasValue ||
-                               record.GetAltitude().HasValue ||
-                               record.GetEnhancedAltitude().HasValue ||
-                               record.GetGrade().HasValue ||
-                               record.GetVerticalSpeed().HasValue ||
-                               record.GetDistance().HasValue;
-
-            if (hasSensorData)
+            // Extract and validate all fields first
+            // Extract and validate speed (must be non-negative)
+            // Prefer enhanced speed if valid, otherwise fall back to standard speed
+            var enhancedSpeed = record.GetEnhancedSpeed();
+            var standardSpeed = record.GetSpeed();
+            double? validatedSpeed = null;
+            if (enhancedSpeed.HasValue && enhancedSpeed.Value >= 0)
             {
-                // Extract and validate speed (must be non-negative)
-                var speed = record.GetEnhancedSpeed() ?? record.GetSpeed();
-                double? validatedSpeed = speed.HasValue && speed.Value >= 0 ? (double?)speed.Value : null;
+                validatedSpeed = (double?)enhancedSpeed.Value;
+            }
+            else if (standardSpeed.HasValue && standardSpeed.Value >= 0)
+            {
+                validatedSpeed = (double?)standardSpeed.Value;
+            }
 
-                // Extract and validate grade (clamp to -100 to 100 range)
-                var grade = record.GetGrade();
-                double? validatedGrade = null;
-                if (grade.HasValue)
+            // Extract and validate grade (clamp to -100 to 100 range)
+            var grade = record.GetGrade();
+            double? validatedGrade = null;
+            if (grade.HasValue)
+            {
+                var gradeValue = (double)grade.Value;
+                validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
+            }
+
+            // Extract and validate vertical speed (reasonable range -50 to 50 m/s)
+            var verticalSpeed = record.GetVerticalSpeed();
+            double? validatedVerticalSpeed = null;
+            if (verticalSpeed.HasValue)
+            {
+                var vsValue = verticalSpeed.Value;
+                if (vsValue >= -50.0 && vsValue <= 50.0)
                 {
-                    var gradeValue = (double)grade.Value;
-                    validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
+                    validatedVerticalSpeed = (double)vsValue;
                 }
+                // Otherwise, set to null (invalid data)
+            }
 
-                // Extract and validate vertical speed (reasonable range -50 to 50 m/s)
-                var verticalSpeed = record.GetVerticalSpeed();
-                double? validatedVerticalSpeed = null;
-                if (verticalSpeed.HasValue)
-                {
-                    var vsValue = verticalSpeed.Value;
-                    if (vsValue >= -50.0 && vsValue <= 50.0)
-                    {
-                        validatedVerticalSpeed = (double)vsValue;
-                    }
-                    // Otherwise, set to null (invalid data)
-                }
+            // Extract other fields (no validation needed)
+            var heartRate = record.GetHeartRate();
+            var cadence = record.GetCadence();
+            var power = record.GetPower();
+            var temperature = record.GetTemperature();
+            var elevation = record.GetEnhancedAltitude().HasValue ? (double?)record.GetEnhancedAltitude().Value : (record.GetAltitude().HasValue ? (double?)record.GetAltitude().Value : null);
+            var distance = record.GetDistance().HasValue ? (double?)record.GetDistance().Value : null;
 
+            // Only create record if there's at least one valid data field after validation
+            var hasValidData = heartRate.HasValue ||
+                               cadence.HasValue ||
+                               power.HasValue ||
+                               validatedSpeed.HasValue ||
+                               temperature.HasValue ||
+                               elevation.HasValue ||
+                               validatedGrade.HasValue ||
+                               validatedVerticalSpeed.HasValue ||
+                               distance.HasValue;
+
+            if (hasValidData)
+            {
                 var timeSeriesRecord = new WorkoutTimeSeries
                 {
                     Id = Guid.NewGuid(),
                     WorkoutId = workoutId,
                     ElapsedSeconds = elapsedSeconds,
-                    HeartRateBpm = record.GetHeartRate(),
-                    CadenceRpm = record.GetCadence(),
-                    PowerWatts = record.GetPower(),
+                    HeartRateBpm = heartRate,
+                    CadenceRpm = cadence,
+                    PowerWatts = power,
                     SpeedMps = validatedSpeed,
-                    TemperatureC = record.GetTemperature(),
-                    ElevationM = record.GetEnhancedAltitude().HasValue ? (double?)record.GetEnhancedAltitude().Value : (record.GetAltitude().HasValue ? (double?)record.GetAltitude().Value : null),
+                    TemperatureC = temperature,
+                    ElevationM = elevation,
                     GradePercent = validatedGrade,
                     VerticalSpeedMps = validatedVerticalSpeed,
-                    DistanceM = record.GetDistance().HasValue ? (double?)record.GetDistance().Value : null
+                    DistanceM = distance
                 };
 
                 timeSeries.Add(timeSeriesRecord);
