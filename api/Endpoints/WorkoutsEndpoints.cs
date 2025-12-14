@@ -2725,49 +2725,71 @@ public static class WorkoutsEndpoints
             if (elapsedSeconds < 0) continue; // Skip records before start time
 
             // Extract and validate all fields first
-            // Extract and validate speed (must be non-negative)
+            // Extract and validate speed (must be non-negative and not NaN)
             // Prefer enhanced speed if valid, otherwise fall back to standard speed
             var enhancedSpeed = record.GetEnhancedSpeed();
             var standardSpeed = record.GetSpeed();
             double? validatedSpeed = null;
-            if (enhancedSpeed.HasValue && enhancedSpeed.Value >= 0)
+            if (enhancedSpeed.HasValue && !double.IsNaN(enhancedSpeed.Value) && enhancedSpeed.Value >= 0)
             {
                 validatedSpeed = (double?)enhancedSpeed.Value;
             }
-            else if (standardSpeed.HasValue && standardSpeed.Value >= 0)
+            else if (standardSpeed.HasValue && !double.IsNaN(standardSpeed.Value) && standardSpeed.Value >= 0)
             {
                 validatedSpeed = (double?)standardSpeed.Value;
             }
 
-            // Extract and validate grade (clamp to -100 to 100 range)
+            // Extract and validate grade (clamp to -100 to 100 range, exclude NaN)
             var grade = record.GetGrade();
             double? validatedGrade = null;
             if (grade.HasValue)
             {
                 var gradeValue = (double)grade.Value;
-                validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
+                if (!double.IsNaN(gradeValue))
+                {
+                    validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
+                }
             }
 
-            // Extract and validate vertical speed (reasonable range -50 to 50 m/s)
+            // Extract and validate vertical speed (reasonable range -50 to 50 m/s, exclude NaN)
             var verticalSpeed = record.GetVerticalSpeed();
             double? validatedVerticalSpeed = null;
             if (verticalSpeed.HasValue)
             {
                 var vsValue = verticalSpeed.Value;
-                if (vsValue >= -50.0 && vsValue <= 50.0)
+                if (!double.IsNaN(vsValue) && vsValue >= -50.0 && vsValue <= 50.0)
                 {
                     validatedVerticalSpeed = (double)vsValue;
                 }
                 // Otherwise, set to null (invalid data)
             }
 
-            // Extract other fields (no validation needed)
+            // Extract other fields (validate NaN for double fields)
             var heartRate = record.GetHeartRate();
             var cadence = record.GetCadence();
             var power = record.GetPower();
             var temperature = record.GetTemperature();
-            var elevation = record.GetEnhancedAltitude().HasValue ? (double?)record.GetEnhancedAltitude().Value : (record.GetAltitude().HasValue ? (double?)record.GetAltitude().Value : null);
-            var distance = record.GetDistance().HasValue ? (double?)record.GetDistance().Value : null;
+            
+            // Extract elevation (prefer enhanced, exclude NaN)
+            double? elevation = null;
+            var enhancedAltitude = record.GetEnhancedAltitude();
+            var standardAltitude = record.GetAltitude();
+            if (enhancedAltitude.HasValue && !double.IsNaN(enhancedAltitude.Value))
+            {
+                elevation = (double?)enhancedAltitude.Value;
+            }
+            else if (standardAltitude.HasValue && !double.IsNaN(standardAltitude.Value))
+            {
+                elevation = (double?)standardAltitude.Value;
+            }
+            
+            // Extract distance (exclude NaN)
+            double? distance = null;
+            var distanceValue = record.GetDistance();
+            if (distanceValue.HasValue && !double.IsNaN(distanceValue.Value))
+            {
+                distance = (double?)distanceValue.Value;
+            }
 
             // Only create record if there's at least one valid data field after validation
             var hasValidData = heartRate.HasValue ||
