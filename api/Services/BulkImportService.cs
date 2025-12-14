@@ -692,32 +692,104 @@ public class BulkImportService
             var elapsedSeconds = (int)(timestamp.Value - startTime).TotalSeconds;
             if (elapsedSeconds < 0) continue; // Skip records before start time
 
-            // Only create record if there's sensor data or elevation
-            var hasSensorData = record.GetHeartRate().HasValue ||
-                               record.GetCadence().HasValue ||
-                               record.GetPower().HasValue ||
-                               record.GetSpeed().HasValue ||
-                               record.GetEnhancedSpeed().HasValue ||
-                               record.GetTemperature().HasValue ||
-                               record.GetAltitude().HasValue ||
-                               record.GetEnhancedAltitude().HasValue;
+            // Extract and validate all fields first
+            // Extract and validate speed (must be non-negative, finite, and not NaN)
+            // Prefer enhanced speed if valid, otherwise fall back to standard speed
+            var enhancedSpeed = record.GetEnhancedSpeed();
+            var standardSpeed = record.GetSpeed();
+            double? validatedSpeed = null;
+            if (enhancedSpeed.HasValue && !double.IsNaN(enhancedSpeed.Value) && !double.IsInfinity(enhancedSpeed.Value) && enhancedSpeed.Value >= 0)
+            {
+                validatedSpeed = (double?)enhancedSpeed.Value;
+            }
+            else if (standardSpeed.HasValue && !double.IsNaN(standardSpeed.Value) && !double.IsInfinity(standardSpeed.Value) && standardSpeed.Value >= 0)
+            {
+                validatedSpeed = (double?)standardSpeed.Value;
+            }
 
-            if (hasSensorData)
+            // Extract and validate grade (clamp to -100 to 100 range, exclude NaN and Infinity)
+            var grade = record.GetGrade();
+            double? validatedGrade = null;
+            if (grade.HasValue)
+            {
+                var gradeValue = (double)grade.Value;
+                if (!double.IsNaN(gradeValue) && !double.IsInfinity(gradeValue))
+                {
+                    validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
+                }
+            }
+
+            // Extract and validate vertical speed (reasonable range -50 to 50 m/s, exclude NaN and Infinity)
+            var verticalSpeed = record.GetVerticalSpeed();
+            double? validatedVerticalSpeed = null;
+            if (verticalSpeed.HasValue)
+            {
+                var vsValue = verticalSpeed.Value;
+                if (!double.IsNaN(vsValue) && !double.IsInfinity(vsValue) && vsValue >= -50.0 && vsValue <= 50.0)
+                {
+                    validatedVerticalSpeed = (double)vsValue;
+                }
+                // Otherwise, set to null (invalid data)
+            }
+
+            // Extract other fields (validate NaN for double fields)
+            var heartRate = record.GetHeartRate();
+            var cadence = record.GetCadence();
+            var power = record.GetPower();
+            var temperature = record.GetTemperature();
+            
+            // Extract elevation (prefer enhanced, exclude NaN and Infinity)
+            double? elevation = null;
+            var enhancedAltitude = record.GetEnhancedAltitude();
+            var standardAltitude = record.GetAltitude();
+            if (enhancedAltitude.HasValue && !double.IsNaN(enhancedAltitude.Value) && !double.IsInfinity(enhancedAltitude.Value))
+            {
+                elevation = (double?)enhancedAltitude.Value;
+            }
+            else if (standardAltitude.HasValue && !double.IsNaN(standardAltitude.Value) && !double.IsInfinity(standardAltitude.Value))
+            {
+                elevation = (double?)standardAltitude.Value;
+            }
+            
+            // Extract distance (must be non-negative, finite, and not NaN)
+            double? distance = null;
+            var distanceValue = record.GetDistance();
+            if (distanceValue.HasValue)
+            {
+                var dist = distanceValue.Value;
+                if (!double.IsNaN(dist) && !double.IsInfinity(dist) && dist >= 0)
+                {
+                    distance = (double?)dist;
+                }
+            }
+
+            // Only create record if there's at least one valid data field after validation
+            var hasValidData = heartRate.HasValue ||
+                               cadence.HasValue ||
+                               power.HasValue ||
+                               validatedSpeed.HasValue ||
+                               temperature.HasValue ||
+                               elevation.HasValue ||
+                               validatedGrade.HasValue ||
+                               validatedVerticalSpeed.HasValue ||
+                               distance.HasValue;
+
+            if (hasValidData)
             {
                 var timeSeriesRecord = new WorkoutTimeSeries
                 {
                     Id = Guid.NewGuid(),
                     WorkoutId = workoutId,
                     ElapsedSeconds = elapsedSeconds,
-                    HeartRateBpm = record.GetHeartRate(),
-                    CadenceRpm = record.GetCadence(),
-                    PowerWatts = record.GetPower(),
-                    SpeedMps = record.GetEnhancedSpeed().HasValue ? (double?)record.GetEnhancedSpeed().Value : (record.GetSpeed().HasValue ? (double?)record.GetSpeed().Value : null),
-                    TemperatureC = record.GetTemperature(),
-                    ElevationM = record.GetEnhancedAltitude().HasValue ? (double?)record.GetEnhancedAltitude().Value : (record.GetAltitude().HasValue ? (double?)record.GetAltitude().Value : null),
-                    GradePercent = record.GetGrade().HasValue ? (double?)record.GetGrade().Value : null,
-                    VerticalSpeedMps = record.GetVerticalSpeed().HasValue ? (double?)record.GetVerticalSpeed().Value : null,
-                    DistanceM = record.GetDistance().HasValue ? (double?)record.GetDistance().Value : null
+                    HeartRateBpm = heartRate,
+                    CadenceRpm = cadence,
+                    PowerWatts = power,
+                    SpeedMps = validatedSpeed,
+                    TemperatureC = temperature,
+                    ElevationM = elevation,
+                    GradePercent = validatedGrade,
+                    VerticalSpeedMps = validatedVerticalSpeed,
+                    DistanceM = distance
                 };
 
                 timeSeries.Add(timeSeriesRecord);
