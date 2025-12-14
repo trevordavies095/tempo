@@ -707,13 +707,13 @@ public class BulkImportService
                 validatedSpeed = (double?)standardSpeed.Value;
             }
 
-            // Extract and validate grade (clamp to -100 to 100 range, exclude NaN)
+            // Extract and validate grade (clamp to -100 to 100 range, exclude NaN and Infinity)
             var grade = record.GetGrade();
             double? validatedGrade = null;
             if (grade.HasValue)
             {
                 var gradeValue = (double)grade.Value;
-                if (!double.IsNaN(gradeValue))
+                if (!double.IsNaN(gradeValue) && !double.IsInfinity(gradeValue))
                 {
                     validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
                 }
