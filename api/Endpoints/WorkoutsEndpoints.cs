@@ -2874,7 +2874,11 @@ public static class WorkoutsEndpoints
             .Select(ts => ts.SpeedMps!.Value).ToList();
         if (speeds.Any())
         {
-            workout.MaxSpeedMps = speeds.Max();
+            // Only set if not already populated (e.g., from Strava CSV or GPX calculated data)
+            if (!workout.MaxSpeedMps.HasValue)
+            {
+                workout.MaxSpeedMps = speeds.Max();
+            }
         }
         
         // Calculate average speed using total distance / duration (matches GPX import behavior)
