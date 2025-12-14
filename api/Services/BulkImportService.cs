@@ -836,6 +836,15 @@ public class BulkImportService
             workout.MaxPowerWatts = powers.Max();
             workout.AvgPowerWatts = (ushort)Math.Round(powers.Average(x => (double)x));
         }
+
+        // Calculate speed aggregates
+        var speeds = timeSeries.Where(ts => ts.SpeedMps.HasValue)
+            .Select(ts => ts.SpeedMps!.Value).ToList();
+        if (speeds.Any())
+        {
+            workout.MaxSpeedMps = speeds.Max();
+            workout.AvgSpeedMps = speeds.Average();
+        }
     }
 
     /// <summary>
