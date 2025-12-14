@@ -4,7 +4,6 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
-using Dynastream.Fit;
 
 namespace Tempo.Api.Services;
 
@@ -681,7 +680,7 @@ public class BulkImportService
     private List<WorkoutTimeSeries> CreateTimeSeriesFromFitRecords(
         Guid workoutId,
         DateTime startTime,
-        ReadOnlyCollection<RecordMesg> records)
+        ReadOnlyCollection<Dynastream.Fit.RecordMesg> records)
     {
         var timeSeries = new List<WorkoutTimeSeries>();
 
