@@ -8,7 +8,6 @@ using Tempo.Api.Models;
 using Tempo.Api.Services;
 using static Tempo.Api.Services.WorkoutQueryService;
 using static Tempo.Api.Services.DeviceExtractionService;
-using Dynastream.Fit;
 
 namespace Tempo.Api.Endpoints;
 
@@ -2712,8 +2711,8 @@ public static class WorkoutsEndpoints
     /// </summary>
     private static List<WorkoutTimeSeries> CreateTimeSeriesFromFitRecords(
         Guid workoutId,
-        System.DateTime startTime,
-        ReadOnlyCollection<RecordMesg> records)
+        DateTime startTime,
+        ReadOnlyCollection<Dynastream.Fit.RecordMesg> records)
     {
         var timeSeries = new List<WorkoutTimeSeries>();
 
