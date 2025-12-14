@@ -14,6 +14,13 @@ RUN dotnet restore
 
 # Copy everything else and build
 COPY . .
+
+# Ensure VERSION file exists (create from APP_VERSION if not present)
+# This ensures the file is always available for the final stage
+RUN if [ ! -f VERSION ]; then \
+      echo "${APP_VERSION}" > VERSION; \
+    fi
+
 RUN dotnet build -c Release -o /app/build
 
 # Publish stage
@@ -38,9 +45,8 @@ COPY --from=publish /app/publish .
 # Create media directory
 RUN mkdir -p /app/media
 
-# Copy VERSION file as fallback (ensured by build workflow)
+# Copy VERSION file as fallback (ensured by build workflow or created from APP_VERSION)
 # This allows VersionEndpoints.cs to read from file if env vars are not set
-# Note: For local builds, ensure VERSION file exists in api/ directory or rely on build args
 COPY --from=build /src/VERSION /app/VERSION
 
 # Add version metadata labels
