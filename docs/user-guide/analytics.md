@@ -156,20 +156,6 @@ Visual representation of elevation changes:
 - Identifies challenging segments
 - Useful for route planning
 
-### Cadence Chart
-
-Visualize cadence throughout the workout (when available):
-- Shows running cadence (steps per minute) over time
-- Helps identify cadence consistency
-- Useful for analyzing running form and efficiency
-
-### Power Chart
-
-Visualize power output throughout the workout (when available):
-- Shows power output (watts) over time
-- Helps identify power variations and effort distribution
-- Useful for power-based training analysis
-
 ## Splits Analysis
 
 Distance-based splits provide detailed segment analysis:

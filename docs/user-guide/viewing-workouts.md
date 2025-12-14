@@ -71,13 +71,12 @@ Splits are calculated based on your unit preference (1km for metric, 1 mile for 
 
 ### Time Series Data
 
-Charts showing data over time:
-- **Heart Rate** - Heart rate throughout the workout
+Time-series data is stored and available for analysis:
+- **Heart Rate** - Heart rate throughout the workout (when available)
 - **Pace** - Pace variations over time
 - **Elevation** - Elevation profile
-- **Cadence** - Cadence throughout the workout (if available)
-- **Power** - Power output throughout the workout (if available)
-- **Speed, Grade, Vertical Speed** - Additional metrics from FIT files (if available)
+- **Cadence, Power, Temperature** - Additional sensor data from FIT files or GPX TrackPointExtension (when available)
+- **Speed, Grade, Vertical Speed** - Additional metrics from FIT files (when available)
 
 ### Weather Information
 
