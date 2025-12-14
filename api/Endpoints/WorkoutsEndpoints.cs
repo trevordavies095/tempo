@@ -2725,16 +2725,16 @@ public static class WorkoutsEndpoints
             if (elapsedSeconds < 0) continue; // Skip records before start time
 
             // Extract and validate all fields first
-            // Extract and validate speed (must be non-negative and not NaN)
+            // Extract and validate speed (must be non-negative, finite, and not NaN)
             // Prefer enhanced speed if valid, otherwise fall back to standard speed
             var enhancedSpeed = record.GetEnhancedSpeed();
             var standardSpeed = record.GetSpeed();
             double? validatedSpeed = null;
-            if (enhancedSpeed.HasValue && !double.IsNaN(enhancedSpeed.Value) && enhancedSpeed.Value >= 0)
+            if (enhancedSpeed.HasValue && !double.IsNaN(enhancedSpeed.Value) && !double.IsInfinity(enhancedSpeed.Value) && enhancedSpeed.Value >= 0)
             {
                 validatedSpeed = (double?)enhancedSpeed.Value;
             }
-            else if (standardSpeed.HasValue && !double.IsNaN(standardSpeed.Value) && standardSpeed.Value >= 0)
+            else if (standardSpeed.HasValue && !double.IsNaN(standardSpeed.Value) && !double.IsInfinity(standardSpeed.Value) && standardSpeed.Value >= 0)
             {
                 validatedSpeed = (double?)standardSpeed.Value;
             }
@@ -2751,13 +2751,13 @@ public static class WorkoutsEndpoints
                 }
             }
 
-            // Extract and validate vertical speed (reasonable range -50 to 50 m/s, exclude NaN)
+            // Extract and validate vertical speed (reasonable range -50 to 50 m/s, exclude NaN and Infinity)
             var verticalSpeed = record.GetVerticalSpeed();
             double? validatedVerticalSpeed = null;
             if (verticalSpeed.HasValue)
             {
                 var vsValue = verticalSpeed.Value;
-                if (!double.IsNaN(vsValue) && vsValue >= -50.0 && vsValue <= 50.0)
+                if (!double.IsNaN(vsValue) && !double.IsInfinity(vsValue) && vsValue >= -50.0 && vsValue <= 50.0)
                 {
                     validatedVerticalSpeed = (double)vsValue;
                 }
@@ -2770,15 +2770,15 @@ public static class WorkoutsEndpoints
             var power = record.GetPower();
             var temperature = record.GetTemperature();
             
-            // Extract elevation (prefer enhanced, exclude NaN)
+            // Extract elevation (prefer enhanced, exclude NaN and Infinity)
             double? elevation = null;
             var enhancedAltitude = record.GetEnhancedAltitude();
             var standardAltitude = record.GetAltitude();
-            if (enhancedAltitude.HasValue && !double.IsNaN(enhancedAltitude.Value))
+            if (enhancedAltitude.HasValue && !double.IsNaN(enhancedAltitude.Value) && !double.IsInfinity(enhancedAltitude.Value))
             {
                 elevation = (double?)enhancedAltitude.Value;
             }
-            else if (standardAltitude.HasValue && !double.IsNaN(standardAltitude.Value))
+            else if (standardAltitude.HasValue && !double.IsNaN(standardAltitude.Value) && !double.IsInfinity(standardAltitude.Value))
             {
                 elevation = (double?)standardAltitude.Value;
             }
