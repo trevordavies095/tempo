@@ -843,7 +843,12 @@ public class BulkImportService
         if (speeds.Any())
         {
             workout.MaxSpeedMps = speeds.Max();
-            workout.AvgSpeedMps = speeds.Average();
+        }
+        
+        // Calculate average speed using total distance / duration (matches GPX import behavior)
+        if (workout.DistanceM > 0 && workout.DurationS > 0)
+        {
+            workout.AvgSpeedMps = workout.DistanceM / workout.DurationS;
         }
     }
 
