@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -7,6 +8,7 @@ using Tempo.Api.Models;
 using Tempo.Api.Services;
 using static Tempo.Api.Services.WorkoutQueryService;
 using static Tempo.Api.Services.DeviceExtractionService;
+using Dynastream.Fit;
 
 namespace Tempo.Api.Endpoints;
 
@@ -2706,6 +2708,59 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
+    /// Creates time-series records from FIT RecordMesg messages with sensor data.
+    /// </summary>
+    private static List<WorkoutTimeSeries> CreateTimeSeriesFromFitRecords(
+        Guid workoutId,
+        DateTime startTime,
+        ReadOnlyCollection<RecordMesg> records)
+    {
+        var timeSeries = new List<WorkoutTimeSeries>();
+
+        foreach (var record in records)
+        {
+            var timestamp = record.GetTimestamp()?.GetDateTime().ToUniversalTime();
+            if (timestamp == null) continue;
+
+            var elapsedSeconds = (int)(timestamp.Value - startTime).TotalSeconds;
+            if (elapsedSeconds < 0) continue; // Skip records before start time
+
+            // Only create record if there's sensor data or elevation
+            var hasSensorData = record.GetHeartRate().HasValue ||
+                               record.GetCadence().HasValue ||
+                               record.GetPower().HasValue ||
+                               record.GetSpeed().HasValue ||
+                               record.GetEnhancedSpeed().HasValue ||
+                               record.GetTemperature().HasValue ||
+                               record.GetAltitude().HasValue ||
+                               record.GetEnhancedAltitude().HasValue;
+
+            if (hasSensorData)
+            {
+                var timeSeriesRecord = new WorkoutTimeSeries
+                {
+                    Id = Guid.NewGuid(),
+                    WorkoutId = workoutId,
+                    ElapsedSeconds = elapsedSeconds,
+                    HeartRateBpm = record.GetHeartRate(),
+                    CadenceRpm = record.GetCadence(),
+                    PowerWatts = record.GetPower(),
+                    SpeedMps = record.GetEnhancedSpeed().HasValue ? (double?)record.GetEnhancedSpeed().Value : (record.GetSpeed().HasValue ? (double?)record.GetSpeed().Value : null),
+                    TemperatureC = record.GetTemperature(),
+                    ElevationM = record.GetEnhancedAltitude().HasValue ? (double?)record.GetEnhancedAltitude().Value : (record.GetAltitude().HasValue ? (double?)record.GetAltitude().Value : null),
+                    GradePercent = record.GetGrade().HasValue ? (double?)record.GetGrade().Value : null,
+                    VerticalSpeedMps = record.GetVerticalSpeed().HasValue ? (double?)record.GetVerticalSpeed().Value : null,
+                    DistanceM = record.GetDistance().HasValue ? (double?)record.GetDistance().Value : null
+                };
+
+                timeSeries.Add(timeSeriesRecord);
+            }
+        }
+
+        return timeSeries;
+    }
+
+    /// <summary>
     /// Calculates aggregate metrics (max/avg/min) from time-series data and updates workout.
     /// </summary>
     private static void CalculateAggregateMetricsFromTimeSeries(Workout workout, List<WorkoutTimeSeries> timeSeries)
@@ -2920,6 +2975,15 @@ public static class WorkoutsEndpoints
             if (parseResult != null)
             {
                 timeSeries = CreateTimeSeriesFromGpxTrackPoints(workout.Id, startedAtUtc, trackPoints);
+                if (timeSeries.Count > 0)
+                {
+                    CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
+                }
+            }
+            // Create time-series from FIT records if available
+            else if (fitResult != null && fitResult.RecordMesgs.Count > 0)
+            {
+                timeSeries = CreateTimeSeriesFromFitRecords(workout.Id, startedAtUtc, fitResult.RecordMesgs);
                 if (timeSeries.Count > 0)
                 {
                     CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);

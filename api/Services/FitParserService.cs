@@ -27,6 +27,7 @@ public class FitParserService
         public double? ElevationGainMeters { get; set; }
         public List<GpxParserService.GpxPoint> TrackPoints { get; set; } = new();
         public string? RawFitDataJson { get; set; }  // JSON string for RawFitData field
+        public ReadOnlyCollection<RecordMesg> RecordMesgs { get; set; } = new ReadOnlyCollection<RecordMesg>(new List<RecordMesg>());
     }
 
     public FitParseResult ParseFit(Stream fitStream)
@@ -186,7 +187,8 @@ public class FitParserService
                 DistanceMeters = totalDistance,
                 ElevationGainMeters = elevationGain,
                 TrackPoints = trackPoints,
-                RawFitDataJson = rawFitData
+                RawFitDataJson = rawFitData,
+                RecordMesgs = records
             };
         }
         catch (FitException ex)
