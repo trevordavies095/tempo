@@ -751,12 +751,16 @@ public class BulkImportService
                 elevation = (double?)standardAltitude.Value;
             }
             
-            // Extract distance (exclude NaN)
+            // Extract distance (must be non-negative, finite, and not NaN)
             double? distance = null;
             var distanceValue = record.GetDistance();
-            if (distanceValue.HasValue && !double.IsNaN(distanceValue.Value))
+            if (distanceValue.HasValue)
             {
-                distance = (double?)distanceValue.Value;
+                var dist = distanceValue.Value;
+                if (!double.IsNaN(dist) && !double.IsInfinity(dist) && dist >= 0)
+                {
+                    distance = (double?)dist;
+                }
             }
 
             // Only create record if there's at least one valid data field after validation
