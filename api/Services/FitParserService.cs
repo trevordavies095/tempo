@@ -27,7 +27,7 @@ public class FitParserService
         public double? ElevationGainMeters { get; set; }
         public List<GpxParserService.GpxPoint> TrackPoints { get; set; } = new();
         public string? RawFitDataJson { get; set; }  // JSON string for RawFitData field
-        public ReadOnlyCollection<RecordMesg> RecordMesgs { get; set; } = new ReadOnlyCollection<RecordMesg>(new List<RecordMesg>());
+        public ReadOnlyCollection<Dynastream.Fit.RecordMesg> RecordMesgs { get; set; } = new ReadOnlyCollection<Dynastream.Fit.RecordMesg>(new List<Dynastream.Fit.RecordMesg>());
     }
 
     public FitParseResult ParseFit(Stream fitStream)
