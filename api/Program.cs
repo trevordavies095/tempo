@@ -94,12 +94,23 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 // Configure Entity Framework
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-// Only register PostgreSQL if not already registered (allows test factory to override)
-if (!builder.Services.Any(s => s.ServiceType == typeof(TempoDbContext)))
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+    ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+// Skip PostgreSQL registration if in Testing environment or using SQLite connection string
+// This allows the test factory to register SQLite without conflicts
+// Check both the builder environment and the ASPNETCORE_ENVIRONMENT variable
+var isTesting = builder.Environment.IsEnvironment("Testing") 
+    || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing";
+var isSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) == true;
+
+if (!isTesting && !isSqlite)
 {
-    builder.Services.AddDbContext<TempoDbContext>(options =>
-        options.UseNpgsql(connectionString));
+    // Only register PostgreSQL if not already registered and not in testing mode
+    if (!builder.Services.Any(s => s.ServiceType == typeof(TempoDbContext)))
+    {
+        builder.Services.AddDbContext<TempoDbContext>(options =>
+            options.UseNpgsql(connectionString));
+    }
 }
 
 // Register services
@@ -185,15 +196,27 @@ app.MapVersionEndpoints();
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
-// Apply database migrations automatically on startup
+// Apply database migrations automatically on startup (skip for SQLite - handled by test factory)
 try
 {
-    using (var scope = app.Services.CreateScope())
+    // Skip migrations for SQLite (used in testing) - factory handles schema creation
+    var migrationConnectionString = app.Configuration.GetConnectionString("DefaultConnection") 
+        ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+    var isSqliteForMigration = migrationConnectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) == true;
+    
+    if (!isSqliteForMigration)
     {
-        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-        DatabaseMigrationHelper.ApplyMigrations(db);
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            DatabaseMigrationHelper.ApplyMigrations(db);
+        }
+        Log.Information("Database migrations completed successfully");
     }
-    Log.Information("Database migrations completed successfully");
+    else
+    {
+        Log.Information("Skipping migrations for SQLite database (test mode)");
+    }
 }
 catch (Exception ex)
 {

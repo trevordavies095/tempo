@@ -33,6 +33,9 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
 
     public TempoWebApplicationFactory()
     {
+        // Set environment BEFORE creating builder so Program.cs can detect it
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
+        
         _databaseOptions = new TestDatabaseOptions
         {
             DatabaseType = TestDatabaseOptions.GetDatabaseType()
@@ -47,11 +50,14 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
         {
             _tempDatabaseFile = Path.Combine(Path.GetTempPath(), $"tempo-test-db-{Guid.NewGuid()}.db");
         }
+        
+        // Set connection string environment variable early so Program.cs can detect SQLite
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", GetTestConnectionString());
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // Set environment variables BEFORE any configuration happens
+        // Environment variables are already set in constructor, but ensure they're still set
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", GetTestConnectionString());
         Environment.SetEnvironmentVariable("JWT__SecretKey", TestJwtSecretKey);
         Environment.SetEnvironmentVariable("JWT__Issuer", TestJwtIssuer);
@@ -64,6 +70,7 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
         builder.ConfigureServices(services =>
         {
             // Remove ALL existing DbContext registrations (both options and the context itself)
+            // Also remove any Npgsql-specific extension services that might conflict
             // This must happen AFTER Program.cs has run, so we remove what it registered
             var descriptorsToRemove = new List<ServiceDescriptor>();
             
@@ -73,6 +80,12 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
                     service.ServiceType == typeof(TempoDbContext) ||
                     (service.ServiceType != null && service.ServiceType.IsGenericType && 
                      service.ServiceType.GetGenericTypeDefinition() == typeof(DbContextOptions<>)))
+                {
+                    descriptorsToRemove.Add(service);
+                }
+                // Also remove Npgsql-specific services if present
+                else if (service.ServiceType != null && 
+                         service.ServiceType.FullName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
                 {
                     descriptorsToRemove.Add(service);
                 }
