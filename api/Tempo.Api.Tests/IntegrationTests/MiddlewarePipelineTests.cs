@@ -57,11 +57,23 @@ public class MiddlewarePipelineTests
     public async Task Swagger_IsAvailable_InDevelopmentEnvironment()
     {
         // Arrange - save original environment
+        // Save both JWT__SecretKey (double underscore, standard .NET convention) and JWT:SecretKey (colon, if it exists)
         var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        var originalJwtSecretDoubleUnderscore = Environment.GetEnvironmentVariable("JWT__SecretKey");
+        var originalJwtSecretColon = Environment.GetEnvironmentVariable("JWT:SecretKey");
+        var originalConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
 
         try
         {
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+            // Set a valid JWT secret to allow startup
+            Environment.SetEnvironmentVariable("JWT__SecretKey", "ValidSecretKeyForDevelopmentTesting12345678901234567890");
+            // Also clear JWT:SecretKey if it exists to avoid conflicts
+            if (originalJwtSecretColon != null)
+            {
+                Environment.SetEnvironmentVariable("JWT:SecretKey", null);
+            }
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=:memory:?cache=shared");
 
             // Create factory with Development environment
             using var factory = new WebApplicationFactory<Program>()
@@ -81,7 +93,11 @@ public class MiddlewarePipelineTests
         }
         finally
         {
+            // Restore original environment variables (both variations)
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
+            Environment.SetEnvironmentVariable("JWT__SecretKey", originalJwtSecretDoubleUnderscore);
+            Environment.SetEnvironmentVariable("JWT:SecretKey", originalJwtSecretColon);
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", originalConnectionString);
         }
     }
 
