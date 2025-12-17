@@ -27,4 +27,12 @@
     <!-- FIT SDK source files are automatically included from Libraries/FitSDK/ -->
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Exclude test project files from API project build -->
+    <Compile Remove="Tempo.Api.Tests/**" />
+    <Content Remove="Tempo.Api.Tests/**" />
+    <EmbeddedResource Remove="Tempo.Api.Tests/**" />
+    <None Remove="Tempo.Api.Tests/**" />
+  </ItemGroup>
+
 </Project>

@@ -9,6 +9,12 @@ api/*.suo
 api/*.cache
 api/.vs/
 
+# .NET Test Projects
+**/bin/
+**/obj/
+**/*.Tests/bin/
+**/*.Tests/obj/
+
 # Node
 frontend/node_modules/
 frontend/.next/
@@ -44,6 +50,17 @@ logs/
 test_data/
 media/
 RELEASES.md
+
+# Testing
+TestResults/
+**/TestResults/
+**/coverage.cobertura.xml
+**/coverage.xml
+**/coverage.json
+**/coverage.info
+**/lcov.info
+**/*.trx
+**/*.coverage
 
 # MkDocs build output
 site/
