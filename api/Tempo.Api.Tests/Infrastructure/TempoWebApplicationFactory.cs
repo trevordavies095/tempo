@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -172,8 +173,35 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
                 if (_databaseOptions.DatabaseType == TestDatabaseType.SqliteInMemory ||
                     _databaseOptions.DatabaseType == TestDatabaseType.SqliteFile)
                 {
-                    db.Database.EnsureCreated();
-                    logger.LogInformation("Test database schema created using EnsureCreated");
+                    // Check if database is already created by checking if any tables exist
+                    // This handles the case where multiple factories share the same in-memory database
+                    var tablesExist = false;
+                    try
+                    {
+                        var connection = db.Database.GetDbConnection();
+                        if (connection.State != ConnectionState.Open)
+                            connection.Open();
+                        
+                        using var command = connection.CreateCommand();
+                        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+                        var tableCount = Convert.ToInt32(command.ExecuteScalar());
+                        tablesExist = tableCount > 0;
+                    }
+                    catch
+                    {
+                        // If we can't check, assume tables don't exist and try to create
+                        tablesExist = false;
+                    }
+                    
+                    if (!tablesExist)
+                    {
+                        db.Database.EnsureCreated();
+                        logger.LogInformation("Test database schema created using EnsureCreated");
+                    }
+                    else
+                    {
+                        logger.LogInformation("Test database schema already exists, skipping creation");
+                    }
                 }
                 else
                 {
@@ -181,6 +209,12 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
                     DatabaseMigrationHelper.ApplyMigrations(db);
                     logger.LogInformation("Test database migrations applied");
                 }
+            }
+            catch (SqliteException ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+            {
+                // Ignore SQLite errors about tables already existing
+                // This can happen when multiple factories share the same in-memory database
+                logger.LogInformation("Database tables already exist, skipping creation");
             }
             catch (Exception ex)
             {
