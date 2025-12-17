@@ -175,10 +175,12 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
     {
         return _databaseOptions.DatabaseType switch
         {
-            TestDatabaseType.SqliteInMemory => "Data Source=:memory:",
+            // Use shared-cache for in-memory SQLite so all connections share the same database
+            // This ensures schema and data continuity across different scoped DbContext instances
+            TestDatabaseType.SqliteInMemory => "Data Source=:memory:?cache=shared",
             TestDatabaseType.SqliteFile => $"Data Source={_tempDatabaseFile}",
             TestDatabaseType.Testcontainers => throw new NotImplementedException("Testcontainers support not yet implemented"),
-            _ => "Data Source=:memory:"
+            _ => "Data Source=:memory:?cache=shared"
         };
     }
 
