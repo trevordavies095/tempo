@@ -131,7 +131,11 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
             });
 
             // Override MediaStorageConfig
-            services.Remove(services.SingleOrDefault(s => s.ServiceType == typeof(MediaStorageConfig)));
+            var mediaStorageConfigDescriptor = services.SingleOrDefault(s => s.ServiceType == typeof(MediaStorageConfig));
+            if (mediaStorageConfigDescriptor != null)
+            {
+                services.Remove(mediaStorageConfigDescriptor);
+            }
             services.AddSingleton(new MediaStorageConfig
             {
                 RootPath = _tempMediaDirectory,
@@ -139,7 +143,11 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
             });
 
             // Override ElevationCalculationConfig (keep defaults)
-            services.Remove(services.SingleOrDefault(s => s.ServiceType == typeof(ElevationCalculationConfig)));
+            var elevationConfigDescriptor = services.SingleOrDefault(s => s.ServiceType == typeof(ElevationCalculationConfig));
+            if (elevationConfigDescriptor != null)
+            {
+                services.Remove(elevationConfigDescriptor);
+            }
             services.AddSingleton(new ElevationCalculationConfig
             {
                 NoiseThresholdMeters = 2.0,
