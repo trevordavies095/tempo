@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -80,6 +81,15 @@ public class MiddlewarePipelineTests
                 .WithWebHostBuilder(builder =>
                 {
                     builder.UseEnvironment("Development");
+                    // Explicitly configure JWT secret key and connection string
+                    builder.ConfigureAppConfiguration(config =>
+                    {
+                        config.AddInMemoryCollection(new Dictionary<string, string?>
+                        {
+                            { "JWT:SecretKey", "ValidSecretKeyForDevelopmentTesting12345678901234567890" },
+                            { "ConnectionStrings:DefaultConnection", "Data Source=:memory:?cache=shared" }
+                        });
+                    });
                 });
             var client = factory.CreateClient();
 
@@ -128,6 +138,15 @@ public class MiddlewarePipelineTests
                 .WithWebHostBuilder(builder =>
                 {
                     builder.UseEnvironment("Production");
+                    // Explicitly configure JWT secret key and connection string
+                    builder.ConfigureAppConfiguration(config =>
+                    {
+                        config.AddInMemoryCollection(new Dictionary<string, string?>
+                        {
+                            { "JWT:SecretKey", "ValidSecretKeyForProductionTesting12345678901234567890" },
+                            { "ConnectionStrings:DefaultConnection", "Data Source=:memory:?cache=shared" }
+                        });
+                    });
                 });
             var client = factory.CreateClient();
 
