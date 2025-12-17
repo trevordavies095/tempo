@@ -51,8 +51,9 @@ var jwtSecretKey = builder.Configuration["JWT:SecretKey"]
     ?? throw new InvalidOperationException("JWT:SecretKey is not configured");
 
 // Validate that the secret key is not the default placeholder value
+// Skip validation in Testing environment (used by integration tests)
 const string placeholderValue = "CHANGE_THIS_IN_PRODUCTION_USE_ENVIRONMENT_VARIABLE";
-if (jwtSecretKey == placeholderValue)
+if (jwtSecretKey == placeholderValue && !builder.Environment.IsEnvironment("Testing"))
 {
     throw new InvalidOperationException(
         "JWT:SecretKey must be changed from the default placeholder value. " +
@@ -94,8 +95,12 @@ builder.Services.AddAuthorization();
 
 // Configure Entity Framework
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<TempoDbContext>(options =>
-    options.UseNpgsql(connectionString));
+// Only register PostgreSQL if not already registered (allows test factory to override)
+if (!builder.Services.Any(s => s.ServiceType == typeof(TempoDbContext)))
+{
+    builder.Services.AddDbContext<TempoDbContext>(options =>
+        options.UseNpgsql(connectionString));
+}
 
 // Register services
 builder.Services.AddHttpContextAccessor();
@@ -199,3 +204,6 @@ catch (Exception ex)
 }
 
 app.Run();
+
+// Make Program class accessible for WebApplicationFactory
+public partial class Program { }
