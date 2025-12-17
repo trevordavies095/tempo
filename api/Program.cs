@@ -96,21 +96,26 @@ builder.Services.AddAuthorization();
 // Configure Entity Framework
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
-// Skip PostgreSQL registration if in Testing environment or using SQLite connection string
-// This allows the test factory to register SQLite without conflicts
 // Check both the builder environment and the ASPNETCORE_ENVIRONMENT variable
 var isTesting = builder.Environment.IsEnvironment("Testing") 
     || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing";
 var isSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) == true;
 
-if (!isTesting && !isSqlite)
+// Always register TempoDbContext with the appropriate provider, unless already registered (for testing)
+// The test factory will remove and re-register it, so we skip if already registered
+if (!builder.Services.Any(s => s.ServiceType == typeof(TempoDbContext)))
 {
-    // Only register PostgreSQL if not already registered and not in testing mode
-    if (!builder.Services.Any(s => s.ServiceType == typeof(TempoDbContext)))
+    builder.Services.AddDbContext<TempoDbContext>(options =>
     {
-        builder.Services.AddDbContext<TempoDbContext>(options =>
-            options.UseNpgsql(connectionString));
-    }
+        if (isSqlite)
+        {
+            options.UseSqlite(connectionString);
+        }
+        else
+        {
+            options.UseNpgsql(connectionString);
+        }
+    });
 }
 
 // Register services
@@ -196,26 +201,39 @@ app.MapVersionEndpoints();
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
-// Apply database migrations automatically on startup (skip for SQLite - handled by test factory)
+// Apply database migrations automatically on startup
 try
 {
-    // Skip migrations for SQLite (used in testing) - factory handles schema creation
     var migrationConnectionString = app.Configuration.GetConnectionString("DefaultConnection") 
         ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
     var isSqliteForMigration = migrationConnectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) == true;
+    var isTestingForMigration = app.Environment.IsEnvironment("Testing") 
+        || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing";
     
-    if (!isSqliteForMigration)
+    // Skip migrations in Testing environment (test factory handles schema creation)
+    if (isTestingForMigration)
     {
+        Log.Information("Skipping migrations for Testing environment (test factory handles schema creation)");
+    }
+    else if (isSqliteForMigration)
+    {
+        // For SQLite in non-testing environments, use EnsureCreated (migrations don't work well with SQLite)
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            db.Database.EnsureCreated();
+        }
+        Log.Information("SQLite database schema created using EnsureCreated");
+    }
+    else
+    {
+        // For PostgreSQL, use migrations
         using (var scope = app.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             DatabaseMigrationHelper.ApplyMigrations(db);
         }
         Log.Information("Database migrations completed successfully");
-    }
-    else
-    {
-        Log.Information("Skipping migrations for SQLite database (test mode)");
     }
 }
 catch (Exception ex)
