@@ -51,8 +51,9 @@ var jwtSecretKey = builder.Configuration["JWT:SecretKey"]
     ?? throw new InvalidOperationException("JWT:SecretKey is not configured");
 
 // Validate that the secret key is not the default placeholder value
+// Skip validation in Testing environment (used by integration tests)
 const string placeholderValue = "CHANGE_THIS_IN_PRODUCTION_USE_ENVIRONMENT_VARIABLE";
-if (jwtSecretKey == placeholderValue)
+if (jwtSecretKey == placeholderValue && !builder.Environment.IsEnvironment("Testing"))
 {
     throw new InvalidOperationException(
         "JWT:SecretKey must be changed from the default placeholder value. " +
@@ -93,9 +94,29 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 // Configure Entity Framework
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<TempoDbContext>(options =>
-    options.UseNpgsql(connectionString));
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+    ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+// Check both the builder environment and the ASPNETCORE_ENVIRONMENT variable
+var isTesting = builder.Environment.IsEnvironment("Testing") 
+    || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing";
+var isSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) == true;
+
+// Always register TempoDbContext with the appropriate provider, unless already registered (for testing)
+// The test factory will remove and re-register it, so we skip if already registered
+if (!builder.Services.Any(s => s.ServiceType == typeof(TempoDbContext)))
+{
+    builder.Services.AddDbContext<TempoDbContext>(options =>
+    {
+        if (isSqlite)
+        {
+            options.UseSqlite(connectionString);
+        }
+        else
+        {
+            options.UseNpgsql(connectionString);
+        }
+    });
+}
 
 // Register services
 builder.Services.AddHttpContextAccessor();
@@ -183,12 +204,37 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 // Apply database migrations automatically on startup
 try
 {
-    using (var scope = app.Services.CreateScope())
+    var migrationConnectionString = app.Configuration.GetConnectionString("DefaultConnection") 
+        ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+    var isSqliteForMigration = migrationConnectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) == true;
+    var isTestingForMigration = app.Environment.IsEnvironment("Testing") 
+        || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing";
+    
+    // Skip migrations in Testing environment (test factory handles schema creation)
+    if (isTestingForMigration)
     {
-        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-        DatabaseMigrationHelper.ApplyMigrations(db);
+        Log.Information("Skipping migrations for Testing environment (test factory handles schema creation)");
     }
-    Log.Information("Database migrations completed successfully");
+    else if (isSqliteForMigration)
+    {
+        // For SQLite in non-testing environments, use EnsureCreated (migrations don't work well with SQLite)
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            db.Database.EnsureCreated();
+        }
+        Log.Information("SQLite database schema created using EnsureCreated");
+    }
+    else
+    {
+        // For PostgreSQL, use migrations
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            DatabaseMigrationHelper.ApplyMigrations(db);
+        }
+        Log.Information("Database migrations completed successfully");
+    }
 }
 catch (Exception ex)
 {
@@ -199,3 +245,6 @@ catch (Exception ex)
 }
 
 app.Run();
+
+// Make Program class accessible for WebApplicationFactory
+public partial class Program { }
