@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Tempo.Api.Data;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -21,6 +23,30 @@ public class WorkoutIntegrationTests : IClassFixture<TempoWebApplicationFactory>
         _client = factory.CreateClient();
     }
 
+    /// <summary>
+    /// Helper method to ensure database is clean before a test (but preserves test user)
+    /// </summary>
+    private async Task EnsureCleanDatabaseAsync()
+    {
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            
+            // Clear all data except users (we need the test user for authentication)
+            db.WorkoutTimeSeries.RemoveRange(db.WorkoutTimeSeries);
+            db.WorkoutSplits.RemoveRange(db.WorkoutSplits);
+            db.WorkoutMedia.RemoveRange(db.WorkoutMedia);
+            db.WorkoutRoutes.RemoveRange(db.WorkoutRoutes);
+            db.BestEfforts.RemoveRange(db.BestEfforts);
+            db.Workouts.RemoveRange(db.Workouts);
+            db.UserSettings.RemoveRange(db.UserSettings);
+            db.Shoes.RemoveRange(db.Shoes);
+            // Note: We don't clear Users - we need the test user for authentication
+            
+            await db.SaveChangesAsync();
+        }
+    }
+
     [Fact]
     public async Task GetWorkouts_ReturnsEmptyList_WhenNoWorkouts()
     {
@@ -37,6 +63,8 @@ public class WorkoutIntegrationTests : IClassFixture<TempoWebApplicationFactory>
     public async Task GetWorkouts_ReturnsEmptyList_WhenAuthenticatedAndNoWorkouts()
     {
         // Arrange
+        await EnsureCleanDatabaseAsync(); // Ensure clean database before test (preserves test user)
+        // CreateAuthenticatedClientAsync will create the user if it doesn't exist
         var authenticatedClient = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
 
         // Act
@@ -54,11 +82,15 @@ public class WorkoutIntegrationTests : IClassFixture<TempoWebApplicationFactory>
     public async Task GetWorkouts_ReturnsWorkouts_WhenWorkoutsExist()
     {
         // Arrange
+        await EnsureCleanDatabaseAsync(); // Ensure clean database before test (preserves test user)
+        // CreateAuthenticatedClientAsync will create the user if it doesn't exist
         var authenticatedClient = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
         
+        // Seed test data for this specific test
         using (var scope = _factory.Server.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<Tempo.Api.Data.TempoDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            // Seed workouts for this test
             await TestDataSeeder.SeedWorkoutAsync(db, name: "Morning Run");
             await TestDataSeeder.SeedWorkoutAsync(db, name: "Evening Run");
         }
