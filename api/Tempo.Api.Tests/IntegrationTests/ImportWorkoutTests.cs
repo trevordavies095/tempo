@@ -538,14 +538,14 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         await EnsureCleanDatabaseAsync();
         
         // Configure weather service to fail - create a new factory with mocked weather service
-        var factoryWithMockWeather = new TempoWebApplicationFactory();
-        factoryWithMockWeather.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
+        using var factoryWithMockWeather = new TempoWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
             {
-                MockWeatherServiceHelper.ConfigureWeatherApiFailure(services, HttpStatusCode.InternalServerError);
+                builder.ConfigureServices(services =>
+                {
+                    MockWeatherServiceHelper.ConfigureWeatherApiFailure(services, HttpStatusCode.InternalServerError);
+                });
             });
-        });
         
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(factoryWithMockWeather);
         var gpxContent = CreateMinimalGpxContent();
@@ -573,8 +573,6 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
             workout.Should().NotBeNull();
             // Weather field may be null or have a default value
         }
-        
-        factoryWithMockWeather.Dispose();
     }
 
     [Fact]
@@ -584,14 +582,14 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         await EnsureCleanDatabaseAsync();
         
         // Configure weather service to timeout
-        var factoryWithMockWeather = new TempoWebApplicationFactory();
-        factoryWithMockWeather.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
+        using var factoryWithMockWeather = new TempoWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
             {
-                MockWeatherServiceHelper.ConfigureWeatherApiTimeout(services);
+                builder.ConfigureServices(services =>
+                {
+                    MockWeatherServiceHelper.ConfigureWeatherApiTimeout(services);
+                });
             });
-        });
         
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(factoryWithMockWeather);
         var gpxContent = CreateMinimalGpxContent();
@@ -618,8 +616,6 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
             
             workout.Should().NotBeNull();
         }
-        
-        factoryWithMockWeather.Dispose();
     }
 
     [Fact]
@@ -629,14 +625,14 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         await EnsureCleanDatabaseAsync();
         
         // Configure weather service to return invalid JSON
-        var factoryWithMockWeather = new TempoWebApplicationFactory();
-        factoryWithMockWeather.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
+        using var factoryWithMockWeather = new TempoWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
             {
-                MockWeatherServiceHelper.ConfigureInvalidJsonResponse(services);
+                builder.ConfigureServices(services =>
+                {
+                    MockWeatherServiceHelper.ConfigureInvalidJsonResponse(services);
+                });
             });
-        });
         
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(factoryWithMockWeather);
         var gpxContent = CreateMinimalGpxContent();
@@ -663,8 +659,6 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
             
             workout.Should().NotBeNull();
         }
-        
-        factoryWithMockWeather.Dispose();
     }
 
     #endregion
