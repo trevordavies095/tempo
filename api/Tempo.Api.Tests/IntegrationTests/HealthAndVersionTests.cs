@@ -201,8 +201,18 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
                     {
                         builder.UseEnvironment("Testing");
                         builder.UseContentRoot(testOutputDir);
-                        // JWT and connection string are already set via environment variables above
-                        // No need to configure them here since they're loaded earlier in the pipeline
+                        // Ensure JWT and connection string are configured via in-memory config
+                        // This ensures they're available even if appsettings.json is not loaded correctly
+                        builder.ConfigureAppConfiguration((context, config) =>
+                        {
+                            config.AddInMemoryCollection(new Dictionary<string, string?>
+                            {
+                                { "JWT:SecretKey", "test-secret-key-for-testing-only-min-32-chars" },
+                                { "JWT:Issuer", "Tempo-Test" },
+                                { "JWT:Audience", "Tempo-Test" },
+                                { "ConnectionStrings:DefaultConnection", "Data Source=:memory:?cache=shared" }
+                            });
+                        });
                     });
                 var client = factory.CreateClient();
 
