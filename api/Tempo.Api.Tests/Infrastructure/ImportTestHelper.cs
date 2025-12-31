@@ -304,16 +304,20 @@ public static class ImportTestHelper
             .ToListAsync();
 
         // Check that all media files in the database actually exist
+        var missingFiles = new List<string>();
         foreach (var media in mediaInDb)
         {
-            if (!string.IsNullOrEmpty(media.FilePath) && File.Exists(media.FilePath))
+            if (!string.IsNullOrEmpty(media.FilePath) && !File.Exists(media.FilePath))
             {
-                // File exists and is in database - this is correct
-                continue;
+                missingFiles.Add(media.FilePath);
             }
         }
 
+        missingFiles.Should().BeEmpty(
+            $"all media files referenced in the database should exist on disk. Missing files: {string.Join(", ", missingFiles)}");
+
         // Check for orphaned files: files in the media directory that aren't in the database
+        var orphanedDirectories = new List<string>();
         if (Directory.Exists(mediaRootPath))
         {
             var workoutDirs = Directory.GetDirectories(mediaRootPath);
@@ -332,10 +336,7 @@ public static class ImportTestHelper
                                 var mediaInDbForWorkout = mediaInDb.FirstOrDefault(m => m.WorkoutId == workoutId && m.Id == mediaId);
                                 if (mediaInDbForWorkout == null)
                                 {
-                                    // Orphaned media directory found - this should have been cleaned up
-                                    // Note: This is a best-effort check. The ImportService cleans up
-                                    // orphaned files when SaveChangesAsync fails, but we can't easily
-                                    // test that specific scenario without mocking.
+                                    orphanedDirectories.Add(mediaSubDir);
                                 }
                             }
                         }
@@ -343,6 +344,9 @@ public static class ImportTestHelper
                 }
             }
         }
+
+        orphanedDirectories.Should().BeEmpty(
+            $"orphaned media directories should be cleaned up. Found orphaned directories: {string.Join(", ", orphanedDirectories)}");
     }
 
     /// <summary>
