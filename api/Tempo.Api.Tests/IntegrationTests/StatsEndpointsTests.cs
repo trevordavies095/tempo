@@ -835,6 +835,8 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         // Arrange
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        // Capture expected date before API call to avoid flakiness if test runs at midnight UTC
+        var expectedDate = DateTime.UtcNow.ToString("yyyy-MM-dd");
 
         // Act
         var response = await client.GetAsync("/stats/yearly-weekly");
@@ -844,7 +846,7 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         var result = await response.Content.ReadFromJsonAsync<YearlyWeeklyStatsResponse>();
         result.Should().NotBeNull();
         result!.Weeks.Should().HaveCount(52);
-        result.DateRangeEnd.Should().Be(DateTime.UtcNow.ToString("yyyy-MM-dd"));
+        result.DateRangeEnd.Should().Be(expectedDate);
     }
 
     [Fact]
