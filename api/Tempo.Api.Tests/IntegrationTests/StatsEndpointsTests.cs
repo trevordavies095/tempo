@@ -699,15 +699,25 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
         const int estOffsetMinutes = -300;
 
+        // Calculate dates relative to current year to make test work regardless of when it runs
+        var now = DateTime.UtcNow;
+        var currentYear = now.Year;
+        var previousYear = currentYear - 1;
+        
+        // Create a workout on Dec 31 of previous year at 11 PM EST
+        // EST is UTC-5, so 11 PM EST = 4 AM UTC next day
+        // We want: Dec 31, previousYear 11 PM EST = Jan 1, currentYear 4 AM UTC
+        var workoutDateLocal = new DateTime(previousYear, 12, 31, 23, 0, 0);
+        var workoutDateUtc = workoutDateLocal.AddMinutes(-estOffsetMinutes); // Convert EST to UTC
+
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            // Seed workout on Dec 31, 2024 at 11 PM EST (which is Jan 1, 2025 4 AM UTC)
+            // Seed workout that falls in previous year when converted to EST
             // This tests year boundary handling with timezone
-            var workoutDate = new DateTime(2025, 1, 1, 4, 0, 0, DateTimeKind.Utc);
             await TestDataSeeder.SeedWorkoutAsync(
                 db,
-                startedAt: workoutDate,
+                startedAt: workoutDateUtc,
                 distanceM: 5000,
                 durationS: 1800,
                 name: "Year Boundary Test");
@@ -720,7 +730,7 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<YearlyStatsResponse>();
         result.Should().NotBeNull();
-        // The workout at 4 AM UTC on Jan 1 is Dec 31 11 PM EST, so should be in previous year
+        // The workout at Dec 31 11 PM EST (previous year) should be in previous year
         result!.PreviousYear.Should().BeGreaterThan(0);
     }
 
