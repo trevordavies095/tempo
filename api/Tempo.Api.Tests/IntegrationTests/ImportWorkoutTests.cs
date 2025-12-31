@@ -321,15 +321,10 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
                 .Where(w => w.StartedAt >= startTime.AddSeconds(-5) && w.StartedAt <= startTime.AddSeconds(5))
                 .FirstOrDefaultAsync();
             
-            // If not found by time, try to get the most recently created workout
-            if (workout == null)
-            {
-                workout = await db.Workouts
-                    .OrderByDescending(w => w.CreatedAt)
-                    .FirstOrDefaultAsync();
-            }
-            
-            workout.Should().NotBeNull();
+            // Fail with a clear message if workout not found by time (rather than using fallback that masks the issue)
+            workout.Should().NotBeNull(
+                because: $"Workout with StartedAt around {startTime:O} was not found. " +
+                         "This indicates the workout was not created with the expected start time.");
             workout!.StartedAt.Should().BeCloseTo(startTime, TimeSpan.FromSeconds(1));
             workout.DistanceM.Should().BeGreaterThan(0);
             workout.DurationS.Should().BeGreaterThan(0);
