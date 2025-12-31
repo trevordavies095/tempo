@@ -22,8 +22,9 @@ public class ShoeMileageServiceTests : IDisposable
     public ShoeMileageServiceTests()
     {
         // Create in-memory SQLite database
-        // Keep connection open for shared in-memory database to work properly
-        _connection = new SqliteConnection("Data Source=:memory:?cache=shared");
+        // Use non-shared in-memory database for better test isolation
+        // This ensures each test class instance gets a fresh database
+        _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
         
         var options = new DbContextOptionsBuilder<TempoDbContext>()
@@ -32,6 +33,9 @@ public class ShoeMileageServiceTests : IDisposable
 
         _db = new TempoDbContext(options);
         _db.Database.EnsureCreated();
+        
+        // Enable foreign key constraints for SQLite (disabled by default)
+        _db.Database.ExecuteSqlRaw("PRAGMA foreign_keys = ON;");
 
         // Create logger mock
         var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
@@ -182,9 +186,8 @@ public class ShoeMileageServiceTests : IDisposable
     [Fact]
     public async Task GetTotalMileageWithUserPreferenceAsync_UsesSettingsUnitPreference()
     {
-        // Arrange - clear any existing settings first
-        _db.UserSettings.RemoveRange(_db.UserSettings);
-        await _db.SaveChangesAsync();
+        // Arrange - clear all existing data first to ensure test isolation
+        await CleanDatabaseAsync();
         
         await TestDataSeeder.SeedUserSettingsAsync(_db, unitPreference: "imperial");
         var shoe = await TestDataSeeder.SeedShoeAsync(_db, "Nike", "Pegasus", initialMileage: null);
@@ -196,11 +199,29 @@ public class ShoeMileageServiceTests : IDisposable
         // Assert
         result.Should().BeApproximately(1.0, 0.001); // Should return in miles
     }
+    
+    /// <summary>
+    /// Cleans all data from the database to ensure test isolation
+    /// </summary>
+    private async Task CleanDatabaseAsync()
+    {
+        // Delete in order to respect foreign key constraints
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutTimeSeries");
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutSplits");
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutMedia");
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM BestEfforts");
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutRoutes");
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Workouts");
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM UserSettings");
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Shoes");
+    }
 
     [Fact]
     public async Task GetTotalMileageWithUserPreferenceAsync_WithNoSettings_DefaultsToMetric()
     {
-        // Arrange
+        // Arrange - clear all existing data first to ensure test isolation
+        await CleanDatabaseAsync();
+        
         // No settings seeded
         var shoe = await TestDataSeeder.SeedShoeAsync(_db, "Nike", "Pegasus", initialMileage: null);
         await TestDataSeeder.SeedWorkoutAsync(_db, shoeId: shoe.Id, distanceM: 5000.0); // 5km

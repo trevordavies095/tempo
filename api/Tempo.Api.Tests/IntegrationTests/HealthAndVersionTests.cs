@@ -196,15 +196,18 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
             try
             {
                 // Create factory and change working directory to test directory (without VERSION file)
+                // Note: Environment variables are already set above (JWT__SecretKey with double underscore)
+                // ConfigureAppConfiguration will add in-memory config to ensure JWT secret is available
                 using var factory = new WebApplicationFactory<Program>()
                     .WithWebHostBuilder(builder =>
                     {
                         builder.UseEnvironment("Testing");
                         builder.UseContentRoot(testOutputDir);
-                        // Ensure JWT and connection string are configured via in-memory config
-                        // This ensures they're available even if appsettings.json is not loaded correctly
+                        // Configure app configuration to ensure JWT secret is available when Program.cs runs
+                        // This runs during host building, before Program.cs code executes
                         builder.ConfigureAppConfiguration((context, config) =>
                         {
+                            // Add in-memory configuration - this will be available when Program.cs reads configuration
                             config.AddInMemoryCollection(new Dictionary<string, string?>
                             {
                                 { "JWT:SecretKey", "test-secret-key-for-testing-only-min-32-chars" },

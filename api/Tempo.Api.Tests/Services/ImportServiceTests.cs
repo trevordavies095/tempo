@@ -17,6 +17,7 @@ namespace Tempo.Api.Tests.Services;
 public class ImportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDisposable
 {
     private readonly TempoWebApplicationFactory _factory;
+    private readonly IServiceScope _scope;
     private readonly TempoDbContext _db;
     private readonly ImportService _importService;
     private readonly string _tempMediaDirectory;
@@ -29,9 +30,9 @@ public class ImportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         _tempMediaDirectory = Path.Combine(Path.GetTempPath(), $"tempo-test-media-{Guid.NewGuid()}");
         Directory.CreateDirectory(_tempMediaDirectory);
 
-        // Get services from factory
-        var scope = factory.Server.Services.CreateScope();
-        _db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        // Get services from factory - store scope as field to prevent disposal
+        _scope = factory.Server.Services.CreateScope();
+        _db = _scope.ServiceProvider.GetRequiredService<TempoDbContext>();
         
         // Ensure user exists for authentication (check first to avoid unique constraint violation)
         var testUser = _db.Users.FirstOrDefault(u => u.Username == "testuser");
@@ -42,9 +43,9 @@ public class ImportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         
         var mediaService = new MediaService(
             new MediaStorageConfig { RootPath = _tempMediaDirectory, MaxFileSizeBytes = 52_428_800 },
-            scope.ServiceProvider.GetRequiredService<ILogger<MediaService>>());
+            _scope.ServiceProvider.GetRequiredService<ILogger<MediaService>>());
         
-        var httpContextAccessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+        var httpContextAccessor = _scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
         
         // Set up HTTP context with authenticated user
         var httpContext = new DefaultHttpContext();
@@ -56,13 +57,16 @@ public class ImportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
             }, "Test"));
         httpContextAccessor.HttpContext = httpContext;
         
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<ImportService>>();
+        var logger = _scope.ServiceProvider.GetRequiredService<ILogger<ImportService>>();
         
         _importService = new ImportService(_db, mediaService, httpContextAccessor, logger);
     }
 
     public void Dispose()
     {
+        // Dispose the service scope to clean up scoped services
+        _scope?.Dispose();
+        
         // Clean up temporary directory
         if (Directory.Exists(_tempMediaDirectory))
         {

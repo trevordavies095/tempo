@@ -20,6 +20,7 @@ namespace Tempo.Api.Tests.Services;
 public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDisposable
 {
     private readonly TempoWebApplicationFactory _factory;
+    private readonly IServiceScope _scope;
     private readonly TempoDbContext _db;
     private readonly ExportService _exportService;
     private readonly string _tempMediaDirectory;
@@ -33,9 +34,9 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         _tempMediaDirectory = Path.Combine(Path.GetTempPath(), $"tempo-test-media-{Guid.NewGuid()}");
         Directory.CreateDirectory(_tempMediaDirectory);
 
-        // Get services from factory
-        var scope = factory.Server.Services.CreateScope();
-        _db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        // Get services from factory - store scope as field to prevent disposal
+        _scope = factory.Server.Services.CreateScope();
+        _db = _scope.ServiceProvider.GetRequiredService<TempoDbContext>();
         
         var mediaConfig = new MediaStorageConfig 
         { 
@@ -43,8 +44,8 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
             MaxFileSizeBytes = 52_428_800 
         };
         
-        var httpContextAccessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<ExportService>>();
+        var httpContextAccessor = _scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+        var logger = _scope.ServiceProvider.GetRequiredService<ILogger<ExportService>>();
         
         _exportService = new ExportService(_db, mediaConfig, httpContextAccessor, logger);
         
@@ -68,6 +69,9 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
 
     public void Dispose()
     {
+        // Dispose the service scope to clean up scoped services
+        _scope?.Dispose();
+        
         // Clean up temporary directory
         if (Directory.Exists(_tempMediaDirectory))
         {
@@ -367,6 +371,8 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
     {
         var shoe = await TestDataSeeder.SeedShoeAsync(_db);
         var workout = await TestDataSeeder.SeedWorkoutAsync(_db, shoeId: shoe.Id);
+        // Seed user settings to ensure settings.json is included in export
+        await TestDataSeeder.SeedUserSettingsAsync(_db, defaultShoeId: shoe.Id);
         return workout;
     }
 
