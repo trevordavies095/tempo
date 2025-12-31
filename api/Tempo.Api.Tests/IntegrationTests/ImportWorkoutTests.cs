@@ -315,7 +315,19 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var workout = await db.Workouts.FirstOrDefaultAsync();
+            // Query by the specific start time to ensure we get the workout we just created
+            // Use a time range to account for any small time differences
+            var workout = await db.Workouts
+                .Where(w => w.StartedAt >= startTime.AddSeconds(-5) && w.StartedAt <= startTime.AddSeconds(5))
+                .FirstOrDefaultAsync();
+            
+            // If not found by time, try to get the most recently created workout
+            if (workout == null)
+            {
+                workout = await db.Workouts
+                    .OrderByDescending(w => w.CreatedAt)
+                    .FirstOrDefaultAsync();
+            }
             
             workout.Should().NotBeNull();
             workout!.StartedAt.Should().BeCloseTo(startTime, TimeSpan.FromSeconds(1));
