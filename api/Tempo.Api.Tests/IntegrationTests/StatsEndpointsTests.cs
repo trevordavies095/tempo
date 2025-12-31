@@ -639,8 +639,12 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result.Should().NotBeNull();
         result!.CurrentYear.Should().BeGreaterThan(0);
         result.PreviousYear.Should().BeGreaterThan(0);
-        result.CurrentYearLabel.Should().Be("2025");
-        result.PreviousYearLabel.Should().Be("2024");
+        
+        // Compute expected year labels dynamically based on current year (API uses DateTime.UtcNow.Year)
+        var currentYear = DateTime.UtcNow.Year;
+        var previousYear = currentYear - 1;
+        result.CurrentYearLabel.Should().Be(currentYear.ToString());
+        result.PreviousYearLabel.Should().Be(previousYear.ToString());
     }
 
     [Fact]
