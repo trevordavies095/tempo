@@ -651,12 +651,16 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
                        Math.Abs((original.CreatedAt - imported.CreatedAt).TotalSeconds) < 1;
             });
 
+            var originalWorkoutShoePairs = originalWorkoutData
+                .Where(w => w.ShoeId.HasValue)
+                .ToList();
+
             var importedWorkoutShoePairs = await db.Workouts
                 .Where(w => w.ShoeId.HasValue)
                 .Select(w => new WorkoutData { Id = w.Id, ShoeId = w.ShoeId })
                 .ToListAsync();
 
-            comparison.RelationshipsPreserved = originalWorkoutData.All(original =>
+            comparison.RelationshipsPreserved = originalWorkoutShoePairs.All(original =>
             {
                 var imported = importedWorkoutShoePairs.FirstOrDefault(i => i.Id == original.Id);
                 return imported != null && imported.ShoeId == original.ShoeId;
