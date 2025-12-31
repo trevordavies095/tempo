@@ -260,12 +260,30 @@ public static class WorkoutsEndpoints
         // Apply keyword search (case-insensitive partial matching across Name, Device, and Source)
         if (!string.IsNullOrWhiteSpace(keyword))
         {
-            var keywordPattern = $"%{keyword}%";
-            query = query.Where(w =>
-                (w.Name != null && EF.Functions.ILike(w.Name, keywordPattern)) ||
-                (w.Device != null && EF.Functions.ILike(w.Device, keywordPattern)) ||
-                (w.Source != null && EF.Functions.ILike(w.Source, keywordPattern))
-            );
+            var keywordLower = keyword.ToLowerInvariant();
+            // Use database-agnostic approach: ILike for PostgreSQL, Contains for SQLite
+            // Check database provider by connection string
+            var connectionString = db.Database.GetDbConnection().ConnectionString ?? "";
+            var isPostgres = !connectionString.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase);
+            
+            if (isPostgres)
+            {
+                var keywordPattern = $"%{keyword}%";
+                query = query.Where(w =>
+                    (w.Name != null && EF.Functions.ILike(w.Name, keywordPattern)) ||
+                    (w.Device != null && EF.Functions.ILike(w.Device, keywordPattern)) ||
+                    (w.Source != null && EF.Functions.ILike(w.Source, keywordPattern))
+                );
+            }
+            else
+            {
+                // SQLite: use ToLower() for case-insensitive comparison
+                query = query.Where(w =>
+                    (w.Name != null && w.Name.ToLower().Contains(keywordLower)) ||
+                    (w.Device != null && w.Device.ToLower().Contains(keywordLower)) ||
+                    (w.Source != null && w.Source.ToLower().Contains(keywordLower))
+                );
+            }
         }
 
         // Apply runType filter
@@ -2553,7 +2571,7 @@ public static class WorkoutsEndpoints
                 RawFileType = fileType,
                 RawGpxData = rawGpxDataJson,
                 RawFitData = rawFitDataJson,
-                Source = isGpx ? "apple_watch" : "fit_import",
+                Source = isGpx ? "gpx_import" : "fit_import",
                 RunType = "Easy Run",
                 CreatedAt = DateTime.UtcNow
             };
@@ -3062,6 +3080,30 @@ public static class WorkoutsEndpoints
             var workout = CreateWorkoutEntity(
                 startedAtUtc, durationSeconds, distanceMeters, avgPaceS, elevationGainMeters,
                 rawFileData, file.FileName, fileType, rawGpxDataJson, rawFitDataJson, isGpx);
+
+            // Extract name from GPX metadata if available
+            if (parseResult != null && !string.IsNullOrEmpty(rawGpxDataJson))
+            {
+                try
+                {
+                    var rawData = JsonSerializer.Deserialize<JsonElement>(rawGpxDataJson);
+                    if (rawData.TryGetProperty("metadata", out var metadataElement) && metadataElement.ValueKind == JsonValueKind.Object)
+                    {
+                        if (metadataElement.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String)
+                        {
+                            var name = nameElement.GetString();
+                            if (!string.IsNullOrWhiteSpace(name))
+                            {
+                                workout.Name = name;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to extract name from GPX metadata");
+                }
+            }
 
             // Populate metrics
             PopulateWorkoutMetrics(workout, calculated, fitResult, rawFitDataJson, logger);

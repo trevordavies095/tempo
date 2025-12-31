@@ -12,6 +12,7 @@ namespace Tempo.Api.Tests.IntegrationTests;
 /// <summary>
 /// Example integration tests demonstrating the test infrastructure usage
 /// </summary>
+[Collection("Integration Tests")]
 public class WorkoutIntegrationTests : IClassFixture<TempoWebApplicationFactory>
 {
     private readonly TempoWebApplicationFactory _factory;
@@ -33,17 +34,27 @@ public class WorkoutIntegrationTests : IClassFixture<TempoWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             
             // Clear all data except users (we need the test user for authentication)
-            db.WorkoutTimeSeries.RemoveRange(db.WorkoutTimeSeries);
-            db.WorkoutSplits.RemoveRange(db.WorkoutSplits);
-            db.WorkoutMedia.RemoveRange(db.WorkoutMedia);
-            db.WorkoutRoutes.RemoveRange(db.WorkoutRoutes);
-            db.BestEfforts.RemoveRange(db.BestEfforts);
-            db.Workouts.RemoveRange(db.Workouts);
-            db.UserSettings.RemoveRange(db.UserSettings);
-            db.Shoes.RemoveRange(db.Shoes);
-            // Note: We don't clear Users - we need the test user for authentication
-            
-            await db.SaveChangesAsync();
+            // Use a transaction to ensure atomic cleanup
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            try
+            {
+                // Delete in order to respect foreign key constraints
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutTimeSeries");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutSplits");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutMedia");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM BestEfforts");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutRoutes");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM Workouts");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM UserSettings");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM Shoes");
+                
+                await transaction.CommitAsync();
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
     }
 

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -191,6 +192,15 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
                     {
                         builder.UseEnvironment("Testing");
                         builder.UseContentRoot(testOutputDir);
+                        // Configure JWT secret key for testing
+                        builder.ConfigureAppConfiguration(config =>
+                        {
+                            config.AddInMemoryCollection(new Dictionary<string, string?>
+                            {
+                                { "JWT:SecretKey", "test-secret-key-for-testing-only-min-32-chars" },
+                                { "ConnectionStrings:DefaultConnection", "Data Source=:memory:?cache=shared" }
+                            });
+                        });
                     });
                 var client = factory.CreateClient();
 
@@ -235,3 +245,4 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
         public string GitCommit { get; set; } = string.Empty;
     }
 }
+
