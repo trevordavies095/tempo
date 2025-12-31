@@ -315,9 +315,16 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var workout = await db.Workouts.FirstOrDefaultAsync();
+            // Query by the specific start time to ensure we get the workout we just created
+            // Use a time range to account for any small time differences
+            var workout = await db.Workouts
+                .Where(w => w.StartedAt >= startTime.AddSeconds(-5) && w.StartedAt <= startTime.AddSeconds(5))
+                .FirstOrDefaultAsync();
             
-            workout.Should().NotBeNull();
+            // Fail with a clear message if workout not found by time (rather than using fallback that masks the issue)
+            workout.Should().NotBeNull(
+                because: $"Workout with StartedAt around {startTime:O} was not found. " +
+                         "This indicates the workout was not created with the expected start time.");
             workout!.StartedAt.Should().BeCloseTo(startTime, TimeSpan.FromSeconds(1));
             workout.DistanceM.Should().BeGreaterThan(0);
             workout.DurationS.Should().BeGreaterThan(0);

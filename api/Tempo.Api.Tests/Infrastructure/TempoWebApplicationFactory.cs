@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using Microsoft.IdentityModel.Tokens;
 using Tempo.Api.Data;
 using Tempo.Api.Services;
@@ -107,7 +108,8 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
             // Remove existing JWT configuration
             services.RemoveAll(typeof(IConfigureOptions<JwtBearerOptions>));
             
-            // Override JWT configuration
+            // Override JWT configuration to match what JwtService will generate
+            // JwtService reads from configuration, so we need to ensure both use the same values
             services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
             {
                 options.TokenValidationParameters = new TokenValidationParameters
@@ -129,6 +131,26 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
                         return Task.CompletedTask;
                     }
                 };
+            });
+            
+            // Override JwtService to use test values (ensures token generation matches validation)
+            // Remove existing JwtService registration
+            var jwtServiceDescriptor = services.FirstOrDefault(s => s.ServiceType == typeof(JwtService));
+            if (jwtServiceDescriptor != null)
+            {
+                services.Remove(jwtServiceDescriptor);
+            }
+            
+            // Register JwtService with test configuration
+            // Create a test configuration that provides test JWT values
+            services.AddScoped<JwtService>(sp =>
+            {
+                var logger = sp.GetRequiredService<ILogger<JwtService>>();
+                var baseConfig = sp.GetRequiredService<IConfiguration>();
+                
+                // Create a configuration wrapper that overrides JWT values
+                var testConfig = new TestJwtConfiguration(baseConfig, TestJwtSecretKey, TestJwtIssuer, TestJwtAudience);
+                return new JwtService(testConfig, logger);
             });
 
             // Override MediaStorageConfig
@@ -274,4 +296,43 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
 
         base.Dispose(disposing);
     }
+}
+
+/// <summary>
+/// Configuration wrapper that overrides JWT values for testing
+/// </summary>
+internal class TestJwtConfiguration : IConfiguration
+{
+    private readonly IConfiguration _baseConfig;
+    private readonly string _jwtSecretKey;
+    private readonly string _jwtIssuer;
+    private readonly string _jwtAudience;
+
+    public TestJwtConfiguration(IConfiguration baseConfig, string jwtSecretKey, string jwtIssuer, string jwtAudience)
+    {
+        _baseConfig = baseConfig;
+        _jwtSecretKey = jwtSecretKey;
+        _jwtIssuer = jwtIssuer;
+        _jwtAudience = jwtAudience;
+    }
+
+    public string? this[string key]
+    {
+        get
+        {
+            // Override JWT configuration values
+            return key switch
+            {
+                "JWT:SecretKey" => _jwtSecretKey,
+                "JWT:Issuer" => _jwtIssuer,
+                "JWT:Audience" => _jwtAudience,
+                _ => _baseConfig[key]
+            };
+        }
+        set => _baseConfig[key] = value;
+    }
+
+    public IEnumerable<IConfigurationSection> GetChildren() => _baseConfig.GetChildren();
+    public IChangeToken GetReloadToken() => _baseConfig.GetReloadToken();
+    public IConfigurationSection GetSection(string key) => _baseConfig.GetSection(key);
 }

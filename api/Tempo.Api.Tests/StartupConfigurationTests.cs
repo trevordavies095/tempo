@@ -32,74 +32,41 @@ public class StartupConfigurationTests
     public void Startup_ThrowsException_WhenJwtSecretKeyIsPlaceholder()
     {
         // Arrange - save original environment variables
-        // Save both JWT__SecretKey (double underscore, standard .NET convention) and JWT:SecretKey (colon, if it exists)
-        var originalJwtSecretDoubleUnderscore = Environment.GetEnvironmentVariable("JWT__SecretKey");
-        var originalJwtSecretColon = Environment.GetEnvironmentVariable("JWT:SecretKey");
+        var originalJwtSecret = Environment.GetEnvironmentVariable("JWT__SecretKey");
         var originalConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
         var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         
         try
         {
-            // Clear any existing JWT configuration to avoid conflicts from other tests
-            Environment.SetEnvironmentVariable("JWT__SecretKey", null);
-            Environment.SetEnvironmentVariable("JWT:SecretKey", null);
-            
-            // Set placeholder value
+            // Set placeholder value via environment variable (best practice - environment variables override appsettings.json)
+            // This is the recommended way to configure JWT secret in production
             const string placeholderValue = "CHANGE_THIS_IN_PRODUCTION_USE_ENVIRONMENT_VARIABLE";
             Environment.SetEnvironmentVariable("JWT__SecretKey", placeholderValue);
             Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=:memory:");
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             // Act - try to create the application factory with Production environment
-            // This will execute Program.cs which will throw during configuration
-            // We need to override appsettings.json with the placeholder value.
-            // The issue is that appsettings.json is loaded by default before ConfigureAppConfiguration runs.
-            // We'll use ConfigureAppConfiguration to add in-memory config which should override JSON files
-            // (configuration sources are evaluated in reverse order - last added = highest precedence).
+            // This will execute Program.cs which will throw during configuration validation
             var act = () =>
             {
                 using var factory = new WebApplicationFactory<Program>()
                     .WithWebHostBuilder(builder =>
                     {
+                        // Explicitly set Production environment
                         builder.UseEnvironment("Production");
-                        // Override appsettings.json with placeholder value
-                        // Remove JSON configuration sources to prevent appsettings.json from being loaded
-                        // This ensures the placeholder value from in-memory config is used
-                        builder.ConfigureAppConfiguration((context, config) =>
-                        {
-                            // Remove JSON file sources (appsettings.json, appsettings.{Environment}.json)
-                            // to prevent them from overriding our test configuration
-                            var sourcesToRemove = config.Sources
-                                .Where(s => s.GetType().Name.Contains("Json") || 
-                                           s.GetType().Name.Contains("JsonConfiguration"))
-                                .ToList();
-                            foreach (var source in sourcesToRemove)
-                            {
-                                config.Sources.Remove(source);
-                            }
-                            
-                            // Add in-memory configuration with the placeholder value
-                            // This will be the only source for JWT:SecretKey
-                            config.AddInMemoryCollection(new Dictionary<string, string?>
-                            {
-                                { "JWT:SecretKey", placeholderValue },
-                                { "ConnectionStrings:DefaultConnection", "Data Source=:memory:" }
-                            });
-                        });
                     });
-                // Access Server to trigger application startup
+                // Access Server to trigger application startup and configuration validation
                 _ = factory.Server;
             };
 
-            // Assert
+            // Assert - should throw InvalidOperationException because placeholder value is not allowed in Production
             act.Should().Throw<InvalidOperationException>()
                 .WithMessage("*must be changed from the default placeholder value*");
         }
         finally
         {
-            // Restore original environment variables (both variations)
-            Environment.SetEnvironmentVariable("JWT__SecretKey", originalJwtSecretDoubleUnderscore);
-            Environment.SetEnvironmentVariable("JWT:SecretKey", originalJwtSecretColon);
+            // Restore original environment variables
+            Environment.SetEnvironmentVariable("JWT__SecretKey", originalJwtSecret);
             Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", originalConnectionString);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
         }
