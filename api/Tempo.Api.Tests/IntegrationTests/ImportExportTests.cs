@@ -864,7 +864,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
                 {
                     settings = 0,
                     shoes = 0,
-                    workouts = 0,
+                    workouts = 1,
                     routes = 0,
                     splits = 0,
                     timeSeries = 0,
