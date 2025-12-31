@@ -62,7 +62,7 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
     /// Creates a minimal valid GPX file content for testing
     /// Uses points with sufficient distance to meet minimum distance requirements (~5km)
     /// </summary>
-    private static string CreateMinimalGpxContent(DateTime? startTime = null, double distanceKm = 5.0)
+    private static string CreateMinimalGpxContent(DateTime? startTime = null, double distanceKm = 6.35)
     {
         var start = startTime ?? DateTime.UtcNow.AddHours(-1);
         var durationMinutes = 30;
@@ -73,8 +73,16 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         var startLat = 37.7749;
         var startLon = -122.4194;
         
-        // Calculate points to achieve desired distance (roughly 5km)
-        // Each degree of latitude is ~111km, so for 5km we need ~0.045 degrees
+        // Calculate degree increment to achieve desired distance
+        // At San Francisco's latitude (~37.77°), moving diagonally (northeast):
+        // - 1 degree latitude ≈ 111 km
+        // - 1 degree longitude ≈ 111 * cos(37.77°) ≈ 87.7 km
+        // - Diagonal distance per degree ≈ sqrt(111^2 + 87.7^2) ≈ 141 km
+        // So to get distanceKm km, we need: distanceKm / 141 degrees
+        // Note: Default distanceKm = 6.35km maintains backward compatibility with the old
+        // hardcoded 0.045 degree increment, which produced approximately 6.35km
+        var degreeIncrement = distanceKm / 141.0;
+        
         // We'll create multiple points to ensure smooth parsing
         var numPoints = 20;
         var points = new List<string>();
@@ -82,8 +90,8 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         for (int i = 0; i < numPoints; i++)
         {
             var progress = (double)i / (numPoints - 1);
-            var lat = startLat + (progress * 0.045); // Move north
-            var lon = startLon + (progress * 0.045); // Move east
+            var lat = startLat + (progress * degreeIncrement); // Move north
+            var lon = startLon + (progress * degreeIncrement); // Move east
             var ele = 10.0 + (progress * 50.0); // Elevation gain
             var time = start.AddMinutes(progress * durationMinutes);
             
