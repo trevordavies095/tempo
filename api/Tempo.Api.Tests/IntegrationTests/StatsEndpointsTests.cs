@@ -700,8 +700,11 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         const int estOffsetMinutes = -300;
 
         // Calculate dates relative to current year to make test work regardless of when it runs
-        var now = DateTime.UtcNow;
-        var currentYear = now.Year;
+        // IMPORTANT: Match the endpoint's calculation - apply timezone offset first, then get year
+        // This prevents mismatch when test runs between midnight and 5 AM UTC on Jan 1st
+        var nowUtc = DateTime.UtcNow;
+        var nowInTimezone = nowUtc.AddMinutes(estOffsetMinutes);
+        var currentYear = nowInTimezone.Year;
         var previousYear = currentYear - 1;
         
         // Create a workout on Dec 31 of previous year at 11 PM EST
