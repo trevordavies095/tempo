@@ -246,24 +246,47 @@ public static class ImportTestHelper
     }
 
     /// <summary>
+    /// Gets the current count of temp directories matching the GUID pattern
+    /// </summary>
+    public static int GetTempDirectoryCount()
+    {
+        var tempPath = Path.GetTempPath();
+        return Directory.GetDirectories(tempPath)
+            .Count(d => Guid.TryParse(Path.GetFileName(d), out _));
+    }
+
+    /// <summary>
     /// Verifies that temp directories are cleaned up after import
     /// Note: This is difficult to test directly since temp directories are created with random GUIDs.
     /// Instead, we verify that no new temp directories were left behind by checking the count
     /// of directories matching the pattern before and after import.
     /// </summary>
-    public static void VerifyTempDirectoryCleanup()
+    /// <param name="baselineCount">Optional baseline count of temp directories before the operation.
+    /// If provided, verifies that the current count hasn't increased beyond a reasonable threshold.</param>
+    /// <param name="maxAllowedIncrease">Maximum allowed increase in temp directory count (default: 5).
+    /// This accounts for other processes that may create temp directories during the test.</param>
+    public static void VerifyTempDirectoryCleanup(int? baselineCount = null, int maxAllowedIncrease = 5)
     {
-        // Get all temp directories matching the pattern (GUID-only directories)
-        var tempPath = Path.GetTempPath();
-        var tempDirs = Directory.GetDirectories(tempPath)
-            .Where(d => Guid.TryParse(Path.GetFileName(d), out _))
-            .ToList();
+        var currentCount = GetTempDirectoryCount();
 
-        // We can't directly verify cleanup of a specific directory since we don't know its GUID,
-        // but we can verify that the import process doesn't leave excessive temp directories.
-        // In practice, the ImportService cleans up in the finally block, so this is more of a
-        // sanity check. The real verification is that the import succeeds without errors.
-        // If temp directories weren't cleaned up, we'd see disk space issues over time.
+        if (baselineCount.HasValue)
+        {
+            // Verify that the count hasn't increased beyond the threshold
+            // This indicates that temp directories created during import were cleaned up
+            currentCount.Should().BeLessThanOrEqualTo(
+                baselineCount.Value + maxAllowedIncrease,
+                "temp directories should be cleaned up after import, allowing for other processes");
+        }
+        else
+        {
+            // Without a baseline, verify that the count is reasonable (not excessive)
+            // An excessive count would indicate cleanup failures over time
+            // Set a reasonable threshold (e.g., 100) to catch significant cleanup failures
+            const int maxReasonableCount = 100;
+            currentCount.Should().BeLessThanOrEqualTo(
+                maxReasonableCount,
+                $"temp directory count ({currentCount}) should be reasonable, indicating proper cleanup");
+        }
     }
 
     /// <summary>

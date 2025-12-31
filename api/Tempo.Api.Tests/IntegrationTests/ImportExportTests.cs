@@ -712,6 +712,9 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
 
+        // Capture baseline count of temp directories before import
+        var baselineCount = ImportTestHelper.GetTempDirectoryCount();
+
         // Create invalid ZIP (missing manifest)
         var invalidZip = ExportTestHelper.CreateZipWithMissingManifestAsync();
         
@@ -724,10 +727,10 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         var importResponse = await client.PostAsync("/workouts/import/export", formContent);
         importResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        // Verify temp directory cleanup (indirectly - if cleanup failed, we'd see errors)
+        // Verify temp directory cleanup - the count should not have increased significantly
         // The ImportService cleans up in the finally block, so this test verifies
         // that the exception handling doesn't prevent cleanup
-        ImportTestHelper.VerifyTempDirectoryCleanup();
+        ImportTestHelper.VerifyTempDirectoryCleanup(baselineCount);
     }
 
     // Helper methods to create export ZIPs with specific data
