@@ -182,7 +182,10 @@ public class ShoeMileageServiceTests : IDisposable
     [Fact]
     public async Task GetTotalMileageWithUserPreferenceAsync_UsesSettingsUnitPreference()
     {
-        // Arrange
+        // Arrange - clear any existing settings first
+        _db.UserSettings.RemoveRange(_db.UserSettings);
+        await _db.SaveChangesAsync();
+        
         await TestDataSeeder.SeedUserSettingsAsync(_db, unitPreference: "imperial");
         var shoe = await TestDataSeeder.SeedShoeAsync(_db, "Nike", "Pegasus", initialMileage: null);
         await TestDataSeeder.SeedWorkoutAsync(_db, shoeId: shoe.Id, distanceM: 1609.344); // 1 mile
