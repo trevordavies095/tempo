@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -171,6 +172,9 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
         var originalVersion = Environment.GetEnvironmentVariable("TEMPO_VERSION");
         var originalBuildDate = Environment.GetEnvironmentVariable("TEMPO_BUILD_DATE");
         var originalGitCommit = Environment.GetEnvironmentVariable("TEMPO_GIT_COMMIT");
+        var originalAspnetcoreEnv = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        var originalJwtSecret = Environment.GetEnvironmentVariable("JWT__SecretKey");
+        var originalConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
 
         try
         {
@@ -178,6 +182,12 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
             Environment.SetEnvironmentVariable("TEMPO_VERSION", null);
             Environment.SetEnvironmentVariable("TEMPO_BUILD_DATE", null);
             Environment.SetEnvironmentVariable("TEMPO_GIT_COMMIT", null);
+
+            // Set environment variables BEFORE creating factory (so Program.cs can access them)
+            // This matches what TempoWebApplicationFactory does
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
+            Environment.SetEnvironmentVariable("JWT__SecretKey", "test-secret-key-for-testing-only-min-32-chars");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=:memory:?cache=shared");
 
             // Create a temporary directory without VERSION file
             var testOutputDir = Path.Combine(Path.GetTempPath(), $"tempo-test-{Guid.NewGuid()}");
@@ -191,6 +201,8 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
                     {
                         builder.UseEnvironment("Testing");
                         builder.UseContentRoot(testOutputDir);
+                        // JWT and connection string are already set via environment variables above
+                        // No need to configure them here since they're loaded earlier in the pipeline
                     });
                 var client = factory.CreateClient();
 
@@ -220,6 +232,9 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
             Environment.SetEnvironmentVariable("TEMPO_VERSION", originalVersion);
             Environment.SetEnvironmentVariable("TEMPO_BUILD_DATE", originalBuildDate);
             Environment.SetEnvironmentVariable("TEMPO_GIT_COMMIT", originalGitCommit);
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalAspnetcoreEnv);
+            Environment.SetEnvironmentVariable("JWT__SecretKey", originalJwtSecret);
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", originalConnectionString);
         }
     }
 
@@ -235,3 +250,4 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
         public string GitCommit { get; set; } = string.Empty;
     }
 }
+
