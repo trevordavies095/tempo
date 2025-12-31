@@ -1410,24 +1410,26 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
 
+        // Seed workout in previous year so it appears in PreviousYear stats
+        // This ensures the test works regardless of what the current year is
+        var previousYear = DateTime.UtcNow.Year - 1;
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            await SeedSparseDataAsync(db, 2024);
+            await SeedSparseDataAsync(db, previousYear);
         }
 
-        // Act & Assert - Yearly Stats should show the workout
+        // Act & Assert - Yearly Stats should show the workout in PreviousYear
         var yearlyResponse = await client.GetAsync("/stats/yearly");
         yearlyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var yearlyResult = await yearlyResponse.Content.ReadFromJsonAsync<YearlyStatsResponse>();
-        // If current year is 2024, should have data; otherwise previous year should have data
-        (yearlyResult!.CurrentYear + yearlyResult.PreviousYear).Should().BeGreaterThan(0);
+        yearlyResult!.PreviousYear.Should().BeGreaterThan(0, "the workout was seeded in the previous year");
 
-        // Act & Assert - Available Years should include 2024
+        // Act & Assert - Available Years should include the year we seeded
         var yearsResponse = await client.GetAsync("/stats/available-years");
         yearsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var yearsResult = await yearsResponse.Content.ReadFromJsonAsync<List<int>>();
-        yearsResult!.Should().Contain(2024);
+        yearsResult!.Should().Contain(previousYear);
     }
 
     [Fact]
