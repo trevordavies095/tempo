@@ -687,8 +687,8 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         var result = await response.Content.ReadFromJsonAsync<YearlyStatsResponse>();
         result.Should().NotBeNull();
         
-        // SeedMultiYearWorkoutsAsync seeds workouts in 2022-2025, so if we're past 2025,
-        // CurrentYear might be 0. Check if current year has workouts, otherwise verify previous year has workouts.
+        // SeedMultiYearWorkoutsAsync dynamically seeds workouts for the current year (12 workouts)
+        // and previous year (8 workouts), so both should always be greater than 0.
         var currentYear = DateTime.UtcNow.Year;
         if (currentYear <= 2025)
         {
@@ -697,8 +697,9 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         }
         else
         {
-            // If we're past 2025, at least previous year (2025) should have workouts
-            result!.PreviousYear.Should().BeGreaterThan(0);
+            // SeedMultiYearWorkoutsAsync seeds current year workouts dynamically, so CurrentYear should always have workouts
+            result!.CurrentYear.Should().BeGreaterThan(0);
+            result.PreviousYear.Should().BeGreaterThan(0);
         }
     }
 
