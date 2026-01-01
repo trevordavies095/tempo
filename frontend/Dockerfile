@@ -17,6 +17,12 @@ RUN npm ci --legacy-peer-deps
 # Copy source code
 COPY . .
 
+# Ensure VERSION file exists (create from APP_VERSION if not present)
+# This ensures the file is always available for the runner stage
+RUN if [ ! -f VERSION ]; then \
+      echo "${APP_VERSION}" > VERSION; \
+    fi
+
 # Set environment variables
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_VERSION=$APP_VERSION

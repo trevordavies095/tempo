@@ -137,6 +137,22 @@ Include:
 
 ## Testing
 
+### Test Coverage Requirements
+
+- All new code should include appropriate tests (unit or integration tests)
+- Code coverage must remain at or above **45%** (enforced in CI, will be gradually increased)
+- Critical code paths (endpoints, services, security) should have comprehensive test coverage
+- See [Testing Guide](testing.md) for detailed information on running tests and adding new tests
+
+### Running Tests
+
+```bash
+cd api
+dotnet test
+```
+
+For coverage reports and detailed testing instructions, see the [Testing Guide](testing.md).
+
 ### Manual Testing
 
 - Test with sample workout files

@@ -1,0 +1,80 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore Tempo.sln
+
+      - name: Build
+        run: dotnet build Tempo.sln --no-restore
+
+      - name: Run tests with coverage
+        run: dotnet test Tempo.sln --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory:"TestResults" --settings:"api/Tempo.Api.Tests/coverlet.runsettings"
+
+      - name: Install ReportGenerator
+        run: dotnet tool install -g dotnet-reportgenerator-globaltool
+
+      - name: Generate coverage report
+        run: |
+          reportgenerator \
+            -reports:"**/coverage.cobertura.xml" \
+            -targetdir:"coverage-report" \
+            -reporttypes:"Html;Badges" \
+            -classfilters:"-*Dynastream*" \
+            -assemblyfilters:"-*Dynastream*"
+
+      - name: Check coverage threshold
+        run: |
+          # Extract coverage percentage from Cobertura XML (line-rate attribute)
+          COVERAGE_XML=$(find TestResults -name "coverage.cobertura.xml" | head -1)
+          if [ -z "$COVERAGE_XML" ]; then
+            echo "❌ Coverage report not found"
+            exit 1
+          fi
+          
+          # Extract line-rate value (e.g., "0.85" for 85%)
+          # Use set -o pipefail to ensure grep failure propagates, or check if result is empty
+          COVERAGE=$(grep -oP 'line-rate="\K[0-9.]+' "$COVERAGE_XML" | head -1)
+          if [ -z "$COVERAGE" ]; then
+            COVERAGE="0"
+          fi
+          
+          # Calculate percentage (multiply by 100 and round)
+          COVERAGE_PERCENT=$(awk "BEGIN {printf \"%.0f\", $COVERAGE * 100}")
+          
+          echo "Current coverage: ${COVERAGE_PERCENT}%"
+          echo "Required coverage: 45%"
+          
+          if [ "$COVERAGE_PERCENT" -lt 45 ]; then
+            echo "❌ Coverage ${COVERAGE_PERCENT}% is below the required 45% threshold"
+            exit 1
+          else
+            echo "✅ Coverage ${COVERAGE_PERCENT}% meets the required 45% threshold"
+          fi
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            **/coverage.cobertura.xml
+            **/TestResults/**/coverage.cobertura.xml
+            coverage-report/**
+          retention-days: 30

@@ -1,0 +1,316 @@
+using System.Data;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
+using Microsoft.IdentityModel.Tokens;
+using Tempo.Api.Data;
+using Tempo.Api.Services;
+
+namespace Tempo.Api.Tests.Infrastructure;
+
+/// <summary>
+/// Custom WebApplicationFactory for integration testing
+/// </summary>
+public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDisposable
+{
+    private readonly TestDatabaseOptions _databaseOptions;
+    private readonly string _tempMediaDirectory;
+    private readonly string? _tempDatabaseFile;
+    private bool _disposed;
+
+    // Test JWT configuration
+    private const string TestJwtSecretKey = "TestSecretKeyForJWTTokenGeneration12345678901234567890";
+    private const string TestJwtIssuer = "Tempo-Test";
+    private const string TestJwtAudience = "Tempo-Test";
+
+    public TempoWebApplicationFactory()
+    {
+        // Set environment BEFORE creating builder so Program.cs can detect it
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
+        
+        _databaseOptions = new TestDatabaseOptions
+        {
+            DatabaseType = TestDatabaseOptions.GetDatabaseType()
+        };
+
+        // Create temporary directory for media storage
+        _tempMediaDirectory = Path.Combine(Path.GetTempPath(), $"tempo-test-media-{Guid.NewGuid()}");
+        Directory.CreateDirectory(_tempMediaDirectory);
+
+        // Store database file path for cleanup if using SQLite file
+        if (_databaseOptions.DatabaseType == TestDatabaseType.SqliteFile)
+        {
+            _tempDatabaseFile = Path.Combine(Path.GetTempPath(), $"tempo-test-db-{Guid.NewGuid()}.db");
+        }
+        
+        // Set connection string environment variable early so Program.cs can detect SQLite
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", GetTestConnectionString());
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        // Environment variables are already set in constructor, but ensure they're still set
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", GetTestConnectionString());
+        Environment.SetEnvironmentVariable("JWT__SecretKey", TestJwtSecretKey);
+        Environment.SetEnvironmentVariable("JWT__Issuer", TestJwtIssuer);
+        Environment.SetEnvironmentVariable("JWT__Audience", TestJwtAudience);
+        Environment.SetEnvironmentVariable("MediaStorage__RootPath", _tempMediaDirectory);
+        Environment.SetEnvironmentVariable("MediaStorage__MaxFileSizeBytes", "52428800");
+        
+        builder.UseEnvironment("Testing");
+        
+        builder.ConfigureServices(services =>
+        {
+            // Remove ALL existing DbContext registrations (both options and the context itself)
+            // Also remove any Npgsql-specific extension services that might conflict
+            // This must happen AFTER Program.cs has run, so we remove what it registered
+            var descriptorsToRemove = new List<ServiceDescriptor>();
+            
+            foreach (var service in services)
+            {
+                if (service.ServiceType == typeof(DbContextOptions<TempoDbContext>) ||
+                    service.ServiceType == typeof(TempoDbContext) ||
+                    (service.ServiceType != null && service.ServiceType.IsGenericType && 
+                     service.ServiceType.GetGenericTypeDefinition() == typeof(DbContextOptions<>)))
+                {
+                    descriptorsToRemove.Add(service);
+                }
+                // Also remove Npgsql-specific services if present
+                else if (service.ServiceType != null && 
+                         service.ServiceType.FullName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    descriptorsToRemove.Add(service);
+                }
+            }
+
+            foreach (var descriptor in descriptorsToRemove)
+            {
+                services.Remove(descriptor);
+            }
+
+            // Register test database context with SQLite
+            var connectionString = GetTestConnectionString();
+            services.AddDbContext<TempoDbContext>(options =>
+            {
+                options.UseSqlite(connectionString);
+            }, ServiceLifetime.Scoped, ServiceLifetime.Scoped);
+
+            // Remove existing JWT configuration
+            services.RemoveAll(typeof(IConfigureOptions<JwtBearerOptions>));
+            
+            // Override JWT configuration to match what JwtService will generate
+            // JwtService reads from configuration, so we need to ensure both use the same values
+            services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestJwtSecretKey)),
+                    ValidateIssuer = true,
+                    ValidIssuer = TestJwtIssuer,
+                    ValidateAudience = true,
+                    ValidAudience = TestJwtAudience,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.Zero
+                };
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        context.Token = context.Request.Cookies["authToken"];
+                        return Task.CompletedTask;
+                    }
+                };
+            });
+            
+            // Override JwtService to use test values (ensures token generation matches validation)
+            // Remove existing JwtService registration
+            var jwtServiceDescriptor = services.FirstOrDefault(s => s.ServiceType == typeof(JwtService));
+            if (jwtServiceDescriptor != null)
+            {
+                services.Remove(jwtServiceDescriptor);
+            }
+            
+            // Register JwtService with test configuration
+            // Create a test configuration that provides test JWT values
+            services.AddScoped<JwtService>(sp =>
+            {
+                var logger = sp.GetRequiredService<ILogger<JwtService>>();
+                var baseConfig = sp.GetRequiredService<IConfiguration>();
+                
+                // Create a configuration wrapper that overrides JWT values
+                var testConfig = new TestJwtConfiguration(baseConfig, TestJwtSecretKey, TestJwtIssuer, TestJwtAudience);
+                return new JwtService(testConfig, logger);
+            });
+
+            // Override MediaStorageConfig
+            var mediaStorageConfigDescriptor = services.SingleOrDefault(s => s.ServiceType == typeof(MediaStorageConfig));
+            if (mediaStorageConfigDescriptor != null)
+            {
+                services.Remove(mediaStorageConfigDescriptor);
+            }
+            services.AddSingleton(new MediaStorageConfig
+            {
+                RootPath = _tempMediaDirectory,
+                MaxFileSizeBytes = 52_428_800 // 50MB
+            });
+
+            // Override ElevationCalculationConfig (keep defaults)
+            var elevationConfigDescriptor = services.SingleOrDefault(s => s.ServiceType == typeof(ElevationCalculationConfig));
+            if (elevationConfigDescriptor != null)
+            {
+                services.Remove(elevationConfigDescriptor);
+            }
+            services.AddSingleton(new ElevationCalculationConfig
+            {
+                NoiseThresholdMeters = 2.0,
+                MinDistanceMeters = 10.0
+            });
+        });
+    }
+    
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        var host = base.CreateHost(builder);
+        
+        // Initialize database after host is created
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<TempoWebApplicationFactory>>();
+
+            try
+            {
+                // For SQLite, use EnsureCreated (migrations don't work well with SQLite)
+                if (_databaseOptions.DatabaseType == TestDatabaseType.SqliteInMemory ||
+                    _databaseOptions.DatabaseType == TestDatabaseType.SqliteFile)
+                {
+                    // EnsureCreated is idempotent - safe to call multiple times
+                    // It will create tables if they don't exist, or do nothing if they do
+                    db.Database.EnsureCreated();
+                    logger.LogInformation("Test database schema ensured (created or already exists)");
+                }
+                else
+                {
+                    // For PostgreSQL, use migrations
+                    DatabaseMigrationHelper.ApplyMigrations(db);
+                    logger.LogInformation("Test database migrations applied");
+                }
+            }
+            catch (SqliteException ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+            {
+                // Ignore SQLite errors about tables already existing
+                // This can happen when multiple factories share the same in-memory database
+                logger.LogInformation("Database tables already exist, skipping creation");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "An error occurred creating the test database");
+                throw;
+            }
+        }
+        
+        return host;
+    }
+
+    private string GetTestConnectionString()
+    {
+        return _databaseOptions.DatabaseType switch
+        {
+            // Use shared-cache for in-memory SQLite so all connections share the same database
+            // This ensures schema and data continuity across different scoped DbContext instances
+            // Using URI format with file: prefix for shared in-memory database
+            // The URL-style query parameter format "Data Source=:memory:?cache=shared" is NOT supported
+            // by Microsoft.Data.Sqlite and would cause each DbContext to get its own private database
+            TestDatabaseType.SqliteInMemory => "Data Source=file::memory:?cache=shared",
+            TestDatabaseType.SqliteFile => $"Data Source={_tempDatabaseFile}",
+            TestDatabaseType.Testcontainers => throw new NotImplementedException("Testcontainers support not yet implemented"),
+            _ => "Data Source=file::memory:?cache=shared"
+        };
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (!_disposed && disposing)
+        {
+            // Clean up temporary media directory
+            try
+            {
+                if (Directory.Exists(_tempMediaDirectory))
+                {
+                    Directory.Delete(_tempMediaDirectory, recursive: true);
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore cleanup errors
+            }
+
+            // Clean up SQLite database file if using file-based database
+            if (_tempDatabaseFile != null && File.Exists(_tempDatabaseFile))
+            {
+                try
+                {
+                    File.Delete(_tempDatabaseFile);
+                }
+                catch (Exception)
+                {
+                    // Ignore cleanup errors
+                }
+            }
+
+            _disposed = true;
+        }
+
+        base.Dispose(disposing);
+    }
+}
+
+/// <summary>
+/// Configuration wrapper that overrides JWT values for testing
+/// </summary>
+internal class TestJwtConfiguration : IConfiguration
+{
+    private readonly IConfiguration _baseConfig;
+    private readonly string _jwtSecretKey;
+    private readonly string _jwtIssuer;
+    private readonly string _jwtAudience;
+
+    public TestJwtConfiguration(IConfiguration baseConfig, string jwtSecretKey, string jwtIssuer, string jwtAudience)
+    {
+        _baseConfig = baseConfig;
+        _jwtSecretKey = jwtSecretKey;
+        _jwtIssuer = jwtIssuer;
+        _jwtAudience = jwtAudience;
+    }
+
+    public string? this[string key]
+    {
+        get
+        {
+            // Override JWT configuration values
+            return key switch
+            {
+                "JWT:SecretKey" => _jwtSecretKey,
+                "JWT:Issuer" => _jwtIssuer,
+                "JWT:Audience" => _jwtAudience,
+                _ => _baseConfig[key]
+            };
+        }
+        set => _baseConfig[key] = value;
+    }
+
+    public IEnumerable<IConfigurationSection> GetChildren() => _baseConfig.GetChildren();
+    public IChangeToken GetReloadToken() => _baseConfig.GetReloadToken();
+    public IConfigurationSection GetSection(string key) => _baseConfig.GetSection(key);
+}
