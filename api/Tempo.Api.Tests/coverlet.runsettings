@@ -6,8 +6,7 @@
         <Configuration>
           <Format>cobertura</Format>
           <Include>[Tempo.Api]*</Include>
-          <Exclude>[Tempo.Api.Tests]*</Exclude>
-          <Exclude>[Tempo.Api.Libraries.FitSDK]*</Exclude>
+          <Exclude>[Tempo.Api.Tests]*,[Tempo.Api.Libraries.FitSDK]*</Exclude>
           <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
           <ExcludeByFile>**/Program.cs,**/Migrations/**,**/Libraries/FitSDK/**</ExcludeByFile>
         </Configuration>
