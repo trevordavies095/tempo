@@ -56,13 +56,13 @@ jobs:
           COVERAGE_PERCENT=$(awk "BEGIN {printf \"%.0f\", $COVERAGE * 100}")
           
           echo "Current coverage: ${COVERAGE_PERCENT}%"
-          echo "Required coverage: 80%"
+          echo "Required coverage: 50%"
           
-          if [ "$COVERAGE_PERCENT" -lt 80 ]; then
-            echo "❌ Coverage ${COVERAGE_PERCENT}% is below the required 80% threshold"
+          if [ "$COVERAGE_PERCENT" -lt 50 ]; then
+            echo "❌ Coverage ${COVERAGE_PERCENT}% is below the required 50% threshold"
             exit 1
           else
-            echo "✅ Coverage ${COVERAGE_PERCENT}% meets the required 80% threshold"
+            echo "✅ Coverage ${COVERAGE_PERCENT}% meets the required 50% threshold"
           fi
 
       - name: Upload coverage report

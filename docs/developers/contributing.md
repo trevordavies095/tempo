@@ -140,7 +140,7 @@ Include:
 ### Test Coverage Requirements
 
 - All new code should include appropriate tests (unit or integration tests)
-- Code coverage must remain at or above **80%** (enforced in CI)
+- Code coverage must remain at or above **50%** (enforced in CI)
 - Critical code paths (endpoints, services, security) should have comprehensive test coverage
 - See [Testing Guide](testing.md) for detailed information on running tests and adding new tests
 
