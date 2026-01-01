@@ -2658,7 +2658,7 @@ public static class WorkoutsEndpoints
             // Infer device from Source field if device is missing or "Development"
             if (string.IsNullOrWhiteSpace(workout.Device) || workout.Device == "Development")
             {
-                if (workout.Source == "apple_watch")
+                if (workout.Source == "gpx_import" || workout.Source == "apple_watch")
                 {
                     workout.Device = "Apple Watch";
             }
