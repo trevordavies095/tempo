@@ -50,7 +50,11 @@ jobs:
           fi
           
           # Extract line-rate value (e.g., "0.85" for 85%)
-          COVERAGE=$(grep -oP 'line-rate="\K[0-9.]+' "$COVERAGE_XML" | head -1 || echo "0")
+          # Use set -o pipefail to ensure grep failure propagates, or check if result is empty
+          COVERAGE=$(grep -oP 'line-rate="\K[0-9.]+' "$COVERAGE_XML" | head -1)
+          if [ -z "$COVERAGE" ]; then
+            COVERAGE="0"
+          fi
           
           # Calculate percentage (multiply by 100 and round)
           COVERAGE_PERCENT=$(awk "BEGIN {printf \"%.0f\", $COVERAGE * 100}")
