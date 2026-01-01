@@ -31,10 +31,8 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            
-            // Clear all users to allow registration
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM Users");
-            await db.SaveChangesAsync();
+            // Clear all data including users (needed for registration tests)
+            await TestDataSeeder.SafeClearAllDataAsync(db, preserveUsers: false);
         }
     }
 

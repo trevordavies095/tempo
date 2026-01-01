@@ -195,35 +195,10 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
                 if (_databaseOptions.DatabaseType == TestDatabaseType.SqliteInMemory ||
                     _databaseOptions.DatabaseType == TestDatabaseType.SqliteFile)
                 {
-                    // Check if database is already created by checking if any tables exist
-                    // This handles the case where multiple factories share the same in-memory database
-                    var tablesExist = false;
-                    try
-                    {
-                        var connection = db.Database.GetDbConnection();
-                        if (connection.State != ConnectionState.Open)
-                            connection.Open();
-                        
-                        using var command = connection.CreateCommand();
-                        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
-                        var tableCount = Convert.ToInt32(command.ExecuteScalar());
-                        tablesExist = tableCount > 0;
-                    }
-                    catch
-                    {
-                        // If we can't check, assume tables don't exist and try to create
-                        tablesExist = false;
-                    }
-                    
-                    if (!tablesExist)
-                    {
-                        db.Database.EnsureCreated();
-                        logger.LogInformation("Test database schema created using EnsureCreated");
-                    }
-                    else
-                    {
-                        logger.LogInformation("Test database schema already exists, skipping creation");
-                    }
+                    // EnsureCreated is idempotent - safe to call multiple times
+                    // It will create tables if they don't exist, or do nothing if they do
+                    db.Database.EnsureCreated();
+                    logger.LogInformation("Test database schema ensured (created or already exists)");
                 }
                 else
                 {
@@ -254,10 +229,13 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
         {
             // Use shared-cache for in-memory SQLite so all connections share the same database
             // This ensures schema and data continuity across different scoped DbContext instances
-            TestDatabaseType.SqliteInMemory => "Data Source=:memory:?cache=shared",
+            // Using URI format with file: prefix for shared in-memory database
+            // The URL-style query parameter format "Data Source=:memory:?cache=shared" is NOT supported
+            // by Microsoft.Data.Sqlite and would cause each DbContext to get its own private database
+            TestDatabaseType.SqliteInMemory => "Data Source=file::memory:?cache=shared",
             TestDatabaseType.SqliteFile => $"Data Source={_tempDatabaseFile}",
             TestDatabaseType.Testcontainers => throw new NotImplementedException("Testcontainers support not yet implemented"),
-            _ => "Data Source=:memory:?cache=shared"
+            _ => "Data Source=file::memory:?cache=shared"
         };
     }
 

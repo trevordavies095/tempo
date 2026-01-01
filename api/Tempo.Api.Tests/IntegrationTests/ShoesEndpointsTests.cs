@@ -34,27 +34,7 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             
             // Clear all data except users (we need the test user for authentication)
-            // Use a transaction to ensure atomic cleanup
-            await using var transaction = await db.Database.BeginTransactionAsync();
-            try
-            {
-                // Delete in order to respect foreign key constraints
-                await db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutTimeSeries");
-                await db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutSplits");
-                await db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutMedia");
-                await db.Database.ExecuteSqlRawAsync("DELETE FROM BestEfforts");
-                await db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutRoutes");
-                await db.Database.ExecuteSqlRawAsync("DELETE FROM Workouts");
-                await db.Database.ExecuteSqlRawAsync("DELETE FROM UserSettings");
-                await db.Database.ExecuteSqlRawAsync("DELETE FROM Shoes");
-                
-                await transaction.CommitAsync();
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
+            await TestDataSeeder.SafeClearAllDataAsync(db, preserveUsers: true);
         }
     }
 

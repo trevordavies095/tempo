@@ -14,3 +14,4 @@ public class StartupConfigurationTestCollection : ICollectionFixture<object>
     // to be the place to apply [CollectionDefinition] and all the
     // [Collection] attributes can be bound to it.
 }
+

@@ -30,10 +30,21 @@ public static class TestHttpClientFactory
     {
         var client = factory.CreateClient();
 
-        // First, ensure user exists
+        // First, ensure database schema exists and user exists
         using (var scope = factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            
+            // Ensure database schema is created (in case it wasn't created during host initialization)
+            try
+            {
+                await db.Database.EnsureCreatedAsync();
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+            {
+                // Schema already exists, continue
+            }
+            
             var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
             
             if (user == null)

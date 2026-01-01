@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -435,5 +436,60 @@ public static class TestDataSeeder
         db.Users.RemoveRange(db.Users);
         
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Safely clears all test data from the database using raw SQL, handling missing tables gracefully
+    /// This is useful for cleanup in integration tests where tables might not exist yet
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="preserveUsers">Whether to preserve users (default: true, needed for authentication)</param>
+    public static async Task SafeClearAllDataAsync(TempoDbContext db, bool preserveUsers = true)
+    {
+        // Use a transaction to ensure atomic cleanup
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        try
+        {
+            // Delete in order to respect foreign key constraints
+            // Catch SqliteException for "no such table" errors and ignore them
+            await SafeDeleteFromTableAsync(db, "WorkoutTimeSeries");
+            await SafeDeleteFromTableAsync(db, "WorkoutSplits");
+            await SafeDeleteFromTableAsync(db, "WorkoutMedia");
+            await SafeDeleteFromTableAsync(db, "BestEfforts");
+            await SafeDeleteFromTableAsync(db, "WorkoutRoutes");
+            await SafeDeleteFromTableAsync(db, "Workouts");
+            await SafeDeleteFromTableAsync(db, "UserSettings");
+            await SafeDeleteFromTableAsync(db, "Shoes");
+            
+            if (!preserveUsers)
+            {
+                await SafeDeleteFromTableAsync(db, "Users");
+            }
+            
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Safely deletes all rows from a table, ignoring "no such table" errors
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="tableName">Name of the table to delete from</param>
+    private static async Task SafeDeleteFromTableAsync(TempoDbContext db, string tableName)
+    {
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync($"DELETE FROM {tableName}");
+        }
+        catch (SqliteException ex) when (ex.Message.Contains("no such table", StringComparison.OrdinalIgnoreCase))
+        {
+            // Table doesn't exist yet, nothing to clean up - this is fine
+            // This can happen when the database schema hasn't been created yet
+        }
     }
 }
