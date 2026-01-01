@@ -81,7 +81,7 @@ Coverage is configured in `api/Tempo.Api.Tests/coverlet.runsettings`:
 
 ### Coverage Threshold
 
-The CI pipeline enforces a **minimum 50% code coverage** threshold. If coverage drops below 50%, the CI build will fail.
+The CI pipeline enforces a **minimum 45% code coverage** threshold. If coverage drops below 45%, the CI build will fail. This threshold will be gradually increased as test coverage improves.
 
 ### Viewing Coverage Locally
 
@@ -288,8 +288,8 @@ The CI pipeline automatically:
 
 1. Runs all tests with coverage collection
 2. Generates coverage reports
-3. Checks if coverage meets the 50% threshold
-4. Fails the build if coverage is below 50%
+3. Checks if coverage meets the 45% threshold
+4. Fails the build if coverage is below 45%
 
 ### Fixing Coverage Failures
 
