@@ -12,6 +12,7 @@ namespace Tempo.Api.Tests.IntegrationTests;
 /// <summary>
 /// Integration tests for health and version endpoints
 /// </summary>
+[Collection("Integration Tests")]
 public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
 {
     private readonly TempoWebApplicationFactory _factory;
