@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-01-01
+
+### Added
+- **Automated testing suite**
+  - Comprehensive test infrastructure with 29 test files covering unit and integration tests
+  - CI integration with automated test execution and coverage reporting
+  - 45% code coverage threshold enforced in CI (will be gradually increased)
+  - Test infrastructure for authenticated requests, test data seeding, and database management
+  - Full test coverage for core workflows: authentication, workouts, imports/exports, and statistics
+  - Unit tests for all major services (parsers, export, import, media, calculations)
+  - Integration tests for all API endpoints
+  - GitHub Actions workflow for automated testing on push/PR to main and develop branches
+  - Coverage reports generated and uploaded as artifacts
+
+### Technical
+- Added xUnit test framework with FluentAssertions and Moq
+- Created test infrastructure: TempoWebApplicationFactory, TestHttpClientFactory, TestDataSeeder
+- Support for SQLite in-memory database for fast test execution
+- Test collections for proper test isolation
+- Coverage configuration with appropriate exclusions (Program.cs, Migrations, FitSDK)
+- Solution file (Tempo.sln) for managing API and test projects together
+
 ## [2.1.0] - 2025-12-14
 
 ### Added
