@@ -515,6 +515,38 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task GetCurrentUser_WithDeletedUser_ReturnsUnauthorized()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "testuser", "Test123!");
+        
+        // Get user ID from the authenticated response
+        var initialResponse = await client.GetAsync("/auth/me");
+        initialResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var userInfo = await initialResponse.Content.ReadFromJsonAsync<CurrentUserResponse>();
+        var userId = userInfo!.UserId;
+        
+        // Delete the user from the database
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var user = await db.Users.FindAsync(userId);
+            if (user != null)
+            {
+                db.Users.Remove(user);
+                await db.SaveChangesAsync();
+            }
+        }
+        
+        // Act - try to access /auth/me with valid JWT but deleted user
+        var response = await client.GetAsync("/auth/me");
+        
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     #endregion
 
     #region Logout Endpoint Tests
