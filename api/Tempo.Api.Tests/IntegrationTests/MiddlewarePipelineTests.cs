@@ -74,7 +74,7 @@ public class MiddlewarePipelineTests
             {
                 Environment.SetEnvironmentVariable("JWT:SecretKey", null);
             }
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=:memory:?cache=shared");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=file::memory:?cache=shared");
 
             // Create factory with Development environment
             using var factory = new WebApplicationFactory<Program>()
@@ -87,7 +87,7 @@ public class MiddlewarePipelineTests
                         config.AddInMemoryCollection(new Dictionary<string, string?>
                         {
                             { "JWT:SecretKey", "ValidSecretKeyForDevelopmentTesting12345678901234567890" },
-                            { "ConnectionStrings:DefaultConnection", "Data Source=:memory:?cache=shared" }
+                            { "ConnectionStrings:DefaultConnection", "Data Source=file::memory:?cache=shared" }
                         });
                     });
                 });
@@ -131,7 +131,7 @@ public class MiddlewarePipelineTests
             {
                 Environment.SetEnvironmentVariable("JWT:SecretKey", null);
             }
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=:memory:?cache=shared");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=file::memory:?cache=shared");
 
             // Create factory with Production environment
             using var factory = new WebApplicationFactory<Program>()
@@ -144,7 +144,7 @@ public class MiddlewarePipelineTests
                         config.AddInMemoryCollection(new Dictionary<string, string?>
                         {
                             { "JWT:SecretKey", "ValidSecretKeyForProductionTesting12345678901234567890" },
-                            { "ConnectionStrings:DefaultConnection", "Data Source=:memory:?cache=shared" }
+                            { "ConnectionStrings:DefaultConnection", "Data Source=file::memory:?cache=shared" }
                         });
                     });
                 });
@@ -212,4 +212,5 @@ public class MiddlewarePipelineTests
         content.Should().Contain("version");
     }
 }
+
 

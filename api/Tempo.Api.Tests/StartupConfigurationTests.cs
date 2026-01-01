@@ -65,7 +65,7 @@ public class StartupConfigurationTests
             {
                 Environment.SetEnvironmentVariable("JWT:SecretKey", null);
             }
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=:memory:?cache=shared");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=file::memory:?cache=shared");
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
 
             // Act - try to create the application factory with Testing environment

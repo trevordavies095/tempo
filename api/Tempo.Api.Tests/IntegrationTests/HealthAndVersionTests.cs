@@ -188,7 +188,7 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
             // This matches what TempoWebApplicationFactory does
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
             Environment.SetEnvironmentVariable("JWT__SecretKey", "test-secret-key-for-testing-only-min-32-chars");
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=:memory:?cache=shared");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=file::memory:?cache=shared");
 
             // Create a temporary directory without VERSION file
             var testOutputDir = Path.Combine(Path.GetTempPath(), $"tempo-test-{Guid.NewGuid()}");
@@ -214,7 +214,7 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
                                 { "JWT:SecretKey", "test-secret-key-for-testing-only-min-32-chars" },
                                 { "JWT:Issuer", "Tempo-Test" },
                                 { "JWT:Audience", "Tempo-Test" },
-                                { "ConnectionStrings:DefaultConnection", "Data Source=:memory:?cache=shared" }
+                                { "ConnectionStrings:DefaultConnection", "Data Source=file::memory:?cache=shared" }
                             });
                         });
                     });
