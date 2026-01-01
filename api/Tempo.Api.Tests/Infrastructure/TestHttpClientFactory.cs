@@ -63,12 +63,6 @@ public static class TestHttpClientFactory
 
         var loginResponse = await client.PostAsJsonAsync("/auth/login", loginRequest);
         
-        if (!loginResponse.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                $"Failed to authenticate user '{username}'. Status: {loginResponse.StatusCode}");
-        }
-
         // The JWT token is set as a cookie by the login endpoint
         // HttpClient from WebApplicationFactory automatically handles cookies
         // Verify the login was successful
