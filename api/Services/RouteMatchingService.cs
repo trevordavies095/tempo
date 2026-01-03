@@ -40,9 +40,8 @@ public class RouteMatchingService
         int maxResults = 10,
         int maxYears = DefaultMaxYears)
     {
-        // Get the current workout with route data
+        // Get the current workout without route first (to avoid JSON parsing errors)
         var currentWorkout = await _db.Workouts
-            .Include(w => w.Route)
             .FirstOrDefaultAsync(w => w.Id == workoutId);
 
         if (currentWorkout == null)
@@ -51,11 +50,37 @@ public class RouteMatchingService
             return new List<SimilarRouteMatch>();
         }
 
-        if (currentWorkout.Route == null || string.IsNullOrEmpty(currentWorkout.Route.RouteGeoJson))
+        // Load route using raw SQL to get RouteGeoJson as text, avoiding JSONB validation errors
+        RouteData? currentRouteData = null;
+        try
+        {
+            currentRouteData = await _db.Database
+                .SqlQueryRaw<RouteData>(
+                    @"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
+                      FROM ""WorkoutRoutes"" 
+                      WHERE ""WorkoutId"" = {0}",
+                    workoutId)
+                .FirstOrDefaultAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load route for current workout {WorkoutId} due to database error", workoutId);
+            return new List<SimilarRouteMatch>();
+        }
+
+        if (currentRouteData == null || string.IsNullOrEmpty(currentRouteData.RouteGeoJson))
         {
             _logger.LogDebug("Workout {WorkoutId} has no route data", workoutId);
             return new List<SimilarRouteMatch>();
         }
+
+        // Create WorkoutRoute object for consistency
+        currentWorkout.Route = new WorkoutRoute
+        {
+            Id = currentRouteData.Id,
+            WorkoutId = currentRouteData.WorkoutId,
+            RouteGeoJson = currentRouteData.RouteGeoJson
+        };
 
         // Extract coordinates from current route
         var currentRouteCoords = ExtractCoordinatesFromGeoJson(currentWorkout.Route.RouteGeoJson);
@@ -68,23 +93,50 @@ public class RouteMatchingService
         // Calculate time range for filtering
         var minDate = currentWorkout.StartedAt.AddYears(-maxYears);
 
-        // Get candidate workouts with routes (excluding current workout)
+        // Get candidate workouts without routes first (to avoid JSON parsing errors during Include)
         var candidateWorkouts = await _db.Workouts
-            .Include(w => w.Route)
             .Where(w => w.Id != workoutId &&
-                       w.Route != null &&
-                       !string.IsNullOrEmpty(w.Route.RouteGeoJson) &&
-                       w.StartedAt >= minDate)
+                       w.StartedAt >= minDate &&
+                       _db.WorkoutRoutes.Any(r => r.WorkoutId == w.Id))
             .ToListAsync();
 
         var matches = new List<SimilarRouteMatch>();
 
         foreach (var candidate in candidateWorkouts)
         {
-            if (candidate.Route == null || string.IsNullOrEmpty(candidate.Route.RouteGeoJson))
+            // Load route using raw SQL to get RouteGeoJson as text
+            // Casting to text avoids JSONB validation errors during EF Core materialization
+            // Invalid JSON will be handled gracefully in ExtractCoordinatesFromGeoJson
+            RouteData? routeData = null;
+            try
+            {
+                routeData = await _db.Database
+                    .SqlQueryRaw<RouteData>(
+                        @"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
+                          FROM ""WorkoutRoutes"" 
+                          WHERE ""WorkoutId"" = {0}",
+                        candidate.Id)
+                    .FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load route for workout {WorkoutId} due to database error. Skipping workout.", candidate.Id);
+                continue;
+            }
+
+            if (routeData == null || string.IsNullOrEmpty(routeData.RouteGeoJson))
             {
                 continue;
             }
+
+            // Create a WorkoutRoute object for consistency with existing code
+            var route = new WorkoutRoute
+            {
+                Id = routeData.Id,
+                WorkoutId = routeData.WorkoutId,
+                RouteGeoJson = routeData.RouteGeoJson
+            };
+            candidate.Route = route;
 
             // Quick filters: start/end proximity and distance similarity
             if (!PassQuickFilters(currentWorkout, candidate, currentRouteCoords))
@@ -409,6 +461,16 @@ public class RouteMatchingService
         // Similarity score = 100 - (average distance in meters), clamped to 0-100
         var score = 100.0 - averageDistanceM;
         return Math.Max(0.0, Math.Min(100.0, score));
+    }
+
+    /// <summary>
+    /// Helper class for raw SQL query results when loading routes with potentially invalid JSON.
+    /// </summary>
+    private class RouteData
+    {
+        public Guid Id { get; set; }
+        public Guid WorkoutId { get; set; }
+        public string RouteGeoJson { get; set; } = string.Empty;
     }
 }
 
