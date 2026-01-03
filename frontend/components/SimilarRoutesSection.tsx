@@ -357,9 +357,12 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                         (() => {
                           const elevDiff = route.elevGainM! - currentWorkout.elevGainM;
                           const absDiff = Math.abs(elevDiff);
-                          const percentDiff = Math.abs(elevDiff / currentWorkout.elevGainM) * 100;
-                          // Only show difference if significant (>50m or >10%)
-                          const isSignificant = absDiff > 50 || percentDiff > 10;
+                          // Only calculate percentDiff if currentWorkout.elevGainM is not 0 to avoid division by zero
+                          const percentDiff = currentWorkout.elevGainM > 0
+                            ? Math.abs(elevDiff / currentWorkout.elevGainM) * 100
+                            : 0;
+                          // Only show difference if significant (>50m or >10% when elevation > 0)
+                          const isSignificant = absDiff > 50 || (currentWorkout.elevGainM > 0 && percentDiff > 10);
                           
                           if (!isSignificant) {
                             return null;
