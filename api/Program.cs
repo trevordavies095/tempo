@@ -135,6 +135,7 @@ builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<ShoeMileageService>();
 builder.Services.AddScoped<ExportService>();
 builder.Services.AddScoped<ImportService>();
+builder.Services.AddScoped<RouteMatchingService>();
 builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage
