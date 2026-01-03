@@ -158,18 +158,15 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
     );
   }
 
-  // Sort by date (most recent first)
-  const sortedRoutes = [...data].sort((a, b) => 
-    new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-  );
-
+  // Use data directly - backend already sorts by similarity score (highest first),
+  // then by date (most recent first), then by distance similarity
   return (
     <div>
       <h3 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
         Previous Efforts
       </h3>
       <div className="space-y-2">
-        {sortedRoutes.map((route) => (
+        {data.map((route) => (
           <Link
             key={route.workoutId}
             href={`/dashboard/${route.workoutId}`}
