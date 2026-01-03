@@ -28,13 +28,26 @@ function formatTimeDifference(differenceS: number): string {
 /**
  * Format pace difference in seconds per km to a readable string
  * @param differenceS Pace difference in seconds per km (negative = faster pace, positive = slower pace)
- * @returns Formatted string like "+5s/km slower" or "-5s/km faster"
+ * @param unitPreference Unit preference for formatting
+ * @returns Formatted string like "+5s/km slower" or "-16s/mi faster"
  */
-function formatPaceDifference(differenceS: number): string {
-  const absSeconds = Math.abs(differenceS);
-  const sign = differenceS < 0 ? '-' : '+';
-  const fasterSlower = differenceS < 0 ? 'faster' : 'slower';
-  return `${sign}${Math.round(absSeconds)}s/km ${fasterSlower}`;
+function formatPaceDifference(differenceS: number, unitPreference: 'metric' | 'imperial'): string {
+  let convertedDifference: number;
+  let unitLabel: string;
+  
+  if (unitPreference === 'imperial') {
+    // Convert from seconds/km to seconds/mile (same conversion as formatPace)
+    convertedDifference = differenceS * 1.609344;
+    unitLabel = 's/mi';
+  } else {
+    convertedDifference = differenceS;
+    unitLabel = 's/km';
+  }
+  
+  const absSeconds = Math.abs(convertedDifference);
+  const sign = convertedDifference < 0 ? '-' : '+';
+  const fasterSlower = convertedDifference < 0 ? 'faster' : 'slower';
+  return `${sign}${Math.round(absSeconds)}${unitLabel} ${fasterSlower}`;
 }
 
 /**
@@ -235,7 +248,7 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                           : 'text-red-600 dark:text-red-400'
                       }`}
                     >
-                      {formatPaceDifference(route.paceDifferenceS)}
+                      {formatPaceDifference(route.paceDifferenceS, unitPreference)}
                       {route.paceDifferenceS < 0 ? (
                         <svg
                           className="inline-block w-3 h-3 ml-0.5"
