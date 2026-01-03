@@ -139,17 +139,14 @@ public class RouteMatchingService
             candidate.Route = route;
 
             // Quick filters: start/end proximity and distance similarity
-            if (!PassQuickFilters(currentWorkout, candidate, currentRouteCoords))
+            // PassQuickFilters extracts coordinates once and returns them if filters pass
+            var (passed, candidateCoords) = PassQuickFilters(currentWorkout, candidate, currentRouteCoords);
+            if (!passed || candidateCoords == null || candidateCoords.Count < 2)
             {
                 continue;
             }
 
-            // Calculate detailed similarity
-            var candidateCoords = ExtractCoordinatesFromGeoJson(candidate.Route.RouteGeoJson);
-            if (candidateCoords.Count < 2)
-            {
-                continue;
-            }
+            // Calculate detailed similarity (candidateCoords already extracted in PassQuickFilters)
 
             var averageDistance = CalculateAveragePointDistance(currentRouteCoords, candidateCoords);
             var similarityScore = CalculateSimilarityScore(averageDistance);
@@ -327,8 +324,9 @@ public class RouteMatchingService
 
     /// <summary>
     /// Checks if candidate workout passes quick filters (start/end proximity, distance similarity).
+    /// Returns both the filter result and the extracted coordinates to avoid re-parsing GeoJSON.
     /// </summary>
-    private bool PassQuickFilters(
+    private (bool passed, List<(double lat, double lon)>? coords) PassQuickFilters(
         Workout currentWorkout,
         Workout candidate,
         List<(double lat, double lon)> currentRouteCoords)
@@ -338,19 +336,19 @@ public class RouteMatchingService
         var distanceThreshold = currentWorkout.DistanceM * DistanceSimilarityThresholdPercent;
         if (distanceDiff > distanceThreshold)
         {
-            return false;
+            return (false, null);
         }
 
         // Extract candidate route coordinates
         if (candidate.Route == null || string.IsNullOrEmpty(candidate.Route.RouteGeoJson))
         {
-            return false;
+            return (false, null);
         }
 
         var candidateCoords = ExtractCoordinatesFromGeoJson(candidate.Route.RouteGeoJson);
         if (candidateCoords.Count < 2)
         {
-            return false;
+            return (false, null);
         }
 
         // Check start point proximity
@@ -360,7 +358,7 @@ public class RouteMatchingService
 
         if (startDistance > StartEndProximityThresholdM)
         {
-            return false;
+            return (false, null);
         }
 
         // Check end point proximity
@@ -370,10 +368,10 @@ public class RouteMatchingService
 
         if (endDistance > StartEndProximityThresholdM)
         {
-            return false;
+            return (false, null);
         }
 
-        return true;
+        return (true, candidateCoords);
     }
 
     /// <summary>
