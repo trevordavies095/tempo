@@ -37,6 +37,55 @@ function formatPaceDifference(differenceS: number): string {
   return `${sign}${Math.round(absSeconds)}s/km ${fasterSlower}`;
 }
 
+/**
+ * Format relative effort difference to a readable string
+ * @param previousEffort Previous workout's relative effort
+ * @param currentEffort Current workout's relative effort
+ * @returns Formatted string like "85 (-5)" if current is 90 and previous is 85
+ */
+function formatRelativeEffortDifference(previousEffort: number, currentEffort: number): string {
+  const difference = previousEffort - currentEffort;
+  const sign = difference < 0 ? '-' : '+';
+  const absDiff = Math.abs(difference);
+  return `${previousEffort} (${sign}${absDiff})`;
+}
+
+/**
+ * Format elevation difference to a readable string
+ * @param previousElev Previous workout's elevation gain in meters
+ * @param currentElev Current workout's elevation gain in meters
+ * @param unitPreference Unit preference for formatting
+ * @returns Formatted string like "+150m (+50m more)" or "+150m (-20m less)"
+ */
+function formatElevationDifference(
+  previousElev: number,
+  currentElev: number,
+  unitPreference: 'metric' | 'imperial'
+): string {
+  const difference = previousElev - currentElev;
+  const absDiff = Math.abs(difference);
+  const previousFormatted = formatElevation(previousElev, unitPreference);
+  
+  if (unitPreference === 'imperial') {
+    const diffFeet = Math.round(absDiff * 3.28084);
+    if (difference > 0) {
+      return `${previousFormatted} (+${diffFeet}ft more)`;
+    } else if (difference < 0) {
+      return `${previousFormatted} (-${diffFeet}ft less)`;
+    } else {
+      return previousFormatted;
+    }
+  } else {
+    if (difference > 0) {
+      return `${previousFormatted} (+${Math.round(absDiff)}m more)`;
+    } else if (difference < 0) {
+      return `${previousFormatted} (-${Math.round(absDiff)}m less)`;
+    } else {
+      return previousFormatted;
+    }
+  }
+}
+
 export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoutesSectionProps) {
   const { unitPreference } = useSettings();
 
@@ -44,7 +93,7 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
     queryKey: ['similar-routes', workoutId],
     queryFn: () => getSimilarRoutes(workoutId),
     staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime in v4)
     retry: 1,
     refetchOnWindowFocus: false,
     enabled: !!workoutId && !!currentWorkout.route,
@@ -235,8 +284,62 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
               {route.relativeEffort !== null && route.relativeEffort !== undefined && (
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-gray-500 dark:text-gray-400">Relative Effort</div>
-                  <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    {route.relativeEffort}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      {route.relativeEffort}
+                    </span>
+                    {currentWorkout.relativeEffort !== null &&
+                      currentWorkout.relativeEffort !== undefined && (
+                        (() => {
+                          const effortDiff = route.relativeEffort! - currentWorkout.relativeEffort;
+                          const absDiff = Math.abs(effortDiff);
+                          const sign = effortDiff < 0 ? '-' : '+';
+                          return (
+                            <span
+                              className={`text-xs ${
+                                effortDiff < 0
+                                  ? 'text-green-600 dark:text-green-400'
+                                  : effortDiff > 0
+                                  ? 'text-red-600 dark:text-red-400'
+                                  : 'text-gray-500 dark:text-gray-400'
+                              }`}
+                            >
+                              ({sign}{absDiff})
+                              {effortDiff < 0 ? (
+                                <svg
+                                  className="inline-block w-3 h-3 ml-0.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M5 10l7-7m0 0l7 7m-7-7v18"
+                                  />
+                                </svg>
+                              ) : effortDiff > 0 ? (
+                                <svg
+                                  className="inline-block w-3 h-3 ml-0.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                                  />
+                                </svg>
+                              ) : null}
+                            </span>
+                          );
+                        })()
+                      )}
                   </div>
                 </div>
               )}
@@ -245,8 +348,36 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
               {route.elevGainM !== null && route.elevGainM !== undefined && (
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-gray-500 dark:text-gray-400">Elevation</div>
-                  <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    {formatElevation(route.elevGainM, unitPreference)}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      {formatElevation(route.elevGainM, unitPreference)}
+                    </span>
+                    {currentWorkout.elevGainM !== null &&
+                      currentWorkout.elevGainM !== undefined && (
+                        (() => {
+                          const elevDiff = route.elevGainM! - currentWorkout.elevGainM;
+                          const absDiff = Math.abs(elevDiff);
+                          const percentDiff = Math.abs(elevDiff / currentWorkout.elevGainM) * 100;
+                          // Only show difference if significant (>50m or >10%)
+                          const isSignificant = absDiff > 50 || percentDiff > 10;
+                          
+                          if (!isSignificant) {
+                            return null;
+                          }
+                          
+                          const sign = elevDiff > 0 ? '+' : '-';
+                          const moreLess = elevDiff > 0 ? 'more' : 'less';
+                          const diffFormatted = unitPreference === 'imperial' 
+                            ? `${Math.round(absDiff * 3.28084)}ft`
+                            : `${Math.round(absDiff)}m`;
+                          
+                          return (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              ({sign}{diffFormatted} {moreLess})
+                            </span>
+                          );
+                        })()
+                      )}
                   </div>
                 </div>
               )}
