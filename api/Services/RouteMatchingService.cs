@@ -100,31 +100,46 @@ public class RouteMatchingService
                        _db.WorkoutRoutes.Any(r => r.WorkoutId == w.Id))
             .ToListAsync();
 
+        // Load all route data in a single query to avoid N+1 query problem
+        var candidateWorkoutIds = candidateWorkouts.Select(w => w.Id).ToList();
+        Dictionary<Guid, RouteData> routeDataMap = new Dictionary<Guid, RouteData>();
+        
+        if (candidateWorkoutIds.Count > 0)
+        {
+            try
+            {
+                // Build IN clause with GUIDs - safe because IDs come from database, not user input
+                var guidStrings = candidateWorkoutIds.Select(id => $"'{id}'").ToList();
+                var inClause = string.Join(", ", guidStrings);
+                
+                var allRouteData = await _db.Database
+                    .SqlQueryRaw<RouteData>(
+                        $@"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
+                          FROM ""WorkoutRoutes"" 
+                          WHERE ""WorkoutId"" IN ({inClause})")
+                    .ToListAsync();
+                
+                // Create dictionary for O(1) lookup
+                foreach (var routeData in allRouteData)
+                {
+                    routeDataMap[routeData.WorkoutId] = routeData;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load routes for candidate workouts due to database error");
+                // Continue with empty map - individual workouts will be skipped
+            }
+        }
+
         var matches = new List<SimilarRouteMatch>();
 
         foreach (var candidate in candidateWorkouts)
         {
-            // Load route using raw SQL to get RouteGeoJson as text
-            // Casting to text avoids JSONB validation errors during EF Core materialization
-            // Invalid JSON will be handled gracefully in ExtractCoordinatesFromGeoJson
-            RouteData? routeData = null;
-            try
-            {
-                routeData = await _db.Database
-                    .SqlQueryRaw<RouteData>(
-                        @"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
-                          FROM ""WorkoutRoutes"" 
-                          WHERE ""WorkoutId"" = {0}",
-                        candidate.Id)
-                    .FirstOrDefaultAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load route for workout {WorkoutId} due to database error. Skipping workout.", candidate.Id);
-                continue;
-            }
-
-            if (routeData == null || string.IsNullOrEmpty(routeData.RouteGeoJson))
+            // Get route data from pre-loaded dictionary instead of querying database
+            if (!routeDataMap.TryGetValue(candidate.Id, out var routeData) || 
+                routeData == null || 
+                string.IsNullOrEmpty(routeData.RouteGeoJson))
             {
                 continue;
             }
