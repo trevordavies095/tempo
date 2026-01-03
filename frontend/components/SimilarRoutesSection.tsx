@@ -191,13 +191,13 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                   {route.timeDifferenceS !== undefined && route.timeDifferenceS !== null && (
                     <span
                       className={`text-xs ${
-                        route.timeDifferenceS < 0
+                        route.timeDifferenceS > 0
                           ? 'text-green-600 dark:text-green-400'
                           : 'text-red-600 dark:text-red-400'
                       }`}
                     >
                       {formatTimeDifference(route.timeDifferenceS)}
-                      {route.timeDifferenceS < 0 ? (
+                      {route.timeDifferenceS > 0 ? (
                         <svg
                           className="inline-block w-3 h-3 ml-0.5"
                           fill="none"
@@ -243,13 +243,13 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                   {route.paceDifferenceS !== undefined && route.paceDifferenceS !== null && (
                     <span
                       className={`text-xs ${
-                        route.paceDifferenceS < 0
+                        route.paceDifferenceS > 0
                           ? 'text-green-600 dark:text-green-400'
                           : 'text-red-600 dark:text-red-400'
                       }`}
                     >
                       {formatPaceDifference(route.paceDifferenceS, unitPreference)}
-                      {route.paceDifferenceS < 0 ? (
+                      {route.paceDifferenceS > 0 ? (
                         <svg
                           className="inline-block w-3 h-3 ml-0.5"
                           fill="none"
