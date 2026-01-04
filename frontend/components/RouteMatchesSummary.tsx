@@ -200,9 +200,9 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
                     className={`text-xs ${
                       highlight.route.timeDifferenceS !== undefined &&
                       highlight.route.timeDifferenceS !== null
-                        ? highlight.route.timeDifferenceS > 0
+                        ? highlight.route.timeDifferenceS < 0
                           ? 'text-green-600 dark:text-green-400'
-                          : highlight.route.timeDifferenceS < 0
+                          : highlight.route.timeDifferenceS > 0
                           ? 'text-red-600 dark:text-red-400'
                           : 'text-gray-500 dark:text-gray-400'
                         : 'text-gray-500 dark:text-gray-400'

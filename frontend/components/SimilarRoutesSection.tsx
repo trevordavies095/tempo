@@ -194,15 +194,15 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                   {route.timeDifferenceS !== undefined && route.timeDifferenceS !== null && (
                     <span
                       className={`text-xs ${
-                        route.timeDifferenceS > 0
+                        route.timeDifferenceS < 0
                           ? 'text-green-600 dark:text-green-400'
-                          : route.timeDifferenceS < 0
+                          : route.timeDifferenceS > 0
                           ? 'text-red-600 dark:text-red-400'
                           : 'text-gray-500 dark:text-gray-400'
                       }`}
                     >
                       {formatTimeDifference(route.timeDifferenceS)}
-                      {route.timeDifferenceS > 0 ? (
+                      {route.timeDifferenceS < 0 ? (
                         <svg
                           className="inline-block w-3 h-3 ml-0.5"
                           fill="none"
@@ -217,7 +217,7 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                             d="M5 10l7-7m0 0l7 7m-7-7v18"
                           />
                         </svg>
-                      ) : route.timeDifferenceS < 0 ? (
+                      ) : route.timeDifferenceS > 0 ? (
                         <svg
                           className="inline-block w-3 h-3 ml-0.5"
                           fill="none"
@@ -248,15 +248,15 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                   {route.paceDifferenceS !== undefined && route.paceDifferenceS !== null && (
                     <span
                       className={`text-xs ${
-                        route.paceDifferenceS > 0
+                        route.paceDifferenceS < 0
                           ? 'text-green-600 dark:text-green-400'
-                          : route.paceDifferenceS < 0
+                          : route.paceDifferenceS > 0
                           ? 'text-red-600 dark:text-red-400'
                           : 'text-gray-500 dark:text-gray-400'
                       }`}
                     >
                       {formatPaceDifference(route.paceDifferenceS, unitPreference)}
-                      {route.paceDifferenceS > 0 ? (
+                      {route.paceDifferenceS < 0 ? (
                         <svg
                           className="inline-block w-3 h-3 ml-0.5"
                           fill="none"
@@ -271,7 +271,7 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                             d="M5 10l7-7m0 0l7 7m-7-7v18"
                           />
                         </svg>
-                      ) : route.paceDifferenceS < 0 ? (
+                      ) : route.paceDifferenceS > 0 ? (
                         <svg
                           className="inline-block w-3 h-3 ml-0.5"
                           fill="none"
@@ -317,15 +317,15 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                           return (
                             <span
                               className={`text-xs ${
-                                effortDiff > 0
+                                effortDiff < 0
                                   ? 'text-green-600 dark:text-green-400'
-                                  : effortDiff < 0
+                                  : effortDiff > 0
                                   ? 'text-red-600 dark:text-red-400'
                                   : 'text-gray-500 dark:text-gray-400'
                               }`}
                             >
                               ({sign}{absDiff})
-                              {effortDiff > 0 ? (
+                              {effortDiff < 0 ? (
                                 <svg
                                   className="inline-block w-3 h-3 ml-0.5"
                                   fill="none"
@@ -340,7 +340,7 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                                     d="M5 10l7-7m0 0l7 7m-7-7v18"
                                   />
                                 </svg>
-                              ) : effortDiff < 0 ? (
+                              ) : effortDiff > 0 ? (
                                 <svg
                                   className="inline-block w-3 h-3 ml-0.5"
                                   fill="none"

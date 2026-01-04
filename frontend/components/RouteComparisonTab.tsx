@@ -234,9 +234,9 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
           </p>
           {data.timeDifferenceS !== undefined && data.timeDifferenceS !== null && (
             <p className={`text-xs ${
-              data.timeDifferenceS > 0
+              data.timeDifferenceS < 0
                 ? 'text-green-600 dark:text-green-400'
-                : data.timeDifferenceS < 0
+                : data.timeDifferenceS > 0
                 ? 'text-red-600 dark:text-red-400'
                 : 'text-gray-500 dark:text-gray-400'
             }`}>
@@ -393,7 +393,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                 <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
                   {formatDate(quickStats.bestTime.startedAt)}
                 </div>
-                <div className="text-xs text-red-600 dark:text-red-400">
+                <div className="text-xs text-green-600 dark:text-green-400">
                   {formatTimeDifference(quickStats.bestTime.timeDifferenceS)}
                 </div>
               </div>
@@ -477,9 +477,9 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                     {route.timeDifferenceS !== undefined && route.timeDifferenceS !== null && (
                       <span
                         className={`text-xs ${
-                          route.timeDifferenceS > 0
+                          route.timeDifferenceS < 0
                             ? 'text-green-600 dark:text-green-400'
-                            : route.timeDifferenceS < 0
+                            : route.timeDifferenceS > 0
                             ? 'text-red-600 dark:text-red-400'
                             : 'text-gray-500 dark:text-gray-400'
                         }`}
@@ -500,9 +500,9 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                     {route.paceDifferenceS !== undefined && route.paceDifferenceS !== null && (
                       <span
                         className={`text-xs ${
-                          route.paceDifferenceS > 0
+                          route.paceDifferenceS < 0
                             ? 'text-green-600 dark:text-green-400'
-                            : route.paceDifferenceS < 0
+                            : route.paceDifferenceS > 0
                             ? 'text-red-600 dark:text-red-400'
                             : 'text-gray-500 dark:text-gray-400'
                         }`}
