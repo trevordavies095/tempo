@@ -142,8 +142,8 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
   const matchText = matchCount === 1 ? 'run' : 'runs';
 
   return (
-    <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
-      <h3 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
+    <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
         Previous Efforts
       </h3>
       <div className="space-y-3">
@@ -154,15 +154,15 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
 
         {/* Highlights */}
         {highlights.length > 0 && (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {highlights.map((highlight) => (
-              <div key={`${highlight.type}-${highlight.route.workoutId}`} className="space-y-0.5">
-                <div className="text-xs font-medium text-gray-900 dark:text-gray-100">
+              <div key={`${highlight.type}-${highlight.route.workoutId}`} className="space-y-0.5 min-w-0">
+                <div className="text-xs font-medium text-gray-900 dark:text-gray-100 break-words">
                   {highlight.label}: {formatDate(highlight.route.startedAt)}
                 </div>
                 {highlight.value && (
                   <div
-                    className={`text-xs ${
+                    className={`text-xs break-words ${
                       highlight.route.timeDifferenceS !== undefined &&
                       highlight.route.timeDifferenceS !== null
                         ? highlight.route.timeDifferenceS < 0
