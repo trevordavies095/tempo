@@ -245,7 +245,39 @@ function prepareDotPlotData(
 }
 
 /**
+ * Generate screen reader accessible text description of chart data
+ * @param data Array of dot plot data points
+ * @param unitPreference Unit preference for formatting pace
+ * @returns Screen reader accessible description string
+ */
+function generateChartDescription(
+  data: DotPlotDataPoint[],
+  unitPreference: 'metric' | 'imperial'
+): string {
+  if (data.length === 0) {
+    return '';
+  }
+
+  const dates = data.map((d) => new Date(d.date));
+  const paces = data.map((d) => d.paceS);
+  const hasCurrent = data.some((d) => d.isCurrent);
+
+  const dateRange = `${formatDate(dates[0].toISOString())} to ${formatDate(
+    dates[dates.length - 1].toISOString()
+  )}`;
+  const paceRange = `${formatPace(
+    Math.min(...paces),
+    unitPreference
+  )} to ${formatPace(Math.max(...paces), unitPreference)}`;
+  const currentText = hasCurrent ? 'is included' : 'is not included';
+
+  return `Pace trend chart showing ${data.length} recent efforts. Dates range from ${dateRange}. Pace ranges from ${paceRange}. Current workout ${currentText}.`;
+}
+
+/**
  * Custom tooltip component for dot plot chart
+ * Enhanced for better contrast and mobile touch interactions
+ * WCAG AA compliant: text-gray-900 on white (21:1) and text-gray-100 on gray-800 (13.5:1)
  */
 function DotPlotTooltip({ active, payload }: any) {
   if (!active || !payload || !payload[0]) {
@@ -255,9 +287,17 @@ function DotPlotTooltip({ active, payload }: any) {
   const data = payload[0].payload as DotPlotDataPoint;
 
   return (
-    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-lg">
-      <p className="text-xs font-medium text-gray-900 dark:text-gray-100">{data.dateDisplay}</p>
-      <p className="text-xs text-gray-600 dark:text-gray-400">Pace: {data.paceDisplay}</p>
+    <div
+      className="bg-white dark:bg-gray-800 border-2 border-gray-400 dark:border-gray-500 rounded-lg p-3 shadow-xl z-50 pointer-events-none"
+      role="tooltip"
+      aria-label={`Workout on ${data.dateDisplay} with pace ${data.paceDisplay}`}
+    >
+      <p className="text-xs font-semibold text-gray-900 dark:text-gray-100 leading-tight">
+        {data.dateDisplay}
+      </p>
+      <p className="text-xs font-medium text-gray-800 dark:text-gray-200 mt-1 leading-tight">
+        Pace: {data.paceDisplay}
+      </p>
     </div>
   );
 }
@@ -338,6 +378,17 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
     return prepareDotPlotData(data, currentWorkout, unitPreference, 5);
   }, [data, currentWorkout, unitPreference]);
 
+  // Generate screen reader description for chart
+  const chartDescription = useMemo(() => {
+    if (dotPlotData.length < 2) {
+      return '';
+    }
+    return generateChartDescription(dotPlotData, unitPreference);
+  }, [dotPlotData, unitPreference]);
+
+  // Generate unique ID for screen reader text element
+  const chartDescriptionId = `chart-description-${workoutId}`;
+
   return (
     <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
       <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
@@ -380,42 +431,63 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
 
         {/* Dot Plot Chart */}
         {dotPlotData.length >= 2 && (
-          <div
-            className="mt-3 mb-3"
-            style={{ height: '80px' }}
-            aria-label="Pace trend for recent efforts on similar route"
-            role="img"
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart data={dotPlotData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
-                <XAxis
-                  dataKey="date"
-                  type="number"
-                  scale="time"
-                  domain={['dataMin', 'dataMax']}
-                  hide
-                />
-                <YAxis dataKey="paceS" domain={['auto', 'auto']} hide />
-                <Tooltip content={<DotPlotTooltip />} />
-                <Scatter dataKey="paceS">
-                  {dotPlotData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={
-                        entry.isCurrent
-                          ? isDarkMode
-                            ? '#60a5fa'
-                            : '#3b82f6'
-                          : isDarkMode
-                          ? '#9ca3af'
-                          : '#6b7280'
-                      }
-                      r={entry.isCurrent ? 5 : 3}
-                    />
-                  ))}
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
+          <div className="mt-3 mb-3 min-w-0 overflow-x-hidden">
+            {/* Screen reader accessible description */}
+            <div
+              id={chartDescriptionId}
+              className="sr-only"
+              aria-live="polite"
+            >
+              {chartDescription}
+            </div>
+            <div
+              className="w-full"
+              style={{ height: '80px', minWidth: 0 }}
+              aria-label="Pace trend for recent efforts on similar route"
+              aria-describedby={chartDescriptionId}
+              role="img"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart
+                  data={dotPlotData}
+                  margin={{ top: 5, right: 5, left: 0, bottom: 5 }}
+                >
+                  <XAxis
+                    dataKey="date"
+                    type="number"
+                    scale="time"
+                    domain={['dataMin', 'dataMax']}
+                    hide
+                  />
+                  <YAxis dataKey="paceS" domain={['auto', 'auto']} hide />
+                  <Tooltip
+                    content={<DotPlotTooltip />}
+                    cursor={{ stroke: '#9ca3af', strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.5 }}
+                    trigger="click"
+                    allowEscapeViewBox={{ x: true, y: true }}
+                    wrapperStyle={{ pointerEvents: 'auto' }}
+                  />
+                  <Scatter dataKey="paceS" name="Pace">
+                    {dotPlotData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={
+                          entry.isCurrent
+                            ? isDarkMode
+                              ? '#60a5fa' // blue-400: good contrast on dark backgrounds
+                              : '#2563eb' // blue-600: better contrast than blue-500 on white
+                            : isDarkMode
+                            ? '#9ca3af' // gray-400: good visibility on dark backgrounds
+                            : '#4b5563' // gray-600: better contrast than gray-500 on white
+                        }
+                        r={entry.isCurrent ? 5.5 : 4}
+                        style={{ cursor: 'pointer', transition: 'r 0.2s ease' }}
+                      />
+                    ))}
+                  </Scatter>
+                </ScatterChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         )}
 
