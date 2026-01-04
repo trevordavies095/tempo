@@ -388,7 +388,6 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                             return null;
                           }
                           
-                          const sign = elevDiff > 0 ? '+' : '-';
                           const moreLess = elevDiff > 0 ? 'more' : 'less';
                           const diffFormatted = unitPreference === 'imperial' 
                             ? `${Math.round(absDiff * 3.28084)}ft`
@@ -396,7 +395,7 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                           
                           return (
                             <span className="text-xs text-gray-500 dark:text-gray-400">
-                              ({sign}{diffFormatted} {moreLess})
+                              ({diffFormatted} {moreLess})
                             </span>
                           );
                         })()
