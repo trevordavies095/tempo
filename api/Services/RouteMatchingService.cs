@@ -92,11 +92,13 @@ public class RouteMatchingService
 
         // Calculate time range for filtering
         var minDate = currentWorkout.StartedAt.AddYears(-maxYears);
+        var maxDate = currentWorkout.StartedAt; // Only include workouts before current workout
 
         // Get candidate workouts without routes first (to avoid JSON parsing errors during Include)
         var candidateWorkouts = await _db.Workouts
             .Where(w => w.Id != workoutId &&
                        w.StartedAt >= minDate &&
+                       w.StartedAt < maxDate &&
                        _db.WorkoutRoutes.Any(r => r.WorkoutId == w.Id))
             .ToListAsync();
 

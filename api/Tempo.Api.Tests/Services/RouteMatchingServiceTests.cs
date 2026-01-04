@@ -238,6 +238,52 @@ public class RouteMatchingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task FindSimilarRoutesAsync_ExcludesWorkoutsAfterCurrentWorkout()
+    {
+        // Arrange
+        var baseDate = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc);
+        
+        var currentWorkout = await CreateWorkoutWithRouteAsync(
+            _db,
+            baseDate,
+            5000.0,
+            1800,
+            CreateRouteGeoJson(new[] {
+                (-122.4194, 37.7749),
+                (-122.4094, 37.7849),
+            }));
+
+        // Create workout before current workout (should be included)
+        var previousWorkout = await CreateWorkoutWithRouteAsync(
+            _db,
+            baseDate.AddDays(-10),
+            5000.0,
+            1750,
+            CreateRouteGeoJson(new[] {
+                (-122.4194, 37.7749),
+                (-122.4094, 37.7849),
+            }));
+
+        // Create workout after current workout (should be excluded)
+        var futureWorkout = await CreateWorkoutWithRouteAsync(
+            _db,
+            baseDate.AddDays(10),
+            5000.0,
+            1750,
+            CreateRouteGeoJson(new[] {
+                (-122.4194, 37.7749),
+                (-122.4094, 37.7849),
+            }));
+
+        // Act
+        var result = await _service.FindSimilarRoutesAsync(currentWorkout.Id, maxYears: 2);
+
+        // Assert
+        result.Should().Contain(m => m.WorkoutId == previousWorkout.Id);
+        result.Should().NotContain(m => m.WorkoutId == futureWorkout.Id);
+    }
+
+    [Fact]
     public async Task FindSimilarRoutesAsync_HandlesRoutesWithFewPoints()
     {
         // Arrange
