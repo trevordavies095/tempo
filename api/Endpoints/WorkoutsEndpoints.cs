@@ -21,6 +21,21 @@ public static class WorkoutsEndpoints
         public object? Response { get; set; }
     }
 
+    // Response class for similar routes
+    private class SimilarRouteResponse
+    {
+        public Guid WorkoutId { get; set; }
+        public DateTime StartedAt { get; set; }
+        public int DurationS { get; set; }
+        public double DistanceM { get; set; }
+        public int AvgPaceS { get; set; }
+        public double? SimilarityScore { get; set; }
+        public int? TimeDifferenceS { get; set; } // Negative = faster, Positive = slower
+        public int? PaceDifferenceS { get; set; } // Negative = faster pace
+        public int? RelativeEffort { get; set; }
+        public double? ElevGainM { get; set; }
+    }
+
     /// <summary>
     /// Import workout file(s)
     /// </summary>
@@ -1296,6 +1311,91 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
+    /// Get similar routes for a workout
+    /// </summary>
+    /// <param name="id">Workout ID</param>
+    /// <param name="db">Database context</param>
+    /// <param name="routeMatchingService">Route matching service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <param name="maxResults">Maximum number of results to return (default: 10)</param>
+    /// <returns>List of similar routes with comparison metrics</returns>
+    /// <remarks>
+    /// Returns previous workouts that were completed on similar routes, allowing users to compare
+    /// their current performance with past efforts. Includes time and pace differences compared to
+    /// the current workout. Requires the workout to have route data.
+    /// </remarks>
+    private static async Task<IResult> GetSimilarRoutes(
+        Guid id,
+        TempoDbContext db,
+        RouteMatchingService routeMatchingService,
+        ILogger<Program> logger,
+        int maxResults = 10)
+    {
+        try
+        {
+            // Verify workout exists and load route
+            var currentWorkout = await db.Workouts
+                .Include(w => w.Route)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(w => w.Id == id);
+
+            if (currentWorkout == null)
+            {
+                return Results.NotFound(new { error = "Workout not found" });
+            }
+
+            // Verify workout has route data
+            if (currentWorkout.Route == null || string.IsNullOrEmpty(currentWorkout.Route.RouteGeoJson))
+            {
+                return Results.BadRequest(new { error = "Workout has no route data" });
+            }
+
+            // Find similar routes
+            var similarRoutes = await routeMatchingService.FindSimilarRoutesAsync(id, maxResults);
+
+            // Get current workout details for comparison
+            var currentDurationS = currentWorkout.DurationS;
+            var currentAvgPaceS = currentWorkout.AvgPaceS;
+            var currentRelativeEffort = currentWorkout.RelativeEffort;
+            var currentElevGainM = currentWorkout.ElevGainM;
+
+            // Load full workout details for matches to access RelativeEffort and ElevGainM
+            var matchWorkoutIds = similarRoutes.Select(m => m.WorkoutId).ToList();
+            var matchWorkouts = await db.Workouts
+                .AsNoTracking()
+                .Where(w => matchWorkoutIds.Contains(w.Id))
+                .ToDictionaryAsync(w => w.Id);
+
+            // Map to response model with calculated differences
+            var response = similarRoutes.Select(match =>
+            {
+                matchWorkouts.TryGetValue(match.WorkoutId, out var matchWorkout);
+
+                return new SimilarRouteResponse
+                {
+                    WorkoutId = match.WorkoutId,
+                    StartedAt = match.StartedAt,
+                    DurationS = match.DurationS,
+                    DistanceM = match.DistanceM,
+                    AvgPaceS = match.AvgPaceS,
+                    SimilarityScore = match.SimilarityScore,
+                    TimeDifferenceS = match.DurationS - currentDurationS, // Negative = faster, Positive = slower
+                    PaceDifferenceS = match.AvgPaceS - currentAvgPaceS, // Negative = faster pace
+                    RelativeEffort = matchWorkout?.RelativeEffort,
+                    ElevGainM = matchWorkout?.ElevGainM
+                };
+            }).ToList();
+
+            return Results.Ok(response);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error fetching similar routes for workout {WorkoutId}", id);
+            return Results.Problem("An error occurred while fetching similar routes");
+        }
+    }
+
+    /// <summary>
     /// Bulk import Strava export
     /// </summary>
     /// <param name="request">HTTP request containing multipart/form-data with ZIP file</param>
@@ -2254,6 +2354,14 @@ public static class WorkoutsEndpoints
         .Produces(404)
         .WithSummary("Crop Workout")
         .WithDescription("Crops/trims a workout by removing time from the beginning and/or end, updating all derived data");
+
+        group.MapGet("/{id:guid}/similar-routes", GetSimilarRoutes)
+        .WithName("GetSimilarRoutes")
+        .Produces(200)
+        .Produces(400)
+        .Produces(404)
+        .WithSummary("Get similar routes")
+        .WithDescription("Returns previous workouts that were completed on similar routes, allowing users to compare their current performance with past efforts. Includes time and pace differences compared to the current workout. Requires the workout to have route data.");
 
         group.MapGet("/{id:guid}", GetWorkout)
         .WithName("GetWorkout")

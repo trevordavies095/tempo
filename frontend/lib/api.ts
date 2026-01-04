@@ -1236,3 +1236,48 @@ export async function setDefaultShoe(shoeId: string | null): Promise<DefaultShoe
   return response.json();
 }
 
+// Similar Routes interfaces and functions
+export interface SimilarRoute {
+  workoutId: string;
+  startedAt: string;
+  durationS: number;
+  distanceM: number;
+  avgPaceS: number;
+  similarityScore?: number;
+  timeDifferenceS?: number; // Negative = faster, Positive = slower
+  paceDifferenceS?: number; // Negative = faster pace
+  relativeEffort?: number | null;
+  elevGainM?: number | null;
+}
+
+export async function getSimilarRoutes(workoutId: string, maxResults?: number): Promise<SimilarRoute[]> {
+  const searchParams = new URLSearchParams();
+  if (maxResults !== undefined) {
+    searchParams.set('maxResults', maxResults.toString());
+  }
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/workouts/${workoutId}/similar-routes${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (response.status === 404) {
+    throw new Error('Workout not found');
+  }
+
+  if (response.status === 400) {
+    const error = await response.json().catch(() => ({ error: 'Workout has no route data' }));
+    throw new Error(error.error || 'Workout has no route data');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch similar routes: ${response.status}`);
+  }
+
+  return response.json();
+}
+

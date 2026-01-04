@@ -17,6 +17,7 @@ import { ShoeSelector } from '@/components/ShoeSelector';
 import { MediaModal } from '@/components/MediaModal';
 import { MediaUpload } from '@/components/MediaUpload';
 import { AuthGuard } from '@/components/AuthGuard';
+import { SimilarRoutesSection } from '@/components/SimilarRoutesSection';
 import {
   getWeatherSymbol,
   formatTemperature,
@@ -397,6 +398,13 @@ function WorkoutDetailPageContent() {
                   )}
                 </dd>
               </div>
+
+              {/* Similar Routes Section */}
+              {data.route && (
+                <div className="mt-2.5">
+                  <SimilarRoutesSection workoutId={id} currentWorkout={data} />
+                </div>
+              )}
 
               {/* Device */}
               {data.device && (
