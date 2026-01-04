@@ -275,11 +275,21 @@ function generateChartDescription(
 }
 
 /**
+ * Tooltip props interface for Recharts tooltip components
+ */
+interface DotPlotTooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    payload: DotPlotDataPoint;
+  }>;
+}
+
+/**
  * Custom tooltip component for dot plot chart
  * Enhanced for better contrast and mobile touch interactions
  * WCAG AA compliant: text-gray-900 on white (21:1) and text-gray-100 on gray-800 (13.5:1)
  */
-function DotPlotTooltip({ active, payload }: any) {
+function DotPlotTooltip({ active, payload }: DotPlotTooltipProps) {
   if (!active || !payload || !payload[0]) {
     return null;
   }
@@ -366,7 +376,11 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
     return null;
   }
 
-  const highlights = calculateHighlights(data);
+  // Memoize highlights calculation to avoid unnecessary recalculations
+  const highlights = useMemo(() => {
+    return calculateHighlights(data);
+  }, [data]);
+
   const matchCount = data.length;
   const matchText = matchCount === 1 ? 'run' : 'runs';
 
