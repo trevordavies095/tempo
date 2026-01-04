@@ -399,7 +399,13 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                 <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
                   {formatDate(quickStats.bestTime.startedAt)}
                 </div>
-                <div className="text-xs text-green-600 dark:text-green-400">
+                <div className={`text-xs ${
+                  quickStats.bestTime.timeDifferenceS < 0
+                    ? 'text-green-600 dark:text-green-400'
+                    : quickStats.bestTime.timeDifferenceS > 0
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-gray-500 dark:text-gray-400'
+                }`}>
                   {formatTimeDifference(quickStats.bestTime.timeDifferenceS)}
                 </div>
               </div>
