@@ -12,6 +12,7 @@ interface ActivityDetailTabsProps {
   overviewContent: ReactNode;
   comparisonContent: ReactNode;
   showComparisonTab?: boolean;
+  isLoadingSimilarRoutes?: boolean;
 }
 
 /**
@@ -27,6 +28,7 @@ export function ActivityDetailTabs({
   overviewContent,
   comparisonContent,
   showComparisonTab = true,
+  isLoadingSimilarRoutes = false,
 }: ActivityDetailTabsProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -60,7 +62,9 @@ export function ActivityDetailTabs({
     }
 
     // If user is on comparison tab but comparison tab should be hidden, redirect to overview
-    if (tabFromUrl === 'comparison' && !showComparisonTab) {
+    // Only redirect if the query has completed (not loading) and there are no matches
+    // This prevents race conditions where the query is still loading when the user deep-links
+    if (tabFromUrl === 'comparison' && !showComparisonTab && !isLoadingSimilarRoutes) {
       router.replace(pathname);
       setActiveTab('overview');
       return;
@@ -70,7 +74,7 @@ export function ActivityDetailTabs({
     setActiveTab((currentTab) => {
       return tabFromUrl !== currentTab ? tabFromUrl : currentTab;
     });
-  }, [tabFromUrl, searchParams, router, pathname, showComparisonTab]);
+  }, [tabFromUrl, searchParams, router, pathname, showComparisonTab, isLoadingSimilarRoutes]);
 
   // Handle tab change
   const handleTabChange = (tab: TabId) => {

@@ -67,7 +67,7 @@ function WorkoutDetailPageContent() {
   });
 
   // Check if there are matched runs to conditionally show comparison tab
-  const { data: similarRoutes } = useQuery({
+  const { data: similarRoutes, isLoading: isLoadingSimilarRoutes } = useQuery({
     queryKey: ['similar-routes', id],
     queryFn: () => getSimilarRoutes(id),
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -171,6 +171,7 @@ function WorkoutDetailPageContent() {
           workoutId={id} 
           currentWorkout={data}
           showComparisonTab={hasMatchedRuns}
+          isLoadingSimilarRoutes={isLoadingSimilarRoutes}
           overviewContent={
             <div className="w-full space-y-3">
               {/* Main Content Area - Two Columns */}
