@@ -1,9 +1,12 @@
 'use client';
 
+import { useMemo, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, usePathname } from 'next/navigation';
+import { ScatterChart, Scatter, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
-import { formatDate } from '@/lib/format';
+import { formatDate, formatPace } from '@/lib/format';
+import { useSettings } from '@/lib/settings';
 
 interface RouteMatchesSummaryProps {
   workoutId: string;
@@ -32,6 +35,15 @@ interface Highlight {
   route: SimilarRoute;
   label: string;
   value: string;
+}
+
+interface DotPlotDataPoint {
+  date: number; // Timestamp for X-axis
+  paceS: number; // Pace in seconds for Y-axis
+  workoutId: string;
+  isCurrent: boolean;
+  dateDisplay: string; // For tooltip
+  paceDisplay: string; // For tooltip
 }
 
 /**
@@ -108,9 +120,116 @@ function calculateHighlights(routes: SimilarRoute[]): Highlight[] {
   return highlights.slice(0, 3);
 }
 
+/**
+ * Prepare data for dot plot chart
+ * @param routes Array of similar routes
+ * @param currentWorkout Current workout details
+ * @param unitPreference Unit preference for formatting pace
+ * @param maxPoints Maximum number of points to display (default: 5)
+ * @returns Array of DotPlotDataPoint or empty array if insufficient data
+ */
+function prepareDotPlotData(
+  routes: SimilarRoute[],
+  currentWorkout: WorkoutDetail,
+  unitPreference: 'metric' | 'imperial',
+  maxPoints: number = 5
+): DotPlotDataPoint[] {
+  // Filter valid routes (must have pace and date)
+  const validRoutes = routes.filter(
+    (route) =>
+      route.avgPaceS !== undefined &&
+      route.avgPaceS !== null &&
+      route.startedAt &&
+      !isNaN(route.avgPaceS)
+  );
+
+  // Need at least 2 valid points
+  if (validRoutes.length < 2) {
+    return [];
+  }
+
+  // Sort by date (most recent first) and take last maxPoints
+  const sortedRoutes = [...validRoutes].sort(
+    (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+  );
+
+  const recentRoutes = sortedRoutes.slice(0, maxPoints);
+
+  // Check if current workout should be included
+  const currentDate = new Date(currentWorkout.startedAt).getTime();
+  const recentDates = recentRoutes.map((r) => new Date(r.startedAt).getTime());
+  const includeCurrent = recentDates.includes(currentDate);
+
+  // Prepare data points
+  const dataPoints: DotPlotDataPoint[] = recentRoutes.map((route) => ({
+    date: new Date(route.startedAt).getTime(),
+    paceS: route.avgPaceS,
+    workoutId: route.workoutId,
+    isCurrent: includeCurrent && new Date(route.startedAt).getTime() === currentDate,
+    dateDisplay: formatDate(route.startedAt),
+    paceDisplay: formatPace(route.avgPaceS, unitPreference),
+  }));
+
+  // Sort by date for chart (oldest to newest)
+  return dataPoints.sort((a, b) => a.date - b.date);
+}
+
+/**
+ * Custom tooltip component for dot plot chart
+ */
+function DotPlotTooltip({ active, payload }: any) {
+  if (!active || !payload || !payload[0]) {
+    return null;
+  }
+
+  const data = payload[0].payload as DotPlotDataPoint;
+
+  return (
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-lg">
+      <p className="text-xs font-medium text-gray-900 dark:text-gray-100">{data.dateDisplay}</p>
+      <p className="text-xs text-gray-600 dark:text-gray-400">Pace: {data.paceDisplay}</p>
+    </div>
+  );
+}
+
 export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesSummaryProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const { unitPreference } = useSettings();
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // Detect dark mode
+  useEffect(() => {
+    const checkDarkMode = () => {
+      if (typeof window !== 'undefined') {
+        const isDark =
+          document.documentElement.classList.contains('dark') ||
+          window.matchMedia('(prefers-color-scheme: dark)').matches;
+        setIsDarkMode(isDark);
+      }
+    };
+
+    checkDarkMode();
+
+    // Watch for class changes
+    const observer = new MutationObserver(checkDarkMode);
+    if (typeof window !== 'undefined') {
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+
+      // Also listen to media query changes
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleChange = () => checkDarkMode();
+      mediaQuery.addEventListener('change', handleChange);
+
+      return () => {
+        observer.disconnect();
+        mediaQuery.removeEventListener('change', handleChange);
+      };
+    }
+  }, []);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['similar-routes', workoutId],
@@ -140,6 +259,14 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
   const highlights = calculateHighlights(data);
   const matchCount = data.length;
   const matchText = matchCount === 1 ? 'run' : 'runs';
+
+  // Prepare dot plot data
+  const dotPlotData = useMemo(() => {
+    if (!data || data.length < 2) {
+      return [];
+    }
+    return prepareDotPlotData(data, currentWorkout, unitPreference, 5);
+  }, [data, currentWorkout, unitPreference]);
 
   return (
     <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
@@ -178,6 +305,47 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Dot Plot Chart */}
+        {dotPlotData.length >= 2 && (
+          <div
+            className="mt-3 mb-3"
+            style={{ height: '80px' }}
+            aria-label="Pace trend for recent efforts on similar route"
+            role="img"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart data={dotPlotData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                <XAxis
+                  dataKey="date"
+                  type="number"
+                  scale="time"
+                  domain={['dataMin', 'dataMax']}
+                  hide
+                />
+                <YAxis dataKey="paceS" domain={['auto', 'auto']} hide />
+                <Tooltip content={<DotPlotTooltip />} />
+                <Scatter dataKey="paceS">
+                  {dotPlotData.map((entry, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={
+                        entry.isCurrent
+                          ? isDarkMode
+                            ? '#60a5fa'
+                            : '#3b82f6'
+                          : isDarkMode
+                          ? '#9ca3af'
+                          : '#6b7280'
+                      }
+                      r={entry.isCurrent ? 5 : 3}
+                    />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
           </div>
         )}
 
