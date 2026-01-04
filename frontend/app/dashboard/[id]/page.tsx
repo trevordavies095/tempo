@@ -18,6 +18,7 @@ import { MediaModal } from '@/components/MediaModal';
 import { MediaUpload } from '@/components/MediaUpload';
 import { AuthGuard } from '@/components/AuthGuard';
 import { SimilarRoutesSection } from '@/components/SimilarRoutesSection';
+import { ActivityDetailTabs } from '@/components/ActivityDetailTabs';
 import {
   getWeatherSymbol,
   formatTemperature,
@@ -152,13 +153,17 @@ function WorkoutDetailPageContent() {
       <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
         <WorkoutDetailHeader workout={data} />
 
-        <div className="w-full space-y-3">
-          {/* Main Content Area - Two Columns */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* Left Column - Activity Details */}
-            <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
-              {/* Notes/Description */}
-              <div>
+        <ActivityDetailTabs 
+          workoutId={id} 
+          currentWorkout={data}
+          overviewContent={
+            <div className="w-full space-y-3">
+              {/* Main Content Area - Two Columns */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Left Column - Activity Details */}
+                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
+                  {/* Notes/Description */}
+                  <div>
                 <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Description</dt>
                 <dd>
                   {isEditingNotes ? (
@@ -234,10 +239,10 @@ function WorkoutDetailPageContent() {
                     </button>
                   )}
                 </dd>
-              </div>
+                  </div>
 
-              {/* Run Type */}
-              <div>
+                  {/* Run Type */}
+                  <div>
                 <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Run Type</dt>
                 <dd className="text-sm text-gray-900 dark:text-gray-100">
                   {isEditingRunType ? (
@@ -318,10 +323,10 @@ function WorkoutDetailPageContent() {
                     </span>
                   )}
                 </dd>
-              </div>
+                  </div>
 
-              {/* Shoe */}
-              <div>
+                  {/* Shoe */}
+                  <div>
                 <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Shoe</dt>
                 <dd className="text-sm text-gray-900 dark:text-gray-100">
                   {isEditingShoe ? (
@@ -397,61 +402,61 @@ function WorkoutDetailPageContent() {
                     </span>
                   )}
                 </dd>
-              </div>
+                  </div>
 
-              {/* Similar Routes Section */}
-              {data.route && (
-                <div className="mt-2.5">
-                  <SimilarRoutesSection workoutId={id} currentWorkout={data} />
+                  {/* Similar Routes Section */}
+                  {data.route && (
+                    <div className="mt-2.5">
+                      <SimilarRoutesSection workoutId={id} currentWorkout={data} />
+                    </div>
+                  )}
+
+                  {/* Device */}
+                  {data.device && (
+                    <div>
+                      <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Device</dt>
+                      <dd className="text-sm text-gray-900 dark:text-gray-100">
+                        {data.device}
+                      </dd>
+                    </div>
+                  )}
+
+                  {/* Source */}
+                  {data.source && (
+                    <div>
+                      <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Source</dt>
+                      <dd className="text-sm text-gray-900 dark:text-gray-100">
+                        {data.source}
+                      </dd>
+                    </div>
+                  )}
+
+                  {/* Media Upload and Gallery */}
+                  <div>
+                    <MediaUpload
+                      workoutId={id}
+                      onUploadSuccess={() => {
+                        queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
+                      }}
+                    />
+                    <div className="mt-2">
+                      <WorkoutMediaGallery
+                        workoutId={id}
+                        media={isMediaError ? [] : media}
+                        isLoading={isLoadingMedia}
+                        onMediaClick={handleMediaClick}
+                        onDeleteSuccess={() => {
+                          queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
-              )}
 
-              {/* Device */}
-              {data.device && (
-                <div>
-                  <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Device</dt>
-                  <dd className="text-sm text-gray-900 dark:text-gray-100">
-                    {data.device}
-                  </dd>
-                </div>
-              )}
-
-              {/* Source */}
-              {data.source && (
-                <div>
-                  <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Source</dt>
-                  <dd className="text-sm text-gray-900 dark:text-gray-100">
-                    {data.source}
-                  </dd>
-                </div>
-              )}
-
-              {/* Media Upload and Gallery */}
-              <div>
-                <MediaUpload
-                  workoutId={id}
-                  onUploadSuccess={() => {
-                    queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
-                  }}
-                />
-                <div className="mt-2">
-                  <WorkoutMediaGallery
-                    workoutId={id}
-                    media={isMediaError ? [] : media}
-                    isLoading={isLoadingMedia}
-                    onMediaClick={handleMediaClick}
-                    onDeleteSuccess={() => {
-                      queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column - Stats and Weather */}
-            <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
-              {/* Key Metrics */}
-              <div>
+                {/* Right Column - Stats and Weather */}
+                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
+                  {/* Key Metrics */}
+                  <div>
                 <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Key Metrics</h3>
                 <div className={`grid gap-3 ${data.relativeEffort !== null ? 'grid-cols-4' : 'grid-cols-3'}`}>
                   <div>
@@ -656,37 +661,48 @@ function WorkoutDetailPageContent() {
                   </div>
                 ) : null;
               })()}
-            </div>
-          </div>
-
-          {/* Lower Section - Splits and Map */}
-          {(data.splits && data.splits.length > 0) || data.route ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <WorkoutDetailSplits
-                splits={data.splits}
-                unitPreference={unitPreference}
-                hoveredSplitIdx={hoveredSplitIdx}
-                onSplitHover={setHoveredSplitIdx}
-              />
-
-              {/* Route Map */}
-              {data.route && (
-                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                    Route Map
-                  </h2>
-                  <WorkoutMap 
-                    key={data.id} 
-                    route={data.route} 
-                    workoutId={data.id}
-                    splits={data.splits}
-                    hoveredSplitIdx={hoveredSplitIdx}
-                  />
                 </div>
-              )}
+              </div>
+
+              {/* Lower Section - Splits and Map */}
+              {(data.splits && data.splits.length > 0) || data.route ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <WorkoutDetailSplits
+                    splits={data.splits}
+                    unitPreference={unitPreference}
+                    hoveredSplitIdx={hoveredSplitIdx}
+                    onSplitHover={setHoveredSplitIdx}
+                  />
+
+                  {/* Route Map */}
+                  {data.route && (
+                    <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                        Route Map
+                      </h2>
+                      <WorkoutMap 
+                        key={data.id} 
+                        route={data.route} 
+                        workoutId={data.id}
+                        splits={data.splits}
+                        hoveredSplitIdx={hoveredSplitIdx}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
+          }
+          comparisonContent={
+            <div className="w-full">
+              <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Route comparison view coming soon. This will show detailed analysis including a pace-over-time chart and full list of matched routes.
+                </p>
+              </div>
+            </div>
+          }
+        />
 
         {/* Media Modal */}
         {media && media.length > 0 && selectedMediaIndex !== null && (
