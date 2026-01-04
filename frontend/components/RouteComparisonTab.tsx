@@ -192,7 +192,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
       avgPace,
       trend,
     };
-  }, [data, currentWorkout.avgPaceS]);
+  }, [data, currentWorkout.avgPaceS, currentWorkout.startedAt]);
 
   // Sort routes for list display
   const sortedRoutes = useMemo(() => {
