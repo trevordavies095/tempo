@@ -47,6 +47,19 @@ interface DotPlotDataPoint {
 }
 
 /**
+ * Validates if a date string can be parsed to a valid date
+ * @param dateString Date string to validate (can be null or undefined)
+ * @returns true if date is valid, false otherwise
+ */
+function isValidDate(dateString: string | null | undefined): boolean {
+  if (!dateString) {
+    return false;
+  }
+  const date = new Date(dateString);
+  return !isNaN(date.getTime());
+}
+
+/**
  * Calculate highlights from matched routes
  * @param routes Array of similar routes
  * @returns Array of highlights (best time, most recent, fastest pace)
@@ -122,6 +135,16 @@ function calculateHighlights(routes: SimilarRoute[]): Highlight[] {
 
 /**
  * Prepare data for dot plot chart
+ * 
+ * This function handles all edge cases specified in Story 2:
+ * - 0 previous efforts: Returns empty array (handled by component-level check)
+ * - 1 previous effort: Returns empty array (needs at least 2 points)
+ * - 2+ previous efforts: Returns data points for chart
+ * - Missing pace data: Routes filtered out
+ * - Missing date data: Routes filtered out
+ * - Invalid dates: Routes filtered out
+ * - Current workout date missing: Current workout not marked (chart still displays)
+ * 
  * @param routes Array of similar routes
  * @param currentWorkout Current workout details
  * @param unitPreference Unit preference for formatting pace
@@ -134,44 +157,91 @@ function prepareDotPlotData(
   unitPreference: 'metric' | 'imperial',
   maxPoints: number = 5
 ): DotPlotDataPoint[] {
-  // Filter valid routes (must have pace and date)
-  const validRoutes = routes.filter(
-    (route) =>
-      route.avgPaceS !== undefined &&
-      route.avgPaceS !== null &&
-      route.startedAt &&
-      !isNaN(route.avgPaceS)
-  );
+  // Comprehensive validation: Filter routes with valid pace and date data
+  // This handles edge cases: missing pace, missing date, invalid dates, NaN values
+  const validRoutes = routes.filter((route) => {
+    // Must have valid pace data
+    // Check for undefined, null, NaN, and non-positive values
+    if (
+      route.avgPaceS === undefined ||
+      route.avgPaceS === null ||
+      isNaN(route.avgPaceS) ||
+      route.avgPaceS <= 0
+    ) {
+      return false;
+    }
 
-  // Need at least 2 valid points
+    // Must have valid date
+    // Check for null, undefined, and invalid date strings
+    if (!isValidDate(route.startedAt)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  // Edge case: Need at least 2 valid points to display a meaningful chart
+  // This handles: 0 previous efforts (empty array), 1 previous effort (returns empty)
   if (validRoutes.length < 2) {
     return [];
   }
 
   // Sort by date (most recent first) and take last maxPoints
+  // Edge case: More than 5 previous efforts - shows last 5 only
   const sortedRoutes = [...validRoutes].sort(
     (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
   );
 
   const recentRoutes = sortedRoutes.slice(0, maxPoints);
 
-  // Check if current workout should be included
-  const currentDate = new Date(currentWorkout.startedAt).getTime();
-  const recentDates = recentRoutes.map((r) => new Date(r.startedAt).getTime());
-  const includeCurrent = recentDates.includes(currentDate);
+  // Validate current workout date before using it
+  // Edge case: Current workout date missing or invalid - skip "isCurrent" check
+  const currentDateValid = isValidDate(currentWorkout.startedAt);
+  const currentDate = currentDateValid
+    ? new Date(currentWorkout.startedAt).getTime()
+    : null;
 
-  // Prepare data points
-  const dataPoints: DotPlotDataPoint[] = recentRoutes.map((route) => ({
-    date: new Date(route.startedAt).getTime(),
-    paceS: route.avgPaceS,
-    workoutId: route.workoutId,
-    isCurrent: includeCurrent && new Date(route.startedAt).getTime() === currentDate,
-    dateDisplay: formatDate(route.startedAt),
-    paceDisplay: formatPace(route.avgPaceS, unitPreference),
-  }));
+  // Check if current workout should be included (only if current date is valid)
+  // Edge case: If current workout date is invalid, no points will be marked as current
+  const recentDates = recentRoutes.map((r) => new Date(r.startedAt).getTime());
+  const includeCurrent =
+    currentDateValid && currentDate !== null
+      ? recentDates.includes(currentDate)
+      : false;
+
+  // Prepare data points with defensive date parsing
+  // All dates are already validated, but we ensure no NaN values in timestamps
+  const dataPoints: (DotPlotDataPoint | null)[] = recentRoutes.map((route) => {
+    const routeDate = new Date(route.startedAt).getTime();
+    // Defensive check: If date parsing somehow fails, skip this route
+    // (This should never happen since we validated above, but adds safety)
+    if (isNaN(routeDate)) {
+      return null;
+    }
+
+    return {
+      date: routeDate,
+      paceS: route.avgPaceS,
+      workoutId: route.workoutId,
+      isCurrent:
+        includeCurrent && currentDate !== null && routeDate === currentDate,
+      dateDisplay: formatDate(route.startedAt),
+      paceDisplay: formatPace(route.avgPaceS, unitPreference),
+    };
+  });
+
+  // Filter out any null entries (shouldn't happen, but defensive programming)
+  const validDataPoints = dataPoints.filter(
+    (point): point is DotPlotDataPoint => point !== null
+  );
+
+  // Edge case: If filtering removed too many points, return empty array
+  if (validDataPoints.length < 2) {
+    return [];
+  }
 
   // Sort by date for chart (oldest to newest)
-  return dataPoints.sort((a, b) => a.date - b.date);
+  return validDataPoints.sort((a, b) => a.date - b.date);
 }
 
 /**
