@@ -405,13 +405,6 @@ function WorkoutDetailPageContent() {
                 </dd>
                   </div>
 
-                  {/* Similar Routes Section */}
-                  {data.route && (
-                    <div className="mt-2.5">
-                      <RouteMatchesSummary workoutId={id} currentWorkout={data} />
-                    </div>
-                  )}
-
                   {/* Device */}
                   {data.device && (
                     <div>
@@ -664,6 +657,11 @@ function WorkoutDetailPageContent() {
               })()}
                 </div>
               </div>
+
+              {/* Previous Efforts Section */}
+              {data.route && (
+                <RouteMatchesSummary workoutId={id} currentWorkout={data} />
+              )}
 
               {/* Lower Section - Splits and Map */}
               {(data.splits && data.splits.length > 0) || data.route ? (

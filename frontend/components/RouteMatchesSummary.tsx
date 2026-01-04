@@ -126,50 +126,9 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
     router.push(`${pathname}?tab=comparison`);
   };
 
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
-        <h3 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
-          Previous Efforts
-        </h3>
-        <div className="flex items-center justify-center py-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (isError) {
-    return (
-      <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
-        <h3 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
-          Previous Efforts
-        </h3>
-        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <p className="text-sm text-red-800 dark:text-red-200">
-            Unable to load previous efforts. Please try again.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Empty state
-  if (!data || data.length === 0) {
-    return (
-      <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
-        <h3 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
-          Previous Efforts
-        </h3>
-        <div className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            No previous efforts found on this route.
-          </p>
-        </div>
-      </div>
-    );
+  // Don't render anything if loading, error, or no data
+  if (isLoading || isError || !data || data.length === 0) {
+    return null;
   }
 
   const highlights = calculateHighlights(data);
