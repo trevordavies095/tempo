@@ -158,7 +158,13 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
     const avgPace = data.reduce((sum, route) => sum + route.avgPaceS, 0) / data.length;
 
     // Improvement Trend: Compare current pace to average of last 5 runs
-    const sortedByDate = [...data].sort((a, b) => 
+    // Filter to only include past workouts (before current workout date) to ensure
+    // the trend compares current performance to past performance, not future workouts
+    const currentWorkoutDate = new Date(currentWorkout.startedAt).getTime();
+    const pastRoutes = data.filter(route => 
+      new Date(route.startedAt).getTime() < currentWorkoutDate
+    );
+    const sortedByDate = [...pastRoutes].sort((a, b) => 
       new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
     );
     const last5Runs = sortedByDate.slice(0, 5);
