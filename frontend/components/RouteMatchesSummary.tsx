@@ -127,6 +127,12 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
   };
 
   // Don't render anything if loading, error, or no data
+  // This ensures the section is completely hidden when:
+  // - Query is still loading (no loading state shown)
+  // - Query errors (no error state shown)
+  // - No matches found (data.length === 0)
+  // - No data returned (!data)
+  // The parent component also checks for route existence before rendering this component
   if (isLoading || isError || !data || data.length === 0) {
     return null;
   }
