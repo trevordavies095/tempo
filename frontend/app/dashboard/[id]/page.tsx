@@ -77,7 +77,7 @@ function WorkoutDetailPageContent() {
     enabled: !!id && !!data?.route,
   });
 
-  const hasMatchedRuns = similarRoutes && similarRoutes.length > 0;
+  const hasMatchedRuns = !!(similarRoutes && similarRoutes.length > 0);
 
   // Sync notesValue with data.notes when entering edit mode or data changes
   useEffect(() => {
