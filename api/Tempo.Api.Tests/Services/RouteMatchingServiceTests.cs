@@ -238,7 +238,7 @@ public class RouteMatchingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task FindSimilarRoutesAsync_ExcludesWorkoutsAfterCurrentWorkout()
+    public async Task FindSimilarRoutesAsync_IncludesWorkoutsInSymmetricTimeWindow()
     {
         // Arrange
         var baseDate = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc);
@@ -264,10 +264,21 @@ public class RouteMatchingServiceTests : IDisposable
                 (-122.4094, 37.7849),
             }));
 
-        // Create workout after current workout (should be excluded)
+        // Create workout after current workout (should now be included for symmetric matching)
         var futureWorkout = await CreateWorkoutWithRouteAsync(
             _db,
             baseDate.AddDays(10),
+            5000.0,
+            1750,
+            CreateRouteGeoJson(new[] {
+                (-122.4194, 37.7749),
+                (-122.4094, 37.7849),
+            }));
+
+        // Create workout outside maxYears window (should be excluded)
+        var tooOldWorkout = await CreateWorkoutWithRouteAsync(
+            _db,
+            baseDate.AddYears(-3), // Outside 2-year window
             5000.0,
             1750,
             CreateRouteGeoJson(new[] {
@@ -280,7 +291,8 @@ public class RouteMatchingServiceTests : IDisposable
 
         // Assert
         result.Should().Contain(m => m.WorkoutId == previousWorkout.Id);
-        result.Should().NotContain(m => m.WorkoutId == futureWorkout.Id);
+        result.Should().Contain(m => m.WorkoutId == futureWorkout.Id); // Now included for symmetric matching
+        result.Should().NotContain(m => m.WorkoutId == tooOldWorkout.Id); // Still excluded if outside window
     }
 
     [Fact]

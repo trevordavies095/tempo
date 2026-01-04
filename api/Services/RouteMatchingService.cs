@@ -50,17 +50,37 @@ public class RouteMatchingService
             return new List<SimilarRouteMatch>();
         }
 
-        // Load route using raw SQL to get RouteGeoJson as text, avoiding JSONB validation errors
+        // Load route - use EF Core for SQLite, raw SQL for PostgreSQL (to handle JSONB)
         RouteData? currentRouteData = null;
         try
         {
-            currentRouteData = await _db.Database
-                .SqlQueryRaw<RouteData>(
-                    @"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
-                      FROM ""WorkoutRoutes"" 
-                      WHERE ""WorkoutId"" = {0}",
-                    workoutId)
-                .FirstOrDefaultAsync();
+            var isPostgres = _db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+            
+            if (isPostgres)
+            {
+                // PostgreSQL: use raw SQL with ::text cast to avoid JSONB validation errors
+                currentRouteData = await _db.Database
+                    .SqlQueryRaw<RouteData>(
+                        @"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
+                          FROM ""WorkoutRoutes"" 
+                          WHERE ""WorkoutId"" = {0}",
+                        workoutId)
+                    .FirstOrDefaultAsync();
+            }
+            else
+            {
+                // SQLite: use EF Core query (no JSONB issues)
+                var route = await _db.WorkoutRoutes
+                    .Where(r => r.WorkoutId == workoutId)
+                    .Select(r => new RouteData
+                    {
+                        Id = r.Id,
+                        WorkoutId = r.WorkoutId,
+                        RouteGeoJson = r.RouteGeoJson ?? string.Empty
+                    })
+                    .FirstOrDefaultAsync();
+                currentRouteData = route;
+            }
         }
         catch (Exception ex)
         {
@@ -90,15 +110,15 @@ public class RouteMatchingService
             return new List<SimilarRouteMatch>();
         }
 
-        // Calculate time range for filtering
+        // Calculate time range for filtering (symmetric: include workouts before and after)
         var minDate = currentWorkout.StartedAt.AddYears(-maxYears);
-        var maxDate = currentWorkout.StartedAt; // Only include workouts before current workout
+        var maxDate = currentWorkout.StartedAt.AddYears(maxYears); // Include workouts after current workout too
 
         // Get candidate workouts without routes first (to avoid JSON parsing errors during Include)
         var candidateWorkouts = await _db.Workouts
             .Where(w => w.Id != workoutId &&
                        w.StartedAt >= minDate &&
-                       w.StartedAt < maxDate &&
+                       w.StartedAt <= maxDate &&
                        _db.WorkoutRoutes.Any(r => r.WorkoutId == w.Id))
             .ToListAsync();
 
@@ -110,21 +130,43 @@ public class RouteMatchingService
         {
             try
             {
-                // Build IN clause with GUIDs - safe because IDs come from database, not user input
-                var guidStrings = candidateWorkoutIds.Select(id => $"'{id}'").ToList();
-                var inClause = string.Join(", ", guidStrings);
+                var isPostgres = _db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
                 
-                var allRouteData = await _db.Database
-                    .SqlQueryRaw<RouteData>(
-                        $@"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
-                          FROM ""WorkoutRoutes"" 
-                          WHERE ""WorkoutId"" IN ({inClause})")
-                    .ToListAsync();
-                
-                // Create dictionary for O(1) lookup
-                foreach (var routeData in allRouteData)
+                if (isPostgres)
                 {
-                    routeDataMap[routeData.WorkoutId] = routeData;
+                    // PostgreSQL: use raw SQL with ::text cast
+                    var guidStrings = candidateWorkoutIds.Select(id => $"'{id}'").ToList();
+                    var inClause = string.Join(", ", guidStrings);
+                    
+                    var allRouteData = await _db.Database
+                        .SqlQueryRaw<RouteData>(
+                            $@"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
+                              FROM ""WorkoutRoutes"" 
+                              WHERE ""WorkoutId"" IN ({inClause})")
+                        .ToListAsync();
+                    
+                    foreach (var routeData in allRouteData)
+                    {
+                        routeDataMap[routeData.WorkoutId] = routeData;
+                    }
+                }
+                else
+                {
+                    // SQLite: use EF Core query
+                    var allRouteData = await _db.WorkoutRoutes
+                        .Where(r => candidateWorkoutIds.Contains(r.WorkoutId))
+                        .Select(r => new RouteData
+                        {
+                            Id = r.Id,
+                            WorkoutId = r.WorkoutId,
+                            RouteGeoJson = r.RouteGeoJson ?? string.Empty
+                        })
+                        .ToListAsync();
+                    
+                    foreach (var routeData in allRouteData)
+                    {
+                        routeDataMap[routeData.WorkoutId] = routeData;
+                    }
                 }
             }
             catch (Exception ex)
