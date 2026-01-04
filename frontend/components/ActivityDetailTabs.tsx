@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import type { WorkoutDetail } from '@/lib/api';
 
@@ -11,6 +11,13 @@ interface ActivityDetailTabsProps {
   currentWorkout: WorkoutDetail;
   overviewContent: ReactNode;
   comparisonContent: ReactNode;
+}
+
+/**
+ * Validates if a string is a valid TabId
+ */
+function isValidTabId(value: string | null): value is TabId {
+  return value === 'overview' || value === 'comparison';
 }
 
 export function ActivityDetailTabs({
@@ -27,30 +34,34 @@ export function ActivityDetailTabs({
     comparison: null,
   });
 
-  // Read initial tab from URL
-  const getTabFromUrl = (): TabId => {
+  // Extract and validate tab from URL using useMemo
+  const tabFromUrl = useMemo((): TabId => {
     const tabParam = searchParams.get('tab');
-    if (tabParam === 'comparison') {
-      return 'comparison';
+    if (isValidTabId(tabParam)) {
+      return tabParam;
     }
+    // Invalid or missing tab param defaults to 'overview'
     return 'overview';
-  };
-
-  const [activeTab, setActiveTab] = useState<TabId>(() => {
-    // Initialize from URL on mount
-    const tabParam = searchParams.get('tab');
-    if (tabParam === 'comparison') {
-      return 'comparison';
-    }
-    return 'overview';
-  });
-
-  // Sync with URL changes (browser back/forward)
-  useEffect(() => {
-    const tab = getTabFromUrl();
-    setActiveTab(tab);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  const [activeTab, setActiveTab] = useState<TabId>(tabFromUrl);
+
+  // Sync with URL changes (browser back/forward) and clean up invalid params
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    
+    // If tab param exists but is invalid, clean it up
+    if (tabParam !== null && !isValidTabId(tabParam)) {
+      router.replace(pathname);
+      setActiveTab('overview');
+      return;
+    }
+
+    // Update active tab to match URL (only if different to avoid unnecessary updates)
+    setActiveTab((currentTab) => {
+      return tabFromUrl !== currentTab ? tabFromUrl : currentTab;
+    });
+  }, [tabFromUrl, searchParams, router, pathname]);
 
   // Handle tab change
   const handleTabChange = (tab: TabId) => {

@@ -2,8 +2,9 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, CartesianGrid } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts';
 import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDate, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
@@ -59,8 +60,9 @@ function formatPaceDifference(differenceS: number, unitPreference: 'metric' | 'i
 }
 
 interface ChartDataPoint {
-  date: string; // ISO date for sorting
+  date: number; // Timestamp for X-axis
   dateDisplay: string; // Formatted date for display
+  dateISO?: string; // ISO date string for tooltip
   paceS: number; // Pace in seconds
   paceDisplay: string; // Formatted pace
   workoutId: string;
@@ -74,6 +76,7 @@ type SortOrder = 'asc' | 'desc';
 
 export function RouteComparisonTab({ workoutId, currentWorkout }: RouteComparisonTabProps) {
   const { unitPreference } = useSettings();
+  const router = useRouter();
   const [sortBy, setSortBy] = useState<SortBy>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
@@ -87,20 +90,41 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
     enabled: !!workoutId && !!currentWorkout.route,
   });
 
-  // Prepare chart data
+  // Prepare chart data - always includes current workout
   const chartData = useMemo((): ChartDataPoint[] => {
-    if (!data || data.length === 0) {
+    // Ensure we have current workout data
+    if (!currentWorkout || !currentWorkout.startedAt || currentWorkout.avgPaceS === undefined) {
       return [];
     }
 
+    // Start with similar routes (if any)
+    const routes: Array<SimilarRoute & { isCurrent?: boolean }> = data ? [...data] : [];
+    
+    // Always add current workout to the data (backend doesn't include it in similar routes)
+    // This ensures the current workout is always visible on the chart
+    const currentWorkoutInData = routes.some(r => r.workoutId === workoutId);
+    if (!currentWorkoutInData) {
+      routes.push({
+        workoutId: workoutId,
+        startedAt: currentWorkout.startedAt,
+        durationS: currentWorkout.durationS,
+        distanceM: currentWorkout.distanceM,
+        avgPaceS: currentWorkout.avgPaceS,
+        elevGainM: currentWorkout.elevGainM ?? null,
+        isCurrent: true,
+        // No timeDifferenceS or paceDifferenceS for current workout (it's the baseline)
+      });
+    }
+
     // Sort by date for chart
-    const sortedRoutes = [...data].sort((a, b) => 
+    const sortedRoutes = routes.sort((a, b) => 
       new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
     );
 
     return sortedRoutes.map((route) => ({
-      date: route.startedAt,
+      date: new Date(route.startedAt).getTime(), // Convert to timestamp for X-axis
       dateDisplay: formatDate(route.startedAt),
+      dateISO: route.startedAt, // Keep ISO string for tooltip
       paceS: route.avgPaceS,
       paceDisplay: formatPace(route.avgPaceS, unitPreference),
       workoutId: route.workoutId,
@@ -108,7 +132,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
       timeDifferenceS: route.timeDifferenceS,
       isCurrent: route.workoutId === workoutId,
     }));
-  }, [data, unitPreference, workoutId]);
+  }, [data, unitPreference, workoutId, currentWorkout]);
 
   // Calculate quick stats
   const quickStats = useMemo(() => {
@@ -196,11 +220,11 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
   // Custom tooltip for chart
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
-      const data = payload[0].payload as ChartDataPoint;
+      const data = payload[0].payload as ChartDataPoint & { dateISO?: string };
       return (
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3">
           <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
-            {data.dateDisplay}
+            {data.dateISO ? formatDate(data.dateISO) : data.dateDisplay}
           </p>
           <p className="text-xs text-gray-600 dark:text-gray-400">
             Pace: {data.paceDisplay}
@@ -253,8 +277,8 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
     );
   }
 
-  // Empty state
-  if (!data || data.length === 0) {
+  // Empty state - only show if we have no chart data at all (including current workout)
+  if (chartData.length === 0) {
     return (
       <div className="w-full space-y-3">
         <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
@@ -280,12 +304,20 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
             <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" className="dark:stroke-gray-700" />
               <XAxis 
-                dataKey="dateDisplay" 
+                dataKey="date" 
+                type="number"
+                scale="time"
+                domain={['dataMin', 'dataMax']}
                 tick={{ fill: '#6b7280', fontSize: 12 }}
                 className="dark:text-gray-400"
                 angle={-45}
                 textAnchor="end"
                 height={80}
+                tickFormatter={(value) => {
+                  // Convert timestamp back to formatted date
+                  const date = new Date(value);
+                  return formatDate(date.toISOString());
+                }}
               />
               <YAxis 
                 tick={{ fill: '#6b7280', fontSize: 12 }}
@@ -295,12 +327,6 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                 width={80}
               />
               <Tooltip content={<CustomTooltip />} />
-              <ReferenceLine 
-                y={currentWorkout.avgPaceS} 
-                stroke="#3b82f6" 
-                strokeDasharray="3 3"
-                label={{ value: 'Current', position: 'right', fill: '#3b82f6' }}
-              />
               <Line 
                 type="monotone" 
                 dataKey="paceS" 
@@ -308,6 +334,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                 strokeWidth={2}
                 dot={(props: any) => {
                   const isCurrent = props.payload?.isCurrent;
+                  const workoutId = props.payload?.workoutId;
                   return (
                     <circle 
                       cx={props.cx} 
@@ -316,10 +343,36 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                       fill={isCurrent ? '#3b82f6' : '#8884d8'}
                       stroke={isCurrent ? '#1e40af' : 'none'}
                       strokeWidth={isCurrent ? 2 : 0}
+                      style={{ cursor: 'pointer' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (workoutId) {
+                          router.push(`/dashboard/${workoutId}`);
+                        }
+                      }}
                     />
                   );
                 }}
-                activeDot={{ r: 8 }}
+                activeDot={(props: any) => {
+                  const workoutId = props.payload?.workoutId;
+                  return (
+                    <circle
+                      cx={props.cx}
+                      cy={props.cy}
+                      r={8}
+                      fill="#8884d8"
+                      stroke="#fff"
+                      strokeWidth={2}
+                      style={{ cursor: 'pointer' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (workoutId) {
+                          router.push(`/dashboard/${workoutId}`);
+                        }
+                      }}
+                    />
+                  );
+                }}
               />
             </LineChart>
           </ResponsiveContainer>
