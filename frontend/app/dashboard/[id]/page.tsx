@@ -19,6 +19,7 @@ import { MediaUpload } from '@/components/MediaUpload';
 import { AuthGuard } from '@/components/AuthGuard';
 import { RouteMatchesSummary } from '@/components/RouteMatchesSummary';
 import { ActivityDetailTabs } from '@/components/ActivityDetailTabs';
+import { RouteComparisonTab } from '@/components/RouteComparisonTab';
 import {
   getWeatherSymbol,
   formatTemperature,
@@ -694,13 +695,7 @@ function WorkoutDetailPageContent() {
             </div>
           }
           comparisonContent={
-            <div className="w-full">
-              <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Route comparison view coming soon. This will show detailed analysis including a pace-over-time chart and full list of matched routes.
-                </p>
-              </div>
-            </div>
+            <RouteComparisonTab workoutId={id} currentWorkout={data} />
           }
         />
 
