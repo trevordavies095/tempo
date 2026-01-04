@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { getWorkout, getWorkoutMedia, type WorkoutMedia } from '@/lib/api';
+import { getWorkout, getWorkoutMedia, getSimilarRoutes, type WorkoutMedia } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import WorkoutDetailHeader from '@/components/WorkoutDetailHeader';
@@ -65,6 +65,19 @@ function WorkoutDetailPageContent() {
     enabled: !!id, // Fetch media as soon as we have the workout ID
     retry: false, // Don't retry on error - treat as no media
   });
+
+  // Check if there are matched runs to conditionally show comparison tab
+  const { data: similarRoutes } = useQuery({
+    queryKey: ['similar-routes', id],
+    queryFn: () => getSimilarRoutes(id),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    retry: 1,
+    refetchOnWindowFocus: false,
+    enabled: !!id && !!data?.route,
+  });
+
+  const hasMatchedRuns = similarRoutes && similarRoutes.length > 0;
 
   // Sync notesValue with data.notes when entering edit mode or data changes
   useEffect(() => {
@@ -157,6 +170,7 @@ function WorkoutDetailPageContent() {
         <ActivityDetailTabs 
           workoutId={id} 
           currentWorkout={data}
+          showComparisonTab={hasMatchedRuns}
           overviewContent={
             <div className="w-full space-y-3">
               {/* Main Content Area - Two Columns */}

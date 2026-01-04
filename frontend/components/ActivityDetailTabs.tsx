@@ -11,6 +11,7 @@ interface ActivityDetailTabsProps {
   currentWorkout: WorkoutDetail;
   overviewContent: ReactNode;
   comparisonContent: ReactNode;
+  showComparisonTab?: boolean;
 }
 
 /**
@@ -25,6 +26,7 @@ export function ActivityDetailTabs({
   currentWorkout,
   overviewContent,
   comparisonContent,
+  showComparisonTab = true,
 }: ActivityDetailTabsProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -57,11 +59,18 @@ export function ActivityDetailTabs({
       return;
     }
 
+    // If user is on comparison tab but comparison tab should be hidden, redirect to overview
+    if (tabFromUrl === 'comparison' && !showComparisonTab) {
+      router.replace(pathname);
+      setActiveTab('overview');
+      return;
+    }
+
     // Update active tab to match URL (only if different to avoid unnecessary updates)
     setActiveTab((currentTab) => {
       return tabFromUrl !== currentTab ? tabFromUrl : currentTab;
     });
-  }, [tabFromUrl, searchParams, router, pathname]);
+  }, [tabFromUrl, searchParams, router, pathname, showComparisonTab]);
 
   // Handle tab change
   const handleTabChange = (tab: TabId) => {
@@ -79,7 +88,7 @@ export function ActivityDetailTabs({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, currentTab: TabId) => {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault();
-      const tabs: TabId[] = ['overview', 'comparison'];
+      const tabs: TabId[] = showComparisonTab ? ['overview', 'comparison'] : ['overview'];
       const currentIndex = tabs.indexOf(currentTab);
       const nextIndex =
         e.key === 'ArrowLeft'
@@ -116,20 +125,22 @@ export function ActivityDetailTabs({
           >
             Overview
           </button>
-          <button
-            ref={(el) => { tabRefs.current.comparison = el; }}
-            onClick={() => handleTabChange('comparison')}
-            onKeyDown={(e) => handleKeyDown(e, 'comparison')}
-            aria-selected={activeTab === 'comparison'}
-            role="tab"
-            className={`px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 rounded-t-lg ${
-              activeTab === 'comparison'
-                ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800'
-            }`}
-          >
-            Route Comparison
-          </button>
+          {showComparisonTab && (
+            <button
+              ref={(el) => { tabRefs.current.comparison = el; }}
+              onClick={() => handleTabChange('comparison')}
+              onKeyDown={(e) => handleKeyDown(e, 'comparison')}
+              aria-selected={activeTab === 'comparison'}
+              role="tab"
+              className={`px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 rounded-t-lg ${
+                activeTab === 'comparison'
+                  ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+            >
+              Route Comparison
+            </button>
+          )}
         </div>
       </nav>
 
