@@ -111,16 +111,24 @@ public class RouteMatchingService
         }
 
         // Calculate time range for filtering (symmetric: include workouts before and after)
-        var minDate = currentWorkout.StartedAt.AddYears(-maxYears);
-        var maxDate = currentWorkout.StartedAt.AddYears(maxYears); // Include workouts after current workout too
+        // Skip date filtering for races to allow matching across all years
+        var isRace = currentWorkout.RunType == "Race";
+        var minDate = isRace ? DateTime.MinValue : currentWorkout.StartedAt.AddYears(-maxYears);
+        var maxDate = isRace ? DateTime.MaxValue : currentWorkout.StartedAt.AddYears(maxYears); // Include workouts after current workout too
 
         // Get candidate workouts without routes first (to avoid JSON parsing errors during Include)
-        var candidateWorkouts = await _db.Workouts
+        var candidateQuery = _db.Workouts
             .Where(w => w.Id != workoutId &&
-                       w.StartedAt >= minDate &&
-                       w.StartedAt <= maxDate &&
-                       _db.WorkoutRoutes.Any(r => r.WorkoutId == w.Id))
-            .ToListAsync();
+                       _db.WorkoutRoutes.Any(r => r.WorkoutId == w.Id));
+
+        // Only apply date filter for non-races
+        if (!isRace)
+        {
+            candidateQuery = candidateQuery
+                .Where(w => w.StartedAt >= minDate && w.StartedAt <= maxDate);
+        }
+
+        var candidateWorkouts = await candidateQuery.ToListAsync();
 
         // Load all route data in a single query to avoid N+1 query problem
         var candidateWorkoutIds = candidateWorkouts.Select(w => w.Id).ToList();
