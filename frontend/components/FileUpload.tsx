@@ -15,14 +15,6 @@ export function FileUpload() {
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
 
-  const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
-    onFilesSelected: (files) => {
-      setSelectedFiles((prev) => [...prev, ...files]);
-      setImportResult(null);
-    },
-    acceptExtensions: ['.gpx', '.fit', '.fit.gz'],
-  });
-
   const mutation = useMutation({
     mutationFn: (files: File[]) => importWorkoutFile(files, unitPreference),
     onSuccess: (data) => {
@@ -35,6 +27,14 @@ export function FileUpload() {
     },
   });
 
+  const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
+    onFilesSelected: (files) => {
+      setSelectedFiles((prev) => [...prev, ...files]);
+      setImportResult(null);
+      mutation.reset(); // Clear mutation error state when new files are selected
+    },
+    acceptExtensions: ['.gpx', '.fit', '.fit.gz'],
+  });
 
   const handleRemoveFile = useCallback((index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
