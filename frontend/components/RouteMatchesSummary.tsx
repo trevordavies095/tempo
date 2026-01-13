@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter, usePathname } from 'next/navigation';
 import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
 import { formatDate } from '@/lib/format';
+import { IconChevronRight } from '@tabler/icons-react';
 
 interface RouteMatchesSummaryProps {
   workoutId: string;
@@ -195,20 +196,7 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
           className="w-full mt-3 px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors flex items-center justify-center gap-1"
         >
           <span>View All Matches</span>
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
+          <IconChevronRight className="w-4 h-4" />
         </button>
       </div>
     </div>
