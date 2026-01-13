@@ -76,6 +76,7 @@ Then create a pull request on GitHub.
 - Use functional components with hooks
 - Keep components small and focused
 - Use Tailwind CSS for styling
+- **Icons**: Use Tabler Icons (`@tabler/icons-react`) for all icons - do not create custom SVG icons. Import icons as needed: `import { IconName } from '@tabler/icons-react'`
 
 ### General
 

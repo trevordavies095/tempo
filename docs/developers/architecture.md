@@ -9,6 +9,7 @@ Tempo is a self-hosted running tracker built as a full-stack application with a 
 - **Framework**: Next.js 16 with React 19
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
+- **Icons**: Tabler Icons (@tabler/icons-react) - All icons use tabler-icons for consistency
 - **State Management**: TanStack Query for server state
 - **Maps**: Leaflet/React-Leaflet for route visualization
 - **Charts**: Recharts for analytics
