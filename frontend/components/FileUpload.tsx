@@ -31,7 +31,11 @@ export function FileUpload() {
     onFilesSelected: (files) => {
       setSelectedFiles((prev) => [...prev, ...files]);
       setImportResult(null);
-      mutation.reset(); // Clear mutation error state when new files are selected
+      // Only reset mutation state if not currently pending to prevent re-enabling submit button
+      // during an in-flight upload, which could allow duplicate submissions
+      if (!mutation.isPending) {
+        mutation.reset(); // Clear mutation error state when new files are selected
+      }
     },
     acceptExtensions: ['.gpx', '.fit', '.fit.gz'],
   });
