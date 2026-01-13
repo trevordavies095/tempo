@@ -4,6 +4,7 @@ import { getWorkoutDisplayName, formatDateTime } from '@/lib/format';
 import type { WorkoutDetail } from '@/lib/api';
 import { useWorkoutMutations } from '@/hooks/useWorkoutMutations';
 import { CropWorkoutDialog } from './CropWorkoutDialog';
+import { IconPencil, IconDotsVertical, IconCrop, IconTrash, IconLoader2 } from '@tabler/icons-react';
 
 interface WorkoutDetailHeaderProps {
   workout: WorkoutDetail;
@@ -127,20 +128,7 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
             <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
               {getWorkoutDisplayName(workout.name, workout.startedAt)}
             </h1>
-            <svg
-              className="w-5 h-5 opacity-0 group-hover:opacity-50 flex-shrink-0"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-              />
-            </svg>
+            <IconPencil className="w-5 h-5 opacity-0 group-hover:opacity-50 flex-shrink-0" />
           </button>
         )}
         <div className="relative">
@@ -151,20 +139,7 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
             aria-label="More options"
             aria-expanded={isMenuOpen}
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-              />
-            </svg>
+            <IconDotsVertical className="w-5 h-5" />
           </button>
           {isMenuOpen && (
             <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-10">
@@ -179,20 +154,7 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                     type="button"
                   >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243 4.243 3 3 0 004.243-4.243zm0-5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z"
-                      />
-                    </svg>
+                    <IconCrop className="w-4 h-4" />
                     Crop Workout
                   </button>
                 )}
@@ -207,28 +169,12 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
                 >
                   {deleteWorkoutMutation.isPending ? (
                     <>
-                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
+                      <IconLoader2 className="animate-spin h-4 w-4" />
                       Deleting...
                     </>
                   ) : (
                     <>
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
+                      <IconTrash className="w-4 h-4" />
                       Delete Workout
                     </>
                   )}

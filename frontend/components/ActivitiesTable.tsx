@@ -3,6 +3,7 @@ import { type WorkoutListItem } from '@/lib/api';
 import { formatDuration, formatDistance, formatElevation, getWorkoutDisplayName } from '@/lib/format';
 import { formatActivityDate } from '@/utils/dateUtils';
 import { type SortColumn, type SortOrder } from '@/hooks/useActivitiesFilters';
+import { IconArrowDown, IconArrowUp } from '@tabler/icons-react';
 
 interface ActivitiesTableProps {
   workouts: WorkoutListItem[];
@@ -14,12 +15,12 @@ interface ActivitiesTableProps {
 
 function getSortIcon(column: SortColumn, currentSortBy: SortColumn, currentSortOrder: SortOrder) {
   if (currentSortBy !== column) {
-    return <span className="text-gray-400 dark:text-gray-500 ml-1">↓</span>;
+    return <IconArrowDown className="inline-block w-3 h-3 ml-1 text-gray-400 dark:text-gray-500" />;
   }
   return currentSortOrder === 'desc' ? (
-    <span className="text-gray-900 dark:text-gray-100 ml-1">↓</span>
+    <IconArrowDown className="inline-block w-3 h-3 ml-1 text-gray-900 dark:text-gray-100" />
   ) : (
-    <span className="text-gray-900 dark:text-gray-100 ml-1">↑</span>
+    <IconArrowUp className="inline-block w-3 h-3 ml-1 text-gray-900 dark:text-gray-100" />
   );
 }
 

@@ -59,7 +59,7 @@ That's it! The database migrations run automatically on first startup. For detai
 
 ## Tech Stack
 
-- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS
+- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS, Tabler Icons
 - **Backend**: ASP.NET Core (.NET 9) Minimal APIs
 - **Database**: PostgreSQL 16
 - **State Management**: TanStack Query

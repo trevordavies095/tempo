@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDate, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
+import { IconArrowUp, IconArrowDown } from '@tabler/icons-react';
 
 interface SimilarRoutesSectionProps {
   workoutId: string;
@@ -203,35 +204,9 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                     >
                       {formatTimeDifference(route.timeDifferenceS)}
                       {route.timeDifferenceS < 0 ? (
-                        <svg
-                          className="inline-block w-3 h-3 ml-0.5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M5 10l7-7m0 0l7 7m-7-7v18"
-                          />
-                        </svg>
+                        <IconArrowUp className="inline-block w-3 h-3 ml-0.5" />
                       ) : route.timeDifferenceS > 0 ? (
-                        <svg
-                          className="inline-block w-3 h-3 ml-0.5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 14l-7 7m0 0l-7-7m7 7V3"
-                          />
-                        </svg>
+                        <IconArrowDown className="inline-block w-3 h-3 ml-0.5" />
                       ) : null}
                     </span>
                   )}
@@ -257,35 +232,9 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                     >
                       {formatPaceDifference(route.paceDifferenceS, unitPreference)}
                       {route.paceDifferenceS < 0 ? (
-                        <svg
-                          className="inline-block w-3 h-3 ml-0.5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M5 10l7-7m0 0l7 7m-7-7v18"
-                          />
-                        </svg>
+                        <IconArrowUp className="inline-block w-3 h-3 ml-0.5" />
                       ) : route.paceDifferenceS > 0 ? (
-                        <svg
-                          className="inline-block w-3 h-3 ml-0.5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 14l-7 7m0 0l-7-7m7 7V3"
-                          />
-                        </svg>
+                        <IconArrowDown className="inline-block w-3 h-3 ml-0.5" />
                       ) : null}
                     </span>
                   )}
@@ -326,35 +275,9 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                             >
                               ({sign}{absDiff})
                               {effortDiff < 0 ? (
-                                <svg
-                                  className="inline-block w-3 h-3 ml-0.5"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M5 10l7-7m0 0l7 7m-7-7v18"
-                                  />
-                                </svg>
+                                <IconArrowUp className="inline-block w-3 h-3 ml-0.5" />
                               ) : effortDiff > 0 ? (
-                                <svg
-                                  className="inline-block w-3 h-3 ml-0.5"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M19 14l-7 7m0 0l-7-7m7 7V3"
-                                  />
-                                </svg>
+                                <IconArrowDown className="inline-block w-3 h-3 ml-0.5" />
                               ) : null}
                             </span>
                           );
