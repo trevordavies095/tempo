@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { getWorkoutMediaUrl, deleteWorkoutMedia, type WorkoutMedia } from '@/lib/api';
-import { IconPlayerPlay, IconFile, IconTrash, IconLoader2 } from '@tabler/icons-react';
+import { IconPlayerPlayFilled, IconFile, IconTrash, IconLoader2 } from '@tabler/icons-react';
 
 interface WorkoutMediaGalleryProps {
   workoutId: string;
@@ -102,7 +102,7 @@ export function WorkoutMediaGallery({ workoutId, media, isLoading, onMediaClick,
                     preload="metadata"
                   />
                   <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 group-hover:bg-opacity-40 transition-opacity">
-                    <IconPlayerPlay className="w-12 h-12 text-white opacity-80" />
+                    <IconPlayerPlayFilled className="w-12 h-12 text-white opacity-80" />
                   </div>
                 </div>
               ) : (
