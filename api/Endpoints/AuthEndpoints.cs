@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
@@ -97,6 +98,8 @@ public static class AuthEndpoints
         PasswordService passwordService,
         JwtService jwtService,
         HttpContext httpContext,
+        IWebHostEnvironment environment,
+        IConfiguration configuration,
         ILogger<Program> logger)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
@@ -130,14 +133,25 @@ public static class AuthEndpoints
         var expirationDays = jwtService.ExpirationDays;
         var expirationDate = DateTime.UtcNow.AddDays(expirationDays);
 
-        // Set httpOnly cookie
+        // Set httpOnly cookie with production-safe configuration
         var cookieOptions = new CookieOptions
         {
             HttpOnly = true,
-            Secure = httpContext.Request.IsHttps,
+            // In production, always use Secure=true (production should always use HTTPS)
+            // In development, use Request.IsHttps to allow local development without HTTPS
+            Secure = environment.IsProduction() ? true : httpContext.Request.IsHttps,
             SameSite = SameSiteMode.Lax,
+            Path = "/",
             Expires = expirationDate
         };
+
+        // Optionally set cookie domain from configuration for cross-subdomain scenarios
+        var cookieDomain = configuration["Cookie:Domain"];
+        if (!string.IsNullOrWhiteSpace(cookieDomain))
+        {
+            cookieOptions.Domain = cookieDomain;
+        }
+
         httpContext.Response.Cookies.Append("authToken", token, cookieOptions);
 
         logger.LogInformation("User logged in: {Username}", user.Username);
