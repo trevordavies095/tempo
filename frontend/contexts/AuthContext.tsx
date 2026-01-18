@@ -43,6 +43,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, []);
 
+  // Register global 401 error handler
+  useEffect(() => {
+    const handleAuthError = () => {
+      setUser(null);
+      setIsLoading(false);
+    };
+
+    api.setAuthErrorHandler(handleAuthError);
+
+    // Cleanup: unregister handler on unmount
+    return () => {
+      api.setAuthErrorHandler(null);
+    };
+  }, []);
+
   const login = async (username: string, password: string) => {
     try {
       await api.login(username, password);

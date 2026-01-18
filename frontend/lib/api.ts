@@ -1,5 +1,70 @@
 const API_BASE_URL = '/api';
 
+// Global 401 error handling
+let authErrorHandler: (() => void) | null = null;
+let isRedirecting = false;
+
+/**
+ * Sets the callback function to be called when a 401 error is detected.
+ * This allows AuthContext to register a handler for clearing user state.
+ */
+export function setAuthErrorHandler(handler: (() => void) | null) {
+  authErrorHandler = handler;
+}
+
+/**
+ * Wrapper around fetch that handles 401 (Unauthorized) responses globally.
+ * Automatically redirects to login page when session expires.
+ */
+async function fetchWithAuth(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  const response = await fetch(input, init);
+
+  // Handle 401 Unauthorized responses
+  if (response.status === 401) {
+    // Skip redirect for auth endpoints to prevent loops
+    let urlString = '';
+    if (typeof input === 'string') {
+      urlString = input;
+    } else if (input instanceof URL) {
+      urlString = input.toString();
+    } else if (input instanceof Request) {
+      urlString = input.url;
+    } else {
+      // Fallback for other types
+      urlString = String(input);
+    }
+    
+    const isAuthEndpoint = urlString.includes('/auth/login') || 
+                          urlString.includes('/auth/register') || 
+                          urlString.includes('/auth/registration-available');
+    
+    if (!isAuthEndpoint) {
+      // Prevent multiple simultaneous redirects
+      if (!isRedirecting) {
+        isRedirecting = true;
+        
+        // Clear authentication state via callback
+        if (authErrorHandler) {
+          authErrorHandler();
+        }
+        
+        // Only redirect if not already on login page
+        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        } else {
+          // Reset flag if we're already on login page
+          isRedirecting = false;
+        }
+      }
+    }
+  }
+
+  return response;
+}
+
 // Auth interfaces
 export interface LoginRequest {
   username: string;
@@ -179,7 +244,7 @@ export async function importWorkoutFile(
     formData.append('unitPreference', unitPreference);
   }
 
-  const response = await fetch(`${API_BASE_URL}/workouts/import`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import`, {
     method: 'POST',
     body: formData,
     credentials: 'include',
@@ -242,7 +307,7 @@ export async function getWorkouts(
   const queryString = searchParams.toString();
   const url = `${API_BASE_URL}/workouts${queryString ? `?${queryString}` : ''}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -259,7 +324,7 @@ export async function getWorkouts(
 }
 
 export async function getWorkout(id: string): Promise<WorkoutDetail> {
-  const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/${id}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -306,7 +371,7 @@ function getDirectApiUrl(): string {
 }
 
 export async function exportAllData(): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}/workouts/export`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/export`, {
     method: 'POST',
     credentials: 'include',
   });
@@ -343,7 +408,7 @@ export async function importTempoExport(zipFile: File): Promise<ExportImportResp
 
   // Use direct API URL to bypass Next.js rewrites and avoid 10MB body size limit
   const directApiUrl = getDirectApiUrl();
-  const response = await fetch(`${directApiUrl}/workouts/import/export`, {
+  const response = await fetchWithAuth(`${directApiUrl}/workouts/import/export`, {
     method: 'POST',
     body: formData,
     credentials: 'include',
@@ -366,7 +431,7 @@ export async function importBulkStravaExport(zipFile: File, unitPreference?: 'me
 
   // Use direct API URL to bypass Next.js rewrites and avoid 10MB body size limit
   const directApiUrl = getDirectApiUrl();
-  const response = await fetch(`${directApiUrl}/workouts/import/bulk`, {
+  const response = await fetchWithAuth(`${directApiUrl}/workouts/import/bulk`, {
     method: 'POST',
     body: formData,
     credentials: 'include',
@@ -381,7 +446,7 @@ export async function importBulkStravaExport(zipFile: File, unitPreference?: 'me
 }
 
 export async function getWorkoutMedia(workoutId: string): Promise<WorkoutMedia[]> {
-  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/${workoutId}/media`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -408,7 +473,7 @@ export async function deleteWorkoutMedia(
   workoutId: string,
   mediaId: string
 ): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media/${mediaId}`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/${workoutId}/media/${mediaId}`, {
     method: 'DELETE',
     credentials: 'include',
   });
@@ -436,7 +501,7 @@ export async function uploadWorkoutMedia(
     formData.append('files', file);
   });
 
-  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/media`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/${workoutId}/media`, {
     method: 'POST',
     body: formData,
     credentials: 'include',
@@ -496,7 +561,7 @@ export async function getWeeklyStats(timezoneOffsetMinutes?: number): Promise<We
   const queryString = searchParams.toString();
   const url = `${API_BASE_URL}/stats/weekly${queryString ? `?${queryString}` : ''}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -518,7 +583,7 @@ export async function getRelativeEffortStats(timezoneOffsetMinutes?: number): Pr
   const queryString = searchParams.toString();
   const url = `${API_BASE_URL}/stats/relative-effort${queryString ? `?${queryString}` : ''}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -546,7 +611,7 @@ export interface BestEffortsResponse {
 export async function getBestEfforts(): Promise<BestEffortsResponse> {
   const url = `${API_BASE_URL}/stats/best-efforts`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -567,7 +632,7 @@ export interface RecalculateBestEffortsResponse {
 export async function recalculateBestEfforts(): Promise<RecalculateBestEffortsResponse> {
   const url = `${API_BASE_URL}/stats/best-efforts/recalculate`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -590,7 +655,7 @@ export async function getYearlyStats(timezoneOffsetMinutes?: number): Promise<Ye
   const queryString = searchParams.toString();
   const url = `${API_BASE_URL}/stats/yearly${queryString ? `?${queryString}` : ''}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -631,7 +696,7 @@ export async function getYearlyWeeklyStats(
   const queryString = searchParams.toString();
   const url = `${API_BASE_URL}/stats/yearly-weekly${queryString ? `?${queryString}` : ''}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -662,7 +727,7 @@ export async function getAvailablePeriods(
   const queryString = searchParams.toString();
   const url = `${API_BASE_URL}/stats/available-periods${queryString ? `?${queryString}` : ''}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -678,7 +743,7 @@ export async function getAvailablePeriods(
 export async function getAvailableYears(): Promise<number[]> {
   const url = `${API_BASE_URL}/stats/available-years`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -710,7 +775,7 @@ export async function updateWorkout(
   id: string,
   updates: UpdateWorkoutRequest
 ): Promise<UpdateWorkoutResponse> {
-  const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -730,7 +795,7 @@ export async function updateWorkout(
 }
 
 export async function deleteWorkout(id: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/workouts/${id}`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/${id}`, {
     method: 'DELETE',
     credentials: 'include',
   });
@@ -772,7 +837,7 @@ export interface UpdateHeartRateZoneSettingsRequest {
 }
 
 export async function getHeartRateZones(): Promise<HeartRateZoneSettings> {
-  const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/heart-rate-zones`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -788,7 +853,7 @@ export async function getHeartRateZones(): Promise<HeartRateZoneSettings> {
 export async function updateHeartRateZones(
   settings: UpdateHeartRateZoneSettingsRequest
 ): Promise<HeartRateZoneSettings> {
-  const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/heart-rate-zones`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -815,7 +880,7 @@ export interface UpdateHeartRateZonesWithRecalcResponse extends HeartRateZoneSet
 export async function updateHeartRateZonesWithRecalc(
   settings: UpdateHeartRateZonesWithRecalcRequest
 ): Promise<UpdateHeartRateZonesWithRecalcResponse> {
-  const response = await fetch(`${API_BASE_URL}/settings/heart-rate-zones/update-with-recalc`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/heart-rate-zones/update-with-recalc`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -839,7 +904,7 @@ export interface RecalculateRelativeEffortResponse {
 }
 
 export async function getQualifyingWorkoutCount(): Promise<{ count: number }> {
-  const response = await fetch(`${API_BASE_URL}/workouts/recalculate-relative-effort/count`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/recalculate-relative-effort/count`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -853,7 +918,7 @@ export async function getQualifyingWorkoutCount(): Promise<{ count: number }> {
 }
 
 export async function recalculateAllRelativeEffort(): Promise<RecalculateRelativeEffortResponse> {
-  const response = await fetch(`${API_BASE_URL}/workouts/recalculate-relative-effort`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/recalculate-relative-effort`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -868,7 +933,7 @@ export async function recalculateAllRelativeEffort(): Promise<RecalculateRelativ
 }
 
 export async function getUnitPreference(): Promise<{ unitPreference: 'metric' | 'imperial' }> {
-  const response = await fetch(`${API_BASE_URL}/settings/unit-preference`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/unit-preference`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -882,7 +947,7 @@ export async function getUnitPreference(): Promise<{ unitPreference: 'metric' | 
 }
 
 export async function updateUnitPreference(unitPreference: 'metric' | 'imperial'): Promise<{ unitPreference: 'metric' | 'imperial' }> {
-  const response = await fetch(`${API_BASE_URL}/settings/unit-preference`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/unit-preference`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -898,7 +963,7 @@ export async function updateUnitPreference(unitPreference: 'metric' | 'imperial'
 }
 
 export async function getQualifyingWorkoutCountForSplits(): Promise<{ count: number }> {
-  const response = await fetch(`${API_BASE_URL}/workouts/recalculate-splits/count`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/recalculate-splits/count`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -919,7 +984,7 @@ export interface RecalculateSplitsResponse {
 }
 
 export async function recalculateAllSplits(): Promise<RecalculateSplitsResponse> {
-  const response = await fetch(`${API_BASE_URL}/workouts/recalculate-splits`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/recalculate-splits`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -934,7 +999,7 @@ export async function recalculateAllSplits(): Promise<RecalculateSplitsResponse>
 }
 
 export async function recalculateWorkoutSplits(workoutId: string): Promise<{ id: string; splitsCount: number }> {
-  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/recalculate-splits`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/${workoutId}/recalculate-splits`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -958,7 +1023,7 @@ export async function cropWorkout(
   startTrimSeconds: number,
   endTrimSeconds: number
 ): Promise<WorkoutDetail> {
-  const response = await fetch(`${API_BASE_URL}/workouts/${workoutId}/crop`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/${workoutId}/crop`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -984,7 +1049,7 @@ export interface VersionResponse {
 }
 
 export async function getVersion(): Promise<VersionResponse> {
-  const response = await fetch(`${API_BASE_URL}/version`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/version`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -1034,7 +1099,7 @@ export async function register(username: string, password: string): Promise<{ me
 }
 
 export async function getCurrentUser(): Promise<UserInfo> {
-  const response = await fetch(`${API_BASE_URL}/auth/me`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/me`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -1052,7 +1117,7 @@ export async function getCurrentUser(): Promise<UserInfo> {
 }
 
 export async function logout(): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/auth/logout`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/logout`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -1123,7 +1188,7 @@ export interface DefaultShoeResponse {
 
 // Shoe API functions
 export async function getShoes(): Promise<Shoe[]> {
-  const response = await fetch(`${API_BASE_URL}/shoes`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/shoes`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -1137,7 +1202,7 @@ export async function getShoes(): Promise<Shoe[]> {
 }
 
 export async function createShoe(shoe: CreateShoeRequest): Promise<Shoe> {
-  const response = await fetch(`${API_BASE_URL}/shoes`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/shoes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -1153,7 +1218,7 @@ export async function createShoe(shoe: CreateShoeRequest): Promise<Shoe> {
 }
 
 export async function updateShoe(id: string, shoe: UpdateShoeRequest): Promise<Shoe> {
-  const response = await fetch(`${API_BASE_URL}/shoes/${id}`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/shoes/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -1173,7 +1238,7 @@ export async function updateShoe(id: string, shoe: UpdateShoeRequest): Promise<S
 }
 
 export async function deleteShoe(id: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/shoes/${id}`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/shoes/${id}`, {
     method: 'DELETE',
     credentials: 'include',
   });
@@ -1189,7 +1254,7 @@ export async function deleteShoe(id: string): Promise<void> {
 }
 
 export async function getShoeMileage(id: string): Promise<ShoeMileageResponse> {
-  const response = await fetch(`${API_BASE_URL}/shoes/${id}/mileage`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/shoes/${id}/mileage`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -1207,7 +1272,7 @@ export async function getShoeMileage(id: string): Promise<ShoeMileageResponse> {
 }
 
 export async function getDefaultShoe(): Promise<DefaultShoeResponse> {
-  const response = await fetch(`${API_BASE_URL}/settings/default-shoe`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/default-shoe`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -1221,7 +1286,7 @@ export async function getDefaultShoe(): Promise<DefaultShoeResponse> {
 }
 
 export async function setDefaultShoe(shoeId: string | null): Promise<DefaultShoeResponse> {
-  const response = await fetch(`${API_BASE_URL}/settings/default-shoe`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/default-shoe`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -1259,7 +1324,7 @@ export async function getSimilarRoutes(workoutId: string, maxResults?: number): 
   const queryString = searchParams.toString();
   const url = `${API_BASE_URL}/workouts/${workoutId}/similar-routes${queryString ? `?${queryString}` : ''}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
