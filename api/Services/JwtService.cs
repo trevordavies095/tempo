@@ -81,7 +81,7 @@ public class JwtService
                 ValidateAudience = true,
                 ValidAudience = _audience,
                 ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
+                ClockSkew = TimeSpan.FromMinutes(5)
             };
 
             var principal = tokenHandler.ValidateToken(token, validationParameters, out _);
