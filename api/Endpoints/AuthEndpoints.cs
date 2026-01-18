@@ -198,9 +198,29 @@ public static class AuthEndpoints
     /// <summary>
     /// Logout (clear auth cookie)
     /// </summary>
-    private static IResult Logout(HttpContext httpContext)
+    private static IResult Logout(
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
+        IConfiguration configuration)
     {
-        httpContext.Response.Cookies.Delete("authToken");
+        // Must use the same cookie options as Login to properly delete the cookie
+        // especially when Cookie:Domain is configured
+        var cookieOptions = new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = environment.IsProduction() ? true : httpContext.Request.IsHttps,
+            SameSite = SameSiteMode.Lax,
+            Path = "/"
+        };
+
+        // Set the same domain as used during login
+        var cookieDomain = configuration["Cookie:Domain"];
+        if (!string.IsNullOrWhiteSpace(cookieDomain))
+        {
+            cookieOptions.Domain = cookieDomain;
+        }
+
+        httpContext.Response.Cookies.Delete("authToken", cookieOptions);
         return Results.Ok(new { message = "Logged out successfully" });
     }
 
