@@ -126,11 +126,14 @@ public static class AuthEndpoints
         user.LastLoginAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        // Generate token
-        var token = jwtService.GenerateToken(user);
+        // Determine expiration days based on RememberMe flag
+        var expirationDays = request.RememberMe 
+            ? jwtService.RememberMeExpirationDays 
+            : jwtService.ExpirationDays;
 
-        // Get expiration days from JWT service to ensure consistency
-        var expirationDays = jwtService.ExpirationDays;
+        // Generate token with appropriate expiration
+        var token = jwtService.GenerateToken(user, expirationDays);
+
         var expirationDate = DateTime.UtcNow.AddDays(expirationDays);
 
         // Set httpOnly cookie with production-safe configuration
@@ -266,6 +269,7 @@ public static class AuthEndpoints
     {
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+        public bool RememberMe { get; set; } = false;
     }
 }
 

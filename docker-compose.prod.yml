@@ -47,6 +47,7 @@ services:
       JWT__Issuer: "Tempo"
       JWT__Audience: "Tempo"
       JWT__ExpirationDays: "7"
+      JWT__RememberMeExpirationDays: "30"
     ports:
       - "5001:5001"
     volumes:

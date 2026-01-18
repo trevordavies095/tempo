@@ -9,6 +9,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -57,7 +58,7 @@ export default function LoginPage() {
       if (isRegistering) {
         await register(username, password);
       } else {
-        await login(username, password);
+        await login(username, password, rememberMe);
       }
       // Navigation is handled by the auth context
     } catch (err: any) {
@@ -138,6 +139,22 @@ export default function LoginPage() {
                     disabled={isLoading}
                     minLength={6}
                   />
+                </div>
+              )}
+              {!isRegistering && (
+                <div className="flex items-center">
+                  <input
+                    id="rememberMe"
+                    name="rememberMe"
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    disabled={isLoading}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800"
+                  />
+                  <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
+                    Remember me
+                  </label>
                 </div>
               )}
             </div>

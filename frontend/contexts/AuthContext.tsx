@@ -15,7 +15,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, rememberMe?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
   checkAuth: () => Promise<void>;
@@ -58,9 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string, rememberMe?: boolean) => {
     try {
-      await api.login(username, password);
+      await api.login(username, password, rememberMe);
       await checkAuth();
       router.push('/dashboard');
     } catch (error) {

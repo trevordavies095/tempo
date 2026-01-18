@@ -69,6 +69,7 @@ async function fetchWithAuth(
 export interface LoginRequest {
   username: string;
   password: string;
+  rememberMe?: boolean;
 }
 
 export interface RegisterRequest {
@@ -1063,12 +1064,12 @@ export async function getVersion(): Promise<VersionResponse> {
 }
 
 // Authentication functions
-export async function login(username: string, password: string): Promise<AuthResponse> {
+export async function login(username: string, password: string, rememberMe?: boolean): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, rememberMe }),
   });
 
   if (!response.ok) {
