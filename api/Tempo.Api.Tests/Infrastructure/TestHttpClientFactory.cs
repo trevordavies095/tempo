@@ -17,6 +17,12 @@ namespace Tempo.Api.Tests.Infrastructure;
 public static class TestHttpClientFactory
 {
     /// <summary>
+    /// Semaphore to ensure thread-safe user creation in tests.
+    /// Protects against race conditions where multiple tests might try to create the same user concurrently.
+    /// </summary>
+    private static readonly SemaphoreSlim _userCreationLock = new(1, 1);
+
+    /// <summary>
     /// Creates an authenticated HttpClient by logging in with username and password
     /// </summary>
     /// <param name="factory">WebApplicationFactory instance</param>
@@ -31,27 +37,36 @@ public static class TestHttpClientFactory
         var client = factory.CreateClient();
 
         // First, ensure database schema exists and user exists
-        using (var scope = factory.Server.Services.CreateScope())
+        // Use semaphore to prevent race conditions when multiple tests try to create the same user concurrently
+        await _userCreationLock.WaitAsync();
+        try
         {
-            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            
-            // Ensure database schema is created (in case it wasn't created during host initialization)
-            try
+            using (var scope = factory.Server.Services.CreateScope())
             {
-                await db.Database.EnsureCreatedAsync();
+                var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+                
+                // Ensure database schema is created (in case it wasn't created during host initialization)
+                try
+                {
+                    await db.Database.EnsureCreatedAsync();
+                }
+                catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Schema already exists, continue
+                }
+                
+                var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
+                
+                if (user == null)
+                {
+                    // Create user if it doesn't exist
+                    user = await TestDataSeeder.SeedUserAsync(db, username, password);
+                }
             }
-            catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
-            {
-                // Schema already exists, continue
-            }
-            
-            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
-            
-            if (user == null)
-            {
-                // Create user if it doesn't exist
-                user = await TestDataSeeder.SeedUserAsync(db, username, password);
-            }
+        }
+        finally
+        {
+            _userCreationLock.Release();
         }
 
         // Login to get JWT token
