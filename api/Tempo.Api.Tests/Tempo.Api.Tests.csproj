@@ -5,11 +5,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    
-    <!-- Sequential test execution to prevent database state conflicts -->
-    <!-- Tests run one at a time for reliability. Trade-off: ~2-3x slower execution -->
-    <ParallelizeTestCollections>false</ParallelizeTestCollections>
-    <MaxParallelThreads>1</MaxParallelThreads>
   </PropertyGroup>
 
   <ItemGroup>
