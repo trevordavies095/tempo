@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
@@ -97,6 +98,8 @@ public static class AuthEndpoints
         PasswordService passwordService,
         JwtService jwtService,
         HttpContext httpContext,
+        IWebHostEnvironment environment,
+        IConfiguration configuration,
         ILogger<Program> logger)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
@@ -123,21 +126,35 @@ public static class AuthEndpoints
         user.LastLoginAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        // Generate token
-        var token = jwtService.GenerateToken(user);
+        // Determine expiration days based on RememberMe flag
+        var expirationDays = request.RememberMe 
+            ? jwtService.RememberMeExpirationDays 
+            : jwtService.ExpirationDays;
 
-        // Get expiration days from JWT service to ensure consistency
-        var expirationDays = jwtService.ExpirationDays;
+        // Generate token with appropriate expiration
+        var token = jwtService.GenerateToken(user, expirationDays);
+
         var expirationDate = DateTime.UtcNow.AddDays(expirationDays);
 
-        // Set httpOnly cookie
+        // Set httpOnly cookie with production-safe configuration
         var cookieOptions = new CookieOptions
         {
             HttpOnly = true,
-            Secure = httpContext.Request.IsHttps,
+            // In production, always use Secure=true (production should always use HTTPS)
+            // In development, use Request.IsHttps to allow local development without HTTPS
+            Secure = environment.IsProduction() ? true : httpContext.Request.IsHttps,
             SameSite = SameSiteMode.Lax,
+            Path = "/",
             Expires = expirationDate
         };
+
+        // Optionally set cookie domain from configuration for cross-subdomain scenarios
+        var cookieDomain = configuration["Cookie:Domain"];
+        if (!string.IsNullOrWhiteSpace(cookieDomain))
+        {
+            cookieOptions.Domain = cookieDomain;
+        }
+
         httpContext.Response.Cookies.Append("authToken", token, cookieOptions);
 
         logger.LogInformation("User logged in: {Username}", user.Username);
@@ -181,9 +198,29 @@ public static class AuthEndpoints
     /// <summary>
     /// Logout (clear auth cookie)
     /// </summary>
-    private static IResult Logout(HttpContext httpContext)
+    private static IResult Logout(
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
+        IConfiguration configuration)
     {
-        httpContext.Response.Cookies.Delete("authToken");
+        // Must use the same cookie options as Login to properly delete the cookie
+        // especially when Cookie:Domain is configured
+        var cookieOptions = new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = environment.IsProduction() ? true : httpContext.Request.IsHttps,
+            SameSite = SameSiteMode.Lax,
+            Path = "/"
+        };
+
+        // Set the same domain as used during login
+        var cookieDomain = configuration["Cookie:Domain"];
+        if (!string.IsNullOrWhiteSpace(cookieDomain))
+        {
+            cookieOptions.Domain = cookieDomain;
+        }
+
+        httpContext.Response.Cookies.Delete("authToken", cookieOptions);
         return Results.Ok(new { message = "Logged out successfully" });
     }
 
@@ -252,6 +289,7 @@ public static class AuthEndpoints
     {
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+        public bool RememberMe { get; set; } = false;
     }
 }
 

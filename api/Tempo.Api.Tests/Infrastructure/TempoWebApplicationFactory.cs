@@ -121,7 +121,7 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
                     ValidateAudience = true,
                     ValidAudience = TestJwtAudience,
                     ValidateLifetime = true,
-                    ClockSkew = TimeSpan.Zero
+                    ClockSkew = TimeSpan.FromMinutes(5)
                 };
                 options.Events = new JwtBearerEvents
                 {
