@@ -548,7 +548,7 @@ public class SimilarRouteMatch
     public DateTime StartedAt { get; set; }
     public int DurationS { get; set; }
     public double DistanceM { get; set; }
-    public int AvgPaceS { get; set; }
+    public double AvgPaceS { get; set; }
     public double SimilarityScore { get; set; }
     public double AverageDistanceM { get; set; }
 }

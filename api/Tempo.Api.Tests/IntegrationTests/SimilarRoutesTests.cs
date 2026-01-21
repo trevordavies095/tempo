@@ -521,10 +521,10 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
         public DateTime StartedAt { get; set; }
         public int DurationS { get; set; }
         public double DistanceM { get; set; }
-        public int AvgPaceS { get; set; }
+        public double AvgPaceS { get; set; }
         public double? SimilarityScore { get; set; }
         public int? TimeDifferenceS { get; set; }
-        public int? PaceDifferenceS { get; set; }
+        public double? PaceDifferenceS { get; set; }
         public int? RelativeEffort { get; set; }
         public double? ElevGainM { get; set; }
     }

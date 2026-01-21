@@ -76,7 +76,7 @@ public class WorkoutCropService
         workout.DurationS = newDurationS;
         workout.StartedAt = workout.StartedAt.AddSeconds(startTrimSeconds);
         workout.AvgPaceS = newDurationS > 0 && workout.DistanceM > 0
-            ? (int)(newDurationS / (workout.DistanceM / 1000.0))
+            ? newDurationS / (workout.DistanceM / 1000.0)
             : 0;
 
         // Update route

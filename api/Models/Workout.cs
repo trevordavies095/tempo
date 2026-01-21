@@ -23,7 +23,8 @@ public class Workout
     public double DistanceM { get; set; }
 
     [Required]
-    public int AvgPaceS { get; set; }  // Average pace in seconds/km
+    [Column(TypeName = "double precision")]
+    public double AvgPaceS { get; set; }  // Average pace in seconds/km
 
     [Column(TypeName = "double precision")]
     public double? ElevGainM { get; set; }

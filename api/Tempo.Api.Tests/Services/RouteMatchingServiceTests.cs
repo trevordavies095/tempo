@@ -841,7 +841,7 @@ public class RouteMatchingServiceTests : IDisposable
             StartedAt = startedAt,
             DistanceM = distanceM,
             DurationS = durationS,
-            AvgPaceS = (int)(durationS / (distanceM / 1000.0)),
+            AvgPaceS = durationS / (distanceM / 1000.0),
             Source = "test",
             CreatedAt = DateTime.UtcNow
         };
