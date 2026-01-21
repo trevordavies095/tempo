@@ -154,34 +154,71 @@ server {
 ### Caddy Example
 
 ```caddy
+# API endpoint for iOS app (direct API access)
+api-tempo.yourdomain.com {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+    
+    # Large file uploads (bulk imports up to 500MB)
+    reverse_proxy localhost:5001 {
+        transport http {
+            read_timeout 30m
+            write_timeout 30m
+        }
+    }
+}
+
+# Web frontend with API routing
 tempo.yourdomain.com {
     tls {
         protocols tls1.2 tls1.3
     }
     
-    # Large file uploads (bulk imports)
-    handle /api/workouts/import/* {
+    # Large file uploads (bulk imports) - route to API (strip only /api prefix)
+    @large_upload {
+        path /api/workouts/import/*
+    }
+    handle @large_upload {
+        uri strip_prefix /api
         reverse_proxy localhost:5001 {
             transport http {
                 read_timeout 30m
                 write_timeout 30m
             }
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
         }
     }
     
-    # Other API routes
-    handle /api/* {
-        reverse_proxy localhost:5001
+    # Other API routes (strip only /api prefix)
+    handle_path /api/* {
+        reverse_proxy localhost:5001 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
     }
     
     # Frontend
     handle {
-        reverse_proxy localhost:3004
+        reverse_proxy localhost:3004 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
     }
 }
 ```
 
-**Note**: Adjust the hostnames and ports based on your deployment setup.
+**Note**: 
+- Adjust the hostnames and ports based on your deployment setup
+- The `api-tempo.yourdomain.com` subdomain is optional and only needed if you have a mobile app that requires direct API access
+- The `uri strip_prefix /api` directive ensures that `/api/workouts/import/bulk` is forwarded to the API as `/workouts/import/bulk` (stripping only the `/api` prefix)
 
 ### Traefik Example
 
