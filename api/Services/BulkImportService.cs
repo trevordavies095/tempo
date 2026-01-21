@@ -246,18 +246,35 @@ public class BulkImportService
                 bool needsRawFileUpdate = existingWorkout.RawFileData == null || existingWorkout.RawFileData.Length == 0;
                 bool needsRawJsonUpdate = false;
                 
-                // Check if RawFitData needs update (old format without track points)
-                if (fileType == "fit" && !string.IsNullOrEmpty(existingWorkout.RawFitData))
+                // Check if RawFitData needs update (old format without track points or missing entirely)
+                if (fileType == "fit")
                 {
-                    try
+                    if (string.IsNullOrEmpty(existingWorkout.RawFitData))
                     {
-                        var existingFitData = System.Text.Json.JsonDocument.Parse(existingWorkout.RawFitData);
-                        // Check if trackPoints array exists in the JSON
-                        needsRawJsonUpdate = !existingFitData.RootElement.TryGetProperty("trackPoints", out _);
+                        // RawFitData is missing, needs update
+                        needsRawJsonUpdate = true;
                     }
-                    catch
+                    else
                     {
-                        // If we can't parse, assume it needs update
+                        try
+                        {
+                            var existingFitData = System.Text.Json.JsonDocument.Parse(existingWorkout.RawFitData);
+                            // Check if trackPoints array exists in the JSON
+                            needsRawJsonUpdate = !existingFitData.RootElement.TryGetProperty("trackPoints", out _);
+                        }
+                        catch
+                        {
+                            // If we can't parse, assume it needs update
+                            needsRawJsonUpdate = true;
+                        }
+                    }
+                }
+                // Check if RawGpxData needs update (missing entirely)
+                else if (fileType == "gpx")
+                {
+                    if (string.IsNullOrEmpty(existingWorkout.RawGpxData))
+                    {
+                        // RawGpxData is missing, needs update
                         needsRawJsonUpdate = true;
                     }
                 }
@@ -276,12 +293,14 @@ public class BulkImportService
                     }
                     
                     // Update RawFitData with new format (includes track points)
-                    if (needsRawJsonUpdate && rawFitDataJson != null)
+                    // Always update if we're updating raw data to keep them in sync
+                    if (fileType == "fit" && rawFitDataJson != null)
                     {
                         existingWorkout.RawFitData = rawFitDataJson;
                     }
                     
                     // Update RawGpxData if this is a GPX file
+                    // Always update if we're updating raw data to keep them in sync
                     if (fileType == "gpx" && rawGpxDataJson != null)
                     {
                         existingWorkout.RawGpxData = rawGpxDataJson;

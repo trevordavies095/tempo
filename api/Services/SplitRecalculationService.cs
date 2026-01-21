@@ -130,6 +130,7 @@ public class SplitRecalculationService
             .Select(w => new Workout
             {
                 Id = w.Id,
+                StartedAt = w.StartedAt,
                 DistanceM = w.DistanceM,
                 DurationS = w.DurationS,
                 Source = w.Source,
