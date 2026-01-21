@@ -116,9 +116,15 @@ export function BulkImport() {
                 <span className="font-medium">Successfully imported:</span>{' '}
                 <span className="text-green-700 dark:text-green-300">{importResult.successful}</span>
               </p>
+              {importResult.updated > 0 && (
+                <p>
+                  <span className="font-medium">Updated with new data:</span>{' '}
+                  <span className="text-blue-700 dark:text-blue-300">{importResult.updated}</span>
+                </p>
+              )}
               {importResult.skipped > 0 && (
                 <p>
-                  <span className="font-medium">Skipped (duplicates):</span>{' '}
+                  <span className="font-medium">Skipped (already complete):</span>{' '}
                   <span className="text-yellow-700 dark:text-yellow-300">{importResult.skipped}</span>
                 </p>
               )}

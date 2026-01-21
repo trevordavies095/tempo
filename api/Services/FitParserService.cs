@@ -180,7 +180,7 @@ public class FitParserService
             double? elevationGain = CalculateElevationGain(trackPoints);
 
             // Build RawFitData JSON
-            var rawFitData = BuildRawFitData(session, deviceInfos, records.Count, weatherConditions);
+            var rawFitData = BuildRawFitData(session, deviceInfos, records.Count, weatherConditions, trackPoints);
 
             return new FitParseResult
             {
@@ -311,22 +311,29 @@ public class FitParserService
     }
 
 
-    private string? BuildRawFitData(SessionMesg? session, ReadOnlyCollection<DeviceInfoMesg> deviceInfos, int recordCount, ReadOnlyCollection<WeatherConditionsMesg> weatherConditions)
+    private string? BuildRawFitData(SessionMesg? session, ReadOnlyCollection<DeviceInfoMesg> deviceInfos, int recordCount, ReadOnlyCollection<WeatherConditionsMesg> weatherConditions, List<GpxParserService.GpxPoint> trackPoints)
     {
-        if (session == null)
-        {
-            return null;
-        }
-
-        var sessionData = ExtractSessionData(session);
+        // Extract session data if available (nullable to handle FIT files without session messages)
+        var sessionData = session != null ? ExtractSessionData(session) : null;
         var deviceData = ExtractDeviceData(deviceInfos);
         var weatherData = ExtractWeatherData(weatherConditions);
 
         var rawFitData = new
         {
-            session = sessionData.Count > 0 ? sessionData : null,
+            session = sessionData?.Count > 0 ? sessionData : null,
             device = deviceData.Count > 0 ? deviceData : null,
             weather = weatherData?.Count > 0 ? weatherData : null,
+            trackPoints = trackPoints.Select(p => new
+            {
+                lat = p.Latitude,
+                lon = p.Longitude,
+                ele = p.Elevation,
+                time = p.Time?.ToString("O"),
+                hr = p.HeartRateBpm,
+                cad = p.CadenceRpm,
+                power = p.PowerWatts,
+                temp = p.TemperatureC
+            }).ToList(),
             recordCount = recordCount,
             hasTimeSeries = recordCount > 0,
             source = "fit_import",

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
@@ -357,7 +358,7 @@ public static class StatsEndpoints
         // This ensures alignment with /stats/available-periods
         DateTime periodEnd;
         var today = now.Date;
-        if (!string.IsNullOrEmpty(periodEndDate) && DateTime.TryParse(periodEndDate, out var parsedEndDate))
+        if (!string.IsNullOrEmpty(periodEndDate) && DateTime.TryParse(periodEndDate, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsedEndDate))
         {
             periodEnd = parsedEndDate.Date;
         }
