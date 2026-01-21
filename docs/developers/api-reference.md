@@ -36,11 +36,17 @@ Content-Type: application/json
 
 {
   "username": "your-username",
-  "password": "your-password"
+  "password": "your-password",
+  "rememberMe": false
 }
 ```
 
-The JWT token is stored in an httpOnly cookie.
+Request Body:
+- `username` (string, required) - Your username
+- `password` (string, required) - Your password
+- `rememberMe` (boolean, optional) - If `true`, token expires in 30 days (default: 7 days)
+
+The JWT token is stored in an httpOnly cookie with expiration based on the `rememberMe` parameter.
 
 ### Get Current User
 
@@ -283,6 +289,25 @@ Recalculate splits for all workouts:
 ```http
 POST /workouts/recalculate-splits
 ```
+
+### Get Similar Routes
+
+Find workouts with similar routes to a given workout:
+
+```http
+GET /workouts/{id}/similar-routes?maxResults=10&maxYears=2
+```
+
+Query Parameters:
+- `maxResults` (int, optional) - Maximum number of results to return (default: 10)
+- `maxYears` (int, optional) - Maximum number of years to look back (default: 2)
+
+Returns a list of similar route matches with:
+- `workoutId` - ID of the similar workout
+- `similarityScore` - Route similarity score (0-100%)
+- `distanceDifferenceM` - Distance difference in meters
+- `timeDifferenceS` - Time difference in seconds
+- `paceDifferenceS` - Pace difference in seconds per km
 
 ## Statistics
 

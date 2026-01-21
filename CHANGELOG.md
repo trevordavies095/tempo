@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-01-21
+
+### Added
+- **Route matching and comparison**
+  - New `RouteMatchingService` for finding similar routes across workouts
+  - Find workouts that follow similar paths based on route geometry comparison
+  - Route comparison tab in workout detail view showing similar routes
+  - Similar routes section displaying matches with similarity scores, distance differences, and time comparisons
+  - Automatic route matching when viewing workout details
+  - GIN index on `WorkoutRoutes.RouteGeoJson` for efficient route queries
+  - Configurable similarity thresholds (start/end proximity, distance similarity, route similarity)
+- **Remember Me authentication**
+  - "Remember me" checkbox on login page for extended session duration
+  - JWT tokens with 30-day expiration when "Remember me" is enabled (vs. 7 days default)
+  - Configurable via `JWT:RememberMeExpirationDays` setting (default: 30 days)
+  - Enhanced authentication context with remember me support
+- **Tabler Icons integration**
+  - Replaced all custom SVG icons with Tabler Icons (`@tabler/icons-react`)
+  - Consistent icon styling across the application
+  - Improved icon accessibility and maintainability
+  - Icons used in: ActivitiesTable, BestEffortsChart, MediaUpload, TempoExportImport, UnitPreferenceSection, and more
+
+### Fixed
+- **Identical split times bug**
+  - Fixed split recalculation producing identical times across all splits
+  - Enhanced `FitParserService` to store track points with timestamps in `RawFitData`
+  - Improved `SplitRecalculationService` with better timestamp extraction from raw data
+  - Enhanced `BulkImportService` to update duplicate workouts with complete track point data
+  - Re-importing workouts now properly updates split data with accurate timestamps
+  
+  **Important for affected users:** If you experienced the identical split times issue (where all splits showed the same or nearly the same pace), you may need to re-import affected workouts to fix the split data. Workouts imported after this fix will automatically have correct split calculations. For existing workouts, re-importing the original workout files (GPX, FIT, or CSV) will update the stored data with complete track point information, enabling accurate split recalculation. The bulk import feature will automatically update duplicate workouts when re-importing.
+- **Pace calculation precision**
+  - Changed `Workout.AvgPaceS` and `WorkoutSplit.PaceS` from `int` to `double` for fractional second precision
+  - Prevents rounding errors that made splits appear more similar than they were
+  - Improved pace formatting with proper rounding in frontend
+  - Database migration automatically converts existing data
+- **Weather service date parsing**
+  - Fixed date parsing issues in `WeatherService` using culture-aware parsing
+  - Added `DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal` for consistent UTC handling
+  - Improved reliability when fetching weather data from Open-Meteo API
+- **Stats endpoint date parsing**
+  - Fixed date parsing in stats endpoints using culture-aware parsing
+  - Consistent date handling across all stats queries
+- **Test reliability improvements**
+  - Sequential test execution to prevent database state conflicts
+  - Fixed authentication race conditions in test setup using `SemaphoreSlim`
+  - Fixed flaky JWT expiration tests with proper token generation
+  - Enhanced test logging with detailed verbosity in CI
+  - Increased JWT clock skew tolerance from 0 to 5 minutes for better reliability
+
+### Changed
+- **FIT parser enhancements**
+  - `RawFitData` now includes complete track point data (lat, lon, elevation, time, heart rate, cadence, power, temperature)
+  - Enables accurate split recalculation for FIT files
+  - Backward compatible with existing FIT files (metadata-only format still supported)
+- **Pace formatting improvements**
+  - Improved pace rounding in `formatPace` function
+  - Better handling of pace conversion between metric and imperial units
+  - More accurate pace display with proper second rounding
+- **Authentication error handling**
+  - Global 401 error handler in `AuthContext` for automatic logout on authentication failures
+  - Improved error handling for expired tokens and authentication errors
+  - Better user experience when sessions expire
+
+### Technical
+- Database migration: `ChangePaceFieldsToDouble` - converts pace fields from integer to double precision
+- Database migration: `AddGinIndexToWorkoutRouteGeoJson` - adds GIN index for efficient route queries
+- Updated `RouteMatchingService` with configurable similarity thresholds and efficient route comparison algorithms
+- Enhanced test infrastructure with sequential execution configuration
+- Updated `TestHttpClientFactory` with thread-safe user creation
+- Improved JWT validation with configurable clock skew tolerance
+- Updated frontend dependencies: `@tabler/icons-react` added
+
+### Migration Notes
+
+**Identical Split Times Bug Fix:**
+If you experienced the identical split times issue where all splits showed the same or nearly the same pace when using "Recalculate Splits", you may need to re-import affected workouts to fix the split data. This issue affected workouts imported before version 2.2.0.
+
+**To fix affected workouts:**
+1. Re-import the original workout files (GPX, FIT, or CSV) for workouts with incorrect split data
+2. The bulk import feature will automatically detect duplicates and update them with complete track point information
+3. After re-importing, split recalculation will work correctly with accurate timestamps
+
+**Note:** New workouts imported after upgrading to 2.2.0 will automatically have correct split calculations and do not need to be re-imported.
+
 ## [2.1.1] - 2026-01-01
 
 ### Added

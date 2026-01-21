@@ -109,6 +109,7 @@ environment:
 - `JWT__Issuer` - JWT issuer (default: "Tempo")
 - `JWT__Audience` - JWT audience (default: "Tempo")
 - `JWT__ExpirationDays` - Token expiration in days (default: 7)
+- `JWT__RememberMeExpirationDays` - Token expiration when "Remember me" is enabled (default: 30)
 
 ### Security Requirements
 
@@ -133,6 +134,7 @@ All configuration can be set via environment variables using the double undersco
 | `JWT:Issuer` | `JWT__Issuer` | `Tempo` |
 | `JWT:Audience` | `JWT__Audience` | `Tempo` |
 | `JWT:ExpirationDays` | `JWT__ExpirationDays` | `7` |
+| `JWT:RememberMeExpirationDays` | `JWT__RememberMeExpirationDays` | `30` |
 
 ## Next Steps
 
