@@ -40,14 +40,16 @@ export function formatDuration(seconds: number): string {
  */
 export function formatPace(secondsPerKm: number, unit: UnitPreference = 'metric'): string {
   if (unit === 'imperial') {
-    // Convert from seconds/km to seconds/mile
-    const secondsPerMile = secondsPerKm * 1.609344;
+    // Convert from seconds/km to seconds/mile, then round to nearest second
+    const secondsPerMile = Math.round(secondsPerKm * 1.609344);
     const minutes = Math.floor(secondsPerMile / 60);
-    const seconds = Math.floor(secondsPerMile % 60);
+    const seconds = secondsPerMile % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')} /mi`;
   } else {
-    const minutes = Math.floor(secondsPerKm / 60);
-    const seconds = Math.floor(secondsPerKm % 60);
+    // Round to nearest second
+    const totalSeconds = Math.round(secondsPerKm);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
   }
 }

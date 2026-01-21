@@ -22,7 +22,8 @@ public class WorkoutSplit
     public int DurationS { get; set; }
 
     [Required]
-    public int PaceS { get; set; }
+    [Column(TypeName = "double precision")]
+    public double PaceS { get; set; }
 
     // Navigation property
     [ForeignKey(nameof(WorkoutId))]

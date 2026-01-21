@@ -28,10 +28,10 @@ public static class WorkoutsEndpoints
         public DateTime StartedAt { get; set; }
         public int DurationS { get; set; }
         public double DistanceM { get; set; }
-        public int AvgPaceS { get; set; }
+        public double AvgPaceS { get; set; }
         public double? SimilarityScore { get; set; }
         public int? TimeDifferenceS { get; set; } // Negative = faster, Positive = slower
-        public int? PaceDifferenceS { get; set; } // Negative = faster pace
+        public double? PaceDifferenceS { get; set; } // Negative = faster pace
         public int? RelativeEffort { get; set; }
         public double? ElevGainM { get; set; }
     }

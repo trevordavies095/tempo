@@ -531,7 +531,7 @@ public class GpxParserService
                 }
 
                 // Calculate split pace in seconds per km (stored in metric)
-                var splitPace = splitDuration > 0 ? (int)(splitDuration / (splitDistance / 1000.0)) : 0;
+                var splitPace = splitDuration > 0 ? splitDuration / (splitDistance / 1000.0) : 0;
 
                 splits.Add(new WorkoutSplit
                 {
@@ -568,7 +568,7 @@ public class GpxParserService
                     finalSplitDuration = (int)((remainingDistance / distanceMeters) * durationSeconds);
                 }
 
-                var finalSplitPace = finalSplitDuration > 0 ? (int)(finalSplitDuration / (remainingDistance / 1000.0)) : 0;
+                var finalSplitPace = finalSplitDuration > 0 ? finalSplitDuration / (remainingDistance / 1000.0) : 0;
 
                 splits.Add(new WorkoutSplit
                 {
@@ -604,7 +604,7 @@ public class GpxParserService
 
                 lastSplit.DistanceM = totalLastSplitDistance;
                 lastSplit.DurationS = mergedDuration;
-                lastSplit.PaceS = mergedDuration > 0 ? (int)(mergedDuration / (totalLastSplitDistance / 1000.0)) : lastSplit.PaceS;
+                lastSplit.PaceS = mergedDuration > 0 ? mergedDuration / (totalLastSplitDistance / 1000.0) : lastSplit.PaceS;
             }
         }
 

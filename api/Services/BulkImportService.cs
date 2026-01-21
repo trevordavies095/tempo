@@ -373,7 +373,7 @@ public class BulkImportService
     {
         // Calculate average pace
         var avgPaceS = distanceMeters > 0 && durationSeconds > 0
-            ? (int)(durationSeconds / (distanceMeters / 1000.0))
+            ? durationSeconds / (distanceMeters / 1000.0)
             : 0;
 
         // Build notes from CSV metadata
