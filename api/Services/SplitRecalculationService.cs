@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
@@ -231,7 +232,7 @@ public class SplitRecalculationService
 
                 if (pointElement.TryGetProperty("time", out var timeElement) && timeElement.ValueKind == JsonValueKind.String)
                 {
-                    if (DateTime.TryParse(timeElement.GetString(), out var time))
+                    if (DateTime.TryParse(timeElement.GetString(), null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var time))
                     {
                         point.Time = DateTime.SpecifyKind(time, DateTimeKind.Utc);
                     }
