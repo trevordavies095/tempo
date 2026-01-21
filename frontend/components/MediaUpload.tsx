@@ -3,6 +3,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { uploadWorkoutMedia } from '@/lib/api';
+import { IconPlus, IconX } from '@tabler/icons-react';
 
 interface MediaUploadProps {
   workoutId: string;
@@ -87,19 +88,7 @@ export function MediaUpload({ workoutId, onUploadSuccess }: MediaUploadProps) {
           onClick={handleButtonClick}
           className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors flex items-center gap-1.5"
         >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
+          <IconPlus className="w-4 h-4" />
           <span>Add Media</span>
         </button>
 
@@ -135,19 +124,7 @@ export function MediaUpload({ workoutId, onUploadSuccess }: MediaUploadProps) {
                     onClick={() => handleRemoveFile(index)}
                     className="ml-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                   >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
+                    <IconX className="w-5 h-5" />
                   </button>
                 </div>
               ))}

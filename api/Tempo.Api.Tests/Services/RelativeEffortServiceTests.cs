@@ -535,7 +535,7 @@ public class RelativeEffortServiceTests : IDisposable
             StartedAt = DateTime.UtcNow.AddHours(-1),
             DurationS = durationS,
             DistanceM = 5000.0,
-            AvgPaceS = (int)(durationS / 5.0),
+            AvgPaceS = durationS / 5.0,
             AvgHeartRateBpm = avgHeartRateBpm,
             CreatedAt = DateTime.UtcNow
         };

@@ -144,7 +144,7 @@ public static class TestDataSeeder
             StartedAt = startedAt ?? DateTime.UtcNow.AddHours(-1),
             DurationS = durationS,
             DistanceM = distanceM,
-            AvgPaceS = (int)(durationS / (distanceM / 1000.0)), // seconds per km
+            AvgPaceS = durationS / (distanceM / 1000.0), // seconds per km
             ShoeId = shoeId,
             Name = name ?? "Test Run",
             Source = "test",
@@ -223,7 +223,7 @@ public static class TestDataSeeder
         {
             var splitDistance = splitDistanceM;
             var splitDuration = (int)(duration * (splitDistanceM / distance));
-            var splitPace = (int)(splitDuration / (splitDistance / 1000.0)); // seconds per km
+            var splitPace = splitDuration / (splitDistance / 1000.0); // seconds per km
 
             splits.Add(new WorkoutSplit
             {
@@ -240,7 +240,7 @@ public static class TestDataSeeder
         if (remainingDistance > 10) // Only add if significant (>10m)
         {
             var remainingDuration = (int)(duration * (remainingDistance / distance));
-            var remainingPace = remainingDistance > 0 ? (int)(remainingDuration / (remainingDistance / 1000.0)) : 0;
+            var remainingPace = remainingDistance > 0 ? remainingDuration / (remainingDistance / 1000.0) : 0;
 
             splits.Add(new WorkoutSplit
             {

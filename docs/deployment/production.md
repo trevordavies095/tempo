@@ -141,9 +141,84 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Large file upload support (bulk imports up to 500MB)
+        client_max_body_size 500M;
+        proxy_read_timeout 600s;
+        proxy_connect_timeout 600s;
+        proxy_send_timeout 600s;
     }
 }
 ```
+
+### Caddy Example
+
+```caddy
+# API endpoint for iOS app (direct API access)
+api-tempo.yourdomain.com {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+    
+    # Large file uploads (bulk imports up to 500MB)
+    reverse_proxy localhost:5001 {
+        transport http {
+            read_timeout 30m
+            write_timeout 30m
+        }
+    }
+}
+
+# Web frontend with API routing
+tempo.yourdomain.com {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+    
+    # Large file uploads (bulk imports) - route to API (strip only /api prefix)
+    @large_upload {
+        path /api/workouts/import/*
+    }
+    handle @large_upload {
+        uri strip_prefix /api
+        reverse_proxy localhost:5001 {
+            transport http {
+                read_timeout 30m
+                write_timeout 30m
+            }
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    
+    # Other API routes (strip only /api prefix)
+    handle_path /api/* {
+        reverse_proxy localhost:5001 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    
+    # Frontend
+    handle {
+        reverse_proxy localhost:3004 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}
+```
+
+**Note**: 
+- Adjust the hostnames and ports based on your deployment setup
+- The `api-tempo.yourdomain.com` subdomain is optional and only needed if you have a mobile app that requires direct API access
+- The `uri strip_prefix /api` directive ensures that `/api/workouts/import/bulk` is forwarded to the API as `/workouts/import/bulk` (stripping only the `/api` prefix)
 
 ### Traefik Example
 
@@ -153,7 +228,31 @@ labels:
   - "traefik.http.routers.tempo.rule=Host(`yourdomain.com`)"
   - "traefik.http.routers.tempo.entrypoints=websecure"
   - "traefik.http.routers.tempo.tls.certresolver=letsencrypt"
+  # Large file upload support
+  - "traefik.http.middlewares.tempo-buffering.buffering.maxRequestBodyBytes=524288000"  # 500MB
+  - "traefik.http.middlewares.tempo-timeout.buffering.retryExpression=IsNetworkError() && Attempts() < 2"
+  - "traefik.http.routers.tempo.middlewares=tempo-buffering,tempo-timeout"
 ```
+
+## Large File Upload Requirements
+
+Tempo supports bulk imports of up to 500MB (Strava exports, Tempo exports). Your reverse proxy must be configured to handle these large uploads:
+
+### Required Settings
+
+- **Maximum body size**: 500MB minimum
+- **Read timeout**: 10-30 minutes (depending on expected upload speed)
+- **Write timeout**: 10-30 minutes
+- **Connect timeout**: 10 minutes
+
+These settings are already configured in the API (`Program.cs`) and only need to be set at the reverse proxy level.
+
+### Testing Large Uploads
+
+After configuration, test with a large file:
+1. Export your data from Strava (typically 50-200MB)
+2. Import via Settings > Import > Bulk Strava Import
+3. Monitor reverse proxy logs for timeout errors
 
 ## SSL/TLS Configuration
 

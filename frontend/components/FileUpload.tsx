@@ -2,51 +2,44 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
-import { importWorkoutFile } from '@/lib/api';
+import Link from 'next/link';
+import { importWorkoutFile, type WorkoutImportResponse, type WorkoutImportSummaryResponse } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { useFileDrop } from '@/hooks/useFileDrop';
+import { formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
+import { IconUpload, IconX } from '@tabler/icons-react';
 
 export function FileUpload() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [importResult, setImportResult] = useState<WorkoutImportResponse | WorkoutImportSummaryResponse | null>(null);
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
-
-  const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
-    onFilesSelected: (files) => {
-      setSelectedFiles((prev) => [...prev, ...files]);
-    },
-    acceptExtensions: ['.gpx', '.fit', '.fit.gz'],
-  });
 
   const mutation = useMutation({
     mutationFn: (files: File[]) => importWorkoutFile(files, unitPreference),
     onSuccess: (data) => {
       invalidateWorkoutQueries(queryClient);
-      
-      // Handle both single file (backward compat) and multiple file responses
-      if ('totalProcessed' in data) {
-        // Multiple file response
-        const summary = data as { totalProcessed: number; successful: number; skipped: number; updated: number; errors: number; errorDetails: Array<{ filename: string; error: string }> };
-        const message = `Import complete!\n\nTotal: ${summary.totalProcessed}\nSuccessful: ${summary.successful}\nUpdated: ${summary.updated}\nSkipped: ${summary.skipped}\nErrors: ${summary.errors}`;
-        if (summary.errorDetails.length > 0) {
-          const errorList = summary.errorDetails.map(e => `- ${e.filename}: ${e.error}`).join('\n');
-          alert(`${message}\n\nErrors:\n${errorList}`);
-        } else {
-          alert(message);
-        }
-      } else {
-        // Single file response (backward compat)
-        const single = data as { distanceM: number; durationS: number };
-        alert(`Workout imported successfully!\nDistance: ${(single.distanceM / 1000).toFixed(2)} km\nDuration: ${Math.floor(single.durationS / 60)}:${(single.durationS % 60).toString().padStart(2, '0')}`);
-      }
+      setImportResult(data);
       setSelectedFiles([]);
     },
     onError: (error: Error) => {
-      alert(`Error importing files: ${error.message}`);
+      // Error is handled inline via mutation.isError
     },
   });
 
+  const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
+    onFilesSelected: (files) => {
+      setSelectedFiles((prev) => [...prev, ...files]);
+      setImportResult(null);
+      // Only reset mutation state if not currently pending to prevent re-enabling submit button
+      // during an in-flight upload, which could allow duplicate submissions
+      if (!mutation.isPending) {
+        mutation.reset(); // Clear mutation error state when new files are selected
+      }
+    },
+    acceptExtensions: ['.gpx', '.fit', '.fit.gz'],
+  });
 
   const handleRemoveFile = useCallback((index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
@@ -91,19 +84,7 @@ export function FileUpload() {
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div className="text-center">
-            <svg
-              className="mx-auto h-12 w-12 text-gray-400"
-              stroke="currentColor"
-              fill="none"
-              viewBox="0 0 48 48"
-            >
-              <path
-                d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-4h12m-4-4v12m0 0l-4-4m4 4l-4-4"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <IconUpload className="mx-auto h-12 w-12 text-gray-400" />
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
               <span className="font-semibold">Click to upload</span> or drag and drop
             </p>
@@ -132,19 +113,7 @@ export function FileUpload() {
                     onClick={() => handleRemoveFile(index)}
                     className="ml-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                   >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
+                    <IconX className="w-5 h-5" />
                   </button>
                 </div>
               ))}
@@ -164,6 +133,93 @@ export function FileUpload() {
             <p className="text-sm text-red-800 dark:text-red-200">
               Error: {mutation.error instanceof Error ? mutation.error.message : 'Unknown error'}
             </p>
+          </div>
+        )}
+
+        {importResult && (
+          <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg space-y-2">
+            {('totalProcessed' in importResult) ? (
+              // Multiple file response
+              <>
+                <h3 className="text-lg font-semibold text-green-900 dark:text-green-100">
+                  Import Complete!
+                </h3>
+                <div className="text-sm text-green-800 dark:text-green-200 space-y-1">
+                  <p>
+                    <span className="font-medium">Total processed:</span> {importResult.totalProcessed}
+                  </p>
+                  <p>
+                    <span className="font-medium">Successfully imported:</span>{' '}
+                    <span className="text-green-700 dark:text-green-300">{importResult.successful}</span>
+                  </p>
+                  {importResult.updated > 0 && (
+                    <p>
+                      <span className="font-medium">Updated:</span>{' '}
+                      <span className="text-blue-700 dark:text-blue-300">{importResult.updated}</span>
+                    </p>
+                  )}
+                  {importResult.skipped > 0 && (
+                    <p>
+                      <span className="font-medium">Skipped (duplicates):</span>{' '}
+                      <span className="text-yellow-700 dark:text-yellow-300">{importResult.skipped}</span>
+                    </p>
+                  )}
+                  {importResult.errors > 0 && (
+                    <div>
+                      <p>
+                        <span className="font-medium">Errors:</span>{' '}
+                        <span className="text-red-700 dark:text-red-300">{importResult.errors}</span>
+                      </p>
+                      {importResult.errorDetails.length > 0 && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-green-700 dark:text-green-300 hover:underline">
+                            View error details
+                          </summary>
+                          <ul className="mt-2 ml-4 list-disc space-y-1">
+                            {importResult.errorDetails.map((error, idx) => (
+                              <li key={idx} className="text-xs">
+                                <span className="font-mono">{error.filename}:</span> {error.error}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              // Single file response
+              <>
+                <h3 className="text-lg font-semibold text-green-900 dark:text-green-100">
+                  Workout Imported Successfully!
+                </h3>
+                <div className="text-sm text-green-800 dark:text-green-200 space-y-1">
+                  <p>
+                    <span className="font-medium">Distance:</span> {formatDistance(importResult.distanceM, unitPreference)}
+                  </p>
+                  <p>
+                    <span className="font-medium">Duration:</span> {formatDuration(importResult.durationS)}
+                  </p>
+                  <p>
+                    <span className="font-medium">Average Pace:</span> {formatPace(importResult.avgPaceS, unitPreference)}
+                  </p>
+                  {importResult.elevGainM !== null && importResult.elevGainM > 0 && (
+                    <p>
+                      <span className="font-medium">Elevation Gain:</span> {formatElevation(importResult.elevGainM, unitPreference)}
+                    </p>
+                  )}
+                  <div className="pt-2">
+                    <Link
+                      href={`/dashboard/${importResult.id}`}
+                      className="inline-flex items-center text-sm font-medium text-green-700 dark:text-green-300 hover:text-green-800 dark:hover:text-green-200 hover:underline"
+                    >
+                      View workout details →
+                    </Link>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </form>

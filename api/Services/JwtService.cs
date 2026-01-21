@@ -15,12 +15,18 @@ public class JwtService
     private readonly string _issuer;
     private readonly string _audience;
     private readonly int _expirationDays;
+    private readonly int _rememberMeExpirationDays;
     private readonly ILogger<JwtService> _logger;
 
     /// <summary>
     /// Gets the configured JWT token expiration in days
     /// </summary>
     public int ExpirationDays => _expirationDays;
+
+    /// <summary>
+    /// Gets the configured JWT token expiration in days for "Remember Me" sessions
+    /// </summary>
+    public int RememberMeExpirationDays => _rememberMeExpirationDays;
 
     public JwtService(IConfiguration configuration, ILogger<JwtService> logger)
     {
@@ -29,6 +35,7 @@ public class JwtService
         _issuer = configuration["JWT:Issuer"] ?? "Tempo";
         _audience = configuration["JWT:Audience"] ?? "Tempo";
         _expirationDays = configuration.GetValue<int>("JWT:ExpirationDays", 7);
+        _rememberMeExpirationDays = configuration.GetValue<int>("JWT:RememberMeExpirationDays", 30);
         _logger = logger;
     }
 
@@ -36,8 +43,9 @@ public class JwtService
     /// Generates a JWT token for a user
     /// </summary>
     /// <param name="user">User entity</param>
+    /// <param name="expirationDays">Optional expiration in days. If not provided, uses default expiration.</param>
     /// <returns>JWT token string</returns>
-    public string GenerateToken(User user)
+    public string GenerateToken(User user, int? expirationDays = null)
     {
         var claims = new[]
         {
@@ -49,11 +57,13 @@ public class JwtService
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
+        var expiration = expirationDays ?? _expirationDays;
+
         var token = new JwtSecurityToken(
             issuer: _issuer,
             audience: _audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddDays(_expirationDays),
+            expires: DateTime.UtcNow.AddDays(expiration),
             signingCredentials: credentials
         );
 
@@ -81,7 +91,7 @@ public class JwtService
                 ValidateAudience = true,
                 ValidAudience = _audience,
                 ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
+                ClockSkew = TimeSpan.FromMinutes(5)
             };
 
             var principal = tokenHandler.ValidateToken(token, validationParameters, out _);

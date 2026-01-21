@@ -327,7 +327,7 @@ public class JwtServiceTests
             { "JWT:SecretKey", "test-secret-key-that-is-at-least-32-characters-long" },
             { "JWT:Issuer", "TestIssuer" },
             { "JWT:Audience", "TestAudience" },
-            { "JWT:ExpirationDays", "0" } // Expires immediately
+            { "JWT:ExpirationDays", "7" }
         };
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(configDict)
@@ -339,10 +339,10 @@ public class JwtServiceTests
             Id = Guid.NewGuid(),
             Username = "testuser"
         };
-        var token = service.GenerateToken(user);
-
-        // Wait a moment to ensure token is expired
-        Thread.Sleep(1000);
+        
+        // Create a token that expired 1 day ago (well beyond the 5-minute ClockSkew tolerance)
+        // This ensures the token is genuinely expired and will be rejected by ValidateToken
+        var token = service.GenerateToken(user, expirationDays: -1);
 
         // Act
         var principal = service.ValidateToken(token);

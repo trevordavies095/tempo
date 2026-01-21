@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Tempo.Api.Utils;
@@ -261,7 +262,7 @@ public class WeatherService
             for (int i = 0; i < timeArray.GetArrayLength(); i++)
             {
                 var timeStr = timeArray[i].GetString();
-                if (DateTime.TryParse(timeStr, out var time))
+                if (DateTime.TryParse(timeStr, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var time))
                 {
                     var timeDiff = Math.Abs((time - startTime).TotalHours);
                     if (timeDiff < minTimeDiff)

@@ -6,6 +6,7 @@ import { importBulkStravaExport, type BulkImportResponse } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { useFileDrop } from '@/hooks/useFileDrop';
+import { IconUpload } from '@tabler/icons-react';
 
 export function BulkImport() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -69,19 +70,7 @@ export function BulkImport() {
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div className="text-center">
-            <svg
-              className="mx-auto h-12 w-12 text-gray-400"
-              stroke="currentColor"
-              fill="none"
-              viewBox="0 0 48 48"
-            >
-              <path
-                d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-4h12m-4-4v12m0 0l-4-4m4 4l-4-4"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <IconUpload className="mx-auto h-12 w-12 text-gray-400" />
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
               <span className="font-semibold">Click to upload</span> or drag and drop
             </p>
@@ -127,9 +116,15 @@ export function BulkImport() {
                 <span className="font-medium">Successfully imported:</span>{' '}
                 <span className="text-green-700 dark:text-green-300">{importResult.successful}</span>
               </p>
+              {importResult.updated > 0 && (
+                <p>
+                  <span className="font-medium">Updated with new data:</span>{' '}
+                  <span className="text-blue-700 dark:text-blue-300">{importResult.updated}</span>
+                </p>
+              )}
               {importResult.skipped > 0 && (
                 <p>
-                  <span className="font-medium">Skipped (duplicates):</span>{' '}
+                  <span className="font-medium">Skipped (already complete):</span>{' '}
                   <span className="text-yellow-700 dark:text-yellow-300">{importResult.skipped}</span>
                 </p>
               )}

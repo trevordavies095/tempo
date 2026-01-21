@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { getBestEfforts, recalculateBestEfforts, type BestEffortItem } from '@/lib/api';
 import Link from 'next/link';
+import { IconRefresh } from '@tabler/icons-react';
 
 /// <summary>
 /// Format seconds as MM:SS or HH:MM:SS
@@ -93,20 +94,7 @@ export default function BestEffortsChart() {
             className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
             title="Recalculate best efforts"
           >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
+            <IconRefresh className="w-4 h-4" />
           </button>
         </div>
         <div className="h-64 flex items-center justify-center">
@@ -160,20 +148,7 @@ export default function BestEffortsChart() {
           className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           title="Recalculate best efforts"
         >
-          <svg
-            className={`w-4 h-4 ${recalculateMutation.isPending ? 'animate-spin' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
+          <IconRefresh className={`w-4 h-4 ${recalculateMutation.isPending ? 'animate-spin' : ''}`} />
         </button>
       </div>
 

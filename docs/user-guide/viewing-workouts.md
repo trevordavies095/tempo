@@ -86,6 +86,21 @@ Automatic weather data for the workout:
 - Wind speed
 - Humidity
 
+### Similar Routes
+
+Tempo can automatically find workouts that follow similar routes:
+- **Route Matching** - Automatically finds workouts with similar paths based on route geometry
+- **Similarity Score** - Shows how closely routes match (0-100%)
+- **Comparison View** - Compare distance, time, and pace differences between similar routes
+- **Route Comparison Tab** - Visual side-by-side comparison of route overlays
+- **Time Comparison** - See how your performance has changed on the same route over time
+
+**How It Works:**
+- Routes are matched based on start/end proximity, distance similarity, and route geometry
+- Only workouts from the last 2 years are considered (configurable)
+- Similar routes are automatically displayed when viewing workout details
+- Click on any similar route to view that workout's details
+
 ## Managing Workouts
 
 ### Edit Workout

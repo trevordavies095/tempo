@@ -78,7 +78,7 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidAudience = jwtAudience,
         ValidateLifetime = true,
-        ClockSkew = TimeSpan.Zero
+        ClockSkew = TimeSpan.FromMinutes(5)
     };
     // Support token from cookie
     options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
@@ -135,6 +135,7 @@ builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<ShoeMileageService>();
 builder.Services.AddScoped<ExportService>();
 builder.Services.AddScoped<ImportService>();
+builder.Services.AddScoped<RouteMatchingService>();
 builder.Services.AddHttpClient<WeatherService>();
 
 // Configure media storage
