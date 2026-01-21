@@ -345,6 +345,7 @@ export async function getWorkout(id: string): Promise<WorkoutDetail> {
 export interface BulkImportResponse {
   totalProcessed: number;
   successful: number;
+  updated: number;
   skipped: number;
   errors: number;
   errorDetails: Array<{

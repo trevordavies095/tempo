@@ -46,10 +46,16 @@ public class SplitRecalculationService
         // Try to extract track points from raw data
         List<GpxParserService.GpxPoint>? trackPoints = null;
 
-        // First, try to extract from RawGpxData
+        // First, try to extract from RawGpxData (GPX files)
         if (!string.IsNullOrEmpty(workout.RawGpxData))
         {
             trackPoints = ExtractTrackPointsFromRawGpxData(workout.RawGpxData);
+        }
+
+        // If not found, try to extract from RawFitData (FIT files)
+        if (trackPoints == null && !string.IsNullOrEmpty(workout.RawFitData))
+        {
+            trackPoints = ExtractTrackPointsFromRawFitData(workout.RawFitData);
         }
 
         // If not found, try to re-parse RawFileData
@@ -58,10 +64,17 @@ public class SplitRecalculationService
             trackPoints = await ReparseTrackPointsFromRawFileAsync(workout);
         }
 
-        // If still not found, extract from RouteGeoJson (coordinates only, no timestamps)
+        // If still not found, extract from RouteGeoJson and reconstruct timestamps
         if (trackPoints == null)
         {
+            _logger.LogInformation("Workout {WorkoutId} using RouteGeoJson, reconstructing timestamps from distance", workout.Id);
             trackPoints = ExtractTrackPointsFromRouteGeoJson(workout.Route.RouteGeoJson);
+            
+            // Reconstruct timestamps based on cumulative distance and workout duration
+            if (trackPoints != null && trackPoints.Count > 1)
+            {
+                trackPoints = ReconstructTimestampsFromDistance(trackPoints, workout.StartedAt, workout.DurationS, workout.DistanceM);
+            }
         }
 
         if (trackPoints == null || trackPoints.Count < 2)
@@ -110,9 +123,23 @@ public class SplitRecalculationService
     /// </summary>
     public async Task<SplitRecalculationResult> RecalculateSplitsForAllWorkoutsAsync(string unitPreference)
     {
+        // Explicitly select all fields needed for recalculation, including large fields that EF Core might not load by default
         var workouts = await _db.Workouts
             .Include(w => w.Route)
             .Where(w => w.Route != null)
+            .Select(w => new Workout
+            {
+                Id = w.Id,
+                DistanceM = w.DistanceM,
+                DurationS = w.DurationS,
+                Source = w.Source,
+                RawGpxData = w.RawGpxData,
+                RawFitData = w.RawFitData,
+                RawFileData = w.RawFileData,
+                RawFileName = w.RawFileName,
+                RawFileType = w.RawFileType,
+                Route = w.Route
+            })
             .ToListAsync();
 
         int successCount = 0;
@@ -156,11 +183,28 @@ public class SplitRecalculationService
     /// </summary>
     private List<GpxParserService.GpxPoint>? ExtractTrackPointsFromRawGpxData(string rawGpxDataJson)
     {
+        return ExtractTrackPointsFromJsonData(rawGpxDataJson, "RawGpxData");
+    }
+
+    /// <summary>
+    /// Extracts track points from RawFitData JSON.
+    /// </summary>
+    private List<GpxParserService.GpxPoint>? ExtractTrackPointsFromRawFitData(string rawFitDataJson)
+    {
+        return ExtractTrackPointsFromJsonData(rawFitDataJson, "RawFitData");
+    }
+
+    /// <summary>
+    /// Extracts track points from JSON data (shared implementation for both GPX and FIT).
+    /// </summary>
+    private List<GpxParserService.GpxPoint>? ExtractTrackPointsFromJsonData(string jsonData, string dataType)
+    {
         try
         {
-            var rawGpx = JsonSerializer.Deserialize<JsonElement>(rawGpxDataJson);
-            if (!rawGpx.TryGetProperty("trackPoints", out var trackPointsElement))
+            var rawData = JsonSerializer.Deserialize<JsonElement>(jsonData);
+            if (!rawData.TryGetProperty("trackPoints", out var trackPointsElement))
             {
+                _logger.LogWarning("{DataType} is missing 'trackPoints' property", dataType);
                 return null;
             }
 
@@ -192,14 +236,39 @@ public class SplitRecalculationService
                     }
                 }
 
+                // Extract heart rate
+                if (pointElement.TryGetProperty("hr", out var hrElement) && hrElement.ValueKind == JsonValueKind.Number)
+                {
+                    point.HeartRateBpm = (byte)hrElement.GetInt32();
+                }
+
+                // Extract cadence
+                if (pointElement.TryGetProperty("cad", out var cadElement) && cadElement.ValueKind == JsonValueKind.Number)
+                {
+                    point.CadenceRpm = (byte)cadElement.GetInt32();
+                }
+
+                // Extract power
+                if (pointElement.TryGetProperty("power", out var powerElement) && powerElement.ValueKind == JsonValueKind.Number)
+                {
+                    point.PowerWatts = (ushort)powerElement.GetInt32();
+                }
+
+                // Extract temperature
+                if (pointElement.TryGetProperty("temp", out var tempElement) && tempElement.ValueKind == JsonValueKind.Number)
+                {
+                    point.TemperatureC = (sbyte)tempElement.GetInt32();
+                }
+
                 trackPoints.Add(point);
             }
 
+            _logger.LogInformation("Extracted {Count} track points from {DataType}", trackPoints.Count, dataType);
             return trackPoints.Count > 0 ? trackPoints : null;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to extract track points from RawGpxData");
+            _logger.LogWarning(ex, "Failed to extract track points from {DataType}", dataType);
             return null;
         }
     }
@@ -303,6 +372,75 @@ public class SplitRecalculationService
             _logger.LogWarning(ex, "Failed to extract track points from RouteGeoJson");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Reconstructs timestamps for track points based on cumulative distance along the route.
+    /// This allows accurate split calculation for workouts without stored timestamps.
+    /// </summary>
+    private List<GpxParserService.GpxPoint> ReconstructTimestampsFromDistance(
+        List<GpxParserService.GpxPoint> trackPoints,
+        DateTime workoutStartTime,
+        int workoutDurationS,
+        double workoutDistanceM)
+    {
+        if (trackPoints == null || trackPoints.Count < 2)
+        {
+            return trackPoints;
+        }
+
+        // Calculate cumulative distances between consecutive points
+        var cumulativeDistances = new List<double> { 0.0 };
+        double totalDistance = 0.0;
+
+        for (int i = 1; i < trackPoints.Count; i++)
+        {
+            var prevPoint = trackPoints[i - 1];
+            var currPoint = trackPoints[i];
+            
+            // Calculate distance using Haversine formula
+            var distance = CalculateHaversineDistance(
+                prevPoint.Latitude, prevPoint.Longitude,
+                currPoint.Latitude, currPoint.Longitude);
+            
+            totalDistance += distance;
+            cumulativeDistances.Add(totalDistance);
+        }
+
+        // Assign timestamps proportionally based on distance
+        var reconstructed = new List<GpxParserService.GpxPoint>();
+        for (int i = 0; i < trackPoints.Count; i++)
+        {
+            var point = trackPoints[i];
+            var distanceRatio = totalDistance > 0 ? cumulativeDistances[i] / totalDistance : 0.0;
+            var elapsedSeconds = distanceRatio * workoutDurationS;
+            
+            point.Time = workoutStartTime.AddSeconds(elapsedSeconds);
+            reconstructed.Add(point);
+        }
+
+        return reconstructed;
+    }
+
+    /// <summary>
+    /// Calculates distance between two GPS coordinates using the Haversine formula.
+    /// </summary>
+    private double CalculateHaversineDistance(double lat1, double lon1, double lat2, double lon2)
+    {
+        const double R = 6371000; // Earth's radius in meters
+        
+        var lat1Rad = lat1 * Math.PI / 180.0;
+        var lat2Rad = lat2 * Math.PI / 180.0;
+        var deltaLat = (lat2 - lat1) * Math.PI / 180.0;
+        var deltaLon = (lon2 - lon1) * Math.PI / 180.0;
+        
+        var a = Math.Sin(deltaLat / 2) * Math.Sin(deltaLat / 2) +
+                Math.Cos(lat1Rad) * Math.Cos(lat2Rad) *
+                Math.Sin(deltaLon / 2) * Math.Sin(deltaLon / 2);
+        
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        
+        return R * c;
     }
 
     /// <summary>

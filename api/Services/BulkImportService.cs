@@ -242,21 +242,73 @@ public class BulkImportService
 
             if (existingWorkout != null)
             {
-                // Check if existing workout is missing raw file data
+                // Check if existing workout needs raw data update
                 bool needsRawFileUpdate = existingWorkout.RawFileData == null || existingWorkout.RawFileData.Length == 0;
+                bool needsRawJsonUpdate = false;
                 
-                if (needsRawFileUpdate)
+                // Check if RawFitData needs update (old format without track points)
+                if (fileType == "fit" && !string.IsNullOrEmpty(existingWorkout.RawFitData))
                 {
-                    // Backfill raw file data for existing workout
-                    existingWorkout.RawFileData = rawFileData;
-                    existingWorkout.RawFileName = Path.GetFileName(activity.Filename);
-                    existingWorkout.RawFileType = fileType;
+                    try
+                    {
+                        var existingFitData = System.Text.Json.JsonDocument.Parse(existingWorkout.RawFitData);
+                        // Check if trackPoints array exists in the JSON
+                        needsRawJsonUpdate = !existingFitData.RootElement.TryGetProperty("trackPoints", out _);
+                    }
+                    catch
+                    {
+                        // If we can't parse, assume it needs update
+                        needsRawJsonUpdate = true;
+                    }
+                }
+                
+                if (needsRawFileUpdate || needsRawJsonUpdate)
+                {
+                    // Load the route to recalculate splits
+                    await _db.Entry(existingWorkout).Reference(w => w.Route).LoadAsync();
                     
-                    // Save the update immediately
+                    // Update raw file data
+                    if (needsRawFileUpdate)
+                    {
+                        existingWorkout.RawFileData = rawFileData;
+                        existingWorkout.RawFileName = Path.GetFileName(activity.Filename);
+                        existingWorkout.RawFileType = fileType;
+                    }
+                    
+                    // Update RawFitData with new format (includes track points)
+                    if (needsRawJsonUpdate && rawFitDataJson != null)
+                    {
+                        existingWorkout.RawFitData = rawFitDataJson;
+                    }
+                    
+                    // Update RawGpxData if this is a GPX file
+                    if (fileType == "gpx" && rawGpxDataJson != null)
+                    {
+                        existingWorkout.RawGpxData = rawGpxDataJson;
+                    }
+                    
+                    // Save the update
                     await _db.SaveChangesAsync();
                     
-                    _logger.LogInformation("Updated duplicate workout {WorkoutId} with raw file data: {Filename} at {StartTime}", 
-                        existingWorkout.Id, activity.Filename, startTime);
+                    // Recalculate splits with new data
+                    try
+                    {
+                        var newSplits = CalculateSplits(trackPoints, distanceMeters, durationSeconds, splitDistanceMeters, existingWorkout.Id);
+                        
+                        // Remove old splits and add new ones
+                        var oldSplits = await _db.WorkoutSplits.Where(s => s.WorkoutId == existingWorkout.Id).ToListAsync();
+                        _db.WorkoutSplits.RemoveRange(oldSplits);
+                        _db.WorkoutSplits.AddRange(newSplits);
+                        
+                        await _db.SaveChangesAsync();
+                        
+                        _logger.LogInformation("Updated duplicate workout {WorkoutId} with raw data and recalculated splits: {Filename} at {StartTime}", 
+                            existingWorkout.Id, activity.Filename, startTime);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to recalculate splits for updated workout {WorkoutId}", existingWorkout.Id);
+                    }
                     
                     return new ActivityProcessResult
                     {
@@ -270,7 +322,7 @@ public class BulkImportService
                 }
                 else
                 {
-                    _logger.LogInformation("Skipped duplicate workout (already has raw file): {Filename} at {StartTime}", 
+                    _logger.LogInformation("Skipped duplicate workout (already has complete raw data): {Filename} at {StartTime}", 
                         activity.Filename, startTime);
                     
                     return new ActivityProcessResult
