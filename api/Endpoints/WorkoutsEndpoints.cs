@@ -2657,7 +2657,7 @@ public static class WorkoutsEndpoints
         DateTime startedAtUtc,
         int durationSeconds,
         double distanceMeters,
-        int avgPaceS,
+        double avgPaceS,
         double? elevationGainMeters,
         byte[] rawFileData,
         string fileName,
@@ -3161,7 +3161,7 @@ public static class WorkoutsEndpoints
 
             // Calculate average pace (seconds per km - stored in metric)
             var avgPaceS = distanceMeters > 0 && durationSeconds > 0
-                ? (int)(durationSeconds / (distanceMeters / 1000.0))
+                ? durationSeconds / (distanceMeters / 1000.0)
                 : 0;
 
             // Extract additional metrics from RawGpxData JSON (for GPX files)
