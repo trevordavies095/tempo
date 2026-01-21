@@ -258,9 +258,11 @@ public class BulkImportService
                     {
                         try
                         {
-                            var existingFitData = System.Text.Json.JsonDocument.Parse(existingWorkout.RawFitData);
-                            // Check if trackPoints array exists in the JSON
-                            needsRawJsonUpdate = !existingFitData.RootElement.TryGetProperty("trackPoints", out _);
+                            using (var existingFitData = System.Text.Json.JsonDocument.Parse(existingWorkout.RawFitData))
+                            {
+                                // Check if trackPoints array exists in the JSON
+                                needsRawJsonUpdate = !existingFitData.RootElement.TryGetProperty("trackPoints", out _);
+                            }
                         }
                         catch
                         {
