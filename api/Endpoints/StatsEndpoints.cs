@@ -73,11 +73,61 @@ public static class StatsEndpoints
             dailyTotals[dayOfWeek] += miles;
         }
 
+        // Calculate previous week boundaries (complete week immediately preceding current week)
+        var previousWeekStart = weekStart.AddDays(-7);
+        var previousWeekEnd = previousWeekStart.AddDays(7).AddTicks(-1);
+
+        // Convert previous week to UTC for database query
+        var previousWeekStartUtc = timezoneOffsetMinutes.HasValue
+            ? DateTime.SpecifyKind(previousWeekStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+            : DateTime.SpecifyKind(previousWeekStart, DateTimeKind.Utc);
+        var previousWeekEndUtc = timezoneOffsetMinutes.HasValue
+            ? DateTime.SpecifyKind(previousWeekEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+            : DateTime.SpecifyKind(previousWeekEnd, DateTimeKind.Utc);
+
+        // Query workouts for the previous week
+        var previousWeekWorkouts = await db.Workouts
+            .Where(w => w.StartedAt >= previousWeekStartUtc && w.StartedAt <= previousWeekEndUtc)
+            .AsNoTracking()
+            .ToListAsync();
+
+        // Calculate previous week daily totals
+        var previousWeekDailyTotals = new double[7]; // M T W T F S S
+        foreach (var workout in previousWeekWorkouts)
+        {
+            // Convert UTC to local timezone
+            var localTime = timezoneOffsetMinutes.HasValue
+                ? workout.StartedAt.AddMinutes(timezoneOffsetMinutes.Value)
+                : workout.StartedAt;
+
+            // Get day of week (0=Monday, 6=Sunday)
+            var dayOfWeek = ((int)localTime.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+            
+            // Convert meters to miles and add to daily total
+            var miles = workout.DistanceM / 1609.344;
+            previousWeekDailyTotals[dayOfWeek] += miles;
+        }
+
+        // Format week labels using invariant culture for consistency
+        var currentWeekLabel = $"{weekStart.ToString("MMM d", CultureInfo.InvariantCulture)} - {weekEnd.ToString("MMM d", CultureInfo.InvariantCulture)}";
+        var previousWeekLabel = $"{previousWeekStart.ToString("MMM d", CultureInfo.InvariantCulture)} - {previousWeekEnd.ToString("MMM d", CultureInfo.InvariantCulture)}";
+
+        // Build response with both camelCase and snake_case for backward compatibility
         return Results.Ok(new
         {
             weekStart = weekStart.ToString("yyyy-MM-dd"),
             weekEnd = weekEnd.ToString("yyyy-MM-dd"),
-            dailyMiles = dailyTotals
+            dailyMiles = dailyTotals,
+            previousWeekStart = previousWeekStart.ToString("yyyy-MM-dd"),
+            previous_week_start = previousWeekStart.ToString("yyyy-MM-dd"),
+            previousWeekEnd = previousWeekEnd.ToString("yyyy-MM-dd"),
+            previous_week_end = previousWeekEnd.ToString("yyyy-MM-dd"),
+            previousWeekDailyMiles = previousWeekDailyTotals,
+            previous_week_daily_miles = previousWeekDailyTotals,
+            currentWeekLabel = currentWeekLabel,
+            current_week_label = currentWeekLabel,
+            previousWeekLabel = previousWeekLabel,
+            previous_week_label = previousWeekLabel
         });
     }
 
