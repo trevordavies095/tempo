@@ -485,8 +485,8 @@ public class InsightsService
                     codeElem.ValueKind == JsonValueKind.Number)
                 {
                     var weatherCode = codeElem.GetInt32();
-                    // Thunderstorm codes: 95-99
-                    if (weatherCode >= 95 && weatherCode <= 99)
+                    // Thunderstorm codes: 95, 96, 99 (WMO standard - 97-98 undefined)
+                    if (weatherCode == 95 || weatherCode == 96 || weatherCode == 99)
                     {
                         if (!maxWeatherCode.HasValue || weatherCode > maxWeatherCode.Value)
                         {
@@ -536,8 +536,8 @@ public class InsightsService
                     codeElem.ValueKind == JsonValueKind.Number)
                 {
                     var weatherCode = codeElem.GetInt32();
-                    // Fog codes: 45-48
-                    if (weatherCode >= 45 && weatherCode <= 48)
+                    // Fog codes: 45, 48 (WMO standard - 46-47 undefined)
+                    if (weatherCode == 45 || weatherCode == 48)
                     {
                         if (!maxFogCode.HasValue || weatherCode > maxFogCode.Value)
                         {
@@ -589,8 +589,9 @@ public class InsightsService
                     codeElem.ValueKind == JsonValueKind.Number)
                 {
                     var weatherCode = codeElem.GetInt32();
-                    // Snow codes: 71-77, 85-86
-                    if ((weatherCode >= 71 && weatherCode <= 77) || (weatherCode >= 85 && weatherCode <= 86))
+                    // Snow codes: 71, 73, 75, 77, 85, 86 (WMO standard - 72, 74, 76 undefined)
+                    if (weatherCode == 71 || weatherCode == 73 || weatherCode == 75 || 
+                        weatherCode == 77 || weatherCode == 85 || weatherCode == 86)
                     {
                         // Try to get precipitation amount
                         double? precipitation = null;
