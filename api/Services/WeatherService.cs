@@ -572,7 +572,7 @@ public class WeatherService
     /// <summary>
     /// Maps WMO weather code to human-readable condition string
     /// </summary>
-    private static string MapWeatherCodeToCondition(int code)
+    public static string MapWeatherCodeToCondition(int code)
     {
         // WMO Weather interpretation codes (WW)
         return code switch
