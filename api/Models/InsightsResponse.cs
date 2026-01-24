@@ -43,6 +43,13 @@ public class InsightsResponse
     [Required]
     [JsonPropertyName("metadata")]
     public DataCoverageMetadata Metadata { get; set; } = new();
+
+    /// <summary>
+    /// Weather extremes statistics (coldest, hottest, windiest runs, etc.)
+    /// Null if insufficient weather data exists.
+    /// </summary>
+    [JsonPropertyName("weather")]
+    public WeatherInsights? Weather { get; set; }
 }
 
 /// <summary>
@@ -119,4 +126,349 @@ public class DataAvailabilityCategory
     [Required]
     [JsonPropertyName("available")]
     public bool Available { get; set; }
+}
+
+/// <summary>
+/// Weather extremes statistics including coldest, hottest, windiest runs and special conditions.
+/// </summary>
+public class WeatherInsights
+{
+    /// <summary>
+    /// Coldest run by temperature.
+    /// </summary>
+    [JsonPropertyName("coldest")]
+    public WeatherExtremeRun? Coldest { get; set; }
+
+    /// <summary>
+    /// Hottest run by temperature.
+    /// </summary>
+    [JsonPropertyName("hottest")]
+    public WeatherExtremeRun? Hottest { get; set; }
+
+    /// <summary>
+    /// Windiest run by wind speed.
+    /// </summary>
+    [JsonPropertyName("windiest")]
+    public WindExtremeRun? Windiest { get; set; }
+
+    /// <summary>
+    /// Most humid run by humidity percentage.
+    /// </summary>
+    [JsonPropertyName("mostHumid")]
+    public HumidityExtremeRun? MostHumid { get; set; }
+
+    /// <summary>
+    /// Wettest run by precipitation amount.
+    /// </summary>
+    [JsonPropertyName("wettest")]
+    public PrecipitationExtremeRun? Wettest { get; set; }
+
+    /// <summary>
+    /// Most epic weather run (thunderstorms, severe weather).
+    /// </summary>
+    [JsonPropertyName("mostEpic")]
+    public EpicWeatherRun? MostEpic { get; set; }
+
+    /// <summary>
+    /// Foggiest run.
+    /// </summary>
+    [JsonPropertyName("foggiest")]
+    public FoggyWeatherRun? Foggiest { get; set; }
+
+    /// <summary>
+    /// Snowiest run.
+    /// </summary>
+    [JsonPropertyName("snowiest")]
+    public SnowyWeatherRun? Snowiest { get; set; }
+}
+
+/// <summary>
+/// Temperature extreme run (coldest or hottest).
+/// </summary>
+public class WeatherExtremeRun
+{
+    /// <summary>
+    /// Temperature value in user's preferred unit.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("temperature")]
+    public double Temperature { get; set; }
+
+    /// <summary>
+    /// Temperature unit (°C or °F).
+    /// </summary>
+    [Required]
+    [JsonPropertyName("temperatureUnit")]
+    public string TemperatureUnit { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Date and time of the workout.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("date")]
+    public DateTime Date { get; set; }
+
+    /// <summary>
+    /// Workout ID for linking to workout details.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("workoutId")]
+    public Guid WorkoutId { get; set; }
+
+    /// <summary>
+    /// Workout name/title.
+    /// </summary>
+    [JsonPropertyName("workoutName")]
+    public string? WorkoutName { get; set; }
+}
+
+/// <summary>
+/// Windiest run information.
+/// </summary>
+public class WindExtremeRun
+{
+    /// <summary>
+    /// Wind speed in user's preferred unit.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("windSpeed")]
+    public double WindSpeed { get; set; }
+
+    /// <summary>
+    /// Wind speed unit (m/s, km/h, or mph).
+    /// </summary>
+    [Required]
+    [JsonPropertyName("windSpeedUnit")]
+    public string WindSpeedUnit { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Wind direction in degrees (0-360).
+    /// </summary>
+    [JsonPropertyName("windDirection")]
+    public int? WindDirection { get; set; }
+
+    /// <summary>
+    /// Wind direction as cardinal direction (N, NE, E, SE, S, SW, W, NW).
+    /// </summary>
+    [JsonPropertyName("windDirectionCardinal")]
+    public string? WindDirectionCardinal { get; set; }
+
+    /// <summary>
+    /// Date and time of the workout.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("date")]
+    public DateTime Date { get; set; }
+
+    /// <summary>
+    /// Workout ID for linking to workout details.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("workoutId")]
+    public Guid WorkoutId { get; set; }
+
+    /// <summary>
+    /// Workout name/title.
+    /// </summary>
+    [JsonPropertyName("workoutName")]
+    public string? WorkoutName { get; set; }
+}
+
+/// <summary>
+/// Most humid run information.
+/// </summary>
+public class HumidityExtremeRun
+{
+    /// <summary>
+    /// Humidity percentage (0-100).
+    /// </summary>
+    [Required]
+    [JsonPropertyName("humidity")]
+    public double Humidity { get; set; }
+
+    /// <summary>
+    /// Date and time of the workout.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("date")]
+    public DateTime Date { get; set; }
+
+    /// <summary>
+    /// Workout ID for linking to workout details.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("workoutId")]
+    public Guid WorkoutId { get; set; }
+
+    /// <summary>
+    /// Workout name/title.
+    /// </summary>
+    [JsonPropertyName("workoutName")]
+    public string? WorkoutName { get; set; }
+}
+
+/// <summary>
+/// Wettest run information (by precipitation).
+/// </summary>
+public class PrecipitationExtremeRun
+{
+    /// <summary>
+    /// Precipitation amount in millimeters.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("precipitation")]
+    public double Precipitation { get; set; }
+
+    /// <summary>
+    /// Precipitation unit (always mm).
+    /// </summary>
+    [Required]
+    [JsonPropertyName("precipitationUnit")]
+    public string PrecipitationUnit { get; set; } = "mm";
+
+    /// <summary>
+    /// Date and time of the workout.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("date")]
+    public DateTime Date { get; set; }
+
+    /// <summary>
+    /// Workout ID for linking to workout details.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("workoutId")]
+    public Guid WorkoutId { get; set; }
+
+    /// <summary>
+    /// Workout name/title.
+    /// </summary>
+    [JsonPropertyName("workoutName")]
+    public string? WorkoutName { get; set; }
+}
+
+/// <summary>
+/// Most epic weather run (thunderstorms, severe weather).
+/// </summary>
+public class EpicWeatherRun
+{
+    /// <summary>
+    /// WMO weather code (95-99 for thunderstorms).
+    /// </summary>
+    [Required]
+    [JsonPropertyName("weatherCode")]
+    public int WeatherCode { get; set; }
+
+    /// <summary>
+    /// Weather condition description.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("condition")]
+    public string Condition { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Date and time of the workout.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("date")]
+    public DateTime Date { get; set; }
+
+    /// <summary>
+    /// Workout ID for linking to workout details.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("workoutId")]
+    public Guid WorkoutId { get; set; }
+
+    /// <summary>
+    /// Workout name/title.
+    /// </summary>
+    [JsonPropertyName("workoutName")]
+    public string? WorkoutName { get; set; }
+}
+
+/// <summary>
+/// Foggiest run information.
+/// </summary>
+public class FoggyWeatherRun
+{
+    /// <summary>
+    /// WMO weather code (45-48 for fog conditions).
+    /// </summary>
+    [Required]
+    [JsonPropertyName("weatherCode")]
+    public int WeatherCode { get; set; }
+
+    /// <summary>
+    /// Weather condition description.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("condition")]
+    public string Condition { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Date and time of the workout.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("date")]
+    public DateTime Date { get; set; }
+
+    /// <summary>
+    /// Workout ID for linking to workout details.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("workoutId")]
+    public Guid WorkoutId { get; set; }
+
+    /// <summary>
+    /// Workout name/title.
+    /// </summary>
+    [JsonPropertyName("workoutName")]
+    public string? WorkoutName { get; set; }
+}
+
+/// <summary>
+/// Snowiest run information.
+/// </summary>
+public class SnowyWeatherRun
+{
+    /// <summary>
+    /// WMO weather code (71-77, 85-86 for snow conditions).
+    /// </summary>
+    [Required]
+    [JsonPropertyName("weatherCode")]
+    public int WeatherCode { get; set; }
+
+    /// <summary>
+    /// Weather condition description.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("condition")]
+    public string Condition { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Precipitation amount in millimeters (if available).
+    /// </summary>
+    [JsonPropertyName("precipitation")]
+    public double? Precipitation { get; set; }
+
+    /// <summary>
+    /// Date and time of the workout.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("date")]
+    public DateTime Date { get; set; }
+
+    /// <summary>
+    /// Workout ID for linking to workout details.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("workoutId")]
+    public Guid WorkoutId { get; set; }
+
+    /// <summary>
+    /// Workout name/title.
+    /// </summary>
+    [JsonPropertyName("workoutName")]
+    public string? WorkoutName { get; set; }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
@@ -54,10 +55,20 @@ public class InsightsService
             // Calculate data coverage metadata
             var metadata = await CalculateDataCoverageAsync(db, totalWorkouts);
 
+            // Calculate weather extremes if sufficient data exists
+            WeatherInsights? weatherInsights = null;
+            if (metadata.DataAvailability["weather"].Available)
+            {
+                var userSettings = await db.UserSettings.FirstOrDefaultAsync();
+                var unitPreference = userSettings?.UnitPreference ?? "metric";
+                weatherInsights = await CalculateWeatherExtremesAsync(db, unitPreference);
+            }
+
             return new InsightsResponse
             {
                 SufficientData = true,
-                Metadata = metadata
+                Metadata = metadata,
+                Weather = weatherInsights
             };
         }
         catch (Exception ex)
@@ -75,67 +86,46 @@ public class InsightsService
     /// <returns>Data coverage metadata</returns>
     private async Task<DataCoverageMetadata> CalculateDataCoverageAsync(TempoDbContext db, int totalWorkouts)
     {
-        // Execute all data availability queries in parallel for performance
-        var weatherCountTask = db.Workouts
+        // Execute all data availability queries sequentially (DbContext doesn't support concurrent operations)
+        var weatherCount = await db.Workouts
             .AsNoTracking()
             .Where(w => w.Weather != null)
             .CountAsync();
 
-        var heartRateCountTask = db.Workouts
+        var heartRateCount = await db.Workouts
             .AsNoTracking()
             .Where(w => w.MaxHeartRateBpm.HasValue)
             .CountAsync();
 
-        var elevationCountTask = db.Workouts
+        var elevationCount = await db.Workouts
             .AsNoTracking()
             .Where(w => w.ElevGainM.HasValue)
             .CountAsync();
 
-        var caloriesCountTask = db.Workouts
+        var caloriesCount = await db.Workouts
             .AsNoTracking()
             .Where(w => w.Calories.HasValue)
             .CountAsync();
 
-        var cadenceCountTask = db.Workouts
+        var cadenceCount = await db.Workouts
             .AsNoTracking()
             .Where(w => w.MaxCadenceRpm.HasValue)
             .CountAsync();
 
-        var powerCountTask = db.Workouts
+        var powerCount = await db.Workouts
             .AsNoTracking()
             .Where(w => w.MaxPowerWatts.HasValue)
             .CountAsync();
 
-        var firstWorkoutTask = db.Workouts
+        var firstWorkout = await db.Workouts
             .AsNoTracking()
             .OrderBy(w => w.StartedAt)
             .FirstOrDefaultAsync();
 
-        var latestWorkoutTask = db.Workouts
+        var latestWorkout = await db.Workouts
             .AsNoTracking()
             .OrderByDescending(w => w.StartedAt)
             .FirstOrDefaultAsync();
-
-        // Await all queries
-        await Task.WhenAll(
-            weatherCountTask,
-            heartRateCountTask,
-            elevationCountTask,
-            caloriesCountTask,
-            cadenceCountTask,
-            powerCountTask,
-            firstWorkoutTask,
-            latestWorkoutTask
-        );
-
-        var weatherCount = await weatherCountTask;
-        var heartRateCount = await heartRateCountTask;
-        var elevationCount = await elevationCountTask;
-        var caloriesCount = await caloriesCountTask;
-        var cadenceCount = await cadenceCountTask;
-        var powerCount = await powerCountTask;
-        var firstWorkout = await firstWorkoutTask;
-        var latestWorkout = await latestWorkoutTask;
 
         // Calculate date range
         DateTime? firstWorkoutDate = firstWorkout?.StartedAt;
@@ -187,6 +177,507 @@ public class InsightsService
             Count = count,
             Percentage = Math.Round(percentage, 1),
             Available = available
+        };
+    }
+
+    /// <summary>
+    /// Simple DTO for workout weather data.
+    /// </summary>
+    private class WorkoutWeatherData
+    {
+        public Guid Id { get; set; }
+        public string? Name { get; set; }
+        public DateTime StartedAt { get; set; }
+        public string Weather { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Calculate weather extremes from workouts with weather data.
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="unitPreference">User unit preference ("metric" or "imperial")</param>
+    /// <returns>Weather insights with extreme statistics</returns>
+    private async Task<WeatherInsights?> CalculateWeatherExtremesAsync(TempoDbContext db, string unitPreference)
+    {
+        try
+        {
+            // Fetch all workouts with weather data (we need to parse JSON in memory)
+            var workoutsWithWeather = await db.Workouts
+                .AsNoTracking()
+                .Where(w => w.Weather != null)
+                .Select(w => new WorkoutWeatherData 
+                { 
+                    Id = w.Id, 
+                    Name = w.Name, 
+                    StartedAt = w.StartedAt, 
+                    Weather = w.Weather!
+                })
+                .ToListAsync();
+
+            if (workoutsWithWeather.Count < InsightsThresholds.MINIMUM_FOR_WEATHER_STATS)
+            {
+                return null;
+            }
+
+            // Parse weather data and find extremes
+            var coldest = FindColdestRun(workoutsWithWeather, unitPreference);
+            var hottest = FindHottestRun(workoutsWithWeather, unitPreference);
+            var windiest = FindWindiestRun(workoutsWithWeather, unitPreference);
+            var mostHumid = FindMostHumidRun(workoutsWithWeather);
+            var wettest = FindWettestRun(workoutsWithWeather);
+            var mostEpic = FindMostEpicWeatherRun(workoutsWithWeather);
+            var foggiest = FindFoggiestRun(workoutsWithWeather);
+            var snowiest = FindSnowiestRun(workoutsWithWeather);
+
+            return new WeatherInsights
+            {
+                Coldest = coldest,
+                Hottest = hottest,
+                Windiest = windiest,
+                MostHumid = mostHumid,
+                Wettest = wettest,
+                MostEpic = mostEpic,
+                Foggiest = foggiest,
+                Snowiest = snowiest
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calculating weather extremes");
+            return null; // Fail gracefully
+        }
+    }
+
+    /// <summary>
+    /// Find the coldest run by temperature.
+    /// </summary>
+    private WeatherExtremeRun? FindColdestRun(
+        List<WorkoutWeatherData> workouts,
+        string unitPreference)
+    {
+        WeatherExtremeRun? coldest = null;
+        double? minTemp = null;
+
+        foreach (var workout in workouts)
+        {
+            try
+            {
+                using var weatherDoc = JsonDocument.Parse((string)workout.Weather);
+                if (weatherDoc.RootElement.TryGetProperty("temperature", out var tempElem) &&
+                    tempElem.ValueKind == JsonValueKind.Number)
+                {
+                    var tempC = tempElem.GetDouble();
+                    if (!minTemp.HasValue || tempC < minTemp.Value)
+                    {
+                        minTemp = tempC;
+                        coldest = new WeatherExtremeRun
+                        {
+                            Temperature = Math.Round(UnitConversionService.ConvertTemperature(tempC, unitPreference), 1),
+                            TemperatureUnit = UnitConversionService.GetTemperatureUnit(unitPreference),
+                            Date = workout.StartedAt,
+                            WorkoutId = workout.Id,
+                            WorkoutName = workout.Name
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse weather data for workout {WorkoutId}", (Guid)workout.Id);
+            }
+        }
+
+        return coldest;
+    }
+
+    /// <summary>
+    /// Find the hottest run by temperature.
+    /// </summary>
+    private WeatherExtremeRun? FindHottestRun(
+        List<WorkoutWeatherData> workouts,
+        string unitPreference)
+    {
+        WeatherExtremeRun? hottest = null;
+        double? maxTemp = null;
+
+        foreach (var workout in workouts)
+        {
+            try
+            {
+                using var weatherDoc = JsonDocument.Parse((string)workout.Weather);
+                if (weatherDoc.RootElement.TryGetProperty("temperature", out var tempElem) &&
+                    tempElem.ValueKind == JsonValueKind.Number)
+                {
+                    var tempC = tempElem.GetDouble();
+                    if (!maxTemp.HasValue || tempC > maxTemp.Value)
+                    {
+                        maxTemp = tempC;
+                        hottest = new WeatherExtremeRun
+                        {
+                            Temperature = Math.Round(UnitConversionService.ConvertTemperature(tempC, unitPreference), 1),
+                            TemperatureUnit = UnitConversionService.GetTemperatureUnit(unitPreference),
+                            Date = workout.StartedAt,
+                            WorkoutId = workout.Id,
+                            WorkoutName = workout.Name
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse weather data for workout {WorkoutId}", (Guid)workout.Id);
+            }
+        }
+
+        return hottest;
+    }
+
+    /// <summary>
+    /// Find the windiest run by wind speed.
+    /// </summary>
+    private WindExtremeRun? FindWindiestRun(
+        List<WorkoutWeatherData> workouts,
+        string unitPreference)
+    {
+        WindExtremeRun? windiest = null;
+        double? maxWindSpeed = null;
+
+        foreach (var workout in workouts)
+        {
+            try
+            {
+                using var weatherDoc = JsonDocument.Parse((string)workout.Weather);
+                if (weatherDoc.RootElement.TryGetProperty("windSpeed", out var windSpeedElem) &&
+                    windSpeedElem.ValueKind == JsonValueKind.Number)
+                {
+                    var windSpeedMs = windSpeedElem.GetDouble();
+                    if (!maxWindSpeed.HasValue || windSpeedMs > maxWindSpeed.Value)
+                    {
+                        maxWindSpeed = windSpeedMs;
+
+                        // Get wind direction if available
+                        int? windDirection = null;
+                        string? windDirectionCardinal = null;
+                        if (weatherDoc.RootElement.TryGetProperty("windDirection", out var windDirElem) &&
+                            windDirElem.ValueKind == JsonValueKind.Number)
+                        {
+                            windDirection = windDirElem.GetInt32();
+                            windDirectionCardinal = UnitConversionService.DegreesToCardinal(windDirection.Value);
+                        }
+
+                        windiest = new WindExtremeRun
+                        {
+                            WindSpeed = Math.Round(UnitConversionService.ConvertWindSpeed(windSpeedMs, unitPreference), 1),
+                            WindSpeedUnit = UnitConversionService.GetWindSpeedUnit(unitPreference),
+                            WindDirection = windDirection,
+                            WindDirectionCardinal = windDirectionCardinal,
+                            Date = workout.StartedAt,
+                            WorkoutId = workout.Id,
+                            WorkoutName = workout.Name
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse weather data for workout {WorkoutId}", (Guid)workout.Id);
+            }
+        }
+
+        return windiest;
+    }
+
+    /// <summary>
+    /// Find the most humid run by humidity percentage.
+    /// </summary>
+    private HumidityExtremeRun? FindMostHumidRun(List<WorkoutWeatherData> workouts)
+    {
+        HumidityExtremeRun? mostHumid = null;
+        double? maxHumidity = null;
+
+        foreach (var workout in workouts)
+        {
+            try
+            {
+                using var weatherDoc = JsonDocument.Parse((string)workout.Weather);
+                if (weatherDoc.RootElement.TryGetProperty("humidity", out var humidityElem) &&
+                    humidityElem.ValueKind == JsonValueKind.Number)
+                {
+                    var humidity = humidityElem.GetDouble();
+                    if (!maxHumidity.HasValue || humidity > maxHumidity.Value)
+                    {
+                        maxHumidity = humidity;
+                        mostHumid = new HumidityExtremeRun
+                        {
+                            Humidity = Math.Round(humidity, 1),
+                            Date = workout.StartedAt,
+                            WorkoutId = workout.Id,
+                            WorkoutName = workout.Name
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse weather data for workout {WorkoutId}", (Guid)workout.Id);
+            }
+        }
+
+        return mostHumid;
+    }
+
+    /// <summary>
+    /// Find the wettest run by precipitation amount.
+    /// </summary>
+    private PrecipitationExtremeRun? FindWettestRun(List<WorkoutWeatherData> workouts)
+    {
+        PrecipitationExtremeRun? wettest = null;
+        double? maxPrecipitation = null;
+
+        foreach (var workout in workouts)
+        {
+            try
+            {
+                using var weatherDoc = JsonDocument.Parse((string)workout.Weather);
+                if (weatherDoc.RootElement.TryGetProperty("precipitation", out var precipElem) &&
+                    precipElem.ValueKind == JsonValueKind.Number)
+                {
+                    var precipitation = precipElem.GetDouble();
+                    if (precipitation > 0 && (!maxPrecipitation.HasValue || precipitation > maxPrecipitation.Value))
+                    {
+                        maxPrecipitation = precipitation;
+                        wettest = new PrecipitationExtremeRun
+                        {
+                            Precipitation = Math.Round(precipitation, 1),
+                            PrecipitationUnit = "mm",
+                            Date = workout.StartedAt,
+                            WorkoutId = workout.Id,
+                            WorkoutName = workout.Name
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse weather data for workout {WorkoutId}", (Guid)workout.Id);
+            }
+        }
+
+        return wettest;
+    }
+
+    /// <summary>
+    /// Find the most epic weather run (thunderstorms - codes 95-99).
+    /// Returns the workout with the most severe thunderstorm code.
+    /// </summary>
+    private EpicWeatherRun? FindMostEpicWeatherRun(List<WorkoutWeatherData> workouts)
+    {
+        EpicWeatherRun? mostEpic = null;
+        int? maxWeatherCode = null;
+
+        foreach (var workout in workouts)
+        {
+            try
+            {
+                using var weatherDoc = JsonDocument.Parse((string)workout.Weather);
+                if (weatherDoc.RootElement.TryGetProperty("weatherCode", out var codeElem) &&
+                    codeElem.ValueKind == JsonValueKind.Number)
+                {
+                    var weatherCode = codeElem.GetInt32();
+                    // Thunderstorm codes: 95-99
+                    if (weatherCode >= 95 && weatherCode <= 99)
+                    {
+                        if (!maxWeatherCode.HasValue || weatherCode > maxWeatherCode.Value)
+                        {
+                            maxWeatherCode = weatherCode;
+                            
+                            // Get condition string if available
+                            var condition = weatherDoc.RootElement.TryGetProperty("condition", out var condElem) &&
+                                          condElem.ValueKind == JsonValueKind.String
+                                ? condElem.GetString() ?? GetWeatherConditionDescription(weatherCode)
+                                : GetWeatherConditionDescription(weatherCode);
+
+                            mostEpic = new EpicWeatherRun
+                            {
+                                WeatherCode = weatherCode,
+                                Condition = condition,
+                                Date = workout.StartedAt,
+                                WorkoutId = workout.Id,
+                                WorkoutName = workout.Name
+                            };
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse weather data for workout {WorkoutId}", (Guid)workout.Id);
+            }
+        }
+
+        return mostEpic;
+    }
+
+    /// <summary>
+    /// Find the foggiest run (fog codes 45-48).
+    /// </summary>
+    private FoggyWeatherRun? FindFoggiestRun(List<WorkoutWeatherData> workouts)
+    {
+        FoggyWeatherRun? foggiest = null;
+        int? maxFogCode = null;
+
+        foreach (var workout in workouts)
+        {
+            try
+            {
+                using var weatherDoc = JsonDocument.Parse((string)workout.Weather);
+                if (weatherDoc.RootElement.TryGetProperty("weatherCode", out var codeElem) &&
+                    codeElem.ValueKind == JsonValueKind.Number)
+                {
+                    var weatherCode = codeElem.GetInt32();
+                    // Fog codes: 45-48
+                    if (weatherCode >= 45 && weatherCode <= 48)
+                    {
+                        if (!maxFogCode.HasValue || weatherCode > maxFogCode.Value)
+                        {
+                            maxFogCode = weatherCode;
+                            
+                            // Get condition string if available
+                            var condition = weatherDoc.RootElement.TryGetProperty("condition", out var condElem) &&
+                                          condElem.ValueKind == JsonValueKind.String
+                                ? condElem.GetString() ?? GetWeatherConditionDescription(weatherCode)
+                                : GetWeatherConditionDescription(weatherCode);
+
+                            foggiest = new FoggyWeatherRun
+                            {
+                                WeatherCode = weatherCode,
+                                Condition = condition,
+                                Date = workout.StartedAt,
+                                WorkoutId = workout.Id,
+                                WorkoutName = workout.Name
+                            };
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse weather data for workout {WorkoutId}", (Guid)workout.Id);
+            }
+        }
+
+        return foggiest;
+    }
+
+    /// <summary>
+    /// Find the snowiest run (snow codes 71-77, 85-86).
+    /// Prioritizes by precipitation amount if available.
+    /// </summary>
+    private SnowyWeatherRun? FindSnowiestRun(List<WorkoutWeatherData> workouts)
+    {
+        SnowyWeatherRun? snowiest = null;
+        double? maxPrecipitation = null;
+        int? fallbackSnowCode = null;
+
+        foreach (var workout in workouts)
+        {
+            try
+            {
+                using var weatherDoc = JsonDocument.Parse((string)workout.Weather);
+                if (weatherDoc.RootElement.TryGetProperty("weatherCode", out var codeElem) &&
+                    codeElem.ValueKind == JsonValueKind.Number)
+                {
+                    var weatherCode = codeElem.GetInt32();
+                    // Snow codes: 71-77, 85-86
+                    if ((weatherCode >= 71 && weatherCode <= 77) || (weatherCode >= 85 && weatherCode <= 86))
+                    {
+                        // Try to get precipitation amount
+                        double? precipitation = null;
+                        if (weatherDoc.RootElement.TryGetProperty("precipitation", out var precipElem) &&
+                            precipElem.ValueKind == JsonValueKind.Number)
+                        {
+                            precipitation = precipElem.GetDouble();
+                        }
+
+                        // Prioritize by precipitation if available
+                        bool isNewMax = false;
+                        if (precipitation.HasValue && precipitation.Value > 0)
+                        {
+                            if (!maxPrecipitation.HasValue || precipitation.Value > maxPrecipitation.Value)
+                            {
+                                maxPrecipitation = precipitation.Value;
+                                isNewMax = true;
+                            }
+                        }
+                        else if (!maxPrecipitation.HasValue && !fallbackSnowCode.HasValue)
+                        {
+                            // No precipitation data available, just pick first snow run
+                            fallbackSnowCode = weatherCode;
+                            isNewMax = true;
+                        }
+
+                        if (isNewMax)
+                        {
+                            // Get condition string if available
+                            var condition = weatherDoc.RootElement.TryGetProperty("condition", out var condElem) &&
+                                          condElem.ValueKind == JsonValueKind.String
+                                ? condElem.GetString() ?? GetWeatherConditionDescription(weatherCode)
+                                : GetWeatherConditionDescription(weatherCode);
+
+                            snowiest = new SnowyWeatherRun
+                            {
+                                WeatherCode = weatherCode,
+                                Condition = condition,
+                                Precipitation = precipitation,
+                                Date = workout.StartedAt,
+                                WorkoutId = workout.Id,
+                                WorkoutName = workout.Name
+                            };
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse weather data for workout {WorkoutId}", (Guid)workout.Id);
+            }
+        }
+
+        return snowiest;
+    }
+
+    /// <summary>
+    /// Get weather condition description from WMO weather code.
+    /// </summary>
+    private static string GetWeatherConditionDescription(int code)
+    {
+        return code switch
+        {
+            0 => "Clear sky",
+            1 => "Mainly clear",
+            2 => "Partly cloudy",
+            3 => "Overcast",
+            45 => "Fog",
+            48 => "Depositing rime fog",
+            51 => "Light drizzle",
+            53 => "Moderate drizzle",
+            55 => "Dense drizzle",
+            61 => "Slight rain",
+            63 => "Moderate rain",
+            65 => "Heavy rain",
+            71 => "Slight snow fall",
+            73 => "Moderate snow fall",
+            75 => "Heavy snow fall",
+            77 => "Snow grains",
+            80 => "Slight rain showers",
+            81 => "Moderate rain showers",
+            82 => "Violent rain showers",
+            85 => "Slight snow showers",
+            86 => "Heavy snow showers",
+            95 => "Thunderstorm",
+            96 => "Thunderstorm with slight hail",
+            99 => "Thunderstorm with heavy hail",
+            _ => $"Weather code {code}"
         };
     }
 }
