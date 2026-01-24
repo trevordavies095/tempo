@@ -82,8 +82,8 @@ public class DataCoverageMetadata
     /// Number of days between the first and latest workout.
     /// Null if fewer than 2 workouts exist.
     /// </summary>
-    [JsonPropertyName("daysSinceFirstWorkout")]
-    public int? DaysSinceFirstWorkout { get; set; }
+    [JsonPropertyName("daysBetweenFirstAndLatestWorkout")]
+    public int? DaysBetweenFirstAndLatestWorkout { get; set; }
 
     /// <summary>
     /// Data availability breakdown by category (weather, HR, elevation, etc.).

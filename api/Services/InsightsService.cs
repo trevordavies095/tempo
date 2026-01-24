@@ -130,11 +130,11 @@ public class InsightsService
         // Calculate date range
         DateTime? firstWorkoutDate = firstWorkout?.StartedAt;
         DateTime? latestWorkoutDate = latestWorkout?.StartedAt;
-        int? daysSinceFirstWorkout = null;
+        int? daysBetweenFirstAndLatestWorkout = null;
 
         if (firstWorkoutDate.HasValue && latestWorkoutDate.HasValue)
         {
-            daysSinceFirstWorkout = (int)(latestWorkoutDate.Value - firstWorkoutDate.Value).TotalDays;
+            daysBetweenFirstAndLatestWorkout = (int)(latestWorkoutDate.Value - firstWorkoutDate.Value).TotalDays;
         }
 
         // Build data availability dictionary
@@ -153,7 +153,7 @@ public class InsightsService
             TotalWorkouts = totalWorkouts,
             FirstWorkoutDate = firstWorkoutDate,
             LatestWorkoutDate = latestWorkoutDate,
-            DaysSinceFirstWorkout = daysSinceFirstWorkout,
+            DaysBetweenFirstAndLatestWorkout = daysBetweenFirstAndLatestWorkout,
             DataAvailability = dataAvailability,
             MinimumWorkoutsRequired = InsightsThresholds.MINIMUM_WORKOUTS
         };
