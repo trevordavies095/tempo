@@ -63,8 +63,8 @@ public static class UnitConversionService
         {
             return MetersPerSecondToMilesPerHour(metersPerSecond);
         }
-        // Default to m/s for metric
-        return metersPerSecond;
+        // Default to km/h for metric
+        return MetersPerSecondToKilometersPerHour(metersPerSecond);
     }
 
     /// <summary>
@@ -104,9 +104,9 @@ public static class UnitConversionService
     /// Get wind speed unit string based on user preference.
     /// </summary>
     /// <param name="unitPreference">User unit preference ("metric" or "imperial")</param>
-    /// <returns>Wind speed unit string (m/s or mph)</returns>
+    /// <returns>Wind speed unit string (km/h or mph)</returns>
     public static string GetWindSpeedUnit(string unitPreference)
     {
-        return unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase) ? "mph" : "m/s";
+        return unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase) ? "mph" : "km/h";
     }
 }

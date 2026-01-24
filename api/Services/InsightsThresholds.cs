@@ -19,18 +19,6 @@ public static class InsightsThresholds
     public const int MINIMUM_FOR_WEATHER_STATS = 3;
 
     /// <summary>
-    /// Minimum number of workouts required to calculate meaningful habit patterns.
-    /// Habit analysis (frequency, typical distance, etc.) requires more data for accuracy.
-    /// </summary>
-    public const int MINIMUM_FOR_HABITS = 10;
-
-    /// <summary>
-    /// Minimum number of workouts required to calculate streak statistics.
-    /// At least one week of potential data is needed for meaningful streak analysis.
-    /// </summary>
-    public const int MINIMUM_FOR_STREAKS = 7;
-
-    /// <summary>
     /// Minimum percentage of workouts with weather data to show weather insights.
     /// Weather stats are omitted if less than 25% of workouts have weather data.
     /// </summary>

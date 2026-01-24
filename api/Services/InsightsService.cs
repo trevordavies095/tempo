@@ -140,7 +140,7 @@ public class InsightsService
         // Build data availability dictionary
         var dataAvailability = new Dictionary<string, DataAvailabilityCategory>
         {
-            ["weather"] = CreateAvailabilityCategory(weatherCount, totalWorkouts, InsightsThresholds.MINIMUM_WEATHER_COVERAGE),
+            ["weather"] = CreateAvailabilityCategory(weatherCount, totalWorkouts, InsightsThresholds.MINIMUM_WEATHER_COVERAGE, InsightsThresholds.MINIMUM_FOR_WEATHER_STATS),
             ["heartRate"] = CreateAvailabilityCategory(heartRateCount, totalWorkouts, InsightsThresholds.MINIMUM_HR_COVERAGE),
             ["elevation"] = CreateAvailabilityCategory(elevationCount, totalWorkouts, 0.0), // Always show if any data exists
             ["calories"] = CreateAvailabilityCategory(caloriesCount, totalWorkouts, 0.0),
@@ -165,12 +165,13 @@ public class InsightsService
     /// <param name="count">Number of workouts with this data</param>
     /// <param name="totalWorkouts">Total number of workouts</param>
     /// <param name="minimumCoverage">Minimum coverage percentage (0.0-1.0) required for availability</param>
+    /// <param name="minimumCount">Minimum absolute count required for availability (default: 1)</param>
     /// <returns>Data availability category</returns>
-    private DataAvailabilityCategory CreateAvailabilityCategory(int count, int totalWorkouts, double minimumCoverage)
+    private DataAvailabilityCategory CreateAvailabilityCategory(int count, int totalWorkouts, double minimumCoverage, int minimumCount = 1)
     {
         var percentage = totalWorkouts > 0 ? (count * 100.0 / totalWorkouts) : 0.0;
         var coverageRatio = totalWorkouts > 0 ? (count / (double)totalWorkouts) : 0.0;
-        var available = count > 0 && coverageRatio >= minimumCoverage;
+        var available = count >= minimumCount && coverageRatio >= minimumCoverage;
 
         return new DataAvailabilityCategory
         {
