@@ -598,6 +598,35 @@ public static class StatsEndpoints
         return Results.Ok(years);
     }
 
+    /// <summary>
+    /// Get running insights including data coverage metadata
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="insightsService">Insights service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>Insights response with data coverage and statistics</returns>
+    /// <remarks>
+    /// Returns comprehensive insights about running data including weather extremes, performance highlights,
+    /// habit patterns, and data availability metadata. Requires at least 5 workouts to return insights.
+    /// Returns helpful messages when insufficient data exists.
+    /// </remarks>
+    private static async Task<IResult> GetInsights(
+        TempoDbContext db,
+        InsightsService insightsService,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            var insights = await insightsService.GetInsightsAsync(db);
+            return Results.Ok(insights);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error retrieving insights");
+            return Results.Problem($"Failed to retrieve insights: {ex.Message}");
+        }
+    }
+
     public static void MapStatsEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/stats")
@@ -652,5 +681,12 @@ public static class StatsEndpoints
             .Produces(200)
             .WithSummary("Get available years")
             .WithDescription("Returns list of years that have workouts");
+
+        group.MapGet("/insights", GetInsights)
+            .WithName("GetInsights")
+            .Produces(200)
+            .Produces(500)
+            .WithSummary("Get running insights")
+            .WithDescription("Returns comprehensive insights about running data including data coverage metadata, weather extremes, performance highlights, and habit patterns. Requires at least 5 workouts.");
     }
 }
