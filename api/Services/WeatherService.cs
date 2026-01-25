@@ -233,7 +233,7 @@ public class WeatherService
 
             var url = $"{OpenMeteoArchiveUrl}?{string.Join("&", queryParams)}";
             
-            _logger.LogInformation("Fetching weather from Open-Meteo: {Url}", url);
+            _logger.LogInformation("Fetching weather from Open-Meteo API");
 
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
