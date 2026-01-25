@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Utils;
 
 namespace Tempo.Api.Endpoints;
 
@@ -66,7 +67,7 @@ public static class AuthEndpoints
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            logger.LogInformation("User registered: {Username}", user.Username);
+            logger.LogInformation("User registered: {Username}", LogSanitizer.Sanitize(user.Username));
 
             return Results.Ok(new
             {
@@ -79,7 +80,7 @@ public static class AuthEndpoints
         {
             // Handle serialization failure (concurrent registration attempt)
             await transaction.RollbackAsync();
-            logger.LogWarning("Registration failed due to concurrent attempt: {Username}", request.Username);
+            logger.LogWarning("Registration failed due to concurrent attempt: {Username}", LogSanitizer.Sanitize(request.Username));
             return Results.BadRequest(new { error = "Registration is disabled. An account already exists." });
         }
         catch
@@ -157,7 +158,7 @@ public static class AuthEndpoints
 
         httpContext.Response.Cookies.Append("authToken", token, cookieOptions);
 
-        logger.LogInformation("User logged in: {Username}", user.Username);
+        logger.LogInformation("User logged in: {Username}", LogSanitizer.Sanitize(user.Username));
 
         return Results.Ok(new
         {
