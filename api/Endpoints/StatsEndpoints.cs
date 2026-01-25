@@ -2,12 +2,42 @@ using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
+using Tempo.Api.Models;
 using Tempo.Api.Services;
 
 namespace Tempo.Api.Endpoints;
 
 public static class StatsEndpoints
 {
+    /// <summary>
+    /// Calculate daily totals (in miles) from a list of workouts, grouped by day of week (Monday=0, Sunday=6).
+    /// </summary>
+    /// <param name="workouts">List of workouts to process</param>
+    /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC)</param>
+    /// <returns>Array of 7 doubles representing daily miles (Monday through Sunday)</returns>
+    private static double[] CalculateDailyTotals(List<Workout> workouts, int? timezoneOffsetMinutes)
+    {
+        var dailyTotals = new double[7]; // M T W T F S S
+
+        foreach (var workout in workouts)
+        {
+            // Convert UTC to local timezone
+            // timezoneOffsetMinutes is already negative (from -getTimezoneOffset()), so add it directly
+            var localTime = timezoneOffsetMinutes.HasValue
+                ? workout.StartedAt.AddMinutes(timezoneOffsetMinutes.Value)
+                : workout.StartedAt;
+
+            // Get day of week (0=Monday, 6=Sunday)
+            var dayOfWeek = ((int)localTime.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+            
+            // Convert meters to miles and add to daily total
+            var miles = workout.DistanceM / 1609.344;
+            dailyTotals[dayOfWeek] += miles;
+        }
+
+        return dailyTotals;
+    }
+
     /// <summary>
     /// Get weekly stats
     /// </summary>
@@ -52,32 +82,50 @@ public static class StatsEndpoints
             .AsNoTracking()
             .ToListAsync();
 
-        // Group by day of week and sum distances
-        // DayOfWeek enum: Sunday=0, Monday=1, ..., Saturday=6
-        // We want: Monday=0, Tuesday=1, ..., Sunday=6
-        var dailyTotals = new double[7]; // M T W T F S S
+        // Calculate daily totals from workouts
+        var dailyTotals = CalculateDailyTotals(workouts, timezoneOffsetMinutes);
 
-        foreach (var workout in workouts)
-        {
-            // Convert UTC to local timezone
-            // timezoneOffsetMinutes is already negative (from -getTimezoneOffset()), so add it directly
-            var localTime = timezoneOffsetMinutes.HasValue
-                ? workout.StartedAt.AddMinutes(timezoneOffsetMinutes.Value)
-                : workout.StartedAt;
+        // Calculate previous week boundaries (complete week immediately preceding current week)
+        var previousWeekStart = weekStart.AddDays(-7);
+        var previousWeekEnd = previousWeekStart.AddDays(7).AddTicks(-1);
 
-            // Get day of week (0=Monday, 6=Sunday)
-            var dayOfWeek = ((int)localTime.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-            
-            // Convert meters to miles and add to daily total
-            var miles = workout.DistanceM / 1609.344;
-            dailyTotals[dayOfWeek] += miles;
-        }
+        // Convert previous week to UTC for database query
+        var previousWeekStartUtc = timezoneOffsetMinutes.HasValue
+            ? DateTime.SpecifyKind(previousWeekStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+            : DateTime.SpecifyKind(previousWeekStart, DateTimeKind.Utc);
+        var previousWeekEndUtc = timezoneOffsetMinutes.HasValue
+            ? DateTime.SpecifyKind(previousWeekEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+            : DateTime.SpecifyKind(previousWeekEnd, DateTimeKind.Utc);
 
+        // Query workouts for the previous week
+        var previousWeekWorkouts = await db.Workouts
+            .Where(w => w.StartedAt >= previousWeekStartUtc && w.StartedAt <= previousWeekEndUtc)
+            .AsNoTracking()
+            .ToListAsync();
+
+        // Calculate previous week daily totals
+        var previousWeekDailyTotals = CalculateDailyTotals(previousWeekWorkouts, timezoneOffsetMinutes);
+
+        // Format week labels using invariant culture for consistency
+        var currentWeekLabel = $"{weekStart.ToString("MMM d", CultureInfo.InvariantCulture)} - {weekEnd.ToString("MMM d", CultureInfo.InvariantCulture)}";
+        var previousWeekLabel = $"{previousWeekStart.ToString("MMM d", CultureInfo.InvariantCulture)} - {previousWeekEnd.ToString("MMM d", CultureInfo.InvariantCulture)}";
+
+        // Build response with both camelCase and snake_case for backward compatibility
         return Results.Ok(new
         {
             weekStart = weekStart.ToString("yyyy-MM-dd"),
             weekEnd = weekEnd.ToString("yyyy-MM-dd"),
-            dailyMiles = dailyTotals
+            dailyMiles = dailyTotals,
+            previousWeekStart = previousWeekStart.ToString("yyyy-MM-dd"),
+            previous_week_start = previousWeekStart.ToString("yyyy-MM-dd"),
+            previousWeekEnd = previousWeekEnd.ToString("yyyy-MM-dd"),
+            previous_week_end = previousWeekEnd.ToString("yyyy-MM-dd"),
+            previousWeekDailyMiles = previousWeekDailyTotals,
+            previous_week_daily_miles = previousWeekDailyTotals,
+            currentWeekLabel = currentWeekLabel,
+            current_week_label = currentWeekLabel,
+            previousWeekLabel = previousWeekLabel,
+            previous_week_label = previousWeekLabel
         });
     }
 
@@ -598,6 +646,35 @@ public static class StatsEndpoints
         return Results.Ok(years);
     }
 
+    /// <summary>
+    /// Get running insights including data coverage metadata
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="insightsService">Insights service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>Insights response with data coverage and statistics</returns>
+    /// <remarks>
+    /// Returns comprehensive insights about running data including weather extremes, performance highlights,
+    /// habit patterns, and data availability metadata. Requires at least 5 workouts to return insights.
+    /// Returns helpful messages when insufficient data exists.
+    /// </remarks>
+    private static async Task<IResult> GetInsights(
+        TempoDbContext db,
+        InsightsService insightsService,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            var insights = await insightsService.GetInsightsAsync(db);
+            return Results.Ok(insights);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error retrieving insights");
+            return Results.Problem($"Failed to retrieve insights: {ex.Message}");
+        }
+    }
+
     public static void MapStatsEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/stats")
@@ -652,5 +729,12 @@ public static class StatsEndpoints
             .Produces(200)
             .WithSummary("Get available years")
             .WithDescription("Returns list of years that have workouts");
+
+        group.MapGet("/insights", GetInsights)
+            .WithName("GetInsights")
+            .Produces(200)
+            .Produces(500)
+            .WithSummary("Get running insights")
+            .WithDescription("Returns comprehensive insights about running data including data coverage metadata, weather extremes, performance highlights, and habit patterns. Requires at least 5 workouts.");
     }
 }

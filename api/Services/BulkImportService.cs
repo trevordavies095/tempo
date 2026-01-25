@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Utils;
 
 namespace Tempo.Api.Services;
 
@@ -60,24 +61,43 @@ public class BulkImportService
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempDir);
 
+        // Get the fully resolved destination directory path for validation
+        var resolvedDestinationDir = Path.GetFullPath(tempDir + Path.DirectorySeparatorChar);
+
         using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Read))
         {
             foreach (var entry in archive.Entries)
             {
+                // Skip directory entries (they end with /)
+                if (string.IsNullOrEmpty(entry.Name))
+                {
+                    continue;
+                }
+
+                // Construct the raw output path
                 var entryPath = Path.Combine(tempDir, entry.FullName);
-                var entryDir = Path.GetDirectoryName(entryPath);
+                
+                // Resolve any directory traversal elements (e.g., ..) in the path
+                var resolvedEntryPath = Path.GetFullPath(entryPath);
+
+                // Validate that the resolved path is within the destination directory
+                // This prevents directory traversal attacks
+                if (!resolvedEntryPath.StartsWith(resolvedDestinationDir, StringComparison.Ordinal))
+                {
+                    _logger.LogWarning("Skipping zip entry with path traversal attempt: {EntryFullName}", LogSanitizer.Sanitize(entry.FullName));
+                    continue;
+                }
+
+                var entryDir = Path.GetDirectoryName(resolvedEntryPath);
                 if (!string.IsNullOrEmpty(entryDir))
                 {
                     Directory.CreateDirectory(entryDir);
                 }
 
-                if (!string.IsNullOrEmpty(entry.Name))
+                using (var entryStream = entry.Open())
+                using (var fileStream = new FileStream(resolvedEntryPath, FileMode.Create))
                 {
-                    using (var entryStream = entry.Open())
-                    using (var fileStream = new FileStream(entryPath, FileMode.Create))
-                    {
-                        entryStream.CopyTo(fileStream);
-                    }
+                    entryStream.CopyTo(fileStream);
                 }
             }
         }
@@ -110,8 +130,28 @@ public class BulkImportService
         string tempDir,
         double splitDistanceMeters)
     {
+        // Get the fully resolved destination directory path for validation
+        var resolvedDestinationDir = Path.GetFullPath(tempDir + Path.DirectorySeparatorChar);
+        
+        // Construct the raw file path
         var filePath = Path.Combine(tempDir, activity.Filename.Replace('/', Path.DirectorySeparatorChar));
-        if (!File.Exists(filePath))
+        
+        // Resolve any directory traversal elements (e.g., ..) in the path
+        var resolvedFilePath = Path.GetFullPath(filePath);
+        
+        // Validate that the resolved path is within the destination directory
+        // This prevents directory traversal attacks
+        if (!resolvedFilePath.StartsWith(resolvedDestinationDir, StringComparison.Ordinal))
+        {
+            _logger.LogWarning("Skipping activity file with path traversal attempt: {Filename}", LogSanitizer.Sanitize(activity.Filename));
+            return new ActivityProcessResult
+            {
+                Success = false,
+                ErrorMessage = "Invalid file path detected"
+            };
+        }
+        
+        if (!File.Exists(resolvedFilePath))
         {
             return new ActivityProcessResult
             {
@@ -123,16 +163,16 @@ public class BulkImportService
         // Determine file type
         string? fileType = null;
         bool isFitGz = false;
-        if (filePath.EndsWith(".gpx", StringComparison.OrdinalIgnoreCase))
+        if (resolvedFilePath.EndsWith(".gpx", StringComparison.OrdinalIgnoreCase))
         {
             fileType = "gpx";
         }
-        else if (filePath.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase))
+        else if (resolvedFilePath.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase))
         {
             fileType = "fit";
             isFitGz = true;
         }
-        else if (filePath.EndsWith(".fit", StringComparison.OrdinalIgnoreCase))
+        else if (resolvedFilePath.EndsWith(".fit", StringComparison.OrdinalIgnoreCase))
         {
             fileType = "fit";
         }
@@ -149,7 +189,7 @@ public class BulkImportService
         {
             // Read file into byte array before parsing
             byte[] rawFileData;
-            using (var fileStream = File.OpenRead(filePath))
+            using (var fileStream = File.OpenRead(resolvedFilePath))
             using (var memoryStream = new MemoryStream())
             {
                 await fileStream.CopyToAsync(memoryStream);
@@ -1000,6 +1040,9 @@ public class BulkImportService
     {
         var mediaToAdd = new List<WorkoutMedia>();
 
+        // Get the fully resolved destination directory path for validation
+        var resolvedDestinationDir = Path.GetFullPath(tempDir + Path.DirectorySeparatorChar);
+
         foreach (var mediaPath in mediaPaths)
         {
             try
@@ -1029,8 +1072,19 @@ public class BulkImportService
                 // Locate media file in extracted ZIP temp directory
                 var mediaFilePath = Path.Combine(tempDir, mediaPath.Replace('/', Path.DirectorySeparatorChar));
                 
+                // Resolve any directory traversal elements (e.g., ..) in the path
+                var resolvedMediaFilePath = Path.GetFullPath(mediaFilePath);
+                
+                // Validate that the resolved path is within the destination directory
+                // This prevents directory traversal attacks
+                if (!resolvedMediaFilePath.StartsWith(resolvedDestinationDir, StringComparison.Ordinal))
+                {
+                    _logger.LogWarning("Skipping media file with path traversal attempt: {MediaPath}", LogSanitizer.Sanitize(mediaPath));
+                    continue;
+                }
+                
                 // Copy media file and create record
-                var mediaRecord = _mediaService.CopyMediaFile(mediaFilePath, workoutId);
+                var mediaRecord = _mediaService.CopyMediaFile(resolvedMediaFilePath, workoutId);
                 if (mediaRecord != null)
                 {
                     mediaToAdd.Add(mediaRecord);

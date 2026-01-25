@@ -233,7 +233,7 @@ public class WeatherService
 
             var url = $"{OpenMeteoArchiveUrl}?{string.Join("&", queryParams)}";
             
-            _logger.LogInformation("Fetching weather from Open-Meteo: {Url}", url);
+            _logger.LogInformation("Fetching weather from Open-Meteo API");
 
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
@@ -572,7 +572,7 @@ public class WeatherService
     /// <summary>
     /// Maps WMO weather code to human-readable condition string
     /// </summary>
-    private static string MapWeatherCodeToCondition(int code)
+    public static string MapWeatherCodeToCondition(int code)
     {
         // WMO Weather interpretation codes (WW)
         return code switch

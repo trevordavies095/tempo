@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Utils;
 
 namespace Tempo.Api.Endpoints;
 
@@ -109,7 +110,7 @@ public static class ShoesEndpoints
             db.Shoes.Add(shoe);
             await db.SaveChangesAsync();
 
-            logger.LogInformation("Created shoe {ShoeId}: {Brand} {Model}", shoe.Id, shoe.Brand, shoe.Model);
+            logger.LogInformation("Created shoe {ShoeId}: {Brand} {Model}", shoe.Id, LogSanitizer.Sanitize(shoe.Brand), LogSanitizer.Sanitize(shoe.Model));
 
             return Results.Ok(new
             {
@@ -261,7 +262,7 @@ public static class ShoesEndpoints
             shoe.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
 
-            logger.LogInformation("Updated shoe {ShoeId}: {Brand} {Model}", shoe.Id, shoe.Brand, shoe.Model);
+            logger.LogInformation("Updated shoe {ShoeId}: {Brand} {Model}", shoe.Id, LogSanitizer.Sanitize(shoe.Brand), LogSanitizer.Sanitize(shoe.Model));
 
             return Results.Ok(new
             {
@@ -317,7 +318,7 @@ public static class ShoesEndpoints
             db.Shoes.Remove(shoe);
             await db.SaveChangesAsync();
 
-            logger.LogInformation("Deleted shoe {ShoeId}: {Brand} {Model}", shoe.Id, shoe.Brand, shoe.Model);
+            logger.LogInformation("Deleted shoe {ShoeId}: {Brand} {Model}", shoe.Id, LogSanitizer.Sanitize(shoe.Brand), LogSanitizer.Sanitize(shoe.Model));
 
             return Results.NoContent();
         }

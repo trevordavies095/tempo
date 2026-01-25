@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Utils;
 using static Tempo.Api.Services.WorkoutQueryService;
 using static Tempo.Api.Services.DeviceExtractionService;
 
@@ -158,7 +159,7 @@ public static class WorkoutsEndpoints
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error processing file {FileName}", file.FileName);
+                logger.LogError(ex, "Error processing file {FileName}", LogSanitizer.Sanitize(file.FileName));
                 errors.Add(new { filename = file.FileName, error = ex.Message });
             }
         }
@@ -480,19 +481,19 @@ public static class WorkoutsEndpoints
                 {
                     uploadedMedia.Add(mediaRecord);
                     logger.LogInformation("Uploaded media file {FileName} for workout {WorkoutId}", 
-                        file.FileName, id);
+                        LogSanitizer.Sanitize(file.FileName), id);
                 }
                 else
                 {
                     errors.Add(new { filename = file.FileName, error = "Failed to process file" });
                     logger.LogWarning("Failed to upload media file {FileName} for workout {WorkoutId}", 
-                        file.FileName, id);
+                        LogSanitizer.Sanitize(file.FileName), id);
                 }
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error uploading media file {FileName} for workout {WorkoutId}", 
-                    file.FileName, id);
+                    LogSanitizer.Sanitize(file.FileName), id);
                 errors.Add(new { filename = file.FileName, error = ex.Message });
             }
         }
@@ -701,7 +702,8 @@ public static class WorkoutsEndpoints
         logger.LogInformation("Found {MediaCount} media records for workout {WorkoutId}", media.Count, id);
         if (media.Count > 0)
         {
-            logger.LogInformation("Media filenames: {Filenames}", string.Join(", ", media.Select(m => m.filename)));
+            var sanitizedFilenames = media.Select(m => LogSanitizer.Sanitize(m.filename));
+            logger.LogInformation("Media filenames: {Filenames}", string.Join(", ", sanitizedFilenames));
         }
 
         return Results.Ok(media);
@@ -2112,7 +2114,7 @@ public static class WorkoutsEndpoints
         await db.SaveChangesAsync();
 
         logger.LogInformation("Updated workout {WorkoutId}: RunType={RunType}, RunTypeUpdated={RunTypeUpdated}, NotesUpdated={NotesUpdated}, NameUpdated={NameUpdated}, ShoeIdUpdated={ShoeIdUpdated}",
-            workout.Id, workout.RunType ?? "null", runTypeUpdated, notesUpdated, nameUpdated, shoeIdUpdated);
+            workout.Id, LogSanitizer.Sanitize(workout.RunType ?? "null"), runTypeUpdated, notesUpdated, nameUpdated, shoeIdUpdated);
 
         return Results.Ok(new
         {
@@ -2608,7 +2610,7 @@ public static class WorkoutsEndpoints
                     await db.SaveChangesAsync();
                     
                     logger.LogInformation("Updated duplicate workout {WorkoutId} with raw file data: {Filename} at {StartTime}", 
-                existingWorkout.Id, fileName, startedAtUtc);
+                existingWorkout.Id, LogSanitizer.Sanitize(fileName), startedAtUtc);
                     
                     return new FileProcessResult
                     {
@@ -2630,7 +2632,7 @@ public static class WorkoutsEndpoints
                 {
                     // Duplicate exists and already has raw file data
                     logger.LogInformation("Skipped duplicate workout (already has raw file): {Filename} at {StartTime}", 
-                fileName, startedAtUtc);
+                LogSanitizer.Sanitize(fileName), startedAtUtc);
                     
                     return new FileProcessResult
                     {
@@ -3353,7 +3355,7 @@ public static class WorkoutsEndpoints
                 settings.UnitPreference = unitPreference;
                 settings.UpdatedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
-                logger.LogInformation("Updated unit preference to {UnitPreference}", unitPreference);
+                logger.LogInformation("Updated unit preference to {UnitPreference}", Utils.LogSanitizer.Sanitize(unitPreference));
             }
         }
         catch (Exception ex)

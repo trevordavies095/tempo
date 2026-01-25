@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-01-25
+
+### Added
+- **Running insights endpoint**
+  - New `GET /stats/insights` endpoint providing comprehensive running insights
+  - Data coverage metadata showing availability of weather, heart rate, elevation, calories, cadence, and power data
+  - Weather extremes tracking: coldest, hottest, windiest, most humid, wettest, most epic (thunderstorms), foggiest, and snowiest runs
+  - Unit-aware responses respecting user's metric/imperial preferences
+  - Wind direction displayed as cardinal directions (N, NE, E, etc.) in addition to degrees
+  - Minimum threshold enforcement (5+ workouts required) with helpful messages for insufficient data
+  - Graceful degradation when data is unavailable (returns null instead of errors)
+- **Unit conversion service**
+  - New `UnitConversionService` for temperature, wind speed, and wind direction conversions
+  - Automatic unit conversion based on user preferences (metric/imperial)
+  - Temperature conversion: Celsius ↔ Fahrenheit
+  - Wind speed conversion: m/s ↔ mph
+  - Wind direction: degrees to cardinal direction mapping
+- **Weekly stats enhancements**
+  - Previous week data now included in weekly stats endpoint
+  - Previous week daily totals for comparison
+  - Week labels with date ranges for both current and previous weeks
+  - Backward compatible response format (both camelCase and snake_case)
+
+### Security
+- **Log injection prevention**
+  - New `LogSanitizer` utility to prevent log injection attacks
+  - Sanitizes user input before logging by removing newline and control characters
+  - Applied to all user-provided data in log statements (usernames, filenames, shoe names, etc.)
+  - Prevents malicious input from forging log entries or breaking log parsing
+- **Path traversal protection**
+  - Enhanced bulk import service with path traversal attack prevention
+  - Validates all extracted ZIP file paths to ensure they stay within the destination directory
+  - Prevents directory traversal attacks (e.g., `../` sequences) in ZIP extraction
+  - Applied to activity files, media files, and all ZIP entry paths
+- **Workflow permissions**
+  - Added explicit least-privilege permissions to GitHub Actions test workflow
+  - Explicitly scoped to `contents: read` for repository checkout
+  - Prevents workflows from inheriting overly broad repository permissions
+  - Reduces attack surface if workflow is compromised
+
+### Fixed
+- **Weather service logging**
+  - Removed full Open-Meteo API URL from logs (contained sensitive location coordinates)
+  - Prevents location data from being stored in external log files
+  - Maintains useful logging information without exposing private data
+- **Weather code mapping**
+  - Made `MapWeatherCodeToCondition` method public for use in insights service
+  - Enables weather condition string mapping in insights endpoint
+
+### Changed
+- **Insights service integration**
+  - Registered `InsightsService` in dependency injection container
+  - Integrated insights endpoint into stats endpoints group
+  - Added comprehensive XML documentation for insights endpoint
+
+### Technical
+- New `InsightsService` with data analysis and weather extreme calculation
+- New `InsightsThresholds` constants for configurable minimum data requirements
+- New `InsightsResponse` and related models for structured insights data
+- Enhanced `BulkImportService` with path validation and sanitization
+- Updated authentication, shoes, and workouts endpoints with log sanitization
+- Improved error handling and logging throughout the application
+
 ## [2.2.0] - 2026-01-21
 
 ### Added

@@ -301,6 +301,49 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         return workouts;
     }
 
+    /// <summary>
+    /// Seeds workouts for previous week (for week-over-week comparison)
+    /// </summary>
+    private async Task<List<Workout>> SeedPreviousWeekWorkoutsAsync(TempoDbContext db, int timezoneOffsetMinutes = 0)
+    {
+        var now = DateTime.UtcNow;
+        if (timezoneOffsetMinutes != 0)
+        {
+            now = now.AddMinutes(timezoneOffsetMinutes);
+        }
+
+        // Calculate start of current week (Monday)
+        var daysSinceMonday = ((int)now.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        var currentWeekStart = now.Date.AddDays(-daysSinceMonday);
+        // Previous week starts 7 days before current week
+        var previousWeekStart = currentWeekStart.AddDays(-7);
+
+        var workouts = new List<Workout>();
+        var distances = new[] { 2000.0, 4000.0, 8000.0, 4000.0, 2000.0, 0.0, 0.0 }; // M-Sun
+
+        for (int day = 0; day < 7; day++)
+        {
+            if (distances[day] > 0)
+            {
+                var workoutDate = previousWeekStart.AddDays(day).AddHours(10);
+                // Convert back to UTC for storage
+                var workoutDateUtc = timezoneOffsetMinutes != 0
+                    ? DateTime.SpecifyKind(workoutDate.AddMinutes(-timezoneOffsetMinutes), DateTimeKind.Utc)
+                    : DateTime.SpecifyKind(workoutDate, DateTimeKind.Utc);
+
+                var workout = await TestDataSeeder.SeedWorkoutAsync(
+                    db,
+                    startedAt: workoutDateUtc,
+                    distanceM: distances[day],
+                    durationS: (int)(distances[day] / 1000.0 * 300), // ~5 min/km
+                    name: $"Previous Week Day {day + 1}");
+                workouts.Add(workout);
+            }
+        }
+
+        return workouts;
+    }
+
     #endregion
 
     #region Weekly Stats Tests
@@ -420,6 +463,233 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         
         // Verify that today's day has approximately 1 mile
         result!.DailyMiles[dayIndex].Should().BeApproximately(1.0, 0.001);
+    }
+
+    [Fact]
+    public async Task GetWeeklyStats_ReturnsPreviousWeekData_WhenWorkoutsExist()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await SeedCurrentWeekWorkoutsAsync(db);
+            await SeedPreviousWeekWorkoutsAsync(db);
+        }
+
+        // Act
+        var response = await client.GetAsync("/stats/weekly");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyStatsResponse>();
+        result.Should().NotBeNull();
+        
+        // Verify existing fields are still present
+        result!.WeekStart.Should().NotBeEmpty();
+        result.WeekEnd.Should().NotBeEmpty();
+        result.DailyMiles.Should().HaveCount(7);
+        
+        // Verify new fields are present
+        result.PreviousWeekStart.Should().NotBeNullOrEmpty();
+        result.PreviousWeekEnd.Should().NotBeNullOrEmpty();
+        result.PreviousWeekDailyMiles.Should().NotBeNull();
+        result.PreviousWeekDailyMiles!.Should().HaveCount(7);
+        result.CurrentWeekLabel.Should().NotBeNullOrEmpty();
+        result.PreviousWeekLabel.Should().NotBeNullOrEmpty();
+        
+        // Verify previous week has workouts (should have non-zero values)
+        result.PreviousWeekDailyMiles.Should().Contain(m => m > 0);
+        
+        // Verify week labels are formatted correctly (should contain month abbreviation and day)
+        result.CurrentWeekLabel.Should().MatchRegex(@"^[A-Z][a-z]{2} \d+ - [A-Z][a-z]{2} \d+$");
+        result.PreviousWeekLabel.Should().MatchRegex(@"^[A-Z][a-z]{2} \d+ - [A-Z][a-z]{2} \d+$");
+    }
+
+    [Fact]
+    public async Task GetWeeklyStats_ReturnsZerosForPreviousWeek_WhenNoWorkouts()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            // Seed workouts only in current week
+            await SeedCurrentWeekWorkoutsAsync(db);
+        }
+
+        // Act
+        var response = await client.GetAsync("/stats/weekly");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyStatsResponse>();
+        result.Should().NotBeNull();
+        
+        // Verify new fields are present
+        result!.PreviousWeekStart.Should().NotBeNullOrEmpty();
+        result.PreviousWeekEnd.Should().NotBeNullOrEmpty();
+        result.PreviousWeekDailyMiles.Should().NotBeNull();
+        result.PreviousWeekDailyMiles!.Should().HaveCount(7);
+        
+        // Verify previous week daily miles are all zeros
+        result.PreviousWeekDailyMiles.Should().AllBeEquivalentTo(0.0);
+    }
+
+    [Fact]
+    public async Task GetWeeklyStats_RespectsTimezoneForPreviousWeek()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        // EST is UTC-5, so -300 minutes
+        const int estOffsetMinutes = -300;
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await SeedCurrentWeekWorkoutsAsync(db, estOffsetMinutes);
+            await SeedPreviousWeekWorkoutsAsync(db, estOffsetMinutes);
+        }
+
+        // Act
+        var response = await client.GetAsync($"/stats/weekly?timezoneOffsetMinutes={estOffsetMinutes}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyStatsResponse>();
+        result.Should().NotBeNull();
+        
+        // Verify previous week fields are present and correctly calculated
+        result!.PreviousWeekStart.Should().NotBeNullOrEmpty();
+        result.PreviousWeekEnd.Should().NotBeNullOrEmpty();
+        result.PreviousWeekDailyMiles.Should().NotBeNull();
+        result.PreviousWeekDailyMiles!.Should().HaveCount(7);
+        
+        // Verify previous week start is 7 days before current week start
+        var currentWeekStart = DateTime.Parse(result.WeekStart);
+        var previousWeekStart = DateTime.Parse(result.PreviousWeekStart);
+        var daysDifference = (currentWeekStart - previousWeekStart).Days;
+        daysDifference.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task GetWeeklyStats_MaintainsBackwardCompatibility()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await SeedCurrentWeekWorkoutsAsync(db);
+        }
+
+        // Act
+        var response = await client.GetAsync("/stats/weekly");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyStatsResponse>();
+        result.Should().NotBeNull();
+        
+        // Verify existing fields remain unchanged and are still present
+        result!.WeekStart.Should().NotBeEmpty();
+        result.WeekEnd.Should().NotBeEmpty();
+        result.DailyMiles.Should().NotBeNull();
+        result.DailyMiles.Should().HaveCount(7);
+        
+        // Verify existing fields have correct format
+        DateTime.TryParse(result.WeekStart, out _).Should().BeTrue();
+        DateTime.TryParse(result.WeekEnd, out _).Should().BeTrue();
+        
+        // Verify new fields are also present (for forward compatibility)
+        result.PreviousWeekStart.Should().NotBeNullOrEmpty();
+        result.PreviousWeekEnd.Should().NotBeNullOrEmpty();
+        result.PreviousWeekDailyMiles.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetWeeklyStats_HandlesPreviousWeekAcrossMonthBoundary()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        // Seed workouts on a date near month boundary (e.g., first Monday of a month)
+        // This will make previous week span across month boundary
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            
+            // Find the first Monday of current month
+            var now = DateTime.UtcNow;
+            var firstDayOfMonth = new DateTime(now.Year, now.Month, 1);
+            var daysUntilMonday = ((int)DayOfWeek.Monday - (int)firstDayOfMonth.DayOfWeek + 7) % 7;
+            var firstMonday = firstDayOfMonth.AddDays(daysUntilMonday);
+            
+            // If we're before the first Monday of current month, use previous month's first Monday instead
+            if (now.Date < firstMonday)
+            {
+                // Get the first day of the previous month
+                firstMonday = firstDayOfMonth.AddMonths(-1);
+                // Calculate days until Monday from the previous month's first day
+                daysUntilMonday = ((int)DayOfWeek.Monday - (int)firstMonday.DayOfWeek + 7) % 7;
+                // Get the actual Monday in the previous month
+                firstMonday = firstMonday.AddDays(daysUntilMonday);
+            }
+            
+            // Seed workout on first Monday (current week start)
+            var currentWeekStart = firstMonday;
+            var workoutDate = currentWeekStart.AddHours(10);
+            var workoutDateUtc = DateTime.SpecifyKind(workoutDate, DateTimeKind.Utc);
+            
+            await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: workoutDateUtc,
+                distanceM: 5000,
+                durationS: 1800,
+                name: "Month Boundary Workout");
+            
+            // Seed workout in previous week (which will be in previous month)
+            var previousWeekStart = currentWeekStart.AddDays(-7);
+            var previousWeekWorkoutDate = previousWeekStart.AddDays(2).AddHours(10); // Wednesday of previous week
+            var previousWeekWorkoutDateUtc = DateTime.SpecifyKind(previousWeekWorkoutDate, DateTimeKind.Utc);
+            
+            await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: previousWeekWorkoutDateUtc,
+                distanceM: 3000,
+                durationS: 1200,
+                name: "Previous Month Workout");
+        }
+
+        // Act
+        var response = await client.GetAsync("/stats/weekly");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyStatsResponse>();
+        result.Should().NotBeNull();
+        
+        // Verify week labels handle month boundary correctly
+        result!.CurrentWeekLabel.Should().NotBeNullOrEmpty();
+        result.PreviousWeekLabel.Should().NotBeNullOrEmpty();
+        
+        // Verify labels are formatted correctly even across month boundary
+        result.CurrentWeekLabel.Should().MatchRegex(@"^[A-Z][a-z]{2} \d+ - [A-Z][a-z]{2} \d+$");
+        result.PreviousWeekLabel.Should().MatchRegex(@"^[A-Z][a-z]{2} \d+ - [A-Z][a-z]{2} \d+$");
+        
+        // Verify previous week data is present
+        result.PreviousWeekStart.Should().NotBeNullOrEmpty();
+        result.PreviousWeekEnd.Should().NotBeNullOrEmpty();
+        result.PreviousWeekDailyMiles.Should().NotBeNull();
     }
 
     #endregion
@@ -1514,6 +1784,12 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public string WeekStart { get; set; } = string.Empty;
         public string WeekEnd { get; set; } = string.Empty;
         public List<double> DailyMiles { get; set; } = new();
+        // New fields for week-over-week comparison
+        public string? PreviousWeekStart { get; set; }
+        public string? PreviousWeekEnd { get; set; }
+        public List<double>? PreviousWeekDailyMiles { get; set; }
+        public string? CurrentWeekLabel { get; set; }
+        public string? PreviousWeekLabel { get; set; }
     }
 
     private class RelativeEffortStatsResponse
