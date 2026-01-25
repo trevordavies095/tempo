@@ -2,12 +2,42 @@ using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
+using Tempo.Api.Models;
 using Tempo.Api.Services;
 
 namespace Tempo.Api.Endpoints;
 
 public static class StatsEndpoints
 {
+    /// <summary>
+    /// Calculate daily totals (in miles) from a list of workouts, grouped by day of week (Monday=0, Sunday=6).
+    /// </summary>
+    /// <param name="workouts">List of workouts to process</param>
+    /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC)</param>
+    /// <returns>Array of 7 doubles representing daily miles (Monday through Sunday)</returns>
+    private static double[] CalculateDailyTotals(List<Workout> workouts, int? timezoneOffsetMinutes)
+    {
+        var dailyTotals = new double[7]; // M T W T F S S
+
+        foreach (var workout in workouts)
+        {
+            // Convert UTC to local timezone
+            // timezoneOffsetMinutes is already negative (from -getTimezoneOffset()), so add it directly
+            var localTime = timezoneOffsetMinutes.HasValue
+                ? workout.StartedAt.AddMinutes(timezoneOffsetMinutes.Value)
+                : workout.StartedAt;
+
+            // Get day of week (0=Monday, 6=Sunday)
+            var dayOfWeek = ((int)localTime.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+            
+            // Convert meters to miles and add to daily total
+            var miles = workout.DistanceM / 1609.344;
+            dailyTotals[dayOfWeek] += miles;
+        }
+
+        return dailyTotals;
+    }
+
     /// <summary>
     /// Get weekly stats
     /// </summary>
@@ -52,26 +82,8 @@ public static class StatsEndpoints
             .AsNoTracking()
             .ToListAsync();
 
-        // Group by day of week and sum distances
-        // DayOfWeek enum: Sunday=0, Monday=1, ..., Saturday=6
-        // We want: Monday=0, Tuesday=1, ..., Sunday=6
-        var dailyTotals = new double[7]; // M T W T F S S
-
-        foreach (var workout in workouts)
-        {
-            // Convert UTC to local timezone
-            // timezoneOffsetMinutes is already negative (from -getTimezoneOffset()), so add it directly
-            var localTime = timezoneOffsetMinutes.HasValue
-                ? workout.StartedAt.AddMinutes(timezoneOffsetMinutes.Value)
-                : workout.StartedAt;
-
-            // Get day of week (0=Monday, 6=Sunday)
-            var dayOfWeek = ((int)localTime.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-            
-            // Convert meters to miles and add to daily total
-            var miles = workout.DistanceM / 1609.344;
-            dailyTotals[dayOfWeek] += miles;
-        }
+        // Calculate daily totals from workouts
+        var dailyTotals = CalculateDailyTotals(workouts, timezoneOffsetMinutes);
 
         // Calculate previous week boundaries (complete week immediately preceding current week)
         var previousWeekStart = weekStart.AddDays(-7);
@@ -92,21 +104,7 @@ public static class StatsEndpoints
             .ToListAsync();
 
         // Calculate previous week daily totals
-        var previousWeekDailyTotals = new double[7]; // M T W T F S S
-        foreach (var workout in previousWeekWorkouts)
-        {
-            // Convert UTC to local timezone
-            var localTime = timezoneOffsetMinutes.HasValue
-                ? workout.StartedAt.AddMinutes(timezoneOffsetMinutes.Value)
-                : workout.StartedAt;
-
-            // Get day of week (0=Monday, 6=Sunday)
-            var dayOfWeek = ((int)localTime.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-            
-            // Convert meters to miles and add to daily total
-            var miles = workout.DistanceM / 1609.344;
-            previousWeekDailyTotals[dayOfWeek] += miles;
-        }
+        var previousWeekDailyTotals = CalculateDailyTotals(previousWeekWorkouts, timezoneOffsetMinutes);
 
         // Format week labels using invariant culture for consistency
         var currentWeekLabel = $"{weekStart.ToString("MMM d", CultureInfo.InvariantCulture)} - {weekEnd.ToString("MMM d", CultureInfo.InvariantCulture)}";

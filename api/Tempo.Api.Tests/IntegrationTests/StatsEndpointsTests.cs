@@ -634,11 +634,14 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
             var daysUntilMonday = ((int)DayOfWeek.Monday - (int)firstDayOfMonth.DayOfWeek + 7) % 7;
             var firstMonday = firstDayOfMonth.AddDays(daysUntilMonday);
             
-            // If we're past the first Monday, use it; otherwise use next month's first Monday
+            // If we're before the first Monday of current month, use previous month's first Monday instead
             if (now.Date < firstMonday)
             {
+                // Get the first day of the previous month
                 firstMonday = firstDayOfMonth.AddMonths(-1);
+                // Calculate days until Monday from the previous month's first day
                 daysUntilMonday = ((int)DayOfWeek.Monday - (int)firstMonday.DayOfWeek + 7) % 7;
+                // Get the actual Monday in the previous month
                 firstMonday = firstMonday.AddDays(daysUntilMonday);
             }
             
