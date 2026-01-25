@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Utils;
 
 namespace Tempo.Api.Services;
 
@@ -83,7 +84,7 @@ public class BulkImportService
                 // This prevents directory traversal attacks
                 if (!resolvedEntryPath.StartsWith(resolvedDestinationDir, StringComparison.Ordinal))
                 {
-                    _logger.LogWarning("Skipping zip entry with path traversal attempt: {EntryFullName}", entry.FullName);
+                    _logger.LogWarning("Skipping zip entry with path traversal attempt: {EntryFullName}", LogSanitizer.Sanitize(entry.FullName));
                     continue;
                 }
 
@@ -142,7 +143,7 @@ public class BulkImportService
         // This prevents directory traversal attacks
         if (!resolvedFilePath.StartsWith(resolvedDestinationDir, StringComparison.Ordinal))
         {
-            _logger.LogWarning("Skipping activity file with path traversal attempt: {Filename}", activity.Filename);
+            _logger.LogWarning("Skipping activity file with path traversal attempt: {Filename}", LogSanitizer.Sanitize(activity.Filename));
             return new ActivityProcessResult
             {
                 Success = false,
@@ -1078,7 +1079,7 @@ public class BulkImportService
                 // This prevents directory traversal attacks
                 if (!resolvedMediaFilePath.StartsWith(resolvedDestinationDir, StringComparison.Ordinal))
                 {
-                    _logger.LogWarning("Skipping media file with path traversal attempt: {MediaPath}", mediaPath);
+                    _logger.LogWarning("Skipping media file with path traversal attempt: {MediaPath}", LogSanitizer.Sanitize(mediaPath));
                     continue;
                 }
                 

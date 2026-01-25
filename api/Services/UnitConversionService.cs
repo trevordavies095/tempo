@@ -32,16 +32,6 @@ public static class UnitConversionService
     }
 
     /// <summary>
-    /// Convert wind speed from meters per second to kilometers per hour.
-    /// </summary>
-    /// <param name="metersPerSecond">Wind speed in m/s</param>
-    /// <returns>Wind speed in km/h</returns>
-    public static double MetersPerSecondToKilometersPerHour(double metersPerSecond)
-    {
-        return metersPerSecond * 3.6;
-    }
-
-    /// <summary>
     /// Convert wind speed from meters per second to miles per hour.
     /// </summary>
     /// <param name="metersPerSecond">Wind speed in m/s</param>
