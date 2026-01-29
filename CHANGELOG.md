@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-01-28
+
+### Security
+- **Next.js security upgrade**
+  - Upgraded `next` and `eslint-config-next` from 16.0.10 to 16.1.5
+  - Addresses CVE-2026-23864 in the frontend dependency chain
+  - Ensures all frontend builds use the patched Next.js version
+
 ## [2.3.0] - 2026-01-25
 
 ### Added
