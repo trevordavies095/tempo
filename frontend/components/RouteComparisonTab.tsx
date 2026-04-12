@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { BarChart, Scatter, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts';
+import { ComposedChart, Scatter, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts';
 import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDate, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
@@ -81,6 +81,47 @@ interface TrendLinePoint {
  * Ordinary least squares line y = slope * x + intercept (x = epoch ms, y = paceS).
  * Returns two endpoints for min/max date, or null if a line is not meaningful.
  */
+/** X-axis tooltip label (tick value) as epoch ms, if parseable. */
+function axisLabelToEpochMs(label: unknown): number | undefined {
+  if (label == null) {
+    return undefined;
+  }
+  if (typeof label === 'number' && Number.isFinite(label)) {
+    return label;
+  }
+  if (typeof label === 'string') {
+    const asNum = Number(label);
+    if (Number.isFinite(asNum)) {
+      return asNum;
+    }
+    const parsed = Date.parse(label);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+    return undefined;
+  }
+  if (label instanceof Date) {
+    return label.getTime();
+  }
+  return undefined;
+}
+
+/**
+ * ComposedChart axis tooltips resolve Scatter by tick index, which can disagree with the
+ * active axis label; the Line trend still matches by `date`. Fall back to label → workout.
+ */
+function findWorkoutByAxisLabel(label: unknown, chartData: ChartDataPoint[]): ChartDataPoint | undefined {
+  const ms = axisLabelToEpochMs(label);
+  if (ms === undefined || chartData.length === 0) {
+    return undefined;
+  }
+  const exact = chartData.find((p) => p.date === ms);
+  if (exact) {
+    return exact;
+  }
+  return chartData.find((p) => Math.abs(p.date - ms) < 1000);
+}
+
 function computePaceTrendLine(points: ChartDataPoint[]): TrendLinePoint[] | null {
   if (points.length < 2) {
     return null;
@@ -120,10 +161,14 @@ function computePaceTrendLine(points: ChartDataPoint[]): TrendLinePoint[] | null
 function PaceComparisonTooltip({
   active,
   payload,
+  label,
+  chartData,
   unitPreference,
 }: {
   active?: boolean;
   payload?: ReadonlyArray<{ payload?: unknown }>;
+  label?: string | number;
+  chartData: ChartDataPoint[];
   unitPreference: 'metric' | 'imperial';
 }) {
   if (!active || !payload?.length) {
@@ -134,29 +179,32 @@ function PaceComparisonTooltip({
     const p = item.payload as (ChartDataPoint & { isTrend?: boolean }) | undefined;
     return typeof p?.workoutId === 'string' && p.isTrend !== true;
   })?.payload as (ChartDataPoint & { dateISO?: string }) | undefined;
-  if (data) {
+
+  const dataFromLabel = data ?? findWorkoutByAxisLabel(label, chartData);
+
+  if (dataFromLabel) {
     return (
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3">
         <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
-          {data.dateISO ? formatDate(data.dateISO) : data.dateDisplay}
+          {dataFromLabel.dateISO ? formatDate(dataFromLabel.dateISO) : dataFromLabel.dateDisplay}
         </p>
         <p className="text-xs text-gray-600 dark:text-gray-400">
-          Pace: {data.paceDisplay}
+          Pace: {dataFromLabel.paceDisplay}
         </p>
         <p className="text-xs text-gray-600 dark:text-gray-400">
-          Duration: {formatDuration(data.durationS)}
+          Duration: {formatDuration(dataFromLabel.durationS)}
         </p>
-        {data.timeDifferenceS !== undefined && data.timeDifferenceS !== null && (
+        {dataFromLabel.timeDifferenceS !== undefined && dataFromLabel.timeDifferenceS !== null && (
           <p
             className={`text-xs ${
-              data.timeDifferenceS < 0
+              dataFromLabel.timeDifferenceS < 0
                 ? 'text-green-600 dark:text-green-400'
-                : data.timeDifferenceS > 0
+                : dataFromLabel.timeDifferenceS > 0
                   ? 'text-red-600 dark:text-red-400'
                   : 'text-gray-500 dark:text-gray-400'
             }`}
           >
-            {formatTimeDifference(data.timeDifferenceS)}
+            {formatTimeDifference(dataFromLabel.timeDifferenceS)}
           </p>
         )}
       </div>
@@ -385,7 +433,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
         </h2>
         <div style={{ height: '300px' }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 20 }}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" className="dark:stroke-gray-700" />
               <XAxis 
                 dataKey="date" 
@@ -413,7 +461,13 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
               <Tooltip
                 shared={false}
                 content={(props) => (
-                  <PaceComparisonTooltip active={props.active} payload={props.payload} unitPreference={unitPreference} />
+                  <PaceComparisonTooltip
+                    active={props.active}
+                    label={props.label}
+                    payload={props.payload}
+                    chartData={chartData}
+                    unitPreference={unitPreference}
+                  />
                 )}
               />
               <Scatter
@@ -495,7 +549,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                   name="Trend"
                 />
               )}
-            </BarChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>
