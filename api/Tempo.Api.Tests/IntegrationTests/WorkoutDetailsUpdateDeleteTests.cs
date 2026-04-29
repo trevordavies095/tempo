@@ -384,6 +384,29 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
     }
 
     [Fact]
+    public async Task UpdateWorkout_Returns400_WhenShoeIsRetired()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        Shoe shoe;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db);
+            shoe = await TestDataSeeder.SeedShoeAsync(db, brand: "Nike", model: "Old", isRetired: true);
+        }
+
+        var updateRequest = new { shoeId = shoe.Id.ToString() };
+        var content = new StringContent(JsonSerializer.Serialize(updateRequest), Encoding.UTF8, "application/json");
+
+        var response = await client.PatchAsync($"/workouts/{workout.Id}", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task UpdateWorkout_RemovesShoeAssignment_WhenShoeIdIsNull()
     {
         // Arrange

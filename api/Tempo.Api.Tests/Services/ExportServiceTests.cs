@@ -379,6 +379,31 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
     /// <summary>
     /// Cleans the database before a test to ensure accurate statistics
     /// </summary>
+    [Fact]
+    public async Task ExportAllDataAsync_ShoesJsonIncludesIsRetired()
+    {
+        await CleanDatabaseAsync();
+        await TestDataSeeder.SeedShoeAsync(_db, "Nike", "Active");
+        await TestDataSeeder.SeedShoeAsync(_db, "Adidas", "Retired", isRetired: true);
+
+        using var zipStream = new MemoryStream();
+        await _exportService.ExportAllDataAsync(zipStream);
+        zipStream.Position = 0;
+
+        using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+        var shoesEntry = archive.GetEntry("data/shoes.json");
+        shoesEntry.Should().NotBeNull();
+        using var shoesStream = shoesEntry!.Open();
+        var shoesJson = await new StreamReader(shoesStream).ReadToEndAsync();
+        var shoes = JsonSerializer.Deserialize<List<JsonElement>>(shoesJson);
+        shoes.Should().NotBeNull();
+        shoes!.Should().HaveCount(2);
+        var retired = shoes.Single(e => e.GetProperty("brand").GetString() == "Adidas");
+        retired.GetProperty("isRetired").GetBoolean().Should().BeTrue();
+        var active = shoes.Single(e => e.GetProperty("brand").GetString() == "Nike");
+        active.GetProperty("isRetired").GetBoolean().Should().BeFalse();
+    }
+
     private async Task CleanDatabaseAsync()
     {
         // Delete in order to respect foreign key constraints

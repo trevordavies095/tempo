@@ -44,7 +44,8 @@ public static class DatabaseMigrationHelper
         { ("UserSettings", "UnitPreference"), "20251127020615_AddUnitPreferenceToUserSettings" },
         // AddShoeTracking migration
         { ("Workouts", "ShoeId"), "20251201120000_AddShoeTracking" },
-        { ("UserSettings", "DefaultShoeId"), "20251201120000_AddShoeTracking" }
+        { ("UserSettings", "DefaultShoeId"), "20251201120000_AddShoeTracking" },
+        { ("Shoes", "IsRetired"), "20260429231609_AddShoeIsRetired" }
     };
 
     private const string ProductVersion = "9.0.10";

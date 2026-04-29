@@ -1128,6 +1128,7 @@ export interface Shoe {
   brand: string;
   model: string;
   initialMileageM: number | null;
+  isRetired: boolean;
   totalMileage: number;
   unit: 'km' | 'miles';
   createdAt: string;
@@ -1152,6 +1153,7 @@ export interface UpdateShoeRequest {
   brand?: string;
   model?: string;
   initialMileageM?: number | null;
+  isRetired?: boolean;
 }
 
 export interface ShoeMileageResponse {
@@ -1166,16 +1168,22 @@ export interface DefaultShoeResponse {
   model?: string;
 }
 
+export type ShoesListStatus = 'active' | 'retired' | 'all';
+
 // Shoe API functions
-export async function getShoes(): Promise<Shoe[]> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/shoes`, {
+export async function getShoes(params?: { status?: ShoesListStatus }): Promise<Shoe[]> {
+  const status = params?.status ?? 'active';
+  const qs = new URLSearchParams({ status });
+  const response = await fetchWithAuth(`${API_BASE_URL}/shoes?${qs.toString()}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch shoes: ${response.status}`);
+    const err = await response.json().catch(() => null);
+    const msg = err && typeof err === 'object' && 'error' in err ? String((err as { error: string }).error) : `Failed to fetch shoes: ${response.status}`;
+    throw new Error(msg);
   }
 
   return response.json();

@@ -64,6 +64,81 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result[0].brand.Should().Be("Adidas"); // Sorted by brand
         result[1].brand.Should().Be("Nike");
         result[1].totalMileage.Should().BeApproximately(6.0, 0.001); // 1km initial + 5km workout = 6km
+        result.Should().OnlyContain(s => !s.isRetired);
+    }
+
+    [Fact]
+    public async Task GetShoes_StatusActive_ExcludesRetiredShoes()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedShoeAsync(db, "Active", "One");
+            await TestDataSeeder.SeedShoeAsync(db, "Retired", "Two", isRetired: true);
+        }
+
+        var response = await client.GetAsync("/shoes");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<List<ShoeResponse>>();
+        result.Should().NotBeNull();
+        result!.Should().HaveCount(1);
+        result[0].brand.Should().Be("Active");
+    }
+
+    [Fact]
+    public async Task GetShoes_StatusRetired_ReturnsOnlyRetiredShoes()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedShoeAsync(db, "Active", "One");
+            await TestDataSeeder.SeedShoeAsync(db, "Retired", "Two", isRetired: true);
+        }
+
+        var response = await client.GetAsync("/shoes?status=retired");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<List<ShoeResponse>>();
+        result.Should().NotBeNull();
+        result!.Should().HaveCount(1);
+        result[0].brand.Should().Be("Retired");
+        result[0].isRetired.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetShoes_StatusAll_ReturnsActiveAndRetired()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedShoeAsync(db, "A", "One");
+            await TestDataSeeder.SeedShoeAsync(db, "B", "Two", isRetired: true);
+        }
+
+        var response = await client.GetAsync("/shoes?status=all");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<List<ShoeResponse>>();
+        result.Should().NotBeNull();
+        result!.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetShoes_InvalidStatus_ReturnsBadRequest()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var response = await client.GetAsync("/shoes?status=invalid");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
@@ -103,6 +178,7 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result.model.Should().Be("Pegasus 40");
         result.initialMileageM.Should().Be(1000.0);
         result.id.Should().NotBeEmpty();
+        result.isRetired.Should().BeFalse();
     }
 
     [Fact]
@@ -307,6 +383,54 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result!.brand.Should().Be("Nike"); // Unchanged
         result.model.Should().Be("Pegasus 40"); // Updated
         result.initialMileageM.Should().Be(1000.0); // Unchanged
+    }
+
+    [Fact]
+    public async Task UpdateShoe_SetIsRetired_ClearsDefaultShoe()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Shoe shoe;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            shoe = await TestDataSeeder.SeedShoeAsync(db, "Nike", "Pegasus");
+            await TestDataSeeder.SeedUserSettingsAsync(db, defaultShoeId: shoe.Id);
+        }
+
+        var response = await client.PatchAsJsonAsync($"/shoes/{shoe.Id}", new { isRetired = true });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<ShoeResponse>();
+        body.Should().NotBeNull();
+        body!.isRetired.Should().BeTrue();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            settings.Should().NotBeNull();
+            settings!.DefaultShoeId.Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public async Task SetDefaultShoe_WithRetiredShoe_ReturnsBadRequest()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Shoe shoe;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            shoe = await TestDataSeeder.SeedShoeAsync(db, "Nike", "Old", isRetired: true);
+        }
+
+        var response = await client.PutAsJsonAsync("/settings/default-shoe", new { defaultShoeId = shoe.Id });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
@@ -544,6 +668,7 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public string brand { get; set; } = string.Empty;
         public string model { get; set; } = string.Empty;
         public double? initialMileageM { get; set; }
+        public bool isRetired { get; set; }
         public double totalMileage { get; set; }
         public string unit { get; set; } = string.Empty;
         public DateTime createdAt { get; set; }
