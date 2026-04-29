@@ -343,13 +343,22 @@ public class ImportService
                 existing.Zone5MaxBpm = settings.Zone5MaxBpm;
                 existing.UnitPreference = settings.UnitPreference;
                 
-                // Validate shoe reference if present
+                // Validate shoe reference if present (must exist and not be retired)
                 if (settings.DefaultShoeId.HasValue)
                 {
-                    var shoeExists = await _db.Shoes.AnyAsync(s => s.Id == settings.DefaultShoeId.Value);
-                    if (!shoeExists)
+                    var id = settings.DefaultShoeId.Value;
+                    var validDefault = await _db.Shoes.AnyAsync(s => s.Id == id && !s.IsRetired);
+                    if (!validDefault)
                     {
-                        result.Warnings.Add($"Settings references non-existent shoe {settings.DefaultShoeId}, clearing reference");
+                        if (await _db.Shoes.AnyAsync(s => s.Id == id && s.IsRetired))
+                        {
+                            result.Warnings.Add($"Settings references retired shoe {settings.DefaultShoeId}, clearing reference");
+                        }
+                        else
+                        {
+                            result.Warnings.Add($"Settings references non-existent shoe {settings.DefaultShoeId}, clearing reference");
+                        }
+
                         existing.DefaultShoeId = null;
                     }
                     else
@@ -380,13 +389,22 @@ public class ImportService
             }
             else
             {
-                // Validate shoe reference if present
+                // Validate shoe reference if present (must exist and not be retired)
                 if (settings.DefaultShoeId.HasValue)
                 {
-                    var shoeExists = await _db.Shoes.AnyAsync(s => s.Id == settings.DefaultShoeId.Value);
-                    if (!shoeExists)
+                    var id = settings.DefaultShoeId.Value;
+                    var validDefault = await _db.Shoes.AnyAsync(s => s.Id == id && !s.IsRetired);
+                    if (!validDefault)
                     {
-                        result.Warnings.Add($"Settings references non-existent shoe {settings.DefaultShoeId}, clearing reference");
+                        if (await _db.Shoes.AnyAsync(s => s.Id == id && s.IsRetired))
+                        {
+                            result.Warnings.Add($"Settings references retired shoe {settings.DefaultShoeId}, clearing reference");
+                        }
+                        else
+                        {
+                            result.Warnings.Add($"Settings references non-existent shoe {settings.DefaultShoeId}, clearing reference");
+                        }
+
                         settings.DefaultShoeId = null;
                     }
                 }

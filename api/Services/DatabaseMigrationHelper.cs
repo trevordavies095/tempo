@@ -45,6 +45,7 @@ public static class DatabaseMigrationHelper
         // AddShoeTracking migration
         { ("Workouts", "ShoeId"), "20251201120000_AddShoeTracking" },
         { ("UserSettings", "DefaultShoeId"), "20251201120000_AddShoeTracking" },
+        { ("Shoes", "IsRetired"), "20260429231609_AddShoeIsRetired" },
         { ("Users", "SessionVersion"), "20260510120000_AddUserSessionVersion" },
         // AddRpeToWorkout migration
         { ("Workouts", "Rpe"), "20260511200212_AddRpeToWorkout" }

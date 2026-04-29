@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getShoes,
@@ -50,8 +51,8 @@ export function ShoeManagementSection() {
   };
 
   const { data: shoes, isLoading } = useQuery({
-    queryKey: ['shoes'],
-    queryFn: getShoes,
+    queryKey: ['shoes', 'active'],
+    queryFn: () => getShoes({ status: 'active' }),
   });
 
   const { data: defaultShoe } = useQuery({
@@ -120,6 +121,16 @@ export function ShoeManagementSection() {
     }
   };
 
+  const handleRetire = (id: string) => {
+    if (
+      window.confirm(
+        'Retire this shoe? It will no longer appear in lists or as an option for new workouts. Past workouts keep their assignment. You can un-retire it later from Retired shoes.'
+      )
+    ) {
+      updateMutation.mutate({ id, data: { isRetired: true } });
+    }
+  };
+
   const handleSetDefault = (id: string | null) => {
     setDefaultMutation.mutate(id);
   };
@@ -155,8 +166,16 @@ export function ShoeManagementSection() {
       <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
         Shoe Management
       </h2>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
         Track mileage on your running shoes. Assign shoes to workouts to automatically calculate total mileage.
+      </p>
+      <p className="text-sm mb-6">
+        <Link
+          href="/settings/shoes/retired"
+          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+        >
+          View retired shoes and mileage
+        </Link>
       </p>
 
       {/* Default Shoe Selector */}
@@ -338,12 +357,20 @@ export function ShoeManagementSection() {
                         </span>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2 justify-end">
                       <button
                         onClick={() => startEdit(shoe)}
                         className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                       >
                         Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRetire(shoe.id)}
+                        disabled={updateMutation.isPending}
+                        className="px-3 py-1 text-sm bg-amber-100 text-amber-900 rounded hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-100 dark:hover:bg-amber-900/60 disabled:opacity-50"
+                      >
+                        Retire
                       </button>
                       <button
                         onClick={() => handleDelete(shoe.id)}
