@@ -71,12 +71,23 @@ export function ShoeManagementSection() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateShoeRequest }) => updateShoe(id, data),
-    onSuccess: () => {
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: UpdateShoeRequest;
+      /** When false, leave the edit form open (e.g. retiring a different shoe than the one being edited). */
+      resetEditForm?: boolean;
+    }) => updateShoe(id, data),
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['shoes'] });
       queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
-      setEditingId(null);
-      setEditShoe({ brand: '', model: '', initialMileageM: null });
+      if (variables.resetEditForm !== false) {
+        setEditingId(null);
+        setEditShoe({ brand: '', model: '', initialMileageM: null });
+        setEditShoeInitialMileageInput('');
+      }
     },
   });
 
@@ -127,7 +138,7 @@ export function ShoeManagementSection() {
         'Retire this shoe? It will no longer appear in lists or as an option for new workouts. Past workouts keep their assignment. You can un-retire it later from Retired shoes.'
       )
     ) {
-      updateMutation.mutate({ id, data: { isRetired: true } });
+      updateMutation.mutate({ id, data: { isRetired: true }, resetEditForm: false });
     }
   };
 
