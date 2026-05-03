@@ -10,6 +10,8 @@
 
 **[View Full Documentation](https://trevordavies095.github.io/tempo/)** - Complete guides for installation, configuration, usage, deployment, and more.
 
+**[Tempo on the App Store](https://apps.apple.com/us/app/tempo-self-hosted-running/id6763753229)** - Companion iOS app for your self-hosted server.
+
 ## Screenshots
 
 ![Dashboard](https://i.imgur.com/pURdx2e.png)
