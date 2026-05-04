@@ -38,6 +38,7 @@ services:
       ASPNETCORE_ENVIRONMENT: "Production"
       # CORS
       CORS__AllowedOrigins: "http://localhost:3000"
+      JWT__SecretKey: "UXRYmMMI1s3Wmrfeno2RKQCuA98eu3gfcq5sjNm+0w0="
     ports:
       - "5001:5001"
     volumes:
