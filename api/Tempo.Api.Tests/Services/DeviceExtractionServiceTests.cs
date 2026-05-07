@@ -130,7 +130,7 @@ public class DeviceExtractionServiceTests
         var json = JsonSerializer.Serialize(new
         {
             manufacturer = 1, // Garmin
-            product = 1234
+            product = 9999
         });
         var element = JsonSerializer.Deserialize<JsonElement>(json);
 
@@ -138,8 +138,44 @@ public class DeviceExtractionServiceTests
         var result = DeviceExtractionService.ExtractDeviceName(element, _loggerMock.Object);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().Contain("Garmin");
+        result.Should().Be("Garmin");
+    }
+
+    [Fact]
+    public void ExtractDeviceName_WithGarminKnownProductCode_ReturnsFriendlyModelName()
+    {
+        // Arrange
+        var json = JsonSerializer.Serialize(new
+        {
+            manufacturer = 1, // Garmin
+            product = 4315 // Fr965
+        });
+        var element = JsonSerializer.Deserialize<JsonElement>(json);
+
+        // Act
+        var result = DeviceExtractionService.ExtractDeviceName(element, _loggerMock.Object);
+
+        // Assert
+        result.Should().Be("Garmin Forerunner 965");
+    }
+
+    [Fact]
+    public void ExtractDeviceName_WithProductNameAndGarminProductCode_PrefersProductName()
+    {
+        // Arrange
+        var json = JsonSerializer.Serialize(new
+        {
+            productName = "Custom Garmin Name",
+            manufacturer = 1, // Garmin
+            product = 4315 // Fr965
+        });
+        var element = JsonSerializer.Deserialize<JsonElement>(json);
+
+        // Act
+        var result = DeviceExtractionService.ExtractDeviceName(element, _loggerMock.Object);
+
+        // Assert
+        result.Should().Be("Custom Garmin Name");
     }
 
     [Fact]

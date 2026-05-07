@@ -7,6 +7,19 @@ namespace Tempo.Api.Services;
 /// </summary>
 public static class DeviceExtractionService
 {
+    private static readonly IReadOnlyDictionary<ushort, string> GarminProductMap = new Dictionary<ushort, string>
+    {
+        // Source: FIT SDK GarminProduct constants
+        // Keep this list focused and expand over time as we encounter new devices.
+        { 3113, "Garmin Forerunner 945" },      // Fr945
+        { 3652, "Garmin Forerunner 945 LTE" },  // Fr945Lte
+        { 4024, "Garmin Forerunner 955" },      // Fr955
+        { 4315, "Garmin Forerunner 965" },      // Fr965
+        { 3905, "Garmin Fenix 7S" },            // Fenix7s
+        { 3906, "Garmin Fenix 7" },             // Fenix7
+        { 3907, "Garmin Fenix 7X" }             // Fenix7x
+    };
+
     /// <summary>
     /// Maps Apple Watch identifiers to friendly device names.
     /// Based on AppleDB device information: https://appledb.dev/device-selection/Apple-Watch.html
@@ -255,9 +268,14 @@ public static class DeviceExtractionService
         // Combine manufacturer and product code
         if (!string.IsNullOrWhiteSpace(manufacturer) && productCode.HasValue)
         {
+            if (manufacturer.Equals("Garmin", StringComparison.OrdinalIgnoreCase) &&
+                GarminProductMap.TryGetValue(productCode.Value, out var garminModel))
+            {
+                return garminModel;
+            }
+
             // For known manufacturers, show manufacturer name
-            // For Garmin, we could map product codes, but that's extensive
-            // For now, show manufacturer name (cleaner than "Garmin 108")
+            // For Garmin unknown product IDs, fall back to manufacturer name.
             return manufacturer;
         }
 
