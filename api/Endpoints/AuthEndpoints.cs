@@ -170,7 +170,7 @@ public static class AuthEndpoints
     }
 
     /// <summary>
-    /// Get current user info from JWT token
+    /// Get current user info (JWT session or API key).
     /// </summary>
     private static async Task<IResult> GetCurrentUser(
         ClaimsPrincipal user,
@@ -346,7 +346,8 @@ public static class AuthEndpoints
             .Produces(200)
             .Produces(401)
             .WithSummary("Get current user")
-            .WithDescription("Returns information about the currently authenticated user.");
+            .WithDescription(
+                "Returns information about the currently authenticated user. Accepts JWT (cookie or Bearer) or API key (Bearer, prefix tmp_).");
 
         group.MapPost("/logout", Logout)
             .WithName("Logout")

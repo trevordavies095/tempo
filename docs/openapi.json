@@ -67,8 +67,8 @@
         "tags": [
           "Authentication"
         ],
-        "summary": "Get current user info from JWT token",
-        "description": "Returns information about the currently authenticated user.",
+        "summary": "Get current user info (JWT session or API key).",
+        "description": "Returns information about the currently authenticated user. Accepts JWT (cookie or Bearer) or API key (Bearer, prefix tmp_).",
         "operationId": "GetCurrentUser",
         "responses": {
           "200": {

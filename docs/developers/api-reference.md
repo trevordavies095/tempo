@@ -9,7 +9,63 @@ Complete reference for the Tempo REST API.
 
 ## Authentication
 
-Tempo uses JWT-based authentication with httpOnly cookies. Most endpoints require authentication.
+Most endpoints require authentication. Tempo accepts **`Authorization: Bearer`** in two forms:
+
+- **JWT** — Usually issued after login and sent automatically as the httpOnly cookie `authToken`. The same JWT can be sent as a Bearer token when calling the API directly (e.g. `curl`).
+- **API key** — Admin-issued secret for machine clients (prefix `tmp_`). Use for read-only automation and the planned CLI: set something like `TEMPO_API_KEY` and send `Authorization: Bearer <key>`. The server distinguishes keys from JWTs by the `tmp_` prefix.
+
+API keys work on normal protected routes (for example `GET /auth/me`, `GET /workouts`, stats, settings, shoes). **Creating, listing, and revoking API keys** requires a full interactive JWT session (`POST/GET/DELETE /auth/api-keys`); those routes do not accept an API key.
+
+### API keys (CLI and automation)
+
+**Create** (session required — log in first so the `authToken` cookie is set, or use a cookie jar with `POST /auth/login`):
+
+```http
+POST /auth/api-keys
+Content-Type: application/json
+Cookie: authToken=…
+
+{
+  "label": "optional label, max 200 chars"
+}
+```
+
+Response **201**: includes `id`, `label`, `keyPrefix`, `createdAt`, and **`key`** (full secret) **once**. Store it immediately; later listing never returns the secret.
+
+**List** (session only):
+
+```http
+GET /auth/api-keys
+```
+
+Returns metadata per key: `id`, `label`, `keyPrefix`, `createdAt`, `revokedAt`.
+
+**Revoke** (session only):
+
+```http
+DELETE /auth/api-keys/{id}
+```
+
+**Example: cookie jar** (same pattern as the main README):
+
+```bash
+BASE=http://localhost:5001
+curl -sS -c tempo-cookies.txt -X POST "$BASE/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"your-user","password":"your-password","rememberMe":true}'
+curl -sS -b tempo-cookies.txt -X POST "$BASE/auth/api-keys" \
+  -H 'Content-Type: application/json' \
+  -d '{"label":"cli"}'
+```
+
+**Example: call `GET /auth/me` with an API key**:
+
+```bash
+export TEMPO_API_KEY='tmp_…'
+curl -sS -H "Authorization: Bearer $TEMPO_API_KEY" http://localhost:5001/auth/me
+```
+
+Do not log API keys or commit them to version control. Rotate by revoking the key and creating a new one.
 
 ### Register
 
@@ -54,7 +110,7 @@ The JWT token is stored in an httpOnly cookie with expiration based on the `reme
 GET /auth/me
 ```
 
-Requires authentication.
+Requires authentication via JWT (cookie or Bearer) **or** a valid API key (`Authorization: Bearer tmp_…`).
 
 ### Logout
 
@@ -596,19 +652,32 @@ Public endpoint (no authentication required).
 All endpoints may return standard HTTP error codes:
 
 - `400 Bad Request` - Invalid request data
-- `401 Unauthorized` - Authentication required
+- `401 Unauthorized` - Missing, invalid, or revoked credentials on a protected route
 - `403 Forbidden` - Insufficient permissions
 - `404 Not Found` - Resource not found
 - `500 Internal Server Error` - Server error
 
-Error response format:
+Many validation errors use a simple JSON shape such as:
 
 ```json
 {
-  "error": "Error message",
-  "details": "Additional error details"
+  "error": "Error message"
 }
 ```
+
+**401 authentication challenges** (invalid JWT, invalid or revoked API key, or missing auth) typically return:
+
+```json
+{
+  "error": "Invalid or expired credentials"
+}
+```
+
+Other endpoints may include extra fields (for example `details`) where noted above.
+
+## OpenAPI contract
+
+The canonical machine-readable API document is **[openapi.json](../openapi.json)** in this repository (on the `develop` integration branch). Use it for client generation and to stay aligned with the read-only CLI.
 
 ## Interactive Documentation
 
