@@ -1,0 +1,1826 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "Tempo API",
+    "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
+    "version": "2.3.2"
+  },
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Register a new user account",
+        "description": "Creates a new user account. Registration is only available if no users exist in the system.",
+        "operationId": "Register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Login and receive JWT token",
+        "description": "Authenticates user and returns JWT token in httpOnly cookie.",
+        "operationId": "Login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Get current user info (JWT session or API key).",
+        "description": "Returns information about the currently authenticated user. Accepts JWT (cookie or Bearer) or API key (Bearer, prefix tmp_).",
+        "operationId": "GetCurrentUser",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Logout (clear auth cookie)",
+        "description": "Clears the authentication cookie.",
+        "operationId": "Logout",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/auth/registration-available": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Check if registration is available (no users exist)",
+        "description": "Returns whether registration is available (true if no users exist).",
+        "operationId": "CheckRegistrationAvailable",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/auth/api-keys": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Create API key",
+        "description": "Creates an API key for machine/CLI access. The full key is returned once; store it securely. Requires a browser JWT session (not an API key).",
+        "operationId": "CreateApiKey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiKeyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "List API keys",
+        "description": "Returns metadata for your API keys (never the secret value).",
+        "operationId": "ListApiKeys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/auth/api-keys/{id}": {
+      "delete": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Revoke API key",
+        "description": "Soft-revokes an API key so it no longer authenticates.",
+        "operationId": "RevokeApiKey",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/heart-rate-zones": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get heart rate zones configuration",
+        "description": "Returns the current heart rate zones configuration. If no settings exist, returns default zones\ncalculated using age-based method with age 30 (max HR = 190).",
+        "operationId": "GetHeartRateZones",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update heart rate zones configuration",
+        "description": "Updates heart rate zones using one of three calculation methods:\n- AgeBased: Requires age, calculates max HR as 220 - age\n- Karvonen: Requires max HR and resting HR\n- Custom: Requires exactly 5 zones with valid boundaries",
+        "operationId": "UpdateHeartRateZones",
+        "requestBody": {
+          "description": "Heart rate zones update request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHeartRateZonesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/heart-rate-zones/update-with-recalc": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update heart rate zones and optionally recalculate relative effort",
+        "description": "Updates heart rate zones and optionally recalculates relative effort for all qualifying workouts\nin one atomic operation. If RecalculateExisting is true, all workouts with heart rate data will\nhave their relative effort recalculated using the new zones.",
+        "operationId": "UpdateHeartRateZonesWithRecalc",
+        "requestBody": {
+          "description": "Heart rate zones update request with optional recalculation flag",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHeartRateZonesWithRecalcRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/unit-preference": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get unit preference",
+        "description": "Returns the stored unit preference. Defaults to \"metric\" if no preference has been set.",
+        "operationId": "GetUnitPreference",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update unit preference",
+        "description": "Updates the unit preference to either \"metric\" or \"imperial\". This affects how distances\nand splits are calculated and displayed throughout the application.",
+        "operationId": "UpdateUnitPreference",
+        "requestBody": {
+          "description": "Unit preference update request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUnitPreferenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/default-shoe": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get default shoe",
+        "description": "Returns the current default shoe, or null if none is set",
+        "operationId": "GetDefaultShoe",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Set default shoe",
+        "description": "Sets the default shoe for automatic assignment to new workouts. Pass null to clear the default.",
+        "operationId": "SetDefaultShoe",
+        "requestBody": {
+          "description": "Set default shoe request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDefaultShoeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/shoes": {
+      "get": {
+        "tags": [
+          "Shoes"
+        ],
+        "summary": "List all shoes with calculated mileage",
+        "description": "Returns all shoes with calculated total mileage based on assigned workouts",
+        "operationId": "GetShoes",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Shoes"
+        ],
+        "summary": "Create a new shoe",
+        "description": "Creates a new shoe with brand, model, and optional initial mileage",
+        "operationId": "CreateShoe",
+        "requestBody": {
+          "description": "Create shoe request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShoeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/shoes/{id}": {
+      "patch": {
+        "tags": [
+          "Shoes"
+        ],
+        "summary": "Update a shoe",
+        "description": "Updates shoe brand, model, and/or initial mileage",
+        "operationId": "UpdateShoe",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Shoe ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Shoes"
+        ],
+        "summary": "Delete a shoe",
+        "description": "When a shoe is deleted, all assigned workouts' ShoeId is set to null (handled by database cascade).\nIf the shoe is set as the default shoe, the default shoe is also cleared.",
+        "operationId": "DeleteShoe",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Shoe ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/shoes/{id}/mileage": {
+      "get": {
+        "tags": [
+          "Shoes"
+        ],
+        "summary": "Get calculated total mileage for a shoe",
+        "description": "Returns the total calculated mileage for a shoe in user's preferred units",
+        "operationId": "GetShoeMileage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Shoe ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/stats/weekly": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get weekly stats",
+        "description": "Returns daily miles for the current week (Monday-Sunday), grouped by day of week.\nDistances are converted from meters to miles. Week boundaries are calculated in the specified timezone.",
+        "operationId": "GetWeeklyStats",
+        "parameters": [
+          {
+            "name": "timezoneOffsetMinutes",
+            "in": "query",
+            "description": "Timezone offset in minutes (negative for timezones behind UTC)",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/stats/relative-effort": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get relative effort stats",
+        "description": "Returns cumulative relative effort for the current week (Monday-Sunday) and calculates\nthe 3-week average and range from the previous 3 complete weeks.",
+        "operationId": "GetRelativeEffortStats",
+        "parameters": [
+          {
+            "name": "timezoneOffsetMinutes",
+            "in": "query",
+            "description": "Timezone offset in minutes (negative for timezones behind UTC)",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/stats/best-efforts": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get best efforts for all standard distances",
+        "description": "Returns the fastest time achieved for each standard running distance (400m through Marathon).\nBest efforts are calculated from any segment within any workout, not just workouts of that exact distance.",
+        "operationId": "GetBestEfforts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/stats/best-efforts/recalculate": {
+      "post": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Recalculate all best efforts",
+        "description": "Performs a full recalculation of all best efforts across all workouts.\nThis may take some time depending on the number of workouts and time series data.",
+        "operationId": "RecalculateBestEfforts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/stats/yearly": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get yearly stats",
+        "description": "Returns total miles for the current year and previous year. Year boundaries are calculated\nin the specified timezone. Distances are converted from meters to miles.",
+        "operationId": "GetYearlyStats",
+        "parameters": [
+          {
+            "name": "timezoneOffsetMinutes",
+            "in": "query",
+            "description": "Timezone offset in minutes (negative for timezones behind UTC)",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/stats/yearly-weekly": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get yearly weekly stats",
+        "description": "Returns 52 equal week buckets within a 1-year period, covering all dates with no gaps or overlaps.\nIf periodEndDate not provided, defaults to today (last 12 months ending today).\nEach bucket represents approximately 1/52 of the total period.",
+        "operationId": "GetYearlyWeeklyStats",
+        "parameters": [
+          {
+            "name": "periodEndDate",
+            "in": "query",
+            "description": "End date of the period (YYYY-MM-DD format). If not provided, defaults to today.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timezoneOffsetMinutes",
+            "in": "query",
+            "description": "Timezone offset in minutes (negative for timezones behind UTC)",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/stats/available-periods": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get available periods",
+        "description": "Returns consecutive 1-year periods (365/366 days) going backwards from today.\nCurrent period is the last 12 months ending today. Stops when reaching the first workout date\nor after 20 periods (safety limit).",
+        "operationId": "GetAvailablePeriods",
+        "parameters": [
+          {
+            "name": "timezoneOffsetMinutes",
+            "in": "query",
+            "description": "Timezone offset in minutes (negative for timezones behind UTC)",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/stats/available-years": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get available years",
+        "description": "Returns a list of distinct years (in descending order) that have workouts in the database.",
+        "operationId": "GetAvailableYears",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/stats/insights": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get running insights including data coverage metadata",
+        "description": "Returns comprehensive insights about running data including weather extremes, performance highlights,\nhabit patterns, and data availability metadata. Requires at least 5 workouts to return insights.\nReturns helpful messages when insufficient data exists.",
+        "operationId": "GetInsights",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Tempo.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "tags": [
+          "Version"
+        ],
+        "summary": "Get version information",
+        "description": "Version information is retrieved from environment variables (set during Docker build) or from the VERSION file.\nReturns \"unknown\" for any values that cannot be determined.",
+        "operationId": "GetVersion",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/workouts/import": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Import workout file(s)",
+        "description": "Uploads and processes one or more GPX or FIT files (.gpx, .fit, or .fit.gz), extracting workout data\nand saving it to the database. Supports multiple files for batch import. Accepts optional unitPreference\nform field (metric or imperial) to determine split calculation distance.",
+        "operationId": "ImportWorkout",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "List workouts with pagination and filtering",
+        "description": "Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,\nand run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.",
+        "operationId": "ListWorkouts",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (default: 1)",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "Items per page (default: 20, max: 100)",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "Filter workouts starting from this date (inclusive)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "description": "Filter workouts ending before this date (inclusive)",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "minDistanceM",
+            "in": "query",
+            "description": "Minimum distance in meters",
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "maxDistanceM",
+            "in": "query",
+            "description": "Maximum distance in meters",
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "description": "Search keyword (searches Name, Device, and Source fields)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runType",
+            "in": "query",
+            "description": "Filter by run type (e.g., \"Race\", \"Workout\", \"Long Run\", \"Easy Run\")",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "description": "Sort field: \"name\", \"duration\", \"distance\", \"elevation\", \"relativeeffort\", or default \"startedAt\"",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "description": "Sort order: \"asc\" or \"desc\" (default: \"desc\" for startedAt)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/{id}/media": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Upload media files to a workout",
+        "description": "Uploads one or more media files (images/videos) to a workout. Files are validated for size and MIME type,\nstored on the filesystem, and metadata is saved to the database. Returns error details if any files fail to upload.",
+        "operationId": "UploadWorkoutMedia",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "List all media files for a workout",
+        "description": "Retrieves all media files associated with a workout, ordered by creation date.\nReturns metadata including filename, MIME type, file size, caption, and creation timestamp.",
+        "operationId": "ListWorkoutMedia",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/{id}/media/{mediaId}": {
+      "delete": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Delete a media file from a workout",
+        "description": "Deletes a media file from a workout by removing the file from the filesystem and the database record.\nContinues with database deletion even if file deletion fails (handles orphaned records).",
+        "operationId": "DeleteWorkoutMedia",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "mediaId",
+            "in": "path",
+            "description": "Media ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Get a specific media file for a workout",
+        "description": "Retrieves and serves a specific media file for a workout. Supports range requests for video seeking.\nReturns the file with the appropriate MIME type and filename for download.",
+        "operationId": "GetWorkoutMediaFile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "mediaId",
+            "in": "path",
+            "description": "Media ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/{id}/recalculate-effort": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Recalculate relative effort for a workout",
+        "description": "Recalculates the Relative Effort score for a workout using the current heart rate zone configuration.\nRequires heart rate zones to be configured in settings first.",
+        "operationId": "RecalculateWorkoutEffort",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/{id}/recalculate-splits": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Recalculate splits for a workout",
+        "description": "Recalculates splits for a workout using the current unit preference. Splits are calculated as\n1km for metric or 1 mile for imperial. Requires the workout to have route data.",
+        "operationId": "RecalculateWorkoutSplits",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/{id}/crop": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Crop/trim a workout",
+        "description": "Crops/trims a workout by removing time from the beginning and/or end. Updates all derived data including\ndistance, duration, pace, splits, and relative effort. Requires the workout to have route data.",
+        "operationId": "CropWorkout",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/{id}/similar-routes": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Get similar routes for a workout",
+        "description": "Returns previous workouts that were completed on similar routes, allowing users to compare\ntheir current performance with past efforts. Includes time and pace differences compared to\nthe current workout. Requires the workout to have route data.",
+        "operationId": "GetSimilarRoutes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "maxResults",
+            "in": "query",
+            "description": "Maximum number of results to return (default: 10)",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/{id}": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Get workout details",
+        "description": "Retrieves complete workout data including route (as GeoJSON), splits, weather information,\nand raw GPX/FIT/Strava data. Weather humidity values are normalized for consistency.",
+        "operationId": "GetWorkout",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Update workout",
+        "description": "Updates workout RunType, Notes, and/or Name. All fields are optional - only provided fields are updated.\nRunType must be one of: \"Race\", \"Workout\", \"Long Run\", \"Easy Run\", or null.\nName must be 200 characters or less.",
+        "operationId": "UpdateWorkout",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Delete workout",
+        "description": "Deletes a workout and all associated data including route, splits, media files (from filesystem),\nand database records. Continues with deletion even if individual file deletions fail.",
+        "operationId": "DeleteWorkout",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Workout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/bulk": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Bulk import Strava export",
+        "description": "Uploads and processes a ZIP file containing Strava export (activities.csv + activity files),\nimporting all run activities with duplicate detection. Supports optional unitPreference form field.\nOnly \"Run\" activities are imported; others are skipped.",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/export": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Export all user data to a ZIP file",
+        "description": "Exports all user data including workouts, media files, shoes, settings, and best efforts\nin a portable ZIP format that can be imported back into Tempo.",
+        "operationId": "ExportAllData",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/export": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Import Tempo export ZIP file",
+        "description": "Uploads and processes a ZIP file containing a complete Tempo export, restoring all user data\nincluding workouts, media files, settings, shoes, routes, splits, time series, and best efforts.\nDuplicates are skipped by default. GUIDs and timestamps from the export are preserved.",
+        "operationId": "ImportExport",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/recalculate-relative-effort/count": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Get count of workouts eligible for relative effort recalculation",
+        "description": "Returns the number of workouts that have heart rate data (time series, raw FIT data, or average HR)\nand are eligible for relative effort calculation.",
+        "operationId": "GetRecalculateRelativeEffortCount",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/recalculate-relative-effort": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Recalculate relative effort for all qualifying workouts",
+        "description": "Recalculates relative effort for all workouts that have time series heart rate data using the\ncurrent heart rate zone configuration. Requires heart rate zones to be configured first.",
+        "operationId": "RecalculateRelativeEffort",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/recalculate-splits/count": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Get count of workouts eligible for split recalculation",
+        "description": "Returns the number of workouts that have route data and can have splits recalculated.",
+        "operationId": "GetRecalculateSplitsCount",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/recalculate-splits": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Recalculate splits for all workouts",
+        "description": "Recalculates splits for all workouts that have route data using the current unit preference.\nSplits are calculated as 1km for metric or 1 mile for imperial.",
+        "operationId": "RecalculateSplits",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateApiKeyRequest": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateShoeRequest": {
+        "type": "object",
+        "properties": {
+          "brand": {
+            "type": "string",
+            "description": "Shoe brand (required, max 100 characters)",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "description": "Shoe model (required, max 100 characters)",
+            "nullable": true
+          },
+          "initialMileageM": {
+            "type": "number",
+            "description": "Initial mileage in meters (optional)",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Request model for creating a shoe"
+      },
+      "HeartRateZone": {
+        "type": "object",
+        "properties": {
+          "minBpm": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxBpm": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "nullable": true
+          },
+          "password": {
+            "type": "string",
+            "nullable": true
+          },
+          "rememberMe": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Request model for user login"
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "nullable": true
+          },
+          "password": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Request model for user registration"
+      },
+      "SetDefaultShoeRequest": {
+        "type": "object",
+        "properties": {
+          "defaultShoeId": {
+            "type": "string",
+            "description": "Shoe ID to set as default, or null to clear the default",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Request model for setting default shoe"
+      },
+      "UpdateHeartRateZonesRequest": {
+        "type": "object",
+        "properties": {
+          "calculationMethod": {
+            "type": "string",
+            "description": "Calculation method: \"AgeBased\", \"Karvonen\", or \"Custom\"",
+            "nullable": true
+          },
+          "age": {
+            "type": "integer",
+            "description": "Age (required for AgeBased method)",
+            "format": "int32",
+            "nullable": true
+          },
+          "restingHeartRateBpm": {
+            "type": "integer",
+            "description": "Resting heart rate in BPM (required for Karvonen method)",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxHeartRateBpm": {
+            "type": "integer",
+            "description": "Maximum heart rate in BPM (required for Karvonen method)",
+            "format": "int32",
+            "nullable": true
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeartRateZone"
+            },
+            "description": "Custom zones (required for Custom method, must contain exactly 5 zones)",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Request model for updating heart rate zones"
+      },
+      "UpdateHeartRateZonesWithRecalcRequest": {
+        "type": "object",
+        "properties": {
+          "calculationMethod": {
+            "type": "string",
+            "description": "Calculation method: \"AgeBased\", \"Karvonen\", or \"Custom\"",
+            "nullable": true
+          },
+          "age": {
+            "type": "integer",
+            "description": "Age (required for AgeBased method)",
+            "format": "int32",
+            "nullable": true
+          },
+          "restingHeartRateBpm": {
+            "type": "integer",
+            "description": "Resting heart rate in BPM (required for Karvonen method)",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxHeartRateBpm": {
+            "type": "integer",
+            "description": "Maximum heart rate in BPM (required for Karvonen method)",
+            "format": "int32",
+            "nullable": true
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeartRateZone"
+            },
+            "description": "Custom zones (required for Custom method, must contain exactly 5 zones)",
+            "nullable": true
+          },
+          "recalculateExisting": {
+            "type": "boolean",
+            "description": "If true, recalculates relative effort for all qualifying workouts after updating zones",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Request model for updating heart rate zones with optional recalculation"
+      },
+      "UpdateUnitPreferenceRequest": {
+        "type": "object",
+        "properties": {
+          "unitPreference": {
+            "type": "string",
+            "description": "Unit preference: \"metric\" or \"imperial\"",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Request model for updating unit preference"
+      }
+    },
+    "securitySchemes": {
+      "Bearer": {
+        "type": "http",
+        "description": "JWT from login (often delivered as httpOnly cookie `authToken`; Swagger may use a pasted token) or API key string starting with `tmp_`. API key management endpoints require a full JWT session (not an API key).",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

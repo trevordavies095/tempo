@@ -16,6 +16,7 @@ public class TempoDbContext : DbContext
     public DbSet<WorkoutTimeSeries> WorkoutTimeSeries { get; set; }
     public DbSet<UserSettings> UserSettings { get; set; }
     public DbSet<User> Users { get; set; }
+    public DbSet<ApiKey> ApiKeys { get; set; }
     public DbSet<BestEffort> BestEfforts { get; set; }
     public DbSet<Shoe> Shoes { get; set; }
 
@@ -105,6 +106,19 @@ public class TempoDbContext : DbContext
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasIndex(e => e.Username).IsUnique();
+        });
+
+        modelBuilder.Entity<ApiKey>(entity =>
+        {
+            entity.HasOne(e => e.User)
+                .WithMany(u => u.ApiKeys)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.UserId);
+            // TryAuthenticateUserAsync: WHERE KeyPrefix = @p AND RevokedAt IS NULL
+            entity.HasIndex(e => e.KeyPrefix)
+                .HasFilter("\"RevokedAt\" IS NULL");
         });
 
         modelBuilder.Entity<BestEffort>(entity =>

@@ -68,6 +68,47 @@ That's it! The database migrations run automatically on first startup. For detai
 
 ## Documentation
 
+**OpenAPI:** The canonical HTTP API contract for tools and client generation (including the planned read-only CLI) is **[docs/openapi.json](docs/openapi.json)** on the default integration branch (`develop`). After changing routes or Swagger metadata, regenerate it: run `dotnet tool restore` once at the repo root, then:
+
+```bash
+cd api && dotnet build -c Release \
+  && ASPNETCORE_ENVIRONMENT=Development \
+     JWT__SecretKey='local-openapi-only-not-for-production-min-32-chars!' \
+     ConnectionStrings__DefaultConnection='Data Source=:memory:' \
+     dotnet swagger tofile --output ../docs/openapi.json bin/Release/net9.0/Tempo.Api.dll v1
+```
+
+Use **Development** (not `Testing`) for `dotnet swagger tofile`: with `Testing`, the generic host looks for a `StartupTesting` class that this app does not ship, and Swashbuckle fails. In-memory SQLite avoids needing Postgres for this one-off export.
+
+With the API running in **Development**, you can also fetch the same document at `http://localhost:5001/swagger/v1/swagger.json`. Production deployments do not expose Swagger by default.
+
+**API keys (CLI and automation):** Protected routes accept `Authorization: Bearer` with either a JWT (browser session) or an admin-issued API key (prefix `tmp_`). The planned read-only CLI uses env such as `TEMPO_API_KEY`; it does not create keys—operators issue them in Tempo.
+
+1. **Create a key** (requires a logged-in session, not an API key). Either use **Swagger** at `/swagger` in Development, or from a shell log in with a cookie jar and create a key:
+
+```bash
+BASE=http://localhost:5001
+curl -sS -c tempo-cookies.txt -X POST "$BASE/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"your-user","password":"your-password","rememberMe":true}'
+curl -sS -b tempo-cookies.txt -X POST "$BASE/auth/api-keys" \
+  -H 'Content-Type: application/json' \
+  -d '{"label":"cli"}'
+```
+
+The JSON response includes the secret **`key` once**; the server stores only a hash. Copy it immediately.
+
+2. **Verify** machine access:
+
+```bash
+export TEMPO_API_KEY='tmp_…'   # paste the key from step 1
+curl -sS -H "Authorization: Bearer $TEMPO_API_KEY" http://localhost:5001/auth/me
+```
+
+3. **Security:** Do not commit keys, log them in apps, or paste them into shared channels. Revoke a compromised key (`DELETE /auth/api-keys/{id}` with the same session you used to create it) and create a new one.
+
+4. **401 on protected routes** often returns: `{"error":"Invalid or expired credentials"}` (invalid, revoked, or missing auth). Full paths and schemas: [docs/openapi.json](docs/openapi.json).
+
 Comprehensive documentation is available at **[https://trevordavies095.github.io/tempo/](https://trevordavies095.github.io/tempo/)**:
 
 - **[Getting Started](https://trevordavies095.github.io/tempo/getting-started/)** - Installation, quick start, and configuration guides
