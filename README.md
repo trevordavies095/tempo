@@ -68,6 +68,14 @@ That's it! The database migrations run automatically on first startup. For detai
 
 ## Documentation
 
+**OpenAPI:** The canonical HTTP API contract for tools and client generation (including the planned read-only CLI) is **[docs/openapi.json](docs/openapi.json)** on the default integration branch (`develop`). After changing routes or Swagger metadata, regenerate it from the repo root with `dotnet tool restore`, then:
+
+```bash
+cd api && dotnet build -c Release && ASPNETCORE_ENVIRONMENT=Testing dotnet swagger tofile --output ../docs/openapi.json bin/Release/net9.0/Tempo.Api.dll v1
+```
+
+With the API running in **Development**, you can also fetch the same document at `http://localhost:5001/swagger/v1/swagger.json`. Production deployments do not expose Swagger by default.
+
 Comprehensive documentation is available at **[https://trevordavies095.github.io/tempo/](https://trevordavies095.github.io/tempo/)**:
 
 - **[Getting Started](https://trevordavies095.github.io/tempo/getting-started/)** - Installation, quick start, and configuration guides

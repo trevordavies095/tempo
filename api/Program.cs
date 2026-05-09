@@ -11,6 +11,7 @@ using Tempo.Api.Authentication;
 using Tempo.Api.Authorization;
 using Tempo.Api.Data;
 using Tempo.Api.Endpoints;
+using Tempo.Api.OpenApi;
 using Tempo.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,15 +27,7 @@ builder.Host.UseSerilog();
 
 // Add services
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
-{
-    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-    if (File.Exists(xmlPath))
-    {
-        options.IncludeXmlComments(xmlPath);
-    }
-});
+builder.Services.AddSwaggerGen(TempoOpenApi.ConfigureSwaggerGen);
 
 // Configure CORS
 var corsOrigins = builder.Configuration["CORS:AllowedOrigins"] ?? "http://localhost:3000";
