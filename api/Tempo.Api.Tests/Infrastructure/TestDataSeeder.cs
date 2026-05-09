@@ -433,6 +433,7 @@ public static class TestDataSeeder
         db.Workouts.RemoveRange(db.Workouts);
         db.UserSettings.RemoveRange(db.UserSettings);
         db.Shoes.RemoveRange(db.Shoes);
+        db.ApiKeys.RemoveRange(db.ApiKeys);
         db.Users.RemoveRange(db.Users);
         
         await db.SaveChangesAsync();
@@ -463,6 +464,7 @@ public static class TestDataSeeder
             
             if (!preserveUsers)
             {
+                await SafeDeleteFromTableAsync(db, "ApiKeys");
                 await SafeDeleteFromTableAsync(db, "Users");
             }
             
