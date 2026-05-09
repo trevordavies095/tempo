@@ -79,9 +79,9 @@ public class ApiKeyService
     }
 
     /// <summary>
-    /// Resolves an active API key to a user id. Used by Theme C middleware; returns null if invalid or revoked.
+    /// Resolves an active API key to the owning user (single query with user row). Theme C authentication handler.
     /// </summary>
-    public async Task<Guid?> TryGetActiveUserIdAsync(string plaintextKey, CancellationToken cancellationToken = default)
+    public async Task<User?> TryAuthenticateUserAsync(string plaintextKey, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(plaintextKey) ||
             !plaintextKey.StartsWith(KeyMaterialPrefix, StringComparison.Ordinal))
@@ -91,6 +91,7 @@ public class ApiKeyService
 
         var prefix = BuildKeyPrefix(plaintextKey);
         var candidates = await _db.ApiKeys
+            .Include(k => k.User)
             .Where(k => k.KeyPrefix == prefix && k.RevokedAt == null)
             .ToListAsync(cancellationToken);
 
@@ -98,11 +99,20 @@ public class ApiKeyService
         {
             if (_passwordService.VerifyPassword(plaintextKey, k.KeyHash))
             {
-                return k.UserId;
+                return k.User;
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Resolves an active API key to a user id. Returns null if invalid or revoked.
+    /// </summary>
+    public async Task<Guid?> TryGetActiveUserIdAsync(string plaintextKey, CancellationToken cancellationToken = default)
+    {
+        var user = await TryAuthenticateUserAsync(plaintextKey, cancellationToken);
+        return user?.Id;
     }
 
     private static string GenerateSecret()

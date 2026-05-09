@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Microsoft.IdentityModel.Tokens;
+using Tempo.Api.Authentication;
 using Tempo.Api.Data;
 using Tempo.Api.Services;
 
@@ -123,14 +124,7 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromMinutes(5)
                 };
-                options.Events = new JwtBearerEvents
-                {
-                    OnMessageReceived = context =>
-                    {
-                        context.Token = context.Request.Cookies["authToken"];
-                        return Task.CompletedTask;
-                    }
-                };
+                options.Events = TempoJwtBearerEvents.Create();
             });
             
             // Override JwtService to use test values (ensures token generation matches validation)

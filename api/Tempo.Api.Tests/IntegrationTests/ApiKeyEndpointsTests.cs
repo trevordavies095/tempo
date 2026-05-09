@@ -1,9 +1,12 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Tempo.Api.Authentication;
 using Tempo.Api.Data;
 using Tempo.Api.Services;
 using Tempo.Api.Tests.Infrastructure;
@@ -87,6 +90,94 @@ public class ApiKeyEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         list.Should().NotBeNull();
         list!.Should().ContainSingle();
         list[0].RevokedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetMe_WithBearerApiKey_ReturnsSameUserAsSession()
+    {
+        await EnsureCleanDatabaseAsync();
+        var sessionClient = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        var createResp = await sessionClient.PostAsJsonAsync("/auth/api-keys", new { label = "cli" });
+        createResp.EnsureSuccessStatusCode();
+        var created = await createResp.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+        created.Should().NotBeNull();
+
+        var apiKeyClient = _factory.CreateClient();
+        apiKeyClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", created!.Key);
+
+        var me = await apiKeyClient.GetAsync("/auth/me");
+        me.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await me.Content.ReadFromJsonAsync<MeResponse>();
+        json.Should().NotBeNull();
+        json!.Username.Should().Be("alice");
+    }
+
+    [Fact]
+    public async Task GetSettingsReadEndpoint_WithBearerApiKey_Succeeds()
+    {
+        await EnsureCleanDatabaseAsync();
+        var sessionClient = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        var createResp = await sessionClient.PostAsJsonAsync("/auth/api-keys", new { });
+        var created = await createResp.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+
+        var apiKeyClient = _factory.CreateClient();
+        apiKeyClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", created!.Key);
+
+        var pref = await apiKeyClient.GetAsync("/settings/unit-preference");
+        pref.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetMe_WithRevokedApiKey_ReturnsUnauthorizedWithJsonError()
+    {
+        await EnsureCleanDatabaseAsync();
+        var sessionClient = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        var createResp = await sessionClient.PostAsJsonAsync("/auth/api-keys", new { });
+        var created = await createResp.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+
+        await sessionClient.DeleteAsync($"/auth/api-keys/{created!.Id}");
+
+        var apiKeyClient = _factory.CreateClient();
+        apiKeyClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", created.Key);
+
+        var me = await apiKeyClient.GetAsync("/auth/me");
+        me.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var err = await me.Content.ReadFromJsonAsync<ErrorDto>();
+        err.Should().NotBeNull();
+        err!.Error.Should().Be(AuthErrorMessages.Unauthorized);
+    }
+
+    [Fact]
+    public async Task GetMe_WithInvalidApiKey_ReturnsUnauthorizedWithJsonError()
+    {
+        await EnsureCleanDatabaseAsync();
+        await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+
+        var apiKeyClient = _factory.CreateClient();
+        apiKeyClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ApiKeyService.KeyMaterialPrefix + "notavalidkeymaterialatallnotavalidkeymaterialatall");
+
+        var me = await apiKeyClient.GetAsync("/auth/me");
+        me.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var err = await me.Content.ReadFromJsonAsync<ErrorDto>();
+        err.Should().NotBeNull();
+        err!.Error.Should().Be(AuthErrorMessages.Unauthorized);
+    }
+
+    [Fact]
+    public async Task CreateApiKey_WithBearerApiKey_ReturnsForbidden()
+    {
+        await EnsureCleanDatabaseAsync();
+        var sessionClient = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        var createResp = await sessionClient.PostAsJsonAsync("/auth/api-keys", new { });
+        var created = await createResp.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+
+        var apiKeyClient = _factory.CreateClient();
+        apiKeyClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", created!.Key);
+
+        var second = await apiKeyClient.PostAsJsonAsync("/auth/api-keys", new { label = "nested" });
+        second.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [Fact]
@@ -174,5 +265,19 @@ public class ApiKeyEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public string KeyPrefix { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public DateTime? RevokedAt { get; set; }
+    }
+
+    private sealed class MeResponse
+    {
+        [JsonPropertyName("userId")]
+        public Guid UserId { get; set; }
+
+        [JsonPropertyName("username")]
+        public string Username { get; set; } = string.Empty;
+    }
+
+    private sealed class ErrorDto
+    {
+        public string Error { get; set; } = string.Empty;
     }
 }
