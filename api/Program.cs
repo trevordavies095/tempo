@@ -1,9 +1,12 @@
 using System.Data;
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using System.IdentityModel.Tokens.Jwt;
+using Tempo.Api.Authorization;
 using Tempo.Api.Data;
 using Tempo.Api.Endpoints;
 using Tempo.Api.Services;
@@ -91,7 +94,16 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddAuthorization();
+// JwtSessionOnly: interactive JWT only. Theme C API-key principals must omit jti so these routes stay admin/session-only.
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AuthorizationPolicyNames.JwtSessionOnly, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(ClaimTypes.NameIdentifier);
+        policy.RequireClaim(JwtRegisteredClaimNames.Jti);
+    });
+});
 
 // Configure Entity Framework
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
@@ -131,6 +143,7 @@ builder.Services.AddScoped<BulkImportService>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();
+builder.Services.AddScoped<ApiKeyService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<ShoeMileageService>();
 builder.Services.AddScoped<ExportService>();
