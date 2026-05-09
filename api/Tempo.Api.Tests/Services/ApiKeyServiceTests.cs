@@ -45,9 +45,47 @@ public class ApiKeyServiceTests : IDisposable
 
         var (_, plaintext) = await _sut.CreateAsync(user.Id, "l");
 
+        plaintext.Should().StartWith(ApiKeyService.KeyMaterialPrefix);
         var resolved = await _sut.TryGetActiveUserIdAsync(plaintext);
 
         resolved.Should().Be(user.Id);
+    }
+
+    [Fact]
+    public async Task CreateAsync_StoresSha256PrefixedHash_NotBcrypt()
+    {
+        var user = new User { Username = "u_sha", PasswordHash = "h" };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        var (entity, _) = await _sut.CreateAsync(user.Id, null);
+
+        entity.KeyHash.Should().StartWith("sha256:");
+        entity.KeyHash.Should().NotStartWith("$2");
+    }
+
+    [Fact]
+    public async Task TryAuthenticateUserAsync_LegacyBcryptStoredHash_StillWorks()
+    {
+        var user = new User { Username = "u_legacy", PasswordHash = "h" };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        var plaintextKey = ApiKeyService.KeyMaterialPrefix + new string('x', 43);
+        var bcryptHash = new PasswordService().HashPassword(plaintextKey);
+        _db.ApiKeys.Add(new ApiKey
+        {
+            UserId = user.Id,
+            KeyHash = bcryptHash,
+            KeyPrefix = plaintextKey[..ApiKeyService.KeyPrefixLength],
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var resolved = await _sut.TryAuthenticateUserAsync(plaintextKey);
+
+        resolved.Should().NotBeNull();
+        resolved!.Id.Should().Be(user.Id);
     }
 
     [Fact]

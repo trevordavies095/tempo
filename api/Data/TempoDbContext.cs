@@ -116,6 +116,9 @@ public class TempoDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => e.UserId);
+            // TryAuthenticateUserAsync: WHERE KeyPrefix = @p AND RevokedAt IS NULL
+            entity.HasIndex(e => e.KeyPrefix)
+                .HasFilter("\"RevokedAt\" IS NULL");
         });
 
         modelBuilder.Entity<BestEffort>(entity =>

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -14,6 +15,9 @@ public class ApiKeyService
 
     /// <summary>Plaintext keys use this prefix so the server can tell them apart from JWTs (see epic / Theme C).</summary>
     public const string KeyMaterialPrefix = "tmp_";
+
+    /// <summary>Stored <see cref="ApiKey.KeyHash"/> values use this prefix for SHA-256 (high-entropy secrets; fast verify).</summary>
+    internal const string Sha256StoredHashPrefix = "sha256:";
 
     private readonly TempoDbContext _db;
     private readonly PasswordService _passwordService;
@@ -35,7 +39,7 @@ public class ApiKeyService
         {
             UserId = userId,
             Label = NormalizeLabel(label),
-            KeyHash = _passwordService.HashPassword(plaintextKey),
+            KeyHash = HashApiKeySecret(plaintextKey),
             KeyPrefix = keyPrefix,
             CreatedAt = DateTime.UtcNow
         };
@@ -97,13 +101,60 @@ public class ApiKeyService
 
         foreach (var k in candidates)
         {
-            if (_passwordService.VerifyPassword(plaintextKey, k.KeyHash))
+            if (VerifyApiKeyAgainstStoredHash(plaintextKey, k.KeyHash))
             {
                 return k.User;
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// High-entropy API keys use SHA-256 for storage (fast). Legacy rows may still use BCrypt (<c>$2…</c>).
+    /// </summary>
+    private bool VerifyApiKeyAgainstStoredHash(string plaintextKey, string storedHash)
+    {
+        if (storedHash.StartsWith('$'))
+        {
+            return _passwordService.VerifyPassword(plaintextKey, storedHash);
+        }
+
+        return VerifyApiKeySecretSha256(plaintextKey, storedHash);
+    }
+
+    private static string HashApiKeySecret(string plaintextKey)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(plaintextKey));
+        return Sha256StoredHashPrefix + Convert.ToBase64String(hash);
+    }
+
+    private static bool VerifyApiKeySecretSha256(string plaintextKey, string storedHash)
+    {
+        if (!storedHash.StartsWith(Sha256StoredHashPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var encoded = storedHash.Substring(Sha256StoredHashPrefix.Length);
+        byte[] expected;
+        try
+        {
+            expected = Convert.FromBase64String(encoded);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        if (expected.Length != SHA256.HashSizeInBytes)
+        {
+            return false;
+        }
+
+        Span<byte> computed = stackalloc byte[SHA256.HashSizeInBytes];
+        SHA256.HashData(Encoding.UTF8.GetBytes(plaintextKey), computed);
+        return CryptographicOperations.FixedTimeEquals(computed, expected);
     }
 
     /// <summary>
