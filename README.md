@@ -68,11 +68,17 @@ That's it! The database migrations run automatically on first startup. For detai
 
 ## Documentation
 
-**OpenAPI:** The canonical HTTP API contract for tools and client generation (including the planned read-only CLI) is **[docs/openapi.json](docs/openapi.json)** on the default integration branch (`develop`). After changing routes or Swagger metadata, regenerate it from the repo root with `dotnet tool restore`, then:
+**OpenAPI:** The canonical HTTP API contract for tools and client generation (including the planned read-only CLI) is **[docs/openapi.json](docs/openapi.json)** on the default integration branch (`develop`). After changing routes or Swagger metadata, regenerate it: run `dotnet tool restore` once at the repo root, then:
 
 ```bash
-cd api && dotnet build -c Release && ASPNETCORE_ENVIRONMENT=Testing dotnet swagger tofile --output ../docs/openapi.json bin/Release/net9.0/Tempo.Api.dll v1
+cd api && dotnet build -c Release \
+  && ASPNETCORE_ENVIRONMENT=Development \
+     JWT__SecretKey='local-openapi-only-not-for-production-min-32-chars!' \
+     ConnectionStrings__DefaultConnection='Data Source=:memory:' \
+     dotnet swagger tofile --output ../docs/openapi.json bin/Release/net9.0/Tempo.Api.dll v1
 ```
+
+Use **Development** (not `Testing`) for `dotnet swagger tofile`: with `Testing`, the generic host looks for a `StartupTesting` class that this app does not ship, and Swashbuckle fails. In-memory SQLite avoids needing Postgres for this one-off export.
 
 With the API running in **Development**, you can also fetch the same document at `http://localhost:5001/swagger/v1/swagger.json`. Production deployments do not expose Swagger by default.
 

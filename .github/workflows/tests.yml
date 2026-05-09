@@ -32,11 +32,18 @@ jobs:
 
       - name: Verify OpenAPI spec is current
         run: |
-          ASPNETCORE_ENVIRONMENT=Testing dotnet swagger tofile \
+          cd api
+          # Swashbuckle boots the real host. Use Development (not Testing): the generic host
+          # otherwise looks for StartupTesting, which this minimal-host app does not define.
+          # In-memory SQLite + a throwaway JWT secret avoid Postgres and appsettings placeholder checks.
+          export ASPNETCORE_ENVIRONMENT=Development
+          export JWT__SecretKey='ci-openapi-generation-only-not-for-production-use-32b!'
+          export ConnectionStrings__DefaultConnection='Data Source=:memory:'
+          dotnet swagger tofile \
             --output /tmp/openapi-generated.json \
-            api/bin/Debug/net9.0/Tempo.Api.dll \
+            bin/Debug/net9.0/Tempo.Api.dll \
             v1
-          diff -u docs/openapi.json /tmp/openapi-generated.json
+          diff -u ../docs/openapi.json /tmp/openapi-generated.json
 
       - name: Run tests with coverage
         run: dotnet test Tempo.sln --no-build --verbosity detailed --logger "console;verbosity=detailed" --collect:"XPlat Code Coverage" --results-directory:"TestResults" --settings:"api/Tempo.Api.Tests/coverlet.runsettings"
