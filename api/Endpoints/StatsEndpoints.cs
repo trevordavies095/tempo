@@ -30,7 +30,6 @@ public static class StatsEndpoints
         DateTime WeekEndLocal,
         UtcRange CurrentRange,
         UtcRange PreviousWeekRange,
-        UtcRange TrailingWeek1,
         UtcRange TrailingWeek2,
         UtcRange TrailingWeek3,
         bool CurrentWeekIsPartial);
@@ -89,7 +88,6 @@ public static class StatsEndpoints
                 LocalDateRangeEndToUtc(end, timezoneOffsetMinutes));
         }
 
-        var trailing1 = TrailingWeek(1);
         var trailing2 = TrailingWeek(2);
         var trailing3 = TrailingWeek(3);
 
@@ -101,7 +99,6 @@ public static class StatsEndpoints
             weekEndLocal,
             currentRange,
             previousWeekRange,
-            trailing1,
             trailing2,
             trailing3,
             currentWeekIsPartial);
@@ -509,16 +506,15 @@ public static class StatsEndpoints
 
         var current = await GetBucketAggregatesAsync(db, ctx.CurrentRange);
         var previous = await GetBucketAggregatesAsync(db, ctx.PreviousWeekRange);
-        var t1 = await GetBucketAggregatesAsync(db, ctx.TrailingWeek1);
         var t2 = await GetBucketAggregatesAsync(db, ctx.TrailingWeek2);
         var t3 = await GetBucketAggregatesAsync(db, ctx.TrailingWeek3);
 
-        var trRuns = AverageDouble(t1.Runs, t2.Runs, t3.Runs);
-        var trDist = AverageDouble(t1.DistanceM, t2.DistanceM, t3.DistanceM);
-        var trDur = AverageDouble(t1.DurationS, t2.DurationS, t3.DurationS);
-        var trElev = AverageDouble(t1.ElevationGainM, t2.ElevationGainM, t3.ElevationGainM);
-        var trEffort = AverageDouble(t1.RelativeEffortSum, t2.RelativeEffortSum, t3.RelativeEffortSum);
-        var trEasyHr = AverageNullableDouble(t1.EasyRunAvgHeartRateBpm, t2.EasyRunAvgHeartRateBpm, t3.EasyRunAvgHeartRateBpm);
+        var trRuns = AverageDouble(previous.Runs, t2.Runs, t3.Runs);
+        var trDist = AverageDouble(previous.DistanceM, t2.DistanceM, t3.DistanceM);
+        var trDur = AverageDouble(previous.DurationS, t2.DurationS, t3.DurationS);
+        var trElev = AverageDouble(previous.ElevationGainM, t2.ElevationGainM, t3.ElevationGainM);
+        var trEffort = AverageDouble(previous.RelativeEffortSum, t2.RelativeEffortSum, t3.RelativeEffortSum);
+        var trEasyHr = AverageNullableDouble(previous.EasyRunAvgHeartRateBpm, t2.EasyRunAvgHeartRateBpm, t3.EasyRunAvgHeartRateBpm);
 
         double? easyDelta = current.EasyRunAvgHeartRateBpm.HasValue && previous.EasyRunAvgHeartRateBpm.HasValue
             ? current.EasyRunAvgHeartRateBpm.Value - previous.EasyRunAvgHeartRateBpm.Value
