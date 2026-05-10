@@ -220,7 +220,9 @@ app.MapStatsEndpoints();
 app.MapVersionEndpoints();
 
 // Health check endpoint
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
+    .WithTags("Health")
+    .WithSummary("Health check");
 
 // Apply database migrations automatically on startup
 try
