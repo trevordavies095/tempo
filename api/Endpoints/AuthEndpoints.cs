@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Tempo.Api.Authentication;
 using Tempo.Api.Authorization;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -133,31 +134,9 @@ public static class AuthEndpoints
             ? jwtService.RememberMeExpirationDays 
             : jwtService.ExpirationDays;
 
-        // Generate token with appropriate expiration
-        var token = jwtService.GenerateToken(user, expirationDays);
-
+        var token = jwtService.GenerateToken(user, expirationDays, request.RememberMe);
         var expirationDate = DateTime.UtcNow.AddDays(expirationDays);
-
-        // Set httpOnly cookie with production-safe configuration
-        var cookieOptions = new CookieOptions
-        {
-            HttpOnly = true,
-            // In production, always use Secure=true (production should always use HTTPS)
-            // In development, use Request.IsHttps to allow local development without HTTPS
-            Secure = environment.IsProduction() ? true : httpContext.Request.IsHttps,
-            SameSite = SameSiteMode.Lax,
-            Path = "/",
-            Expires = expirationDate
-        };
-
-        // Optionally set cookie domain from configuration for cross-subdomain scenarios
-        var cookieDomain = configuration["Cookie:Domain"];
-        if (!string.IsNullOrWhiteSpace(cookieDomain))
-        {
-            cookieOptions.Domain = cookieDomain;
-        }
-
-        httpContext.Response.Cookies.Append("authToken", token, cookieOptions);
+        AppendAuthTokenCookie(httpContext, environment, configuration, token, expirationDate);
 
         logger.LogInformation("User logged in: {Username}", LogSanitizer.Sanitize(user.Username));
 
@@ -167,6 +146,95 @@ public static class AuthEndpoints
             username = user.Username,
             expiresAt = expirationDate
         });
+    }
+
+    /// <summary>
+    /// Change password (browser session only). Invalidates other JWT sessions; re-issues cookie for this client.
+    /// </summary>
+    private static async Task<IResult> ChangePassword(
+        ChangePasswordRequest request,
+        ClaimsPrincipal claimsPrincipal,
+        HttpContext httpContext,
+        TempoDbContext db,
+        PasswordService passwordService,
+        JwtService jwtService,
+        IWebHostEnvironment environment,
+        IConfiguration configuration,
+        ILogger<Program> logger)
+    {
+        var userId = GetUserIdFromClaims(claimsPrincipal);
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword))
+        {
+            return Results.BadRequest(new { error = "Current password is required" });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+        {
+            return Results.BadRequest(new { error = "Password must be at least 6 characters" });
+        }
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId.Value);
+        if (user == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (!passwordService.VerifyPassword(request.CurrentPassword, user.PasswordHash))
+        {
+            return Results.BadRequest(new { error = "Current password is incorrect" });
+        }
+
+        if (request.NewPassword == request.CurrentPassword)
+        {
+            return Results.BadRequest(new { error = "New password must be different from the current password" });
+        }
+
+        user.PasswordHash = passwordService.HashPassword(request.NewPassword);
+        user.SessionVersion++;
+        await db.SaveChangesAsync();
+
+        var rememberMe = string.Equals(
+            claimsPrincipal.FindFirst(TempoJwtClaimTypes.RememberMe)?.Value,
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        var expirationDays = rememberMe ? jwtService.RememberMeExpirationDays : jwtService.ExpirationDays;
+        var token = jwtService.GenerateToken(user, expirationDays, rememberMe);
+        var expirationDate = DateTime.UtcNow.AddDays(expirationDays);
+        AppendAuthTokenCookie(httpContext, environment, configuration, token, expirationDate);
+
+        logger.LogInformation("Password changed: {Username}", LogSanitizer.Sanitize(user.Username));
+
+        return Results.Ok(new { message = "Password updated successfully" });
+    }
+
+    private static void AppendAuthTokenCookie(
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
+        IConfiguration configuration,
+        string token,
+        DateTime expirationUtc)
+    {
+        var cookieOptions = new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = environment.IsProduction() ? true : httpContext.Request.IsHttps,
+            SameSite = SameSiteMode.Lax,
+            Path = "/",
+            Expires = expirationUtc
+        };
+
+        var cookieDomain = configuration["Cookie:Domain"];
+        if (!string.IsNullOrWhiteSpace(cookieDomain))
+        {
+            cookieOptions.Domain = cookieDomain;
+        }
+
+        httpContext.Response.Cookies.Append("authToken", token, cookieOptions);
     }
 
     /// <summary>
@@ -340,6 +408,16 @@ public static class AuthEndpoints
             .WithSummary("Login")
             .WithDescription("Authenticates user and returns JWT token in httpOnly cookie.");
 
+        group.MapPost("/change-password", ChangePassword)
+            .WithName("ChangePassword")
+            .RequireAuthorization(AuthorizationPolicyNames.JwtSessionOnly)
+            .Produces(200)
+            .Produces(400)
+            .Produces(401)
+            .WithSummary("Change password")
+            .WithDescription(
+                "Updates password and increments session version so other browser sessions are signed out. Re-issues auth cookie for this client.");
+
         group.MapGet("/me", GetCurrentUser)
             .WithName("GetCurrentUser")
             .RequireAuthorization()
@@ -406,6 +484,12 @@ public static class AuthEndpoints
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public bool RememberMe { get; set; } = false;
+    }
+
+    public class ChangePasswordRequest
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
     }
 
     public class CreateApiKeyRequest
