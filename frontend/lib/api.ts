@@ -525,21 +525,8 @@ export interface RelativeEffortStatsResponse {
   currentWeekTotal: number;
 }
 
-export interface WeeklyRecapMetricInt {
-  current: number;
-  previous: number;
-  trailingAvg: number;
-  deltaVsPrevious: number;
-}
-
-export interface WeeklyRecapMetricLong {
-  current: number;
-  previous: number;
-  trailingAvg: number;
-  deltaVsPrevious: number;
-}
-
-export interface WeeklyRecapMetricDouble {
+/** Non-nullable week-over-week metric block (API uses int/long/double; JSON/TS are all number). */
+export interface WeeklyRecapNumericMetric {
   current: number;
   previous: number;
   trailingAvg: number;
@@ -561,11 +548,11 @@ export interface WeeklyRecapResponse {
   currentWeekIsPartial: boolean;
   generatedAtUtc: string;
   metrics: {
-    runs: WeeklyRecapMetricInt;
-    distanceM: WeeklyRecapMetricDouble;
-    durationS: WeeklyRecapMetricLong;
-    elevationGainM: WeeklyRecapMetricDouble;
-    relativeEffortSum: WeeklyRecapMetricInt;
+    runs: WeeklyRecapNumericMetric;
+    distanceM: WeeklyRecapNumericMetric;
+    durationS: WeeklyRecapNumericMetric;
+    elevationGainM: WeeklyRecapNumericMetric;
+    relativeEffortSum: WeeklyRecapNumericMetric;
     easyRunAvgHeartRateBpm: WeeklyRecapMetricNullableDouble;
   };
 }
