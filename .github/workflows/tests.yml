@@ -19,7 +19,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Restore .NET local tools
         run: dotnet tool restore
@@ -41,7 +41,7 @@ jobs:
           export ConnectionStrings__DefaultConnection='Data Source=:memory:'
           dotnet swagger tofile \
             --output /tmp/openapi-generated.json \
-            bin/Debug/net9.0/Tempo.Api.dll \
+            bin/Debug/net10.0/Tempo.Api.dll \
             v1
           diff -u ../docs/openapi.json /tmp/openapi-generated.json
 

@@ -4,7 +4,7 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-2.3.1-green.svg)
-![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
+![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
 
@@ -62,7 +62,7 @@ That's it! The database migrations run automatically on first startup. For detai
 ## Tech Stack
 
 - **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS, Tabler Icons
-- **Backend**: ASP.NET Core (.NET 9) Minimal APIs
+- **Backend**: ASP.NET Core (.NET 10) Minimal APIs
 - **Database**: PostgreSQL 16
 - **State Management**: TanStack Query
 
@@ -75,10 +75,10 @@ cd api && dotnet build \
   && ASPNETCORE_ENVIRONMENT=Development \
      JWT__SecretKey='local-openapi-only-not-for-production-min-32-chars!' \
      ConnectionStrings__DefaultConnection='Data Source=:memory:' \
-     dotnet swagger tofile --output ../docs/openapi.json bin/Debug/net9.0/Tempo.Api.dll v1
+     dotnet swagger tofile --output ../docs/openapi.json bin/Debug/net10.0/Tempo.Api.dll v1
 ```
 
-Use the **Debug** output assembly (`bin/Debug/...`) so the file matches **CI**, which runs `dotnet swagger tofile` against `bin/Debug/net9.0/Tempo.Api.dll` after `dotnet build Tempo.sln`.
+Use the **Debug** output assembly (`bin/Debug/...`) so the file matches **CI**, which runs `dotnet swagger tofile` against `bin/Debug/net10.0/Tempo.Api.dll` after `dotnet build Tempo.sln`.
 
 Use **Development** (not `Testing`) for `dotnet swagger tofile`: with `Testing`, the generic host looks for a `StartupTesting` class that this app does not ship, and Swashbuckle fails. In-memory SQLite avoids needing Postgres for this one-off export.
 

@@ -208,6 +208,19 @@
         ]
       }
     },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/settings/heart-rate-zones": {
       "get": {
         "tags": [
@@ -827,18 +840,6 @@
             "Bearer": [ ]
           }
         ]
-      }
-    },
-    "/health": {
-      "get": {
-        "tags": [
-          "Tempo.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
       }
     },
     "/version": {
@@ -1874,5 +1875,28 @@
         "bearerFormat": "JWT"
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "Authentication"
+    },
+    {
+      "name": "Health"
+    },
+    {
+      "name": "Settings"
+    },
+    {
+      "name": "Shoes"
+    },
+    {
+      "name": "Stats"
+    },
+    {
+      "name": "Version"
+    },
+    {
+      "name": "Workouts"
+    }
+  ]
 }

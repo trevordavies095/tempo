@@ -4,7 +4,7 @@ Set up your local development environment for Tempo.
 
 ## Prerequisites
 
-- **.NET 9 SDK** - [Download](https://dotnet.microsoft.com/download/dotnet/9.0)
+- **.NET 10 SDK** - [Download](https://dotnet.microsoft.com/download/dotnet/10.0)
 - **Node.js 18+** and npm - [Download](https://nodejs.org/)
 - **PostgreSQL 16** - [Download](https://www.postgresql.org/download/) or use Docker
 - **Git** - [Download](https://git-scm.com/downloads)

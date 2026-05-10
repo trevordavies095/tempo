@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Tempo.Api.OpenApi;
@@ -27,18 +27,17 @@ public sealed class BearerAuthOperationFilter : IOperationFilter
             return;
         }
 
+        // OpenAPI.NET 2.x: `OpenApiSecuritySchemeReference` must be tied to the host document or
+        // `Target` stays null and serialization emits `{ }` for each requirement (issue #2801).
+        // Swashbuckle exposes the in-flight document on the operation filter context.
         operation.Security =
         [
             new OpenApiSecurityRequirement
             {
-                [new OpenApiSecurityScheme
-                {
-                    Reference = new OpenApiReference
-                    {
-                        Type = ReferenceType.SecurityScheme,
-                        Id = TempoOpenApi.BearerSecuritySchemeId
-                    }
-                }] = Array.Empty<string>()
+                [new OpenApiSecuritySchemeReference(
+                    TempoOpenApi.BearerSecuritySchemeId,
+                    context.Document,
+                    externalResource: null)] = []
             }
         ];
     }
