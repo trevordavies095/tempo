@@ -1725,7 +1725,8 @@
           },
           "newPassword": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "16–64 characters; UTF-8 encoding must not exceed 72 bytes. Same rejection rules as registration (common passwords, username substring when username length ≥ 3, 5+ repeated characters in a row)."
           }
         },
         "additionalProperties": false
@@ -1804,7 +1805,8 @@
           },
           "password": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "16–64 characters; UTF-8 encoding must not exceed 72 bytes. Common passwords, username substring (when username length ≥ 3), and 5+ repeated characters in a row are rejected."
           }
         },
         "additionalProperties": false,

@@ -39,9 +39,14 @@ This guide covers security best practices for deploying Tempo in production.
 
 ### Password Requirements
 
-- Enforce strong passwords (implement in frontend if needed)
-- Use BCrypt for password hashing (already implemented)
-- Consider password complexity requirements
+Tempo enforces NIST/CISA-aligned rules for **new** passwords (registration and password change):
+
+- **Length**: 16–64 characters
+- **Encoding**: UTF-8 length must not exceed 72 bytes (bcrypt limit)
+- **Complexity**: No mandatory mixed case, digits, or symbols—prefer memorable passphrases
+- **Additional checks**: common-password blocklist; password must not contain the username (when the username is at least 3 characters); no single character repeated five or more times in a row
+
+Existing credentials remain valid until the user sets a new password. BCrypt hashing is already implemented.
 
 ### JWT Configuration
 

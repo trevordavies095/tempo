@@ -198,9 +198,9 @@ public class MyEndpointsTests : IClassFixture<TempoWebApplicationFactory>
    list.Should().HaveCount(3);
    ```
 
-4. **Test Data**: Use `TestDataSeeder` for consistent test data
+4. **Test Data**: Use `TestDataSeeder` for consistent test data. Passwords must satisfy `PasswordPolicy` (16+ characters, etc.); use `TestPasswords.Default` or `TestPasswords.Alternate` from `Tempo.Api.Tests.Infrastructure`.
    ```csharp
-   var user = await TestDataSeeder.SeedUserAsync(_db, "testuser", "password");
+   var user = await TestDataSeeder.SeedUserAsync(_db, "testuser", TestPasswords.Default);
    ```
 
 5. **Database**: Use in-memory SQLite for unit tests
@@ -254,7 +254,7 @@ Helper for creating authenticated HTTP clients:
 var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
 
 // Create authenticated client with custom user
-var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "username", "password");
+var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "username", TestPasswords.Default);
 
 // Create unauthenticated client
 var client = TestHttpClientFactory.CreateUnauthenticatedClient(_factory);
@@ -266,7 +266,7 @@ Helper for seeding test data:
 
 ```csharp
 // Seed user
-var user = await TestDataSeeder.SeedUserAsync(_db, "username", "password");
+var user = await TestDataSeeder.SeedUserAsync(_db, "username", TestPasswords.Default);
 
 // Seed workout
 var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000);

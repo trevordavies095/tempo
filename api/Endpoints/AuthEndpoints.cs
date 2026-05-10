@@ -22,16 +22,15 @@ public static class AuthEndpoints
         PasswordService passwordService,
         ILogger<Program> logger)
     {
-        // Validate username
-        if (string.IsNullOrWhiteSpace(request.Username) || request.Username.Length > 50)
+        var trimmedUsername = request.Username.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedUsername) || trimmedUsername.Length > 50)
         {
             return Results.BadRequest(new { error = "Username must be between 1 and 50 characters" });
         }
 
-        // Validate password
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 6)
+        if (!PasswordPolicy.TryValidate(request.Password, trimmedUsername, out var passwordError))
         {
-            return Results.BadRequest(new { error = "Password must be at least 6 characters" });
+            return Results.BadRequest(new { error = passwordError });
         }
 
         // Use a serializable transaction to atomically check and create user
@@ -48,8 +47,6 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { error = "Registration is disabled. An account already exists." });
             }
 
-            // Check if username already exists (trim before comparison)
-            var trimmedUsername = request.Username.Trim();
             var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == trimmedUsername);
             if (existingUser != null)
             {
@@ -173,11 +170,6 @@ public static class AuthEndpoints
             return Results.BadRequest(new { error = "Current password is required" });
         }
 
-        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
-        {
-            return Results.BadRequest(new { error = "Password must be at least 6 characters" });
-        }
-
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId.Value);
         if (user == null)
         {
@@ -192,6 +184,11 @@ public static class AuthEndpoints
         if (request.NewPassword == request.CurrentPassword)
         {
             return Results.BadRequest(new { error = "New password must be different from the current password" });
+        }
+
+        if (!PasswordPolicy.TryValidate(request.NewPassword, user.Username, out var newPasswordError))
+        {
+            return Results.BadRequest(new { error = newPasswordError });
         }
 
         user.PasswordHash = passwordService.HashPassword(request.NewPassword);

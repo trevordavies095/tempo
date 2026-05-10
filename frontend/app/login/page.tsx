@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/lib/api';
+import { getPasswordLengthAndBytesError } from '@/lib/passwordPolicy';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -44,8 +45,12 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
 
-    // Validate password confirmation when registering
     if (isRegistering) {
+      const pwdErr = getPasswordLengthAndBytesError(password);
+      if (pwdErr) {
+        setError(pwdErr);
+        return;
+      }
       if (password !== confirmPassword) {
         setError('Passwords do not match');
         return;
@@ -61,8 +66,8 @@ export default function LoginPage() {
         await login(username, password, rememberMe);
       }
       // Navigation is handled by the auth context
-    } catch (err: any) {
-      setError(err.message || 'An error occurred. Please try again.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -81,6 +86,12 @@ export default function LoginPage() {
                 ? 'Create your account to get started'
                 : 'Enter your credentials to access your workouts'}
             </p>
+            {isRegistering && (
+              <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+                Use a memorable passphrase, 16–64 characters. Spaces and Unicode are fine; no required symbol or
+                digit rules.
+              </p>
+            )}
           </div>
           <form className="space-y-6" onSubmit={handleSubmit}>
             {error && (
@@ -119,7 +130,8 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={isLoading}
-                  minLength={6}
+                  minLength={isRegistering ? 16 : undefined}
+                  maxLength={isRegistering ? 64 : undefined}
                 />
               </div>
               {isRegistering && (
@@ -137,7 +149,8 @@ export default function LoginPage() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     disabled={isLoading}
-                    minLength={6}
+                    minLength={16}
+                    maxLength={64}
                   />
                 </div>
               )}
@@ -180,7 +193,7 @@ export default function LoginPage() {
                   }}
                   className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300"
                 >
-                  Don't have an account? Register
+                  Do not have an account? Register
                 </button>
               </div>
             )}

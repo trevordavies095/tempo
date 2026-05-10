@@ -25,6 +25,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { AuthGuard } from '@/components/AuthGuard';
+import { getPasswordLengthAndBytesError } from '@/lib/passwordPolicy';
 
 function SettingsPageContent() {
   const queryClient = useQueryClient();
@@ -264,8 +265,9 @@ function SettingsPageContent() {
       setPasswordChangeError('Current password is required');
       return;
     }
-    if (!newPassword.trim() || newPassword.length < 6) {
-      setPasswordChangeError('Password must be at least 6 characters');
+    const newPwdErr = getPasswordLengthAndBytesError(newPassword);
+    if (newPwdErr) {
+      setPasswordChangeError(newPwdErr);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -627,6 +629,8 @@ function SettingsPageContent() {
                 <div className="px-6 pb-6 pt-0 border-t border-gray-200 dark:border-gray-800">
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 mt-4">
                     Updates your password and signs out other browser sessions. This session stays signed in.
+                    New passwords must be 16–64 characters (UTF-8 under 72 bytes). Use a memorable passphrase—no
+                    required mix of symbols or digits.
                   </p>
                   <form onSubmit={handleChangePassword} className="flex flex-col gap-4 max-w-md">
                     <div>

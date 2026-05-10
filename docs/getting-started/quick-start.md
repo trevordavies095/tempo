@@ -42,7 +42,7 @@ Once all services are running, access Tempo at:
 1. Navigate to `http://localhost:3000`
 2. You'll be redirected to the login page
 3. Register your account (only available when no users exist)
-   - Choose a username and password
+   - Choose a username and a passphrase (**16–64** characters; see [Security](../deployment/security.md#password-requirements) for full rules)
    - Confirm your password
    - After registration, you'll be automatically logged in
 
