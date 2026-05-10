@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-05-10
+
+### Added
+- **Change password (authenticated session)**
+  - `POST /auth/change-password` updates the password and re-issues the httpOnly JWT cookie for the current browser
+  - Settings UI for changing password with validation aligned to the server policy
+- **Session invalidation on password change**
+  - `Users.SessionVersion` and JWT `sess_ver` claim; changing the password bumps the version and signs out other outstanding sessions
+  - JWT validation loads the user and rejects tokens when the session version no longer matches (or the user was removed)
+
+### Security
+- **Stronger password policy (registration and password change)**
+  - Length-focused rules with blocks for common passwords, risky repetition, and username substrings (when the username is long enough); documents BCrypt’s 72-byte input limit
+- **Frontend: PostCSS override**
+  - Dependency resolution pins `postcss` to >= 8.5.10 (addresses [GHSA-qx2v-qp2m-jg93](https://github.com/advisories/GHSA-qx2v-qp2m-jg93))
+
+### Migration
+- **Database:** applies `AddUserSessionVersion` — adds `SessionVersion` to `Users` (default `0`). Run migrations or rely on automatic migration on startup.
+
 ## [2.4.0] - 2026-05-09
 
 ### Added
