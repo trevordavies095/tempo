@@ -14,6 +14,9 @@ namespace Tempo.Api.Endpoints;
 
 public static class WorkoutsEndpoints
 {
+    private const int TimeSeriesDefaultPageSize = 1000;
+    private const int TimeSeriesMaxPageSize = 5000;
+
     // Result class for file processing
     private class FileProcessResult
     {
@@ -1313,6 +1316,71 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
+    /// Paginated heart-rate samples for a workout (from stored time series).
+    /// </summary>
+    private static async Task<IResult> GetWorkoutTimeSeries(
+        Guid id,
+        TempoDbContext db,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = TimeSeriesDefaultPageSize)
+    {
+        var workoutExists = await db.Workouts.AsNoTracking().AnyAsync(w => w.Id == id);
+        if (!workoutExists)
+        {
+            return Results.NotFound(new { error = "Workout not found" });
+        }
+
+        if (page < 1)
+        {
+            page = 1;
+        }
+
+        if (pageSize < 1)
+        {
+            pageSize = TimeSeriesDefaultPageSize;
+        }
+
+        if (pageSize > TimeSeriesMaxPageSize)
+        {
+            pageSize = TimeSeriesMaxPageSize;
+        }
+
+        var query = db.WorkoutTimeSeries.AsNoTracking()
+            .Where(ts => ts.WorkoutId == id && ts.HeartRateBpm != null)
+            .OrderBy(ts => ts.ElapsedSeconds)
+            .ThenBy(ts => ts.Id);
+
+        var totalCount = await query.CountAsync();
+        var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+        // When totalPages is 0 (no samples), only page 1 is valid; larger pages are out of range.
+        var pageOutOfRange = totalPages > 0 ? page > totalPages : page > 1;
+        if (pageOutOfRange)
+        {
+            return Results.NotFound(new { error = "Page not found" });
+        }
+
+        var rows = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(ts => new
+            {
+                elapsedSeconds = ts.ElapsedSeconds,
+                heartRateBpm = (int)ts.HeartRateBpm!.Value
+            })
+            .ToListAsync();
+
+        return Results.Ok(new
+        {
+            items = rows,
+            page,
+            pageSize,
+            totalCount,
+            totalPages
+        });
+    }
+
+    /// <summary>
     /// Get similar routes for a workout
     /// </summary>
     /// <param name="id">Workout ID</param>
@@ -2364,6 +2432,18 @@ public static class WorkoutsEndpoints
         .Produces(404)
         .WithSummary("Get similar routes")
         .WithDescription("Returns previous workouts that were completed on similar routes, allowing users to compare their current performance with past efforts. Includes time and pace differences compared to the current workout. Requires the workout to have route data.");
+
+        group.MapGet("/{id:guid}/time-series", GetWorkoutTimeSeries)
+        .WithName("GetWorkoutTimeSeries")
+        .Produces(200)
+        .Produces(404)
+        .WithSummary("Get workout heart-rate time series")
+        .WithDescription(
+            "Returns paginated heart-rate samples from stored workout time series. Each item has elapsedSeconds (integer seconds from workout start) and heartRateBpm (integer). " +
+            "Samples are sparse: only timestamps where heart rate was recorded are included (not a dense sample for every second). GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. " +
+            "The server does not interpolate missing seconds; clients may interpolate if needed. " +
+            "Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. " +
+            $"Default pageSize is {TimeSeriesDefaultPageSize} with a maximum of {TimeSeriesMaxPageSize}; use multiple requests for long activities.");
 
         group.MapGet("/{id:guid}", GetWorkout)
         .WithName("GetWorkout")
