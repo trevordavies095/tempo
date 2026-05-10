@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -86,6 +88,31 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
 
         // Act
         var response = await client.PostAsJsonAsync("/auth/register", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var result = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        result.Should().NotBeNull();
+        result!.Error.Should().Contain("Username");
+    }
+
+    [Fact]
+    public async Task Register_WithNullUsernameInJson_ReturnsBadRequest()
+    {
+        // Arrange: System.Text.Json can deserialize JSON null into a non-nullable string when
+        // RespectNullableReferenceTypes is not enabled; endpoint must not call Trim() before a null check.
+        await EnsureCleanDatabaseAsync();
+        var client = _factory.CreateClient();
+
+        var json = JsonSerializer.Serialize(new Dictionary<string, string?>
+        {
+            ["username"] = null,
+            ["password"] = TestPasswords.Default
+        });
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PostAsync("/auth/register", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);

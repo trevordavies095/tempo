@@ -154,13 +154,6 @@ public static class PasswordPolicy
             "whateverwhatever1",
             "nothingnothing12",
             "blahblahblahblah",
-            "aaaaaaaaaaaaaaaa",
-            "bbbbbbbbbbbbbbbb",
-            "cccccccccccccccc",
-            "dddddddddddddddd",
-            "eeeeeeeeeeeeeeee",
-            "0000000000000000",
-            "1111111111111111",
             "0123456789012345",
             "9876543210987654",
         ];

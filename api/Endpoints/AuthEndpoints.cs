@@ -22,8 +22,13 @@ public static class AuthEndpoints
         PasswordService passwordService,
         ILogger<Program> logger)
     {
+        if (string.IsNullOrWhiteSpace(request.Username))
+        {
+            return Results.BadRequest(new { error = "Username must be between 1 and 50 characters" });
+        }
+
         var trimmedUsername = request.Username.Trim();
-        if (string.IsNullOrWhiteSpace(trimmedUsername) || trimmedUsername.Length > 50)
+        if (trimmedUsername.Length > 50)
         {
             return Results.BadRequest(new { error = "Username must be between 1 and 50 characters" });
         }
@@ -170,6 +175,17 @@ public static class AuthEndpoints
             return Results.BadRequest(new { error = "Current password is required" });
         }
 
+        var usernameForPolicy = claimsPrincipal.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
+        if (!PasswordPolicy.TryValidate(request.NewPassword, usernameForPolicy, out var newPasswordError))
+        {
+            return Results.BadRequest(new { error = newPasswordError });
+        }
+
+        if (request.NewPassword == request.CurrentPassword)
+        {
+            return Results.BadRequest(new { error = "New password must be different from the current password" });
+        }
+
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId.Value);
         if (user == null)
         {
@@ -179,16 +195,6 @@ public static class AuthEndpoints
         if (!passwordService.VerifyPassword(request.CurrentPassword, user.PasswordHash))
         {
             return Results.BadRequest(new { error = "Current password is incorrect" });
-        }
-
-        if (request.NewPassword == request.CurrentPassword)
-        {
-            return Results.BadRequest(new { error = "New password must be different from the current password" });
-        }
-
-        if (!PasswordPolicy.TryValidate(request.NewPassword, user.Username, out var newPasswordError))
-        {
-            return Results.BadRequest(new { error = newPasswordError });
         }
 
         user.PasswordHash = passwordService.HashPassword(request.NewPassword);
