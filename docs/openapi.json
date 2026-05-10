@@ -3,7 +3,7 @@
   "info": {
     "title": "Tempo API",
     "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
-    "version": "2.4.0"
+    "version": "2.5.0"
   },
   "paths": {
     "/auth/register": {
@@ -60,6 +60,42 @@
             "description": "Unauthorized"
           }
         }
+      }
+    },
+    "/auth/change-password": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Change password (browser session only). Invalidates other JWT sessions; re-issues cookie for this client.",
+        "description": "Updates password and increments session version so other browser sessions are signed out. Re-issues auth cookie for this client.",
+        "operationId": "ChangePassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
       }
     },
     "/auth/me": {
@@ -1680,6 +1716,21 @@
   },
   "components": {
     "schemas": {
+      "ChangePasswordRequest": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "nullable": true
+          },
+          "newPassword": {
+            "type": "string",
+            "description": "16-64 characters; UTF-8 encoding must not exceed 72 bytes. Same rejection rules as registration (common passwords, username substring when username length is at least 3, 5+ repeated characters in a row).",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateApiKeyRequest": {
         "type": "object",
         "properties": {
@@ -1754,6 +1805,7 @@
           },
           "password": {
             "type": "string",
+            "description": "16-64 characters; UTF-8 encoding must not exceed 72 bytes. Common passwords, username substring (when username length is at least 3), and 5+ repeated characters in a row are rejected.",
             "nullable": true
           }
         },

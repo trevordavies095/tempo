@@ -1108,6 +1108,27 @@ export async function logout(): Promise<void> {
   }
 }
 
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<{ message: string }> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/change-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Password change failed' }));
+    throw new Error(
+      typeof error.error === 'string' ? error.error : `Password change failed: ${response.status}`
+    );
+  }
+
+  return response.json();
+}
+
 export async function checkRegistrationAvailable(): Promise<RegistrationAvailableResponse> {
   const response = await fetch(`${API_BASE_URL}/auth/registration-available`, {
     method: 'GET',

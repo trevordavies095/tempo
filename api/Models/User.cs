@@ -18,6 +18,11 @@ public class User
 
     public DateTime? LastLoginAt { get; set; }
 
+    /// <summary>
+    /// Incremented on password change to invalidate outstanding JWTs (see <c>sess_ver</c> claim).
+    /// </summary>
+    public int SessionVersion { get; set; }
+
     public ICollection<ApiKey> ApiKeys { get; set; } = new List<ApiKey>();
 }
 

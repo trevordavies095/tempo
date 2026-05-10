@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Tempo.Api.Authentication;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
 using Xunit;
@@ -184,6 +185,39 @@ public class JwtServiceTests
         jsonToken.Claims.Should().Contain(c => c.Type == ClaimTypes.NameIdentifier && c.Value == userId.ToString());
         jsonToken.Claims.Should().Contain(c => c.Type == ClaimTypes.Name && c.Value == "testuser");
         jsonToken.Claims.Should().Contain(c => c.Type == JwtRegisteredClaimNames.Jti);
+        jsonToken.Claims.Should().Contain(c => c.Type == TempoJwtClaimTypes.SessionVersion && c.Value == "0");
+        jsonToken.Claims.Should().Contain(c => c.Type == TempoJwtClaimTypes.RememberMe && c.Value == "false");
+    }
+
+    [Fact]
+    public void GenerateToken_EmbedsSessionVersionFromUser()
+    {
+        var service = new JwtService(_configuration, _loggerMock.Object);
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "u",
+            SessionVersion = 3
+        };
+
+        var token = service.GenerateToken(user);
+        var handler = new JwtSecurityTokenHandler();
+        var jsonToken = handler.ReadJwtToken(token);
+
+        jsonToken.Claims.Should().Contain(c => c.Type == TempoJwtClaimTypes.SessionVersion && c.Value == "3");
+    }
+
+    [Fact]
+    public void GenerateToken_WithRememberMe_SetsRememberMeClaimTrue()
+    {
+        var service = new JwtService(_configuration, _loggerMock.Object);
+        var user = new User { Id = Guid.NewGuid(), Username = "u" };
+
+        var token = service.GenerateToken(user, rememberMe: true);
+        var handler = new JwtSecurityTokenHandler();
+        var jsonToken = handler.ReadJwtToken(token);
+
+        jsonToken.Claims.Should().Contain(c => c.Type == TempoJwtClaimTypes.RememberMe && c.Value == "true");
     }
 
     [Fact]

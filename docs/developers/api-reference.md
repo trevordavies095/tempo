@@ -82,6 +82,8 @@ Content-Type: application/json
 }
 ```
 
+New passwords must be **16–64** characters, with UTF-8 encoding at most **72** bytes. The API rejects common passwords, passwords that contain the username (when the username is at least 3 characters), and passwords with any character repeated five or more times consecutively. There is no mandatory character-class complexity.
+
 ### Login
 
 Authenticate and receive JWT token:
