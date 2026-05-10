@@ -73,6 +73,33 @@ public class WorkoutTimeSeriesEndpointTests : IClassFixture<TempoWebApplicationF
     }
 
     [Fact]
+    public async Task GetWorkoutTimeSeries_Returns404_WhenNoHeartRateSamplesAndPageOutOfRange()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db, durationS: 600);
+            await TestDataSeeder.SeedWorkoutWithTimeSeriesAsync(
+                db,
+                workout,
+                intervalSeconds: 60,
+                totalDurationS: 600,
+                includeHeartRate: false,
+                includeCadence: true);
+        }
+
+        var response = await client.GetAsync($"/workouts/{workout.Id}/time-series?page=999");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        error!.Error.Should().Be("Page not found");
+    }
+
+    [Fact]
     public async Task GetWorkoutTimeSeries_ReturnsOrderedHeartRateSamples()
     {
         await EnsureCleanDatabaseAsync();

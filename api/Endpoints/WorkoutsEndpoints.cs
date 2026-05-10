@@ -1353,7 +1353,9 @@ public static class WorkoutsEndpoints
         var totalCount = await query.CountAsync();
         var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
-        if (page > totalPages && totalPages > 0)
+        // When totalPages is 0 (no samples), only page 1 is valid; larger pages are out of range.
+        var pageOutOfRange = totalPages > 0 ? page > totalPages : page > 1;
+        if (pageOutOfRange)
         {
             return Results.NotFound(new { error = "Page not found" });
         }
