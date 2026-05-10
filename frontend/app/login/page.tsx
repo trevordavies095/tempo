@@ -4,7 +4,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/lib/api';
-import { getPasswordLengthAndBytesError } from '@/lib/passwordPolicy';
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  getPasswordLengthAndBytesError,
+} from '@/lib/passwordPolicy';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -88,8 +92,8 @@ export default function LoginPage() {
             </p>
             {isRegistering && (
               <p className="text-center text-xs text-gray-500 dark:text-gray-400">
-                Use a memorable passphrase, 16–64 characters. Spaces and Unicode are fine; no required symbol or
-                digit rules.
+                Use a memorable passphrase, {PASSWORD_MIN_LENGTH}–{PASSWORD_MAX_LENGTH} characters. Spaces and
+                Unicode are fine; no required symbol or digit rules.
               </p>
             )}
           </div>
@@ -130,8 +134,8 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={isLoading}
-                  minLength={isRegistering ? 16 : undefined}
-                  maxLength={isRegistering ? 64 : undefined}
+                  minLength={isRegistering ? PASSWORD_MIN_LENGTH : undefined}
+                  maxLength={isRegistering ? PASSWORD_MAX_LENGTH : undefined}
                 />
               </div>
               {isRegistering && (
@@ -149,8 +153,8 @@ export default function LoginPage() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     disabled={isLoading}
-                    minLength={16}
-                    maxLength={64}
+                    minLength={PASSWORD_MIN_LENGTH}
+                    maxLength={PASSWORD_MAX_LENGTH}
                   />
                 </div>
               )}
