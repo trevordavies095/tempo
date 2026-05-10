@@ -22,16 +22,20 @@ public static class AuthEndpoints
         PasswordService passwordService,
         ILogger<Program> logger)
     {
-        // Validate username
-        if (string.IsNullOrWhiteSpace(request.Username) || request.Username.Length > 50)
+        if (string.IsNullOrWhiteSpace(request.Username))
         {
             return Results.BadRequest(new { error = "Username must be between 1 and 50 characters" });
         }
 
-        // Validate password
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 6)
+        var trimmedUsername = request.Username.Trim();
+        if (trimmedUsername.Length > 50)
         {
-            return Results.BadRequest(new { error = "Password must be at least 6 characters" });
+            return Results.BadRequest(new { error = "Username must be between 1 and 50 characters" });
+        }
+
+        if (!PasswordPolicy.TryValidate(request.Password, trimmedUsername, out var passwordError))
+        {
+            return Results.BadRequest(new { error = passwordError });
         }
 
         // Use a serializable transaction to atomically check and create user
@@ -48,8 +52,6 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { error = "Registration is disabled. An account already exists." });
             }
 
-            // Check if username already exists (trim before comparison)
-            var trimmedUsername = request.Username.Trim();
             var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == trimmedUsername);
             if (existingUser != null)
             {
@@ -173,9 +175,10 @@ public static class AuthEndpoints
             return Results.BadRequest(new { error = "Current password is required" });
         }
 
-        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+        var usernameForPolicy = claimsPrincipal.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
+        if (!PasswordPolicy.TryValidate(request.NewPassword, usernameForPolicy, out var newPasswordError))
         {
-            return Results.BadRequest(new { error = "Password must be at least 6 characters" });
+            return Results.BadRequest(new { error = newPasswordError });
         }
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId.Value);
@@ -473,6 +476,10 @@ public static class AuthEndpoints
     public class RegisterRequest
     {
         public string Username { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 16-64 characters; UTF-8 encoding must not exceed 72 bytes. Common passwords, username substring (when username length is at least 3), and 5+ repeated characters in a row are rejected.
+        /// </summary>
         public string Password { get; set; } = string.Empty;
     }
 
@@ -489,6 +496,10 @@ public static class AuthEndpoints
     public class ChangePasswordRequest
     {
         public string CurrentPassword { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 16-64 characters; UTF-8 encoding must not exceed 72 bytes. Same rejection rules as registration (common passwords, username substring when username length is at least 3, 5+ repeated characters in a row).
+        /// </summary>
         public string NewPassword { get; set; } = string.Empty;
     }
 

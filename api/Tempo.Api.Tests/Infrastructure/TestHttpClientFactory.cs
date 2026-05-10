@@ -27,12 +27,12 @@ public static class TestHttpClientFactory
     /// </summary>
     /// <param name="factory">WebApplicationFactory instance</param>
     /// <param name="username">Username (default: "testuser")</param>
-    /// <param name="password">Password (default: "Test123!")</param>
+    /// <param name="password">Password (default: <see cref="TestPasswords.Default"/>)</param>
     /// <returns>HttpClient with authentication cookie set</returns>
     public static async Task<HttpClient> CreateAuthenticatedClientAsync(
         WebApplicationFactory<Program> factory,
         string username = "testuser",
-        string password = "Test123!")
+        string password = TestPasswords.Default)
     {
         var client = factory.CreateClient();
 

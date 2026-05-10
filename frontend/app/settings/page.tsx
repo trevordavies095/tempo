@@ -25,6 +25,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { AuthGuard } from '@/components/AuthGuard';
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  getPasswordLengthAndBytesError,
+} from '@/lib/passwordPolicy';
 
 function SettingsPageContent() {
   const queryClient = useQueryClient();
@@ -260,6 +265,15 @@ function SettingsPageContent() {
     e.preventDefault();
     setPasswordChangeError(null);
     setPasswordChangeSuccess(false);
+    if (!currentPassword.trim()) {
+      setPasswordChangeError('Current password is required');
+      return;
+    }
+    const newPwdErr = getPasswordLengthAndBytesError(newPassword);
+    if (newPwdErr) {
+      setPasswordChangeError(newPwdErr);
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setPasswordChangeError('New passwords do not match');
       return;
@@ -291,87 +305,6 @@ function SettingsPageContent() {
         </div>
 
         <div className="w-full space-y-12">
-          {/* Account */}
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
-              Account
-            </h2>
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                Change password
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Updates your password and signs out other browser sessions. This session stays signed in.
-              </p>
-              <form onSubmit={handleChangePassword} className="flex flex-col gap-4 max-w-md">
-                <div>
-                  <label htmlFor="settings-current-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Current password
-                  </label>
-                  <input
-                    id="settings-current-password"
-                    name="currentPassword"
-                    type="password"
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="settings-new-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    New password
-                  </label>
-                  <input
-                    id="settings-new-password"
-                    name="newPassword"
-                    type="password"
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
-                    required
-                    minLength={6}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="settings-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Confirm new password
-                  </label>
-                  <input
-                    id="settings-confirm-password"
-                    name="confirmPassword"
-                    type="password"
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
-                    required
-                    minLength={6}
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={passwordChangeSaving}
-                  className={`w-fit px-6 py-2 rounded-lg font-medium transition-colors ${
-                    passwordChangeSaving
-                      ? 'bg-gray-400 text-white cursor-not-allowed'
-                      : 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white'
-                  }`}
-                >
-                  {passwordChangeSaving ? 'Updating…' : 'Update password'}
-                </button>
-                {passwordChangeSuccess && (
-                  <p className="text-sm text-green-600 dark:text-green-400">Password updated successfully.</p>
-                )}
-                {passwordChangeError && (
-                  <p className="text-sm text-red-600 dark:text-red-400">{passwordChangeError}</p>
-                )}
-              </form>
-            </div>
-          </div>
-
           {/* Display Preferences */}
           <div className="space-y-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
@@ -677,6 +610,96 @@ function SettingsPageContent() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Account */}
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
+              Account
+            </h2>
+            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+              <details className="group">
+                <summary className="cursor-pointer list-none flex items-center justify-between gap-4 px-6 py-4 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800/80 [&::-webkit-details-marker]:hidden">
+                  <span className="text-lg font-semibold">Change password</span>
+                  <span
+                    className="shrink-0 text-gray-500 dark:text-gray-400 transition-transform group-open:rotate-180"
+                    aria-hidden
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </span>
+                </summary>
+                <div className="px-6 pb-6 pt-0 border-t border-gray-200 dark:border-gray-800">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 mt-4">
+                    Updates your password and signs out other browser sessions. This session stays signed in.
+                    New passwords must be {PASSWORD_MIN_LENGTH}–{PASSWORD_MAX_LENGTH} characters (UTF-8 under
+                    72 bytes). Use a memorable passphrase—no required mix of symbols or digits.
+                  </p>
+                  <form onSubmit={handleChangePassword} className="flex flex-col gap-4 max-w-md">
+                    <div>
+                      <label htmlFor="settings-current-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Current password
+                      </label>
+                      <input
+                        id="settings-current-password"
+                        name="currentPassword"
+                        type="password"
+                        autoComplete="current-password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="settings-new-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        New password
+                      </label>
+                      <input
+                        id="settings-new-password"
+                        name="newPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="settings-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Confirm new password
+                      </label>
+                      <input
+                        id="settings-confirm-password"
+                        name="confirmPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={passwordChangeSaving}
+                      className={`w-fit px-6 py-2 rounded-lg font-medium transition-colors ${
+                        passwordChangeSaving
+                          ? 'bg-gray-400 text-white cursor-not-allowed'
+                          : 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white'
+                      }`}
+                    >
+                      {passwordChangeSaving ? 'Updating…' : 'Update password'}
+                    </button>
+                    {passwordChangeSuccess && (
+                      <p className="text-sm text-green-600 dark:text-green-400">Password updated successfully.</p>
+                    )}
+                    {passwordChangeError && (
+                      <p className="text-sm text-red-600 dark:text-red-400">{passwordChangeError}</p>
+                    )}
+                  </form>
+                </div>
+              </details>
+            </div>
           </div>
 
           {/* System Information */}

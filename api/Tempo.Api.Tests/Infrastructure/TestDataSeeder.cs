@@ -17,12 +17,12 @@ public static class TestDataSeeder
     /// </summary>
     /// <param name="db">Database context</param>
     /// <param name="username">Username (default: "testuser")</param>
-    /// <param name="password">Plain text password (default: "Test123!")</param>
+    /// <param name="password">Plain text password (default: <see cref="TestPasswords.Default"/>)</param>
     /// <returns>Created User entity</returns>
     public static async Task<User> SeedUserAsync(
         TempoDbContext db,
         string username = "testuser",
-        string password = "Test123!")
+        string password = TestPasswords.Default)
     {
         var passwordService = new PasswordService();
         var user = new User
