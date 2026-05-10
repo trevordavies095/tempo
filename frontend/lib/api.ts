@@ -525,6 +525,51 @@ export interface RelativeEffortStatsResponse {
   currentWeekTotal: number;
 }
 
+export interface WeeklyRecapMetricInt {
+  current: number;
+  previous: number;
+  trailingAvg: number;
+  deltaVsPrevious: number;
+}
+
+export interface WeeklyRecapMetricLong {
+  current: number;
+  previous: number;
+  trailingAvg: number;
+  deltaVsPrevious: number;
+}
+
+export interface WeeklyRecapMetricDouble {
+  current: number;
+  previous: number;
+  trailingAvg: number;
+  deltaVsPrevious: number;
+}
+
+export interface WeeklyRecapMetricNullableDouble {
+  current: number | null;
+  previous: number | null;
+  trailingAvg: number | null;
+  deltaVsPrevious: number | null;
+}
+
+export interface WeeklyRecapResponse {
+  weekStart: string;
+  weekEnd: string;
+  referenceDate: string;
+  timezoneOffsetMinutes: number | null;
+  currentWeekIsPartial: boolean;
+  generatedAtUtc: string;
+  metrics: {
+    runs: WeeklyRecapMetricInt;
+    distanceM: WeeklyRecapMetricDouble;
+    durationS: WeeklyRecapMetricLong;
+    elevationGainM: WeeklyRecapMetricDouble;
+    relativeEffortSum: WeeklyRecapMetricInt;
+    easyRunAvgHeartRateBpm: WeeklyRecapMetricNullableDouble;
+  };
+}
+
 export interface YearlyStatsResponse {
   currentYear: number;
   previousYear: number;
@@ -571,6 +616,34 @@ export async function getRelativeEffortStats(timezoneOffsetMinutes?: number): Pr
 
   if (!response.ok) {
     throw new Error(`Failed to fetch relative effort stats: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getWeeklyRecap(
+  timezoneOffsetMinutes?: number,
+  referenceDate?: string
+): Promise<WeeklyRecapResponse> {
+  const searchParams = new URLSearchParams();
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+  if (referenceDate) {
+    searchParams.set('referenceDate', referenceDate);
+  }
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/stats/weekly-recap${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetchWithAuth(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch weekly recap: ${response.status}`);
   }
 
   return response.json();

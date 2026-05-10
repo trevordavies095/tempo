@@ -9,6 +9,236 @@ namespace Tempo.Api.Endpoints;
 
 public static class StatsEndpoints
 {
+    private const string EasyRunType = "Easy Run";
+
+    /// <summary>
+    /// Aggregates for a single UTC-inclusive workout window [startUtc, endUtc].
+    /// </summary>
+    private sealed record BucketAggregates(
+        int Runs,
+        double DistanceM,
+        long DurationS,
+        double ElevationGainM,
+        int RelativeEffortSum,
+        double? EasyRunAvgHeartRateBpm);
+
+    private sealed record UtcRange(DateTime StartUtc, DateTime EndUtc);
+
+    private sealed record WeeklyRecapUtcContext(
+        DateTime ReferenceLocalDate,
+        DateTime WeekStartLocal,
+        DateTime WeekEndLocal,
+        UtcRange CurrentRange,
+        UtcRange PreviousWeekRange,
+        UtcRange TrailingWeek1,
+        UtcRange TrailingWeek2,
+        UtcRange TrailingWeek3,
+        bool CurrentWeekIsPartial);
+
+    /// <summary>
+    /// Builds Monday–Sunday week boundaries and UTC query ranges. Current range is week-to-date capped at UTC now.
+    /// </summary>
+    private static WeeklyRecapUtcContext BuildWeeklyRecapUtcContext(
+        DateTime utcNow,
+        int? timezoneOffsetMinutes,
+        DateTime? referenceLocalDate)
+    {
+        DateTime localAnchorDate;
+        if (referenceLocalDate.HasValue)
+        {
+            localAnchorDate = referenceLocalDate.Value.Date;
+        }
+        else
+        {
+            var localNow = timezoneOffsetMinutes.HasValue
+                ? utcNow.AddMinutes(timezoneOffsetMinutes.Value)
+                : utcNow;
+            localAnchorDate = localNow.Date;
+        }
+
+        var daysSinceMonday = ((int)localAnchorDate.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        var weekStartLocal = localAnchorDate.AddDays(-daysSinceMonday);
+        var weekEndLocal = weekStartLocal.AddDays(7).AddTicks(-1);
+
+        var weekStartUtc = LocalDateRangeStartToUtc(weekStartLocal, timezoneOffsetMinutes);
+        var weekEndUtc = LocalDateRangeEndToUtc(weekEndLocal, timezoneOffsetMinutes);
+
+        var currentEndUtc = utcNow < weekEndUtc ? utcNow : weekEndUtc;
+        UtcRange currentRange;
+        if (currentEndUtc < weekStartUtc)
+        {
+            currentRange = new UtcRange(weekStartUtc, weekStartUtc.AddTicks(-1));
+        }
+        else
+        {
+            currentRange = new UtcRange(weekStartUtc, currentEndUtc);
+        }
+
+        var previousWeekStartLocal = weekStartLocal.AddDays(-7);
+        var previousWeekEndLocal = previousWeekStartLocal.AddDays(7).AddTicks(-1);
+        var previousWeekRange = new UtcRange(
+            LocalDateRangeStartToUtc(previousWeekStartLocal, timezoneOffsetMinutes),
+            LocalDateRangeEndToUtc(previousWeekEndLocal, timezoneOffsetMinutes));
+
+        UtcRange TrailingWeek(int offsetFromCurrentWeekStart)
+        {
+            var start = weekStartLocal.AddDays(-7 * offsetFromCurrentWeekStart);
+            var end = start.AddDays(7).AddTicks(-1);
+            return new UtcRange(
+                LocalDateRangeStartToUtc(start, timezoneOffsetMinutes),
+                LocalDateRangeEndToUtc(end, timezoneOffsetMinutes));
+        }
+
+        var trailing1 = TrailingWeek(1);
+        var trailing2 = TrailingWeek(2);
+        var trailing3 = TrailingWeek(3);
+
+        var currentWeekIsPartial = utcNow < weekEndUtc && utcNow >= weekStartUtc;
+
+        return new WeeklyRecapUtcContext(
+            localAnchorDate,
+            weekStartLocal,
+            weekEndLocal,
+            currentRange,
+            previousWeekRange,
+            trailing1,
+            trailing2,
+            trailing3,
+            currentWeekIsPartial);
+    }
+
+    private static DateTime LocalDateRangeStartToUtc(DateTime localDateMidnight, int? timezoneOffsetMinutes)
+    {
+        var d = localDateMidnight.Date;
+        return timezoneOffsetMinutes.HasValue
+            ? DateTime.SpecifyKind(d.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+            : DateTime.SpecifyKind(d, DateTimeKind.Utc);
+    }
+
+    private static DateTime LocalDateRangeEndToUtc(DateTime localEndInclusive, int? timezoneOffsetMinutes)
+    {
+        return timezoneOffsetMinutes.HasValue
+            ? DateTime.SpecifyKind(localEndInclusive.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
+            : DateTime.SpecifyKind(localEndInclusive, DateTimeKind.Utc);
+    }
+
+    private static async Task<BucketAggregates> GetBucketAggregatesAsync(
+        TempoDbContext db,
+        UtcRange range,
+        CancellationToken cancellationToken = default)
+    {
+        if (range.EndUtc < range.StartUtc)
+        {
+            return new BucketAggregates(0, 0, 0, 0, 0, null);
+        }
+
+        var baseQuery = db.Workouts.AsNoTracking()
+            .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc);
+
+        var runs = await baseQuery.CountAsync(cancellationToken);
+        var distanceM = await baseQuery.SumAsync(w => (double?)w.DistanceM, cancellationToken) ?? 0.0;
+        var durationS = await baseQuery.SumAsync(w => (long?)w.DurationS, cancellationToken) ?? 0L;
+        var elevationGainM = await baseQuery.SumAsync(w => (double?)(w.ElevGainM ?? 0.0), cancellationToken) ?? 0.0;
+        var relativeEffortSum = await baseQuery.SumAsync(w => (int?)w.RelativeEffort, cancellationToken) ?? 0;
+
+        var easyQuery = baseQuery.Where(w =>
+            w.RunType == EasyRunType &&
+            w.AvgHeartRateBpm != null &&
+            w.DurationS > 0);
+
+        var easyDur = await easyQuery.SumAsync(w => (long?)w.DurationS, cancellationToken) ?? 0L;
+        double? easyHrAvg = null;
+        if (easyDur > 0)
+        {
+            var weighted = await easyQuery.SumAsync(
+                w => (double)w.AvgHeartRateBpm!.Value * w.DurationS,
+                cancellationToken);
+            easyHrAvg = Math.Round(weighted / easyDur, 1, MidpointRounding.AwayFromZero);
+        }
+
+        return new BucketAggregates(runs, distanceM, durationS, elevationGainM, relativeEffortSum, easyHrAvg);
+    }
+
+    private static double AverageDouble(double a, double b, double c) => (a + b + c) / 3.0;
+
+    private static double? AverageNullableDouble(double? a, double? b, double? c)
+    {
+        var values = new List<double>(3);
+        if (a.HasValue) values.Add(a.Value);
+        if (b.HasValue) values.Add(b.Value);
+        if (c.HasValue) values.Add(c.Value);
+        if (values.Count == 0)
+        {
+            return null;
+        }
+
+        return Math.Round(values.Average(), 1, MidpointRounding.AwayFromZero);
+    }
+
+    private static object MetricInt(
+        int current,
+        int previous,
+        double trailingAvg,
+        int? deltaVsPrevious)
+    {
+        return new
+        {
+            current,
+            previous,
+            trailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
+            deltaVsPrevious
+        };
+    }
+
+    private static object MetricLong(
+        long current,
+        long previous,
+        double trailingAvg,
+        long? deltaVsPrevious)
+    {
+        return new
+        {
+            current,
+            previous,
+            trailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
+            deltaVsPrevious
+        };
+    }
+
+    private static object MetricDouble(
+        double current,
+        double previous,
+        double trailingAvg,
+        double? deltaVsPrevious)
+    {
+        return new
+        {
+            current,
+            previous,
+            trailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
+            deltaVsPrevious
+        };
+    }
+
+    private static object MetricNullableDouble(
+        double? current,
+        double? previous,
+        double? trailingAvg,
+        double? deltaVsPrevious)
+    {
+        return new
+        {
+            current,
+            previous,
+            trailingAvg = trailingAvg.HasValue
+                ? Math.Round(trailingAvg.Value, 1, MidpointRounding.AwayFromZero)
+                : (double?)null,
+            deltaVsPrevious = deltaVsPrevious.HasValue
+                ? Math.Round(deltaVsPrevious.Value, 1, MidpointRounding.AwayFromZero)
+                : (double?)null
+        };
+    }
+
     /// <summary>
     /// Calculate daily totals (in miles) from a list of workouts, grouped by day of week (Monday=0, Sunday=6).
     /// </summary>
@@ -239,6 +469,82 @@ public static class StatsEndpoints
             rangeMin = rangeMin,
             rangeMax = rangeMax,
             currentWeekTotal = currentWeekTotal
+        });
+    }
+
+    /// <summary>
+    /// Get weekly recap aggregates for dashboards and CLI integrations.
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="logger">Logger instance</param>
+    /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC), same as other stats endpoints.</param>
+    /// <param name="referenceDate">Optional local calendar date (yyyy-MM-dd) that selects which Monday–Sunday week is treated as &quot;current&quot;; defaults to today in the offset frame.</param>
+    /// <returns>Counts, distance, duration, elevation, relative effort, and easy-run HR with current (week-to-date), previous week, trailing 3-week average, and week-over-week deltas.</returns>
+    /// <remarks>
+    /// Week boundaries are Monday 00:00 through Sunday 23:59:59.999 in the local frame implied by <paramref name="timezoneOffsetMinutes"/>.
+    /// The current window is [weekStartUtc, min(UTC now, weekEndUtc)] so mid-week responses reflect week-to-date; the response field <c>currentWeekIsPartial</c> is true when UTC now falls inside the current week window.
+    /// Trailing averages use the three full calendar weeks immediately before the current week (offsets -1, -2, -3), matching <c>/stats/relative-effort</c>.
+    /// Elevation uses SUM(COALESCE(ElevGainM, 0)). Relative effort sums only non-null values. Easy-run HR uses RunType &quot;Easy Run&quot; with duration-weighted average HR; weeks with no qualifying runs return null for that metric.
+    /// Deleted workouts do not appear. Fixed-offset timezones do not model DST; clients should send the offset in effect for the user at request time.
+    /// </remarks>
+    private static async Task<IResult> GetWeeklyRecap(
+        TempoDbContext db,
+        ILogger<Program> logger,
+        [FromQuery] int? timezoneOffsetMinutes = null,
+        [FromQuery] string? referenceDate = null)
+    {
+        DateTime? referenceLocalDate = null;
+        if (!string.IsNullOrWhiteSpace(referenceDate))
+        {
+            if (!DateTime.TryParse(referenceDate, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
+            {
+                return Results.BadRequest(new { error = "Invalid referenceDate; use yyyy-MM-dd." });
+            }
+
+            referenceLocalDate = parsed.Date;
+        }
+
+        var utcNow = DateTime.UtcNow;
+        var ctx = BuildWeeklyRecapUtcContext(utcNow, timezoneOffsetMinutes, referenceLocalDate);
+
+        var current = await GetBucketAggregatesAsync(db, ctx.CurrentRange);
+        var previous = await GetBucketAggregatesAsync(db, ctx.PreviousWeekRange);
+        var t1 = await GetBucketAggregatesAsync(db, ctx.TrailingWeek1);
+        var t2 = await GetBucketAggregatesAsync(db, ctx.TrailingWeek2);
+        var t3 = await GetBucketAggregatesAsync(db, ctx.TrailingWeek3);
+
+        var trRuns = AverageDouble(t1.Runs, t2.Runs, t3.Runs);
+        var trDist = AverageDouble(t1.DistanceM, t2.DistanceM, t3.DistanceM);
+        var trDur = AverageDouble(t1.DurationS, t2.DurationS, t3.DurationS);
+        var trElev = AverageDouble(t1.ElevationGainM, t2.ElevationGainM, t3.ElevationGainM);
+        var trEffort = AverageDouble(t1.RelativeEffortSum, t2.RelativeEffortSum, t3.RelativeEffortSum);
+        var trEasyHr = AverageNullableDouble(t1.EasyRunAvgHeartRateBpm, t2.EasyRunAvgHeartRateBpm, t3.EasyRunAvgHeartRateBpm);
+
+        double? easyDelta = current.EasyRunAvgHeartRateBpm.HasValue && previous.EasyRunAvgHeartRateBpm.HasValue
+            ? current.EasyRunAvgHeartRateBpm.Value - previous.EasyRunAvgHeartRateBpm.Value
+            : null;
+
+        return Results.Ok(new
+        {
+            weekStart = ctx.WeekStartLocal.ToString("yyyy-MM-dd"),
+            weekEnd = ctx.WeekEndLocal.Date.ToString("yyyy-MM-dd"),
+            referenceDate = ctx.ReferenceLocalDate.ToString("yyyy-MM-dd"),
+            timezoneOffsetMinutes,
+            currentWeekIsPartial = ctx.CurrentWeekIsPartial,
+            generatedAtUtc = utcNow.ToString("O"),
+            metrics = new
+            {
+                runs = MetricInt(current.Runs, previous.Runs, trRuns, current.Runs - previous.Runs),
+                distanceM = MetricDouble(current.DistanceM, previous.DistanceM, trDist, current.DistanceM - previous.DistanceM),
+                durationS = MetricLong(current.DurationS, previous.DurationS, trDur, current.DurationS - previous.DurationS),
+                elevationGainM = MetricDouble(current.ElevationGainM, previous.ElevationGainM, trElev, current.ElevationGainM - previous.ElevationGainM),
+                relativeEffortSum = MetricInt(current.RelativeEffortSum, previous.RelativeEffortSum, trEffort, current.RelativeEffortSum - previous.RelativeEffortSum),
+                easyRunAvgHeartRateBpm = MetricNullableDouble(
+                    current.EasyRunAvgHeartRateBpm,
+                    previous.EasyRunAvgHeartRateBpm,
+                    trEasyHr,
+                    easyDelta)
+            }
         });
     }
 
@@ -692,6 +998,16 @@ public static class StatsEndpoints
             .Produces(200)
             .WithSummary("Get relative effort stats")
             .WithDescription("Returns cumulative relative effort for the current week and 3-week average range");
+
+        group.MapGet("/weekly-recap", GetWeeklyRecap)
+            .WithName("GetWeeklyRecap")
+            .Produces(200)
+            .Produces(400)
+            .WithSummary("Get weekly recap aggregates")
+            .WithDescription(
+                "Returns run count, distance, duration, elevation gain, relative effort sum, and easy-run average HR for the current (week-to-date) window, previous full week, and trailing 3-week averages, with week-over-week deltas. " +
+                "Optional referenceDate (yyyy-MM-dd) selects the calendar week in the timezoneOffsetMinutes frame. " +
+                "Easy runs are RunType \"Easy Run\" with duration-weighted average heart rate.");
 
         group.MapGet("/best-efforts", GetBestEfforts)
             .WithName("GetBestEfforts")
