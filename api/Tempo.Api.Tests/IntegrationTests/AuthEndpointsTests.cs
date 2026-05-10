@@ -463,6 +463,24 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
 
     #region GetCurrentUser Endpoint Tests
 
+    /// <summary>Theme C: cookie JWT path must still authenticate protected GETs after dual-scheme auth.</summary>
+    [Fact]
+    public async Task Login_SetsCookie_AndGetMeReturnsUser_ThemeCRegression()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = _factory.CreateClient();
+        await client.PostAsJsonAsync("/auth/register", new { username = "themeCUser", password = "Password123!" });
+        var loginResponse = await client.PostAsJsonAsync("/auth/login", new { username = "themeCUser", password = "Password123!" });
+        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var me = await client.GetAsync("/auth/me");
+
+        me.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await me.Content.ReadFromJsonAsync<CurrentUserResponse>();
+        body.Should().NotBeNull();
+        body!.Username.Should().Be("themeCUser");
+    }
+
     [Fact]
     public async Task GetCurrentUser_WhenAuthenticated_ReturnsUserInfo()
     {

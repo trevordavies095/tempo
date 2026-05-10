@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Tempo.Api.Authorization;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
@@ -169,7 +170,7 @@ public static class AuthEndpoints
     }
 
     /// <summary>
-    /// Get current user info from JWT token
+    /// Get current user info (JWT session or API key).
     /// </summary>
     private static async Task<IResult> GetCurrentUser(
         ClaimsPrincipal user,
@@ -234,6 +235,92 @@ public static class AuthEndpoints
         return Results.Ok(new { registrationAvailable = !userExists });
     }
 
+    private static Guid? GetUserIdFromClaims(ClaimsPrincipal user)
+    {
+        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            return null;
+        }
+
+        return userId;
+    }
+
+    private static async Task<IResult> CreateApiKey(
+        CreateApiKeyRequest? request,
+        ClaimsPrincipal user,
+        ApiKeyService apiKeyService,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetUserIdFromClaims(user);
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var label = request?.Label;
+        if (label != null && label.Length > 200)
+        {
+            return Results.BadRequest(new { error = "Label must be at most 200 characters" });
+        }
+
+        var (entity, plaintextKey) = await apiKeyService.CreateAsync(userId.Value, label, cancellationToken);
+
+        return TypedResults.Json(
+            new
+            {
+                id = entity.Id,
+                label = entity.Label,
+                key = plaintextKey,
+                keyPrefix = entity.KeyPrefix,
+                createdAt = entity.CreatedAt
+            },
+            statusCode: StatusCodes.Status201Created);
+    }
+
+    private static async Task<IResult> ListApiKeys(
+        ClaimsPrincipal user,
+        ApiKeyService apiKeyService,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetUserIdFromClaims(user);
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var keys = await apiKeyService.ListForUserAsync(userId.Value, cancellationToken);
+        return Results.Ok(keys.Select(k => new
+        {
+            id = k.Id,
+            label = k.Label,
+            keyPrefix = k.KeyPrefix,
+            createdAt = k.CreatedAt,
+            revokedAt = k.RevokedAt
+        }));
+    }
+
+    private static async Task<IResult> RevokeApiKey(
+        Guid id,
+        ClaimsPrincipal user,
+        ApiKeyService apiKeyService,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetUserIdFromClaims(user);
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var revoked = await apiKeyService.TryRevokeAsync(userId.Value, id, cancellationToken);
+        if (!revoked)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.NoContent();
+    }
+
     public static void MapAuthEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/auth")
@@ -259,7 +346,8 @@ public static class AuthEndpoints
             .Produces(200)
             .Produces(401)
             .WithSummary("Get current user")
-            .WithDescription("Returns information about the currently authenticated user.");
+            .WithDescription(
+                "Returns information about the currently authenticated user. Accepts JWT (cookie or Bearer) or API key (Bearer, prefix tmp_).");
 
         group.MapPost("/logout", Logout)
             .WithName("Logout")
@@ -272,6 +360,33 @@ public static class AuthEndpoints
             .Produces(200)
             .WithSummary("Check if registration is available")
             .WithDescription("Returns whether registration is available (true if no users exist).");
+
+        group.MapPost("/api-keys", CreateApiKey)
+            .WithName("CreateApiKey")
+            .RequireAuthorization(AuthorizationPolicyNames.JwtSessionOnly)
+            .Produces(StatusCodes.Status201Created)
+            .Produces(400)
+            .Produces(401)
+            .WithSummary("Create API key")
+            .WithDescription(
+                "Creates an API key for machine/CLI access. The full key is returned once; store it securely. Requires a browser JWT session (not an API key).");
+
+        group.MapGet("/api-keys", ListApiKeys)
+            .WithName("ListApiKeys")
+            .RequireAuthorization(AuthorizationPolicyNames.JwtSessionOnly)
+            .Produces(200)
+            .Produces(401)
+            .WithSummary("List API keys")
+            .WithDescription("Returns metadata for your API keys (never the secret value).");
+
+        group.MapDelete("/api-keys/{id:guid}", RevokeApiKey)
+            .WithName("RevokeApiKey")
+            .RequireAuthorization(AuthorizationPolicyNames.JwtSessionOnly)
+            .Produces(204)
+            .Produces(401)
+            .Produces(404)
+            .WithSummary("Revoke API key")
+            .WithDescription("Soft-revokes an API key so it no longer authenticates.");
     }
 
     /// <summary>
@@ -291,6 +406,11 @@ public static class AuthEndpoints
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public bool RememberMe { get; set; } = false;
+    }
+
+    public class CreateApiKeyRequest
+    {
+        public string? Label { get; set; }
     }
 }
 

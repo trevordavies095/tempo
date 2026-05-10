@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-05-09
+
+### Added
+- **API keys for automation and CLI**
+  - Issue, list, and revoke keys under `/auth/api-keys` (full JWT session required to manage keys; use `Authorization: Bearer tmp_…` for machine access elsewhere)
+  - API keys authenticate the same Bearer scheme as JWTs; management stays session-only via `JwtSessionOnly` policy
+- **Workout heart-rate time series**
+  - `GET /workouts/{id}/time-series` returns paginated heart-rate samples (`elapsedSeconds`, `heartRateBpm`) from stored time series
+- **Committed OpenAPI contract**
+  - Canonical HTTP contract at `docs/openapi.json`; CI verifies it stays in sync after API or Swagger changes (Swashbuckle CLI, `dotnet tool restore`)
+
+### Changed
+- **.NET 10**
+  - API targets .NET 10; Docker images use `mcr.microsoft.com/dotnet/sdk:10.0` and `aspnet:10.0`; CI uses the 10.0 SDK
+- **Documentation**
+  - README: regenerate OpenAPI, Development vs Testing note for `dotnet swagger tofile`, API key workflow for operators
+
+### Migration
+- **Database:** applies `AddApiKeysTable` — run migrations (or rely on automatic migration on startup) before using API keys.
+
 ## [2.3.2] - 2026-04-08
 
 ### Changed

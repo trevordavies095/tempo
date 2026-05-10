@@ -1,11 +1,17 @@
 using System.Data;
+using System.Security.Claims;
 using System.Text;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using System.IdentityModel.Tokens.Jwt;
+using Tempo.Api.Authentication;
+using Tempo.Api.Authorization;
 using Tempo.Api.Data;
 using Tempo.Api.Endpoints;
+using Tempo.Api.OpenApi;
 using Tempo.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,15 +27,7 @@ builder.Host.UseSerilog();
 
 // Add services
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
-{
-    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-    if (File.Exists(xmlPath))
-    {
-        options.IncludeXmlComments(xmlPath);
-    }
-});
+builder.Services.AddSwaggerGen(TempoOpenApi.ConfigureSwaggerGen);
 
 // Configure CORS
 var corsOrigins = builder.Configuration["CORS:AllowedOrigins"] ?? "http://localhost:3000";
@@ -64,8 +62,26 @@ var jwtAudience = builder.Configuration["JWT:Audience"] ?? "Tempo";
 
 builder.Services.AddAuthentication(options =>
 {
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultAuthenticateScheme = AuthenticationSchemes.TempoAuthentication;
+    options.DefaultChallengeScheme = AuthenticationSchemes.TempoAuthentication;
+})
+.AddPolicyScheme(AuthenticationSchemes.TempoAuthentication, "Tempo JWT or API key", options =>
+{
+    options.ForwardDefaultSelector = context =>
+    {
+        var auth = context.Request.Headers.Authorization.ToString();
+        if (!string.IsNullOrEmpty(auth) &&
+            auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            var token = auth["Bearer ".Length..].Trim();
+            if (token.StartsWith(ApiKeyService.KeyMaterialPrefix, StringComparison.Ordinal))
+            {
+                return AuthenticationSchemes.ApiKey;
+            }
+        }
+
+        return JwtBearerDefaults.AuthenticationScheme;
+    };
 })
 .AddJwtBearer(options =>
 {
@@ -80,18 +96,20 @@ builder.Services.AddAuthentication(options =>
         ValidateLifetime = true,
         ClockSkew = TimeSpan.FromMinutes(5)
     };
-    // Support token from cookie
-    options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
-    {
-        OnMessageReceived = context =>
-        {
-            context.Token = context.Request.Cookies["authToken"];
-            return Task.CompletedTask;
-        }
-    };
-});
+    options.Events = TempoJwtBearerEvents.Create();
+})
+.AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(AuthenticationSchemes.ApiKey, _ => { });
 
-builder.Services.AddAuthorization();
+// JwtSessionOnly: interactive JWT only. Theme C API-key principals must omit jti so these routes stay admin/session-only.
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AuthorizationPolicyNames.JwtSessionOnly, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(ClaimTypes.NameIdentifier);
+        policy.RequireClaim(JwtRegisteredClaimNames.Jti);
+    });
+});
 
 // Configure Entity Framework
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
@@ -131,6 +149,7 @@ builder.Services.AddScoped<BulkImportService>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();
+builder.Services.AddScoped<ApiKeyService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<ShoeMileageService>();
 builder.Services.AddScoped<ExportService>();
@@ -201,7 +220,9 @@ app.MapStatsEndpoints();
 app.MapVersionEndpoints();
 
 // Health check endpoint
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
+    .WithTags("Health")
+    .WithSummary("Health check");
 
 // Apply database migrations automatically on startup
 try
