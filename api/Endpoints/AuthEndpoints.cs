@@ -181,11 +181,6 @@ public static class AuthEndpoints
             return Results.BadRequest(new { error = newPasswordError });
         }
 
-        if (request.NewPassword == request.CurrentPassword)
-        {
-            return Results.BadRequest(new { error = "New password must be different from the current password" });
-        }
-
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId.Value);
         if (user == null)
         {
@@ -195,6 +190,11 @@ public static class AuthEndpoints
         if (!passwordService.VerifyPassword(request.CurrentPassword, user.PasswordHash))
         {
             return Results.BadRequest(new { error = "Current password is incorrect" });
+        }
+
+        if (request.NewPassword == request.CurrentPassword)
+        {
+            return Results.BadRequest(new { error = "New password must be different from the current password" });
         }
 
         user.PasswordHash = passwordService.HashPassword(request.NewPassword);

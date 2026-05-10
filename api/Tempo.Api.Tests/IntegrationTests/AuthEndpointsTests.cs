@@ -672,6 +672,24 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ChangePassword_WrongCurrentPassword_EqualToNewPassword_ReturnsIncorrectCurrentPasswordNotMustDiffer()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "u1", TestPasswords.Default);
+        var wrongGuessSameAsNew = TestPasswords.Alternate;
+        var response = await client.PostAsJsonAsync("/auth/change-password", new
+        {
+            currentPassword = wrongGuessSameAsNew,
+            newPassword = wrongGuessSameAsNew
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var err = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        err.Should().NotBeNull();
+        err!.Error.Should().Contain("Current password");
+        err.Error.Should().NotContain("different");
+    }
+
+    [Fact]
     public async Task ChangePassword_WithWeakNewPassword_ReturnsBadRequest()
     {
         await EnsureCleanDatabaseAsync();
@@ -698,6 +716,9 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
             newPassword = TestPasswords.Default
         });
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var err = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        err.Should().NotBeNull();
+        err!.Error.Should().Contain("different");
     }
 
     [Fact]
