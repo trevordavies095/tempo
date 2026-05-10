@@ -344,6 +344,154 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         return workouts;
     }
 
+    /// <summary>
+    /// Seeds deterministic workouts for /stats/weekly-recap using a pinned reference week in the past (UTC local).
+    /// referenceDate 2020-06-10 -> current week 2020-06-08 .. 2020-06-14; previous week 2020-06-01 .. 2020-06-07.
+    /// </summary>
+    private async Task SeedWeeklyRecapFixtureAsync(TempoDbContext db)
+    {
+        var w1 = await TestDataSeeder.SeedWorkoutAsync(
+            db,
+            startedAt: new DateTime(2020, 6, 8, 12, 0, 0, DateTimeKind.Utc),
+            distanceM: 1000,
+            durationS: 600,
+            name: "Recap current Mon");
+        w1.ElevGainM = 10;
+        w1.RelativeEffort = 20;
+        w1.RunType = "Easy Run";
+        w1.AvgHeartRateBpm = 140;
+
+        var w2 = await TestDataSeeder.SeedWorkoutAsync(
+            db,
+            startedAt: new DateTime(2020, 6, 9, 12, 0, 0, DateTimeKind.Utc),
+            distanceM: 2000,
+            durationS: 900,
+            name: "Recap current Tue");
+        w2.ElevGainM = null;
+        w2.RelativeEffort = null;
+        w2.RunType = "Race";
+        w2.AvgHeartRateBpm = 180;
+
+        var wPrev = await TestDataSeeder.SeedWorkoutAsync(
+            db,
+            startedAt: new DateTime(2020, 6, 5, 12, 0, 0, DateTimeKind.Utc),
+            distanceM: 5000,
+            durationS: 1800,
+            name: "Recap previous Fri");
+        wPrev.ElevGainM = 50;
+        wPrev.RelativeEffort = 30;
+        wPrev.RunType = "Easy Run";
+        wPrev.AvgHeartRateBpm = 130;
+
+        await db.SaveChangesAsync();
+    }
+
+    #endregion
+
+    #region Weekly Recap Tests
+
+    [Fact]
+    public async Task GetWeeklyRecap_ReturnsZeros_WhenNoWorkouts()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var response = await client.GetAsync("/stats/weekly-recap?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
+        result.Should().NotBeNull();
+        result!.Metrics.Runs.Current.Should().Be(0);
+        result.Metrics.Runs.Previous.Should().Be(0);
+        result.Metrics.Runs.TrailingAvg.Should().Be(0);
+        result.Metrics.Runs.DeltaVsPrevious.Should().Be(0);
+        result.Metrics.RelativeEffortSum.Current.Should().Be(0);
+        result.Metrics.EasyRunAvgHeartRateBpm.Current.Should().BeNull();
+        result.ReferenceDate.Should().Be("2020-06-10");
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_Returns400_WhenReferenceDateInvalid()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var response = await client.GetAsync("/stats/weekly-recap?referenceDate=not-a-date");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_AggregatesPinnedWeek_WithElevationCoalesceAndEffortNulls()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await SeedWeeklyRecapFixtureAsync(db);
+        }
+
+        var response = await client.GetAsync("/stats/weekly-recap?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
+        result.Should().NotBeNull();
+
+        result!.WeekStart.Should().Be("2020-06-08");
+        result.WeekEnd.Should().Be("2020-06-14");
+        result.CurrentWeekIsPartial.Should().BeFalse();
+
+        result.Metrics.Runs.Current.Should().Be(2);
+        result.Metrics.Runs.Previous.Should().Be(1);
+        result.Metrics.Runs.TrailingAvg.Should().BeApproximately(0.33, 0.01);
+        result.Metrics.Runs.DeltaVsPrevious.Should().Be(1);
+
+        result.Metrics.DistanceM.Current.Should().Be(3000);
+        result.Metrics.DistanceM.Previous.Should().Be(5000);
+
+        result.Metrics.DurationS.Current.Should().Be(1500);
+        result.Metrics.DurationS.Previous.Should().Be(1800);
+
+        result.Metrics.ElevationGainM.Current.Should().Be(10);
+        result.Metrics.ElevationGainM.Previous.Should().Be(50);
+
+        result.Metrics.RelativeEffortSum.Current.Should().Be(20);
+        result.Metrics.RelativeEffortSum.Previous.Should().Be(30);
+
+        result.Metrics.EasyRunAvgHeartRateBpm.Current.Should().Be(140);
+        result.Metrics.EasyRunAvgHeartRateBpm.Previous.Should().Be(130);
+        result.Metrics.EasyRunAvgHeartRateBpm.DeltaVsPrevious.Should().Be(10);
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_IgnoresNonEasyRunsForHeartRateAverage()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var w = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 8000,
+                durationS: 2400,
+                name: "Hard only");
+            w.RunType = "Workout";
+            w.AvgHeartRateBpm = 175;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync("/stats/weekly-recap?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
+        result!.Metrics.EasyRunAvgHeartRateBpm.Current.Should().BeNull();
+    }
+
     #endregion
 
     #region Weekly Stats Tests
@@ -1667,6 +1815,13 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         effortResult!.CurrentWeek.Should().AllBeEquivalentTo(0);
         effortResult.CurrentWeekTotal.Should().Be(0);
 
+        // Act & Assert - Weekly Recap
+        var recapResponse = await client.GetAsync("/stats/weekly-recap");
+        recapResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var recapResult = await recapResponse.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
+        recapResult!.Metrics.Runs.Current.Should().Be(0);
+        recapResult.Metrics.Runs.Previous.Should().Be(0);
+
         // Act & Assert - Yearly Stats
         var yearlyResponse = await client.GetAsync("/stats/yearly");
         yearlyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1748,6 +1903,9 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         effortResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var effortResult = await effortResponse.Content.ReadFromJsonAsync<RelativeEffortStatsResponse>();
         effortResult!.CurrentWeekTotal.Should().Be(0); // No relative effort
+
+        var recapResponse = await client.GetAsync("/stats/weekly-recap");
+        recapResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -1773,11 +1931,69 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         weeklyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var weeklyResult = await weeklyResponse.Content.ReadFromJsonAsync<WeeklyStatsResponse>();
         weeklyResult!.DailyMiles.Sum().Should().BeGreaterThan(0);
+
+        var recapResponse = await client.GetAsync("/stats/weekly-recap");
+        recapResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var recapResult = await recapResponse.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
+        recapResult!.Metrics.Runs.Current.Should().BeGreaterThan(0);
     }
 
     #endregion
 
     #region Response Models
+
+    private class WeeklyRecapResponse
+    {
+        public string WeekStart { get; set; } = string.Empty;
+        public string WeekEnd { get; set; } = string.Empty;
+        public string ReferenceDate { get; set; } = string.Empty;
+        public int? TimezoneOffsetMinutes { get; set; }
+        public bool CurrentWeekIsPartial { get; set; }
+        public string GeneratedAtUtc { get; set; } = string.Empty;
+        public WeeklyRecapMetricsBlock Metrics { get; set; } = null!;
+    }
+
+    private class WeeklyRecapMetricsBlock
+    {
+        public WeeklyRecapMetricInt Runs { get; set; } = null!;
+        public WeeklyRecapMetricDouble DistanceM { get; set; } = null!;
+        public WeeklyRecapMetricLong DurationS { get; set; } = null!;
+        public WeeklyRecapMetricDouble ElevationGainM { get; set; } = null!;
+        public WeeklyRecapMetricInt RelativeEffortSum { get; set; } = null!;
+        public WeeklyRecapMetricNullableDouble EasyRunAvgHeartRateBpm { get; set; } = null!;
+    }
+
+    private class WeeklyRecapMetricInt
+    {
+        public int Current { get; set; }
+        public int Previous { get; set; }
+        public double TrailingAvg { get; set; }
+        public int DeltaVsPrevious { get; set; }
+    }
+
+    private class WeeklyRecapMetricLong
+    {
+        public long Current { get; set; }
+        public long Previous { get; set; }
+        public double TrailingAvg { get; set; }
+        public long DeltaVsPrevious { get; set; }
+    }
+
+    private class WeeklyRecapMetricDouble
+    {
+        public double Current { get; set; }
+        public double Previous { get; set; }
+        public double TrailingAvg { get; set; }
+        public double DeltaVsPrevious { get; set; }
+    }
+
+    private class WeeklyRecapMetricNullableDouble
+    {
+        public double? Current { get; set; }
+        public double? Previous { get; set; }
+        public double? TrailingAvg { get; set; }
+        public double? DeltaVsPrevious { get; set; }
+    }
 
     private class WeeklyStatsResponse
     {
