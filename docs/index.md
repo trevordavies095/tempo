@@ -4,7 +4,7 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-2.0.0-green.svg)
-![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
+![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
 
@@ -70,7 +70,7 @@ Common issues, solutions, and frequently asked questions to help you resolve pro
 ## Tech Stack
 
 - **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS
-- **Backend**: ASP.NET Core (.NET 9) Minimal APIs
+- **Backend**: ASP.NET Core (.NET 10) Minimal APIs
 - **Database**: PostgreSQL 16
 - **State Management**: TanStack Query
 

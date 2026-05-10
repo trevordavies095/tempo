@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Tempo.Api.OpenApi;
@@ -31,14 +31,7 @@ public sealed class BearerAuthOperationFilter : IOperationFilter
         [
             new OpenApiSecurityRequirement
             {
-                [new OpenApiSecurityScheme
-                {
-                    Reference = new OpenApiReference
-                    {
-                        Type = ReferenceType.SecurityScheme,
-                        Id = TempoOpenApi.BearerSecuritySchemeId
-                    }
-                }] = Array.Empty<string>()
+                [new OpenApiSecuritySchemeReference(TempoOpenApi.BearerSecuritySchemeId)] = []
             }
         ];
     }

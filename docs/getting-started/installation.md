@@ -14,7 +14,7 @@ For development or if you prefer to run services individually:
 
 #### Prerequisites
 
-- .NET 9 SDK
+- .NET 10 SDK
 - Node.js 18+ and npm
 - PostgreSQL 16 (or use Docker Compose for database only)
 
