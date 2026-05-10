@@ -27,11 +27,17 @@ public sealed class BearerAuthOperationFilter : IOperationFilter
             return;
         }
 
+        // OpenAPI.NET 2.x: `OpenApiSecuritySchemeReference` must be tied to the host document or
+        // `Target` stays null and serialization emits `{ }` for each requirement (issue #2801).
+        // Swashbuckle exposes the in-flight document on the operation filter context.
         operation.Security =
         [
             new OpenApiSecurityRequirement
             {
-                [new OpenApiSecuritySchemeReference(TempoOpenApi.BearerSecuritySchemeId)] = []
+                [new OpenApiSecuritySchemeReference(
+                    TempoOpenApi.BearerSecuritySchemeId,
+                    context.Document,
+                    externalResource: null)] = []
             }
         ];
     }
