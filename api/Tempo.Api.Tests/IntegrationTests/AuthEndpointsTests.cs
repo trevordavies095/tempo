@@ -565,6 +565,100 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
 
     #endregion
 
+    #region Change password
+
+    [Fact]
+    public async Task ChangePassword_WhenUnauthenticated_ReturnsUnauthorized()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = _factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/auth/change-password", new
+        {
+            currentPassword = "a",
+            newPassword = "bbbbbb"
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ChangePassword_WithWrongCurrentPassword_ReturnsBadRequest()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "u1", "Password123!");
+        var response = await client.PostAsJsonAsync("/auth/change-password", new
+        {
+            currentPassword = "wrong",
+            newPassword = "NewPassword123!"
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var err = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        err.Should().NotBeNull();
+        err!.Error.Should().Contain("Current password");
+    }
+
+    [Fact]
+    public async Task ChangePassword_WithWeakNewPassword_ReturnsBadRequest()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "u1", "Password123!");
+        var response = await client.PostAsJsonAsync("/auth/change-password", new
+        {
+            currentPassword = "Password123!",
+            newPassword = "12345"
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task ChangePassword_SameAsCurrent_ReturnsBadRequest()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "u1", "Password123!");
+        var response = await client.PostAsJsonAsync("/auth/change-password", new
+        {
+            currentPassword = "Password123!",
+            newPassword = "Password123!"
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task ChangePassword_WithValidCredentials_RevokesOtherJwtSessions_AndClientAKeepsSession()
+    {
+        await EnsureCleanDatabaseAsync();
+        var registerClient = _factory.CreateClient();
+        await registerClient.PostAsJsonAsync("/auth/register", new { username = "soleuser", password = "Password123!" });
+
+        var clientA = _factory.CreateClient();
+        var loginA = await clientA.PostAsJsonAsync("/auth/login", new { username = "soleuser", password = "Password123!" });
+        loginA.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var clientB = _factory.CreateClient();
+        var loginB = await clientB.PostAsJsonAsync("/auth/login", new { username = "soleuser", password = "Password123!" });
+        loginB.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var changeResponse = await clientA.PostAsJsonAsync("/auth/change-password", new
+        {
+            currentPassword = "Password123!",
+            newPassword = "NewPassword456!"
+        });
+        changeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var meB = await clientB.GetAsync("/auth/me");
+        meB.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var meA = await clientA.GetAsync("/auth/me");
+        meA.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var oldLogin = await _factory.CreateClient().PostAsJsonAsync("/auth/login", new { username = "soleuser", password = "Password123!" });
+        oldLogin.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var newLogin = await _factory.CreateClient().PostAsJsonAsync("/auth/login", new { username = "soleuser", password = "NewPassword456!" });
+        newLogin.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    #endregion
+
     #region Logout Endpoint Tests
 
     [Fact]

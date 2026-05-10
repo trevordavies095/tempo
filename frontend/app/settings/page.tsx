@@ -8,6 +8,8 @@ import {
   getQualifyingWorkoutCount,
   getQualifyingWorkoutCountForSplits,
   recalculateAllSplits,
+  getVersion,
+  changePassword,
   type HeartRateZoneSettings,
   type HeartRateCalculationMethod,
   type UpdateHeartRateZoneSettingsRequest
@@ -18,9 +20,8 @@ import { RecalculateSplitsDialog } from '@/components/RecalculateSplitsDialog';
 import UnitPreferenceSection from '@/components/UnitPreferenceSection';
 import { ShoeManagementSection } from '@/components/ShoeManagementSection';
 import { ExportImportSection } from '@/components/ExportImportSection';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getVersion } from '@/lib/api';
 import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { AuthGuard } from '@/components/AuthGuard';
@@ -51,6 +52,13 @@ function SettingsPageContent() {
   const [isRecalculatingSplits, setIsRecalculatingSplits] = useState(false);
   const [recalcSplitsError, setRecalcSplitsError] = useState<string | null>(null);
   const [recalcSplitsSuccess, setRecalcSplitsSuccess] = useState(false);
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordChangeSaving, setPasswordChangeSaving] = useState(false);
+  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState(false);
 
   // Fetch version information
   const { data: versionInfo } = useQuery({
@@ -248,6 +256,28 @@ function SettingsPageContent() {
     }
   };
 
+  const handleChangePassword = async (e: FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeError(null);
+    setPasswordChangeSuccess(false);
+    if (newPassword !== confirmPassword) {
+      setPasswordChangeError('New passwords do not match');
+      return;
+    }
+    setPasswordChangeSaving(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setPasswordChangeSuccess(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setPasswordChangeError(err instanceof Error ? err.message : 'Failed to change password');
+    } finally {
+      setPasswordChangeSaving(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
       <main className="flex min-h-screen w-full max-w-4xl flex-col items-start py-16 px-8">
@@ -261,6 +291,87 @@ function SettingsPageContent() {
         </div>
 
         <div className="w-full space-y-12">
+          {/* Account */}
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
+              Account
+            </h2>
+            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                Change password
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Updates your password and signs out other browser sessions. This session stays signed in.
+              </p>
+              <form onSubmit={handleChangePassword} className="flex flex-col gap-4 max-w-md">
+                <div>
+                  <label htmlFor="settings-current-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Current password
+                  </label>
+                  <input
+                    id="settings-current-password"
+                    name="currentPassword"
+                    type="password"
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="settings-new-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    New password
+                  </label>
+                  <input
+                    id="settings-new-password"
+                    name="newPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                    required
+                    minLength={6}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="settings-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Confirm new password
+                  </label>
+                  <input
+                    id="settings-confirm-password"
+                    name="confirmPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                    required
+                    minLength={6}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={passwordChangeSaving}
+                  className={`w-fit px-6 py-2 rounded-lg font-medium transition-colors ${
+                    passwordChangeSaving
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white'
+                  }`}
+                >
+                  {passwordChangeSaving ? 'Updating…' : 'Update password'}
+                </button>
+                {passwordChangeSuccess && (
+                  <p className="text-sm text-green-600 dark:text-green-400">Password updated successfully.</p>
+                )}
+                {passwordChangeError && (
+                  <p className="text-sm text-red-600 dark:text-red-400">{passwordChangeError}</p>
+                )}
+              </form>
+            </div>
+          </div>
+
           {/* Display Preferences */}
           <div className="space-y-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">

@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
+using Tempo.Api.Authentication;
 using Tempo.Api.Models;
 
 namespace Tempo.Api.Services;
@@ -43,27 +44,29 @@ public class JwtService
     /// Generates a JWT token for a user
     /// </summary>
     /// <param name="user">User entity</param>
-    /// <param name="expirationDays">Optional expiration in days. If not provided, uses default expiration.</param>
+    /// <param name="expirationDays">Optional expiration in days. If not provided, uses default or remember-me based on <paramref name="rememberMe"/>.</param>
+    /// <param name="rememberMe">Stored in the token so session length is preserved after password change.</param>
     /// <returns>JWT token string</returns>
-    public string GenerateToken(User user, int? expirationDays = null)
+    public string GenerateToken(User user, int? expirationDays = null, bool rememberMe = false)
     {
-        var claims = new[]
+        var days = expirationDays ?? (rememberMe ? _rememberMeExpirationDays : _expirationDays);
+        var claims = new Claim[]
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Name, user.Username),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(TempoJwtClaimTypes.SessionVersion, user.SessionVersion.ToString()),
+            new Claim(TempoJwtClaimTypes.RememberMe, rememberMe ? "true" : "false")
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var expiration = expirationDays ?? _expirationDays;
-
         var token = new JwtSecurityToken(
             issuer: _issuer,
             audience: _audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddDays(expiration),
+            expires: DateTime.UtcNow.AddDays(days),
             signingCredentials: credentials
         );
 
