@@ -470,6 +470,10 @@ public static class AuthEndpoints
     public class RegisterRequest
     {
         public string Username { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 16-64 characters; UTF-8 encoding must not exceed 72 bytes. Common passwords, username substring (when username length is at least 3), and 5+ repeated characters in a row are rejected.
+        /// </summary>
         public string Password { get; set; } = string.Empty;
     }
 
@@ -486,6 +490,10 @@ public static class AuthEndpoints
     public class ChangePasswordRequest
     {
         public string CurrentPassword { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 16-64 characters; UTF-8 encoding must not exceed 72 bytes. Same rejection rules as registration (common passwords, username substring when username length is at least 3, 5+ repeated characters in a row).
+        /// </summary>
         public string NewPassword { get; set; } = string.Empty;
     }
 
