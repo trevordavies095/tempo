@@ -1338,6 +1338,58 @@
         ]
       }
     },
+    "/workouts/{id}/time-series": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Paginated heart-rate samples for a workout (from stored time series).",
+        "description": "Returns paginated heart-rate samples from stored workout time series. Each item has elapsedSeconds (integer seconds from workout start) and heartRateBpm (integer). Samples are sparse: only timestamps where heart rate was recorded are included (not a dense sample for every second). GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. The server does not interpolate missing seconds; clients may interpolate if needed. Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. Default pageSize is 1000 with a maximum of 5000; use multiple requests for long activities.",
+        "operationId": "GetWorkoutTimeSeries",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/workouts/{id}": {
       "get": {
         "tags": [
