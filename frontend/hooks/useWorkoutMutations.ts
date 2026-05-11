@@ -8,8 +8,13 @@ export function useWorkoutMutations(workoutId: string) {
   const queryClient = useQueryClient();
 
   const updateWorkoutMutation = useMutation({
-    mutationFn: (updates: { runType?: string | null; notes?: string | null; name?: string | null; shoeId?: string | null }) =>
-      updateWorkout(workoutId, updates),
+    mutationFn: (updates: {
+      runType?: string | null;
+      notes?: string | null;
+      name?: string | null;
+      shoeId?: string | null;
+      rpe?: number | null;
+    }) => updateWorkout(workoutId, updates),
     onSuccess: () => {
       invalidateWorkoutQueries(queryClient, workoutId);
     },

@@ -126,6 +126,7 @@ export interface WorkoutListItem {
   avgPowerWatts: number | null;
   calories: number | null;
   relativeEffort: number | null;
+  rpe: number | null;
   runType: string | null;
   source: string | null;
   device: string | null;
@@ -181,6 +182,7 @@ export interface WorkoutDetail {
   avgPowerWatts: number | null;
   calories: number | null;
   relativeEffort: number | null;
+  rpe: number | null;
   runType: string | null;
   notes: string | null;
   source: string | null;
@@ -801,6 +803,7 @@ export interface UpdateWorkoutRequest {
   notes?: string | null;
   name?: string | null;
   shoeId?: string | null;
+  rpe?: number | null;
 }
 
 export interface UpdateWorkoutResponse {
@@ -809,6 +812,7 @@ export interface UpdateWorkoutResponse {
   notes: string | null;
   name: string | null;
   shoeId: string | null;
+  rpe: number | null;
 }
 
 export async function updateWorkout(
