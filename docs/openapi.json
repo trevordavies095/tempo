@@ -1508,7 +1508,7 @@
           "Workouts"
         ],
         "summary": "Update workout",
-        "description": "Updates workout RunType, Notes, and/or Name. All fields are optional - only provided fields are updated.\nRunType must be one of: \"Race\", \"Workout\", \"Long Run\", \"Easy Run\", or null.\nName must be 200 characters or less.",
+        "description": "Updates workout RunType, Notes, Name, ShoeId, and/or Rpe. All fields are optional - only provided fields are updated.\nRunType must be one of: \"Race\", \"Workout\", \"Long Run\", \"Easy Run\", or null.\nName must be 200 characters or less.\nRpe must be a whole number from 1 to 10, or null to clear.",
         "operationId": "UpdateWorkout",
         "parameters": [
           {

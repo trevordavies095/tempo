@@ -45,7 +45,9 @@ public static class DatabaseMigrationHelper
         // AddShoeTracking migration
         { ("Workouts", "ShoeId"), "20251201120000_AddShoeTracking" },
         { ("UserSettings", "DefaultShoeId"), "20251201120000_AddShoeTracking" },
-        { ("Users", "SessionVersion"), "20260510120000_AddUserSessionVersion" }
+        { ("Users", "SessionVersion"), "20260510120000_AddUserSessionVersion" },
+        // AddRpeToWorkout migration
+        { ("Workouts", "Rpe"), "20260511200212_AddRpeToWorkout" }
     };
 
     private const string ProductVersion = "9.0.10";
