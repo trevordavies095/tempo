@@ -50,7 +50,7 @@ public static class DatabaseMigrationHelper
         { ("Workouts", "Rpe"), "20260511200212_AddRpeToWorkout" }
     };
 
-    private const string ProductVersion = "9.0.10";
+    private const string ProductVersion = "10.0.0";
 
     /// <summary>
     /// Applies database migrations, handling edge cases where the database was created with EnsureCreated()
