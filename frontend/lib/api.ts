@@ -126,6 +126,7 @@ export interface WorkoutListItem {
   avgPowerWatts: number | null;
   calories: number | null;
   relativeEffort: number | null;
+  rpe: number | null;
   runType: string | null;
   source: string | null;
   device: string | null;
@@ -181,6 +182,7 @@ export interface WorkoutDetail {
   avgPowerWatts: number | null;
   calories: number | null;
   relativeEffort: number | null;
+  rpe: number | null;
   runType: string | null;
   notes: string | null;
   source: string | null;
@@ -525,6 +527,38 @@ export interface RelativeEffortStatsResponse {
   currentWeekTotal: number;
 }
 
+/** Non-nullable week-over-week metric block (API uses int/long/double; JSON/TS are all number). */
+export interface WeeklyRecapNumericMetric {
+  current: number;
+  previous: number;
+  trailingAvg: number;
+  deltaVsPrevious: number;
+}
+
+export interface WeeklyRecapMetricNullableDouble {
+  current: number | null;
+  previous: number | null;
+  trailingAvg: number | null;
+  deltaVsPrevious: number | null;
+}
+
+export interface WeeklyRecapResponse {
+  weekStart: string;
+  weekEnd: string;
+  referenceDate: string;
+  timezoneOffsetMinutes: number | null;
+  currentWeekIsPartial: boolean;
+  generatedAtUtc: string;
+  metrics: {
+    runs: WeeklyRecapNumericMetric;
+    distanceM: WeeklyRecapNumericMetric;
+    durationS: WeeklyRecapNumericMetric;
+    elevationGainM: WeeklyRecapNumericMetric;
+    relativeEffortSum: WeeklyRecapNumericMetric;
+    easyRunAvgHeartRateBpm: WeeklyRecapMetricNullableDouble;
+  };
+}
+
 export interface YearlyStatsResponse {
   currentYear: number;
   previousYear: number;
@@ -571,6 +605,34 @@ export async function getRelativeEffortStats(timezoneOffsetMinutes?: number): Pr
 
   if (!response.ok) {
     throw new Error(`Failed to fetch relative effort stats: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getWeeklyRecap(
+  timezoneOffsetMinutes?: number,
+  referenceDate?: string
+): Promise<WeeklyRecapResponse> {
+  const searchParams = new URLSearchParams();
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+  if (referenceDate) {
+    searchParams.set('referenceDate', referenceDate);
+  }
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/stats/weekly-recap${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetchWithAuth(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch weekly recap: ${response.status}`);
   }
 
   return response.json();
@@ -741,6 +803,7 @@ export interface UpdateWorkoutRequest {
   notes?: string | null;
   name?: string | null;
   shoeId?: string | null;
+  rpe?: number | null;
 }
 
 export interface UpdateWorkoutResponse {
@@ -749,6 +812,7 @@ export interface UpdateWorkoutResponse {
   notes: string | null;
   name: string | null;
   shoeId: string | null;
+  rpe: number | null;
 }
 
 export async function updateWorkout(

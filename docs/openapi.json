@@ -3,7 +3,7 @@
   "info": {
     "title": "Tempo API",
     "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
-    "version": "2.5.0"
+    "version": "2.6.0"
   },
   "paths": {
     "/auth/register": {
@@ -682,6 +682,48 @@
         "responses": {
           "200": {
             "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/stats/weekly-recap": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get weekly recap aggregates for dashboards and CLI integrations.",
+        "description": "Week boundaries are Monday 00:00 through Sunday 23:59:59.999 in the local frame implied by timezoneOffsetMinutes.\nThe current window is [weekStartUtc, min(UTC now, weekEndUtc)] so mid-week responses reflect week-to-date; the response field `currentWeekIsPartial` is true when UTC now falls inside the current week window.\nTrailing averages use the three full calendar weeks immediately before the current week (offsets -1, -2, -3), matching `/stats/relative-effort`.\nElevation uses SUM(COALESCE(ElevGainM, 0)). Relative effort sums only non-null values. Easy-run HR uses RunType \"Easy Run\" with duration-weighted average HR; weeks with no qualifying runs return null for that metric.\nDeleted workouts do not appear. Fixed-offset timezones do not model DST; clients should send the offset in effect for the user at request time.",
+        "operationId": "GetWeeklyRecap",
+        "parameters": [
+          {
+            "name": "timezoneOffsetMinutes",
+            "in": "query",
+            "description": "Timezone offset in minutes (negative for timezones behind UTC), same as other stats endpoints.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "referenceDate",
+            "in": "query",
+            "description": "Optional local calendar date (yyyy-MM-dd) that selects which Monday–Sunday week is treated as \"current\"; defaults to today in the offset frame.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
           }
         },
         "security": [
@@ -1466,7 +1508,7 @@
           "Workouts"
         ],
         "summary": "Update workout",
-        "description": "Updates workout RunType, Notes, and/or Name. All fields are optional - only provided fields are updated.\nRunType must be one of: \"Race\", \"Workout\", \"Long Run\", \"Easy Run\", or null.\nName must be 200 characters or less.",
+        "description": "Updates workout RunType, Notes, Name, ShoeId, and/or Rpe. All fields are optional - only provided fields are updated.\nRunType must be one of: \"Race\", \"Workout\", \"Long Run\", \"Easy Run\", or null.\nName must be 200 characters or less.\nRpe must be a whole number from 1 to 10, or null to clear.",
         "operationId": "UpdateWorkout",
         "parameters": [
           {

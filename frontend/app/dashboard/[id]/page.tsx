@@ -46,6 +46,7 @@ function WorkoutDetailPageContent() {
   const [selectedMediaIndex, setSelectedMediaIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditingRunType, setIsEditingRunType] = useState(false);
+  const [isEditingRpe, setIsEditingRpe] = useState(false);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [isEditingShoe, setIsEditingShoe] = useState(false);
   const [notesValue, setNotesValue] = useState<string>('');
@@ -337,6 +338,83 @@ function WorkoutDetailPageContent() {
                     <span className="ml-2 text-xs text-red-600 dark:text-red-400">
                       Error: {updateWorkoutMutation.error instanceof Error ? updateWorkoutMutation.error.message : 'Failed to update'}
                     </span>
+                  )}
+                </dd>
+                  </div>
+
+                  {/* RPE (1–10) */}
+                  <div>
+                <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">RPE (1–10)</dt>
+                <dd className="text-sm text-gray-900 dark:text-gray-100">
+                  {isEditingRpe ? (
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={data.rpe != null ? String(data.rpe) : ''}
+                        onChange={(e) => {
+                          const newValue = e.target.value === '' ? null : Number(e.target.value);
+                          updateWorkoutMutation.mutate(
+                            { rpe: newValue },
+                            {
+                              onSuccess: () => {
+                                setIsEditingRpe(false);
+                              },
+                            }
+                          );
+                        }}
+                        disabled={updateWorkoutMutation.isPending}
+                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        autoFocus
+                      >
+                        <option value="">None</option>
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                          <option key={n} value={n}>
+                            {n}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => setIsEditingRpe(false)}
+                        className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        type="button"
+                        disabled={updateWorkoutMutation.isPending}
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditingRpe(true)}
+                      className="flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                      type="button"
+                    >
+                      <span>{data.rpe != null ? String(data.rpe) : 'None'}</span>
+                      <svg
+                        className="w-4 h-4 opacity-50"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
+                    </button>
                   )}
                 </dd>
                   </div>

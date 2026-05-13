@@ -66,6 +66,11 @@ public class Workout
     // Relative Effort (calculated from heart rate zones)
     public int? RelativeEffort { get; set; }
 
+    /// <summary>
+    /// Rate of Perceived Exertion (user-set, 1–10 scale). Not populated from import files.
+    /// </summary>
+    public byte? Rpe { get; set; }
+
     // ============================================
     // METADATA
     // ============================================
