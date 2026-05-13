@@ -3,7 +3,7 @@
   "info": {
     "title": "Tempo API",
     "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
-    "version": "2.5.0"
+    "version": "2.6.0"
   },
   "paths": {
     "/auth/register": {
