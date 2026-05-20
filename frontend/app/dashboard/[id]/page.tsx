@@ -427,6 +427,7 @@ function WorkoutDetailPageContent() {
                     <div className="flex items-center gap-2">
                       <ShoeSelector
                         value={data.shoeId}
+                        assignedShoe={data.shoe}
                         onChange={(shoeId) => {
                           updateWorkoutMutation.mutate(
                             { shoeId },

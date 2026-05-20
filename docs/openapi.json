@@ -461,12 +461,25 @@
         "tags": [
           "Shoes"
         ],
-        "summary": "List all shoes with calculated mileage",
-        "description": "Returns all shoes with calculated total mileage based on assigned workouts",
+        "summary": "List shoes with calculated mileage (active by default).",
+        "description": "Returns shoes with calculated total mileage. Query status=active (default), retired, or all.",
         "operationId": "GetShoes",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter: active (default), retired, or all",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
           },
           "500": {
             "description": "Internal Server Error"
@@ -483,7 +496,7 @@
           "Shoes"
         ],
         "summary": "Create a new shoe",
-        "description": "Creates a new shoe with brand, model, and optional initial mileage",
+        "description": "Creates a new shoe with brand, model, optional initial mileage, and optional isRetired (defaults to false)",
         "operationId": "CreateShoe",
         "requestBody": {
           "description": "Create shoe request",
@@ -520,7 +533,7 @@
           "Shoes"
         ],
         "summary": "Update a shoe",
-        "description": "Updates shoe brand, model, and/or initial mileage",
+        "description": "Updates shoe brand, model, initial mileage, and/or isRetired",
         "operationId": "UpdateShoe",
         "parameters": [
           {
@@ -1800,6 +1813,11 @@
             "type": "number",
             "description": "Initial mileage in meters (optional)",
             "format": "double",
+            "nullable": true
+          },
+          "isRetired": {
+            "type": "boolean",
+            "description": "Whether the shoe is retired (optional, defaults to false)",
             "nullable": true
           }
         },

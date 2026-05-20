@@ -1627,7 +1627,7 @@ public static class WorkoutsEndpoints
             {
                 // Verify the shoe still exists
                 var defaultShoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
-                if (defaultShoe != null)
+                if (defaultShoe != null && !defaultShoe.IsRetired)
                 {
                     foreach (var workout in workoutsToAdd)
                     {
@@ -2160,6 +2160,11 @@ public static class WorkoutsEndpoints
                     if (shoe == null)
                     {
                         return Results.BadRequest(new { error = "Shoe not found" });
+                    }
+
+                    if (shoe.IsRetired)
+                    {
+                        return Results.BadRequest(new { error = "Cannot assign a retired shoe to a workout" });
                     }
                 }
                 else
@@ -3377,7 +3382,7 @@ public static class WorkoutsEndpoints
             {
                 // Verify the shoe still exists
                 var defaultShoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
-                if (defaultShoe != null)
+                if (defaultShoe != null && !defaultShoe.IsRetired)
                 {
                     workout.ShoeId = settings.DefaultShoeId.Value;
                     logger.LogInformation("Assigned default shoe {ShoeId} to workout {WorkoutId}", settings.DefaultShoeId.Value, workout.Id);
