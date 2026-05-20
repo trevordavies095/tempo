@@ -120,7 +120,7 @@ public static class ShoesEndpoints
                 Brand = request.Brand.Trim(),
                 Model = request.Model.Trim(),
                 InitialMileageM = request.InitialMileageM,
-                IsRetired = false,
+                IsRetired = request.IsRetired ?? false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -431,7 +431,7 @@ public static class ShoesEndpoints
             .Produces(400)
             .Produces(500)
             .WithSummary("Create a new shoe")
-            .WithDescription("Creates a new shoe with brand, model, and optional initial mileage");
+            .WithDescription("Creates a new shoe with brand, model, optional initial mileage, and optional isRetired (defaults to false)");
 
         group.MapPatch("/{id:guid}", UpdateShoe)
             .WithName("UpdateShoe")
@@ -478,6 +478,11 @@ public static class ShoesEndpoints
         /// Initial mileage in meters (optional)
         /// </summary>
         public double? InitialMileageM { get; set; }
+
+        /// <summary>
+        /// Whether the shoe is retired (optional, defaults to false)
+        /// </summary>
+        public bool? IsRetired { get; set; }
     }
 
     /// <summary>
@@ -499,11 +504,6 @@ public static class ShoesEndpoints
         /// Initial mileage in meters (optional)
         /// </summary>
         public double? InitialMileageM { get; set; }
-
-        /// <summary>
-        /// Whether the shoe is retired (optional)
-        /// </summary>
-        public bool? IsRetired { get; set; }
     }
 }
 

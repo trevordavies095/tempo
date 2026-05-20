@@ -182,6 +182,32 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateShoe_WithIsRetiredTrue_CreatesRetiredShoe()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var request = new
+        {
+            brand = "Nike",
+            model = "Retired Peg",
+            isRetired = true
+        };
+
+        var response = await client.PostAsJsonAsync("/shoes", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ShoeResponse>();
+        result.Should().NotBeNull();
+        result!.isRetired.Should().BeTrue();
+
+        var activeList = await client.GetFromJsonAsync<List<ShoeResponse>>("/shoes?status=active");
+        activeList.Should().NotContain(s => s.id == result.id);
+
+        var retiredList = await client.GetFromJsonAsync<List<ShoeResponse>>("/shoes?status=retired");
+        retiredList.Should().Contain(s => s.id == result.id);
+    }
+
+    [Fact]
     public async Task CreateShoe_WithMissingBrand_ReturnsBadRequest()
     {
         // Arrange

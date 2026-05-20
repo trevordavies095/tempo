@@ -1232,6 +1232,7 @@ export interface CreateShoeRequest {
   brand: string;
   model: string;
   initialMileageM?: number | null;
+  isRetired?: boolean;
 }
 
 export interface UpdateShoeRequest {
