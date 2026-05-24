@@ -171,6 +171,9 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
                 MinDistanceMeters = 10.0
             });
 
+            // Avoid real Open-Meteo HTTP calls in integration tests (slow/unreliable in CI).
+            // Tests that need specific weather behaviour override this via WithWebHostBuilder.
+            MockWeatherServiceHelper.ConfigureSuccessfulWeatherResponse(services);
         });
     }
     

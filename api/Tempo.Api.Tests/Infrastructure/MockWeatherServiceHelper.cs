@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Moq.Protected;
@@ -104,12 +105,8 @@ public static class MockWeatherServiceHelper
         string? responseContent,
         bool shouldTimeout = false)
     {
-        // Remove existing WeatherService registration if present
-        var weatherServiceDescriptor = services.FirstOrDefault(s => s.ServiceType == typeof(WeatherService));
-        if (weatherServiceDescriptor != null)
-        {
-            services.Remove(weatherServiceDescriptor);
-        }
+        // Remove existing WeatherService registrations (AddHttpClient may register multiple)
+        services.RemoveAll(typeof(WeatherService));
 
         // Create a mock HttpMessageHandler
         var mockHandler = new Mock<HttpMessageHandler>();
