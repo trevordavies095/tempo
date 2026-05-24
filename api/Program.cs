@@ -145,6 +145,7 @@ builder.Services.AddScoped<MediaService>();
 builder.Services.AddScoped<HeartRateZoneService>();
 builder.Services.AddScoped<RelativeEffortService>();
 builder.Services.AddScoped<BestEffortService>();
+builder.Services.AddScoped<WorkoutImportPipeline>();
 builder.Services.AddScoped<BulkImportService>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();

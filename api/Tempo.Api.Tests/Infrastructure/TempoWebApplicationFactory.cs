@@ -170,6 +170,7 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>, IDispo
                 NoiseThresholdMeters = 2.0,
                 MinDistanceMeters = 10.0
             });
+
         });
     }
     
