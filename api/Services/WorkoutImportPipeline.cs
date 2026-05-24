@@ -49,12 +49,18 @@ public class WorkoutImportPipeline
     /// <param name="Notes">Pre-filled notes (e.g. from Strava activity description).</param>
     /// <param name="RawStravaDataJson">Strava activity JSON blob, if any.
     ///   Used for metrics population and weather location lookup.</param>
+    /// <param name="BackfillMissingRawJsonOnDuplicate">
+    ///   When true (default), a duplicate may be updated if parsed JSON is incomplete (e.g. FIT without
+    ///   <c>trackPoints</c>, or missing <c>RawGpxData</c>). When false, duplicates are skipped once
+    ///   <c>RawFileData</c> is stored — matching single-file <c>/workouts/import</c> behaviour.
+    /// </param>
     public record ImportOptions(
         double SplitDistanceMeters,
         string? ExplicitSource = null,
         string? Name = null,
         string? Notes = null,
-        string? RawStravaDataJson = null);
+        string? RawStravaDataJson = null,
+        bool BackfillMissingRawJsonOnDuplicate = true);
 
     public abstract record ImportResult;
 
@@ -106,6 +112,7 @@ public class WorkoutImportPipeline
                 existing, input.RawData, input.FileName, fileType,
                 rawGpxDataJson, rawFitDataJson, trackPoints,
                 distanceMeters, durationSeconds, input.Options.SplitDistanceMeters,
+                input.Options.BackfillMissingRawJsonOnDuplicate,
                 startedAtUtc);
         }
 
@@ -228,33 +235,37 @@ public class WorkoutImportPipeline
         double distanceMeters,
         int durationSeconds,
         double splitDistanceMeters,
+        bool backfillMissingRawJson,
         DateTime startedAtUtc)
     {
         bool needsRawFileUpdate = existing.RawFileData == null || existing.RawFileData.Length == 0;
         bool needsRawJsonUpdate = false;
 
-        if (fileType == "fit")
+        if (backfillMissingRawJson)
         {
-            if (string.IsNullOrEmpty(existing.RawFitData))
+            if (fileType == "fit")
             {
-                needsRawJsonUpdate = true;
-            }
-            else
-            {
-                try
-                {
-                    using var doc = JsonDocument.Parse(existing.RawFitData);
-                    needsRawJsonUpdate = !doc.RootElement.TryGetProperty("trackPoints", out _);
-                }
-                catch
+                if (string.IsNullOrEmpty(existing.RawFitData))
                 {
                     needsRawJsonUpdate = true;
                 }
+                else
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(existing.RawFitData);
+                        needsRawJsonUpdate = !doc.RootElement.TryGetProperty("trackPoints", out _);
+                    }
+                    catch
+                    {
+                        needsRawJsonUpdate = true;
+                    }
+                }
             }
-        }
-        else if (fileType == "gpx" && string.IsNullOrEmpty(existing.RawGpxData))
-        {
-            needsRawJsonUpdate = true;
+            else if (fileType == "gpx" && string.IsNullOrEmpty(existing.RawGpxData))
+            {
+                needsRawJsonUpdate = true;
+            }
         }
 
         if (!needsRawFileUpdate && !needsRawJsonUpdate)

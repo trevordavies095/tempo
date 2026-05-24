@@ -481,15 +481,14 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
-    public async Task ImportWorkout_MultiFile_HandlesDuplicatesCorrectly()
+    public async Task ImportWorkout_SingleFile_SkipsDuplicateWhenRawFileAlreadyStored()
     {
         // Arrange
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
         var startTime = DateTime.UtcNow.AddHours(-1);
         var gpxContent = CreateMinimalGpxContent(startTime);
-        
-        // Import first file
+
         var formData1 = new MultipartFormDataContent();
         var fileContent1 = new ByteArrayContent(Encoding.UTF8.GetBytes(gpxContent));
         fileContent1.Headers.ContentType = new MediaTypeHeaderValue("application/gpx+xml");
@@ -499,9 +498,9 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
             FileName = "test1.gpx"
         };
         formData1.Add(fileContent1);
-        await client.PostAsync("/workouts/import", formData1);
+        var firstResponse = await client.PostAsync("/workouts/import", formData1);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Import same file again (duplicate)
         var formData2 = new MultipartFormDataContent();
         var fileContent2 = new ByteArrayContent(Encoding.UTF8.GetBytes(gpxContent));
         fileContent2.Headers.ContentType = new MediaTypeHeaderValue("application/gpx+xml");
@@ -512,16 +511,14 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         };
         formData2.Add(fileContent2);
 
-        // Act
+        // Act — single-file import returns one result object, not multi-file aggregates
         var response = await client.PostAsync("/workouts/import", formData2);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<MultiFileImportResponse>();
+        var result = await response.Content.ReadFromJsonAsync<SingleFileImportResponse>();
         result.Should().NotBeNull();
-        // Duplicate should be skipped or updated depending on implementation
-        result!.skipped.Should().BeGreaterThanOrEqualTo(0);
-        result.updated.Should().BeGreaterThanOrEqualTo(0);
+        result!.action.Should().Be("skipped");
     }
 
     [Fact]
@@ -709,6 +706,11 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         public int updated { get; set; }
         public int errors { get; set; }
         public List<object>? errorDetails { get; set; }
+    }
+
+    private class SingleFileImportResponse
+    {
+        public string? action { get; set; }
     }
 }
 

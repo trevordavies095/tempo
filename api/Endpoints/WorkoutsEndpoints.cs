@@ -2606,7 +2606,9 @@ public static class WorkoutsEndpoints
 
         try
         {
-            var options = new WorkoutImportPipeline.ImportOptions(SplitDistanceMeters: splitDistanceMeters);
+            var options = new WorkoutImportPipeline.ImportOptions(
+                SplitDistanceMeters: splitDistanceMeters,
+                BackfillMissingRawJsonOnDuplicate: false);
             var result = await importPipeline.RunAsync(
                 new WorkoutImportPipeline.ImportInput(rawData, file.FileName, options));
 
