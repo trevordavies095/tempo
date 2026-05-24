@@ -315,6 +315,49 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ImportWorkout_SingleGpx_DoesNotAssignRetiredDefaultShoe()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var retiredShoe = await TestDataSeeder.SeedShoeAsync(db, isRetired: true);
+            await TestDataSeeder.SeedUserSettingsAsync(db, defaultShoeId: retiredShoe.Id);
+        }
+
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var startTime = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc);
+        var gpxContent = CreateMinimalGpxContent(startTime);
+        var formData = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes(gpxContent));
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/gpx+xml");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "file",
+            FileName = "test.gpx"
+        };
+        formData.Add(fileContent);
+
+        // Act
+        var response = await client.PostAsync("/workouts/import", formData);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await db.Workouts
+                .Where(w => w.StartedAt >= startTime.AddSeconds(-5) && w.StartedAt <= startTime.AddSeconds(5))
+                .FirstOrDefaultAsync();
+
+            workout.Should().NotBeNull();
+            workout!.ShoeId.Should().BeNull();
+        }
+    }
+
+    [Fact]
     public async Task ImportWorkout_SingleGpx_StoresRouteAsGeoJson()
     {
         // Arrange

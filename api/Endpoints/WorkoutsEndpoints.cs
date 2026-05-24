@@ -2661,7 +2661,7 @@ public static class WorkoutsEndpoints
                     if (settings?.DefaultShoeId.HasValue == true)
                     {
                         var shoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
-                        if (shoe != null)
+                        if (shoe != null && !shoe.IsRetired)
                         {
                             workout.ShoeId = settings.DefaultShoeId.Value;
                             logger.LogInformation("Assigned default shoe {ShoeId} to workout {WorkoutId}",
