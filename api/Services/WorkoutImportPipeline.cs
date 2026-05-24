@@ -51,8 +51,9 @@ public class WorkoutImportPipeline
     ///   Used for metrics population and weather location lookup.</param>
     /// <param name="BackfillMissingRawJsonOnDuplicate">
     ///   When true (default), a duplicate may be updated if parsed JSON is incomplete (e.g. FIT without
-    ///   <c>trackPoints</c>, or missing <c>RawGpxData</c>). When false, duplicates are skipped once
-    ///   <c>RawFileData</c> is stored — matching single-file <c>/workouts/import</c> behaviour.
+    ///   <c>trackPoints</c>, or missing <c>RawGpxData</c>), and splits are recalculated from track points.
+    ///   When false, duplicates are skipped once <c>RawFileData</c> is stored (only missing raw bytes are
+    ///   backfilled, without split recalculation) — matching single-file <c>/workouts/import</c> behaviour.
     /// </param>
     public record ImportOptions(
         double SplitDistanceMeters,
@@ -113,7 +114,7 @@ public class WorkoutImportPipeline
                 rawGpxDataJson, rawFitDataJson, trackPoints,
                 distanceMeters, durationSeconds, input.Options.SplitDistanceMeters,
                 input.Options.BackfillMissingRawJsonOnDuplicate,
-                startedAtUtc);
+                startedAtUtc, ct);
         }
 
         var avgPaceS = distanceMeters > 0 && durationSeconds > 0
@@ -236,7 +237,8 @@ public class WorkoutImportPipeline
         int durationSeconds,
         double splitDistanceMeters,
         bool backfillMissingRawJson,
-        DateTime startedAtUtc)
+        DateTime startedAtUtc,
+        CancellationToken ct)
     {
         bool needsRawFileUpdate = existing.RawFileData == null || existing.RawFileData.Length == 0;
         bool needsRawJsonUpdate = false;
@@ -276,6 +278,8 @@ public class WorkoutImportPipeline
             return new Skipped(existing.Id);
         }
 
+        var shouldRecalculateSplits = backfillMissingRawJson && trackPoints.Count > 0;
+
         if (needsRawFileUpdate)
         {
             existing.RawFileData = rawData;
@@ -285,20 +289,24 @@ public class WorkoutImportPipeline
         if (fileType == "fit" && rawFitDataJson != null) existing.RawFitData = rawFitDataJson;
         if (fileType == "gpx" && rawGpxDataJson != null) existing.RawGpxData = rawGpxDataJson;
 
-        await _db.SaveChangesAsync();
-
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
         try
         {
-            var newSplits = BuildSplits(existing.Id, trackPoints, distanceMeters, durationSeconds, splitDistanceMeters);
-            var oldSplits = await _db.WorkoutSplits.Where(s => s.WorkoutId == existing.Id).ToListAsync();
-            _db.WorkoutSplits.RemoveRange(oldSplits);
-            _db.WorkoutSplits.AddRange(newSplits);
-            await _db.SaveChangesAsync();
+            if (shouldRecalculateSplits)
+            {
+                var newSplits = BuildSplits(existing.Id, trackPoints, distanceMeters, durationSeconds, splitDistanceMeters);
+                var oldSplits = await _db.WorkoutSplits.Where(s => s.WorkoutId == existing.Id).ToListAsync(ct);
+                _db.WorkoutSplits.RemoveRange(oldSplits);
+                _db.WorkoutSplits.AddRange(newSplits);
+            }
+
+            await _db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
-        catch (Exception ex)
+        catch
         {
-            _db.RevertPendingWorkoutSplitChanges(existing.Id);
-            _logger.LogWarning(ex, "Failed to recalculate splits for updated workout {WorkoutId}", existing.Id);
+            await transaction.RollbackAsync(ct);
+            throw;
         }
 
         _logger.LogInformation(

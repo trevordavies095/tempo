@@ -124,6 +124,41 @@ public class WorkoutImportPipelineTests : IDisposable
 
         result.Should().BeOfType<WorkoutImportPipeline.Updated>();
         existing.RawGpxData.Should().NotBeNullOrEmpty();
+        (await _db.WorkoutSplits.CountAsync(s => s.WorkoutId == existing.Id)).Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task RunAsync_DuplicateMissingRawFile_UpdatesWithoutSplitsWhenJsonBackfillDisabled()
+    {
+        var parsed = _gpxParser.ParseGpx(new MemoryStream(_gpxBytes));
+        var startedAtUtc = DateTime.SpecifyKind(parsed.StartTime, DateTimeKind.Utc);
+
+        var existing = new Workout
+        {
+            Id = Guid.NewGuid(),
+            StartedAt = startedAtUtc,
+            DurationS = parsed.DurationSeconds,
+            DistanceM = parsed.DistanceMeters,
+            AvgPaceS = parsed.DurationSeconds / (parsed.DistanceMeters / 1000.0),
+            RawFileData = null,
+            RawFileName = null,
+            RawFileType = null,
+            Source = "gpx_import",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Workouts.Add(existing);
+        await _db.SaveChangesAsync();
+
+        var options = new WorkoutImportPipeline.ImportOptions(
+            SplitDistanceMeters: 1000.0,
+            BackfillMissingRawJsonOnDuplicate: false);
+
+        var result = await _pipeline.RunAsync(
+            new WorkoutImportPipeline.ImportInput(_gpxBytes, "reimport.gpx", options));
+
+        result.Should().BeOfType<WorkoutImportPipeline.Updated>();
+        existing.RawFileData.Should().NotBeNullOrEmpty();
+        (await _db.WorkoutSplits.CountAsync(s => s.WorkoutId == existing.Id)).Should().Be(0);
     }
 
     private static string CreateTestGpxXml()
