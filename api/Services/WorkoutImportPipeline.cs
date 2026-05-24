@@ -286,6 +286,7 @@ public class WorkoutImportPipeline
         }
         catch (Exception ex)
         {
+            _db.RevertPendingWorkoutSplitChanges(existing.Id);
             _logger.LogWarning(ex, "Failed to recalculate splits for updated workout {WorkoutId}", existing.Id);
         }
 
@@ -642,4 +643,5 @@ public class WorkoutImportPipeline
             _logger.LogWarning(ex, "Failed to fetch weather data for workout {WorkoutId}", workout.Id);
         }
     }
+
 }
