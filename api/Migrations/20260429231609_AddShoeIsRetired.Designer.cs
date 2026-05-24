@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Tempo.Api.Data;
@@ -11,54 +12,18 @@ using Tempo.Api.Data;
 namespace Tempo.Api.Migrations
 {
     [DbContext(typeof(TempoDbContext))]
-    partial class TempoDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260429231609_AddShoeIsRetired")]
+    partial class AddShoeIsRetired
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.0")
+                .HasAnnotation("ProductVersion", "9.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("Tempo.Api.Models.ApiKey", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("KeyHash")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("KeyPrefix")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("Label")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("KeyPrefix")
-                        .HasFilter("\"RevokedAt\" IS NULL");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("ApiKeys");
-                });
 
             modelBuilder.Entity("Tempo.Api.Models.BestEffort", b =>
                 {
@@ -146,9 +111,6 @@ namespace Tempo.Api.Migrations
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<int>("SessionVersion")
-                        .HasColumnType("integer");
 
                     b.Property<string>("Username")
                         .IsRequired()
@@ -330,9 +292,6 @@ namespace Tempo.Api.Migrations
 
                     b.Property<int?>("RelativeEffort")
                         .HasColumnType("integer");
-
-                    b.Property<byte?>("Rpe")
-                        .HasColumnType("smallint");
 
                     b.Property<string>("RunType")
                         .HasMaxLength(50)
@@ -517,17 +476,6 @@ namespace Tempo.Api.Migrations
                     b.ToTable("WorkoutTimeSeries");
                 });
 
-            modelBuilder.Entity("Tempo.Api.Models.ApiKey", b =>
-                {
-                    b.HasOne("Tempo.Api.Models.User", "User")
-                        .WithMany("ApiKeys")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("Tempo.Api.Models.BestEffort", b =>
                 {
                     b.HasOne("Tempo.Api.Models.Workout", "Workout")
@@ -606,11 +554,6 @@ namespace Tempo.Api.Migrations
             modelBuilder.Entity("Tempo.Api.Models.Shoe", b =>
                 {
                     b.Navigation("Workouts");
-                });
-
-            modelBuilder.Entity("Tempo.Api.Models.User", b =>
-                {
-                    b.Navigation("ApiKeys");
                 });
 
             modelBuilder.Entity("Tempo.Api.Models.Workout", b =>

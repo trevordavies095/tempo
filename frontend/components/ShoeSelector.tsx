@@ -8,12 +8,14 @@ interface ShoeSelectorProps {
   onChange: (shoeId: string | null) => void;
   showMileage?: boolean;
   className?: string;
+  /** When the workout is assigned a retired shoe, pass it so the select can show the current value. */
+  assignedShoe?: { id: string; brand: string; model: string } | null;
 }
 
-export function ShoeSelector({ value, onChange, showMileage = false, className = '' }: ShoeSelectorProps) {
+export function ShoeSelector({ value, onChange, showMileage = false, className = '', assignedShoe = null }: ShoeSelectorProps) {
   const { data: shoes, isLoading } = useQuery({
-    queryKey: ['shoes'],
-    queryFn: getShoes,
+    queryKey: ['shoes', 'active'],
+    queryFn: () => getShoes({ status: 'active' }),
   });
 
   if (isLoading) {
@@ -31,6 +33,12 @@ export function ShoeSelector({ value, onChange, showMileage = false, className =
     return `${shoe.brand} ${shoe.model}`;
   };
 
+  const showRetiredAssigned =
+    !!value &&
+    !!assignedShoe &&
+    assignedShoe.id === value &&
+    !shoes?.some((s) => s.id === value);
+
   return (
     <select
       value={value || ''}
@@ -38,6 +46,11 @@ export function ShoeSelector({ value, onChange, showMileage = false, className =
       className={className}
     >
       <option value="">None</option>
+      {showRetiredAssigned && assignedShoe && (
+        <option key={assignedShoe.id} value={assignedShoe.id}>
+          {assignedShoe.brand} {assignedShoe.model} (retired)
+        </option>
+      )}
       {shoes?.map((shoe) => (
         <option key={shoe.id} value={shoe.id}>
           {formatShoeLabel(shoe)}

@@ -196,6 +196,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
             workout.AvgPowerWatts = 250;
             workout.Calories = 500;
             workout.RelativeEffort = 150;
+            workout.Rpe = 7;
             
             await db.SaveChangesAsync();
         }
@@ -229,6 +230,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         result.AvgPowerWatts.Should().Be(250);
         result.Calories.Should().Be(500);
         result.RelativeEffort.Should().Be(150);
+        result.Rpe.Should().Be(7);
     }
 
     #endregion
@@ -347,6 +349,126 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
     }
 
     [Fact]
+    public async Task UpdateWorkout_UpdatesRpe_WhenValidValueProvided()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db);
+        }
+
+        var updateRequest = new { rpe = 8 };
+        var content = new StringContent(JsonSerializer.Serialize(updateRequest), Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PatchAsync($"/workouts/{workout.Id}", content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<UpdateWorkoutResponse>();
+        result.Should().NotBeNull();
+        result!.Rpe.Should().Be(8);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var updatedWorkout = await db.Workouts.FindAsync(workout.Id);
+            updatedWorkout!.Rpe.Should().Be(8);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateWorkout_ClearsRpe_WhenRpeIsNull()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db);
+            workout.Rpe = 5;
+            await db.SaveChangesAsync();
+        }
+
+        var updateRequest = new { rpe = (int?)null };
+        var content = new StringContent(JsonSerializer.Serialize(updateRequest), Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PatchAsync($"/workouts/{workout.Id}", content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<UpdateWorkoutResponse>();
+        result.Should().NotBeNull();
+        result!.Rpe.Should().BeNull();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var updatedWorkout = await db.Workouts.FindAsync(workout.Id);
+            updatedWorkout!.Rpe.Should().BeNull();
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(11)]
+    public async Task UpdateWorkout_Returns400_WhenRpeOutOfRange(int rpe)
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db);
+        }
+
+        var updateRequest = new { rpe };
+        var content = new StringContent(JsonSerializer.Serialize(updateRequest), Encoding.UTF8, "application/json");
+
+        var response = await client.PatchAsync($"/workouts/{workout.Id}", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        error.Should().NotBeNull();
+        error!.Error.Should().Contain("rpe");
+    }
+
+    [Fact]
+    public async Task UpdateWorkout_Returns400_WhenRpeIsNotNumberOrNull()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db);
+        }
+
+        var updateRequest = """{"rpe":"easy"}""";
+        var content = new StringContent(updateRequest, Encoding.UTF8, "application/json");
+
+        var response = await client.PatchAsync($"/workouts/{workout.Id}", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        error.Should().NotBeNull();
+        error!.Error.Should().Contain("rpe");
+    }
+
+    [Fact]
     public async Task UpdateWorkout_AssignsShoe_WhenShoeIdProvided()
     {
         // Arrange
@@ -381,6 +503,29 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
             var updatedWorkout = await db.Workouts.FindAsync(workout.Id);
             updatedWorkout!.ShoeId.Should().Be(shoe.Id);
         }
+    }
+
+    [Fact]
+    public async Task UpdateWorkout_Returns400_WhenShoeIsRetired()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        Shoe shoe;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db);
+            shoe = await TestDataSeeder.SeedShoeAsync(db, brand: "Nike", model: "Old", isRetired: true);
+        }
+
+        var updateRequest = new { shoeId = shoe.Id.ToString() };
+        var content = new StringContent(JsonSerializer.Serialize(updateRequest), Encoding.UTF8, "application/json");
+
+        var response = await client.PatchAsync($"/workouts/{workout.Id}", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
@@ -1013,6 +1158,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public ushort? AvgPowerWatts { get; set; }
         public ushort? Calories { get; set; }
         public int? RelativeEffort { get; set; }
+        public byte? Rpe { get; set; }
         public string? RunType { get; set; }
         public string? Notes { get; set; }
         public string? Source { get; set; }
@@ -1051,6 +1197,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public string? Notes { get; set; }
         public string? Name { get; set; }
         public string? ShoeId { get; set; }
+        public byte? Rpe { get; set; }
     }
 
     private class ErrorResponse

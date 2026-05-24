@@ -45,10 +45,13 @@ public static class DatabaseMigrationHelper
         // AddShoeTracking migration
         { ("Workouts", "ShoeId"), "20251201120000_AddShoeTracking" },
         { ("UserSettings", "DefaultShoeId"), "20251201120000_AddShoeTracking" },
-        { ("Users", "SessionVersion"), "20260510120000_AddUserSessionVersion" }
+        { ("Shoes", "IsRetired"), "20260429231609_AddShoeIsRetired" },
+        { ("Users", "SessionVersion"), "20260510120000_AddUserSessionVersion" },
+        // AddRpeToWorkout migration
+        { ("Workouts", "Rpe"), "20260511200212_AddRpeToWorkout" }
     };
 
-    private const string ProductVersion = "9.0.10";
+    private const string ProductVersion = "10.0.0";
 
     /// <summary>
     /// Applies database migrations, handling edge cases where the database was created with EnsureCreated()

@@ -401,6 +401,7 @@ public static class WorkoutsEndpoints
                 avgPowerWatts = w.AvgPowerWatts,
                 calories = w.Calories,
                 relativeEffort = w.RelativeEffort,
+                rpe = w.Rpe,
                 runType = w.RunType,
                 source = w.Source,
                 device = w.Device,
@@ -1096,6 +1097,7 @@ public static class WorkoutsEndpoints
                 avgPowerWatts = workout.AvgPowerWatts,
                 calories = workout.Calories,
                 relativeEffort = workout.RelativeEffort,
+                rpe = workout.Rpe,
                 runType = workout.RunType,
                 notes = workout.Notes,
                 source = workout.Source,
@@ -1288,6 +1290,7 @@ public static class WorkoutsEndpoints
             avgPowerWatts = workout.AvgPowerWatts,
             calories = workout.Calories,
             relativeEffort = workout.RelativeEffort,
+            rpe = workout.Rpe,
             runType = workout.RunType,
             notes = workout.Notes,
             source = workout.Source,
@@ -1614,7 +1617,7 @@ public static class WorkoutsEndpoints
             {
                 // Verify the shoe still exists
                 var defaultShoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
-                if (defaultShoe != null)
+                if (defaultShoe != null && !defaultShoe.IsRetired)
                 {
                     foreach (var workout in workoutsToAdd)
                     {
@@ -2023,14 +2026,15 @@ public static class WorkoutsEndpoints
     /// Update workout
     /// </summary>
     /// <param name="id">Workout ID</param>
-    /// <param name="request">HTTP request containing JSON body with optional runType, notes, and/or name</param>
+    /// <param name="request">HTTP request containing JSON body with optional runType, notes, name, shoeId, and/or rpe</param>
     /// <param name="db">Database context</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>Updated workout fields</returns>
     /// <remarks>
-    /// Updates workout RunType, Notes, and/or Name. All fields are optional - only provided fields are updated.
+    /// Updates workout RunType, Notes, Name, ShoeId, and/or Rpe. All fields are optional - only provided fields are updated.
     /// RunType must be one of: "Race", "Workout", "Long Run", "Easy Run", or null.
     /// Name must be 200 characters or less.
+    /// Rpe must be a whole number from 1 to 10, or null to clear.
     /// </remarks>
     private static async Task<IResult> UpdateWorkout(
         Guid id,
@@ -2147,6 +2151,11 @@ public static class WorkoutsEndpoints
                     {
                         return Results.BadRequest(new { error = "Shoe not found" });
                     }
+
+                    if (shoe.IsRetired)
+                    {
+                        return Results.BadRequest(new { error = "Cannot assign a retired shoe to a workout" });
+                    }
                 }
                 else
                 {
@@ -2164,15 +2173,43 @@ public static class WorkoutsEndpoints
             workout.ShoeId = shoeIdValue;
         }
 
+        // Validate and update Rpe if provided (1–10 scale, user-set)
+        if (root.TryGetProperty("rpe", out var rpeElement))
+        {
+            if (rpeElement.ValueKind == JsonValueKind.Null)
+            {
+                workout.Rpe = null;
+            }
+            else if (rpeElement.ValueKind == JsonValueKind.Number)
+            {
+                if (!rpeElement.TryGetInt32(out var rpeInt))
+                {
+                    return Results.BadRequest(new { error = "rpe must be a whole number between 1 and 10, or null" });
+                }
+
+                if (rpeInt < 1 || rpeInt > 10)
+                {
+                    return Results.BadRequest(new { error = "rpe must be between 1 and 10, or null" });
+                }
+
+                workout.Rpe = (byte)rpeInt;
+            }
+            else
+            {
+                return Results.BadRequest(new { error = "rpe must be a number between 1 and 10, or null" });
+            }
+        }
+
         // Save changes
         var runTypeUpdated = root.TryGetProperty("runType", out _);
         var notesUpdated = root.TryGetProperty("notes", out _);
         var nameUpdated = root.TryGetProperty("name", out _);
         var shoeIdUpdated = root.TryGetProperty("shoeId", out _);
+        var rpeUpdated = root.TryGetProperty("rpe", out _);
         await db.SaveChangesAsync();
 
-        logger.LogInformation("Updated workout {WorkoutId}: RunType={RunType}, RunTypeUpdated={RunTypeUpdated}, NotesUpdated={NotesUpdated}, NameUpdated={NameUpdated}, ShoeIdUpdated={ShoeIdUpdated}",
-            workout.Id, LogSanitizer.Sanitize(workout.RunType ?? "null"), runTypeUpdated, notesUpdated, nameUpdated, shoeIdUpdated);
+        logger.LogInformation("Updated workout {WorkoutId}: RunType={RunType}, RunTypeUpdated={RunTypeUpdated}, NotesUpdated={NotesUpdated}, NameUpdated={NameUpdated}, ShoeIdUpdated={ShoeIdUpdated}, RpeUpdated={RpeUpdated}",
+            workout.Id, LogSanitizer.Sanitize(workout.RunType ?? "null"), runTypeUpdated, notesUpdated, nameUpdated, shoeIdUpdated, rpeUpdated);
 
         return Results.Ok(new
         {
@@ -2180,7 +2217,8 @@ public static class WorkoutsEndpoints
             runType = workout.RunType,
             notes = workout.Notes,
             name = workout.Name,
-            shoeId = workout.ShoeId
+            shoeId = workout.ShoeId,
+            rpe = workout.Rpe
         });
         }
     }
@@ -2498,7 +2536,7 @@ public static class WorkoutsEndpoints
         .Produces(400)
         .Produces(404)
         .WithSummary("Update workout")
-        .WithDescription("Updates workout RunType, Notes, and/or Name");
+        .WithDescription("Updates workout RunType, Notes, Name, ShoeId, and/or Rpe (1–10)");
 
         group.MapDelete("/{id:guid}", DeleteWorkout)
         .WithName("DeleteWorkout")

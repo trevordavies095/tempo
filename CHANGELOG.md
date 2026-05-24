@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-05-13
+
+### Added
+- **Weekly recap stats**
+  - `GET /stats/weekly-recap` returns compact week-over-week aggregates (runs, distance, time, elevation, relative effort, and related metrics) for dashboards and tooling; optional `referenceDate` selects the week in the user’s timezone (`timezoneOffsetMinutes`)
+- **RPE (Rate of Perceived Exertion) on workouts**
+  - Optional **1–10** value stored per workout; included in workout payloads and updatable via `PATCH /workouts/{id}` with `rpe` (integer or `null` to clear)
+  - Workout detail UI to view and edit RPE
+
+### Changed
+- **Frontend:** Next.js and `eslint-config-next` raised to **>=16.2.6** (aligned ESLint flat config where applicable)
+
+### Migration
+- **Database:** applies `AddRpeToWorkout` — adds nullable `Rpe` on `Workouts`. Run migrations or rely on automatic migration on startup.
+
 ## [2.5.0] - 2026-05-10
 
 ### Added
