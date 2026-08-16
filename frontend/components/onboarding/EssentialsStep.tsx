@@ -398,7 +398,10 @@ export function EssentialsStep({ onContinue }: EssentialsStepProps) {
         >
           <div>
             <h2 className="text-lg font-semibold text-ink">Add a default shoe</h2>
-            <p className="mt-1 text-sm text-muted">Optional — skip if you do not care yet.</p>
+            <p className="mt-1 text-sm text-muted">
+              Optional — skip if you do not care yet. If you set a default, new imported activities
+              are automatically tagged with that shoe (you can change this later in Settings).
+            </p>
           </div>
           <span className="text-sm text-muted">{shoeOpen ? 'Hide' : 'Show'}</span>
         </button>
