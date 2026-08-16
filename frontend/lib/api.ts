@@ -501,6 +501,29 @@ export function importJobToBulkResponse(job: ImportJob): BulkImportResponse {
   };
 }
 
+const emptyItemStats = () => ({ imported: 0, skipped: 0, errors: 0 });
+
+export function importJobToExportImportResponse(job: ImportJob): ExportImportResponse {
+  const stats = job.statistics;
+  return {
+    success: (job.errorMessages?.length ?? 0) === 0,
+    importedAt: new Date().toISOString(),
+    statistics: {
+      settings: stats?.settings ?? emptyItemStats(),
+      shoes: stats?.shoes ?? emptyItemStats(),
+      workouts: stats?.workouts ?? emptyItemStats(),
+      routes: stats?.routes ?? emptyItemStats(),
+      splits: stats?.splits ?? emptyItemStats(),
+      timeSeries: stats?.timeSeries ?? emptyItemStats(),
+      media: stats?.media ?? emptyItemStats(),
+      bestEfforts: stats?.bestEfforts ?? emptyItemStats(),
+      rawFiles: stats?.rawFiles ?? emptyItemStats(),
+    },
+    warnings: job.warnings ?? [],
+    errors: job.errorMessages ?? [],
+  };
+}
+
 export async function exportAllData(): Promise<Blob> {
   const response = await fetchWithAuth(`${API_BASE_URL}/workouts/export`, {
     method: 'POST',
@@ -533,23 +556,7 @@ export interface ExportImportResponse {
   errors: string[];
 }
 
-export async function importTempoExport(zipFile: File): Promise<ExportImportResponse> {
-  const formData = new FormData();
-  formData.append('file', zipFile);
-
-  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/export`, {
-    method: 'POST',
-    body: formData,
-    credentials: 'include',
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to import Tempo export' }));
-    throw new Error(error.error || `HTTP error! status: ${response.status}`);
-  }
-
-  return response.json();
-}
+export type ImportJobKind = 'strava_bulk' | 'tempo_export';
 
 async function readImportJobResponse(response: Response, fallback: string): Promise<ImportJob> {
   const body = await response.json().catch(() => ({ error: fallback }));
@@ -563,7 +570,7 @@ async function readImportJobResponse(response: Response, fallback: string): Prom
 }
 
 export async function createImportJob(
-  kind: 'strava_bulk' | 'tempo_export',
+  kind: ImportJobKind,
   filename: string,
   byteSize: number,
   unitPreference?: 'metric' | 'imperial'
@@ -603,13 +610,14 @@ export async function completeImportJob(jobId: string): Promise<ImportJob> {
   return readImportJobResponse(response, 'Failed to complete import upload');
 }
 
-export async function importStravaExportChunked(
+export async function uploadImportJobChunks(
+  kind: ImportJobKind,
   zipFile: File,
   unitPreference: 'metric' | 'imperial' | undefined,
   onProgress: (bytesReceived: number, byteSize: number) => void,
   onJob?: (job: ImportJob) => void
 ): Promise<ImportJob> {
-  const created = await createImportJob('strava_bulk', zipFile.name, zipFile.size, unitPreference);
+  const created = await createImportJob(kind, zipFile.name, zipFile.size, unitPreference);
   onJob?.(created);
   const total = Math.max(1, Math.ceil(zipFile.size / IMPORT_JOB_CHUNK_SIZE));
   onProgress(0, zipFile.size);
@@ -622,6 +630,23 @@ export async function importStravaExportChunked(
   }
 
   return completeImportJob(created.id);
+}
+
+export async function importStravaExportChunked(
+  zipFile: File,
+  unitPreference: 'metric' | 'imperial' | undefined,
+  onProgress: (bytesReceived: number, byteSize: number) => void,
+  onJob?: (job: ImportJob) => void
+): Promise<ImportJob> {
+  return uploadImportJobChunks('strava_bulk', zipFile, unitPreference, onProgress, onJob);
+}
+
+export async function importTempoExportChunked(
+  zipFile: File,
+  onProgress: (bytesReceived: number, byteSize: number) => void,
+  onJob?: (job: ImportJob) => void
+): Promise<ImportJob> {
+  return uploadImportJobChunks('tempo_export', zipFile, undefined, onProgress, onJob);
 }
 
 export async function getImportJob(jobId: string): Promise<ImportJob> {
