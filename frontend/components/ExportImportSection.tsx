@@ -66,7 +66,7 @@ export function ExportImportSection() {
               {isExporting ? 'Exporting...' : 'Export All Data'}
             </Button>
             {exportSuccess && (
-              <span className="text-sm text-green-600 dark:text-green-400">
+              <span className="text-sm text-ink">
                 Export completed successfully! Your download should start shortly.
               </span>
             )}

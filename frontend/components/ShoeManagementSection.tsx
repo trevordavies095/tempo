@@ -194,13 +194,13 @@ export function ShoeManagementSection() {
 
       {/* Default Shoe Selector */}
       <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        <label className="block text-sm font-medium text-ink mb-2">
           Default Shoe
         </label>
         <select
           value={defaultShoe?.defaultShoeId || ''}
           onChange={(e) => handleSetDefault(e.target.value === '' ? null : e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+          className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
         >
           <option value="">None</option>
           {shoes?.map((shoe) => (
@@ -209,7 +209,7 @@ export function ShoeManagementSection() {
             </option>
           ))}
         </select>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        <p className="text-xs text-muted mt-1">
           New workouts will automatically be assigned to the default shoe.
         </p>
       </div>
@@ -223,35 +223,35 @@ export function ShoeManagementSection() {
           + Add New Shoe
         </Button>
       ) : (
-        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Add New Shoe</h3>
+        <div className="mb-6 p-4 bg-canvas rounded-lg border border-border">
+          <h3 className="text-sm font-semibold text-ink mb-3">Add New Shoe</h3>
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-ink mb-1">
                 Brand *
               </label>
               <input
                 type="text"
                 value={newShoe.brand}
                 onChange={(e) => setNewShoe({ ...newShoe, brand: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                 placeholder="e.g., Nike"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-ink mb-1">
                 Model *
               </label>
               <input
                 type="text"
                 value={newShoe.model}
                 onChange={(e) => setNewShoe({ ...newShoe, model: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                 placeholder="e.g., Air Zoom Pegasus 40"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-ink mb-1">
                 Initial Mileage (optional)
               </label>
               <input
@@ -259,10 +259,10 @@ export function ShoeManagementSection() {
                 step="0.1"
                 value={newShoeInitialMileageInput}
                 onChange={(e) => setNewShoeInitialMileageInput(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                 placeholder={unitPreference === 'imperial' ? 'Miles already on shoe' : 'Kilometers already on shoe'}
               />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 Enter mileage in {unitPreference === 'imperial' ? 'miles' : 'kilometers'}
               </p>
             </div>
@@ -299,34 +299,34 @@ export function ShoeManagementSection() {
           shoes?.map((shoe) => (
             <div
               key={shoe.id}
-              className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
+              className="p-4 bg-canvas rounded-lg border border-border"
             >
               {editingId === shoe.id ? (
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-ink mb-1">
                       Brand *
                     </label>
                     <input
                       type="text"
                       value={editShoe.brand || ''}
                       onChange={(e) => setEditShoe({ ...editShoe, brand: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-ink mb-1">
                       Model *
                     </label>
                     <input
                       type="text"
                       value={editShoe.model || ''}
                       onChange={(e) => setEditShoe({ ...editShoe, model: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-ink mb-1">
                       Initial Mileage
                     </label>
                     <input
@@ -334,10 +334,10 @@ export function ShoeManagementSection() {
                       step="0.1"
                       value={editShoeInitialMileageInput}
                       onChange={(e) => setEditShoeInitialMileageInput(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                       placeholder={unitPreference === 'imperial' ? 'Miles' : 'Kilometers'}
                     />
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-xs text-muted mt-1">
                       Enter mileage in {unitPreference === 'imperial' ? 'miles' : 'kilometers'}
                     </p>
                   </div>
@@ -357,10 +357,10 @@ export function ShoeManagementSection() {
                 <div>
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      <h3 className="text-lg font-semibold text-ink">
                         {shoe.brand} {shoe.model}
                       </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <p className="text-sm text-muted">
                         Total: {shoe.totalMileage.toFixed(1)} {shoe.unit}
                       </p>
                       {defaultShoe?.defaultShoeId === shoe.id && (
