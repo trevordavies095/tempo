@@ -442,6 +442,37 @@ export interface BulkImportResponse {
   }>;
 }
 
+export interface ImportJob {
+  id: string;
+  kind: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | string;
+  filename: string;
+  byteSize: number;
+  bytesReceived: number;
+  processed: number;
+  total: number;
+  successful: number;
+  skipped: number;
+  updated: number;
+  errors: number;
+  errorDetails: Array<{
+    filename: string;
+    error: string;
+  }>;
+  errorMessage: string | null;
+}
+
+export function importJobToBulkResponse(job: ImportJob): BulkImportResponse {
+  return {
+    totalProcessed: job.total,
+    successful: job.successful,
+    updated: job.updated,
+    skipped: job.skipped,
+    errors: job.errors,
+    errorDetails: job.errorDetails ?? [],
+  };
+}
+
 export async function exportAllData(): Promise<Blob> {
   const response = await fetchWithAuth(`${API_BASE_URL}/workouts/export`, {
     method: 'POST',
@@ -492,7 +523,7 @@ export async function importTempoExport(zipFile: File): Promise<ExportImportResp
   return response.json();
 }
 
-export async function importBulkStravaExport(zipFile: File, unitPreference?: 'metric' | 'imperial'): Promise<BulkImportResponse> {
+export async function importBulkStravaExport(zipFile: File, unitPreference?: 'metric' | 'imperial'): Promise<ImportJob> {
   const formData = new FormData();
   formData.append('file', zipFile);
   if (unitPreference) {
@@ -507,6 +538,20 @@ export async function importBulkStravaExport(zipFile: File, unitPreference?: 'me
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to import Strava export' }));
+    throw new Error(error.error || `HTTP error! status: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getImportJob(jobId: string): Promise<ImportJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/jobs/${jobId}`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to fetch import job' }));
     throw new Error(error.error || `HTTP error! status: ${response.status}`);
   }
 

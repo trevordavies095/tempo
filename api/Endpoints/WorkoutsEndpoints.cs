@@ -1429,19 +1429,20 @@ public static class WorkoutsEndpoints
     /// Bulk import Strava export
     /// </summary>
     /// <param name="request">HTTP request containing multipart/form-data with ZIP file</param>
-    /// <param name="orchestrator">Strava bulk import orchestrator</param>
     /// <param name="db">Database context</param>
+    /// <param name="mediaStorage">Media storage configuration</param>
+    /// <param name="queue">Import job queue</param>
     /// <param name="logger">Logger instance</param>
-    /// <returns>Import results with counts of successful, skipped, updated, and error details</returns>
+    /// <returns>202 with import job document; poll GET /workouts/import/jobs/{id}</returns>
     /// <remarks>
-    /// Uploads and processes a ZIP file containing Strava export (activities.csv + activity files),
-    /// importing all run activities with duplicate detection. Supports optional unitPreference form field.
-    /// Only "Run" activities are imported; others are skipped.
+    /// Accepts a Strava export ZIP and returns 202 with a job document. Poll GET /workouts/import/jobs/{id}
+    /// until completed or failed. Supports optional unitPreference form field. Only "Run" activities are imported.
     /// </remarks>
     private static async Task<IResult> BulkImportWorkouts(
         HttpRequest request,
-        StravaBulkImportOrchestrator orchestrator,
         TempoDbContext db,
+        MediaStorageConfig mediaStorage,
+        ImportJobQueue queue,
         ILogger<Program> logger)
     {
         if (!request.HasFormContentType)
@@ -1449,8 +1450,6 @@ public static class WorkoutsEndpoints
             return Results.BadRequest(new { error = "Request must be multipart/form-data" });
         }
 
-        // Enable request body buffering to ensure the full request is received before processing
-        // Use 500MB buffer size to match MaxRequestBodySize and MultipartBodyLengthLimit
         request.EnableBuffering(500_000_000);
 
         Microsoft.AspNetCore.Http.IFormCollection form;
@@ -1476,39 +1475,79 @@ public static class WorkoutsEndpoints
             return Results.BadRequest(new { error = "File must be a ZIP file" });
         }
 
-        // Read unit preference from form (default to "metric" for backward compatibility)
         var unitPreference = form["unitPreference"].ToString();
         if (string.IsNullOrWhiteSpace(unitPreference))
         {
             unitPreference = "metric";
         }
 
-        await SaveUnitPreferenceToSettingsAsync(db, unitPreference, logger);
+        var job = new ImportJob
+        {
+            Kind = ImportJobKinds.StravaBulk,
+            Status = ImportJobStatuses.Queued,
+            Filename = Path.GetFileName(file.FileName),
+            ByteSize = file.Length,
+            BytesReceived = file.Length,
+            UnitPreference = unitPreference,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var jobDir = Path.Combine(mediaStorage.RootPath, "imports", job.Id.ToString());
+        Directory.CreateDirectory(jobDir);
+        var archivePath = Path.Combine(jobDir, "archive.zip");
+        job.ArchivePath = archivePath;
 
         try
         {
-            await using var zipStream = file.OpenReadStream();
-            var result = await orchestrator.ImportFromZipAsync(zipStream);
-
-            return Results.Ok(new
+            await using (var zipStream = file.OpenReadStream())
+            await using (var archive = File.Create(archivePath))
             {
-                totalProcessed = result.TotalProcessed,
-                successful = result.Successful,
-                skipped = result.Skipped,
-                updated = result.Updated,
-                errors = result.Errors,
-                errorDetails = result.ErrorDetails
-            });
+                await zipStream.CopyToAsync(archive);
+            }
+
+            db.ImportJobs.Add(job);
+            await db.SaveChangesAsync();
+            await queue.EnqueueAsync(job.Id);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error processing bulk import");
+            logger.LogError(ex, "Failed to accept bulk import upload");
+            try
+            {
+                if (Directory.Exists(jobDir))
+                {
+                    Directory.Delete(jobDir, recursive: true);
+                }
+            }
+            catch (Exception cleanupEx)
+            {
+                logger.LogWarning(cleanupEx, "Failed to clean up import archive after accept failure");
+            }
+
             return Results.Problem(
                 detail: ex.Message,
                 statusCode: 500,
-                title: "Error processing bulk import"
+                title: "Error accepting bulk import"
             );
         }
+
+        return Results.Json(ImportJobDocument.FromEntity(job), statusCode: StatusCodes.Status202Accepted);
+    }
+
+    /// <summary>
+    /// Get Strava bulk import job status
+    /// </summary>
+    private static async Task<IResult> GetImportJob(
+        Guid id,
+        TempoDbContext db)
+    {
+        var job = await db.ImportJobs.FindAsync(id);
+        if (job == null)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(ImportJobDocument.FromEntity(job));
     }
 
     /// <summary>
@@ -2299,11 +2338,18 @@ public static class WorkoutsEndpoints
 
         group.MapPost("/import/bulk", BulkImportWorkouts)
         .Accepts<IFormFile>("multipart/form-data")
-        .Produces(200)
+        .Produces<ImportJobDocument>(202)
         .Produces(400)
         .Produces(500)
         .WithSummary("Bulk import Strava export")
-        .WithDescription("Uploads and processes a ZIP file containing Strava export (activities.csv + activity files), importing all run activities with duplicate detection");
+        .WithDescription("Accepts a Strava export ZIP and returns 202 with a job document. Poll GET /workouts/import/jobs/{id} until completed or failed. Supports optional unitPreference form field.");
+
+        group.MapGet("/import/jobs/{id:guid}", GetImportJob)
+        .WithName("GetImportJob")
+        .Produces<ImportJobDocument>(200)
+        .Produces(404)
+        .WithSummary("Get import job")
+        .WithDescription("Returns the import job document: status, byte and activity progress, counters, and error details.");
 
         group.MapPost("/export", ExportAllData)
         .WithName("ExportAllData")

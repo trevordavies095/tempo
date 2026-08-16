@@ -1,8 +1,13 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
-import { importBulkStravaExport, type BulkImportResponse } from '@/lib/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  getImportJob,
+  importBulkStravaExport,
+  importJobToBulkResponse,
+  type BulkImportResponse,
+} from '@/lib/api';
 import { useSettings } from '@/lib/settings';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { useFileDrop } from '@/hooks/useFileDrop';
@@ -11,7 +16,9 @@ import { Button } from '@/components/ui/Button';
 
 export function BulkImport() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<BulkImportResponse | null>(null);
+  const [jobError, setJobError] = useState<string | null>(null);
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
 
@@ -20,24 +27,56 @@ export function BulkImport() {
       if (files.length > 0) {
         setSelectedFile(files[0]);
         setImportResult(null);
+        setJobError(null);
       }
     },
     acceptExtensions: ['.zip'],
     maxFiles: 1,
   });
 
-  const mutation = useMutation({
-    mutationFn: (file: File) => importBulkStravaExport(file, unitPreference),
-    onSuccess: (data) => {
-      invalidateWorkoutQueries(queryClient);
-      setImportResult(data);
-      setSelectedFile(null);
-    },
-    onError: (error: Error) => {
-      alert(`Error importing Strava export: ${error.message}`);
+  const { data: job } = useQuery({
+    queryKey: ['import-job', jobId],
+    queryFn: () => getImportJob(jobId!),
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'completed' || status === 'failed') {
+        return false;
+      }
+      return 1000;
     },
   });
 
+  useEffect(() => {
+    if (!job) {
+      return;
+    }
+
+    if (job.status === 'completed') {
+      invalidateWorkoutQueries(queryClient);
+      setImportResult(importJobToBulkResponse(job));
+      setSelectedFile(null);
+      setJobId(null);
+      setJobError(null);
+    } else if (job.status === 'failed') {
+      setJobError(job.errorMessage || 'Import failed');
+      setJobId(null);
+    }
+  }, [job, queryClient]);
+
+  const mutation = useMutation({
+    mutationFn: (file: File) => importBulkStravaExport(file, unitPreference),
+    onSuccess: (started) => {
+      setImportResult(null);
+      setJobError(null);
+      setJobId(started.id);
+    },
+    onError: (error: Error) => {
+      setJobError(error.message);
+    },
+  });
+
+  const isWorking = mutation.isPending || !!jobId;
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -46,8 +85,21 @@ export function BulkImport() {
         mutation.mutate(selectedFile);
       }
     },
-    [selectedFile, mutation, unitPreference]
+    [selectedFile, mutation]
   );
+
+  const progressLabel = (() => {
+    if (mutation.isPending) {
+      return 'Uploading...';
+    }
+    if (job && job.total > 0) {
+      return `Importing ${job.processed}/${job.total}...`;
+    }
+    if (jobId) {
+      return 'Importing...';
+    }
+    return 'Import Strava Export';
+  })();
 
   return (
     <div className="w-full">
@@ -68,6 +120,7 @@ export function BulkImport() {
             id="bulk-upload"
             accept=".zip"
             onChange={handleFileInput}
+            disabled={isWorking}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div className="text-center">
@@ -89,17 +142,17 @@ export function BulkImport() {
         {selectedFile && (
           <Button
             type="submit"
-            disabled={mutation.isPending}
+            disabled={isWorking}
             className="w-full"
           >
-            {mutation.isPending ? 'Importing...' : 'Import Strava Export'}
+            {progressLabel}
           </Button>
         )}
 
-        {mutation.isError && (
+        {(mutation.isError || jobError) && (
           <div className="p-4 bg-canvas border border-danger/40 rounded-tempo">
             <p className="text-sm text-danger">
-              Error: {mutation.error instanceof Error ? mutation.error.message : 'Unknown error'}
+              Error: {jobError || (mutation.error instanceof Error ? mutation.error.message : 'Unknown error')}
             </p>
           </div>
         )}

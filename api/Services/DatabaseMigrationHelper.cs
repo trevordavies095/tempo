@@ -26,7 +26,8 @@ public static class DatabaseMigrationHelper
         // AddBestEffortsTable migration
         { "BestEfforts", "20251130201906_AddBestEffortsTable" },
         // AddShoeTracking migration
-        { "Shoes", "20251201120000_AddShoeTracking" }
+        { "Shoes", "20251201120000_AddShoeTracking" },
+        { "ImportJobs", "20260816180637_AddImportJobs" }
     };
 
     // Map of (table, column) pairs to their corresponding migration IDs

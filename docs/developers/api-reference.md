@@ -156,7 +156,7 @@ Content-Type: multipart/form-data
 file: [ZIP file]
 ```
 
-Supports files up to 500MB.
+Returns **202** with an import job document. Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Supports files up to 500MB.
 
 Per activity file uses the same intake outcomes (`created` / `updated` / `skipped`). ZIP extract, `activities.csv`, non-run skip, and Strava media copy stay in bulk, not in intake.
 

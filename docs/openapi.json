@@ -1592,7 +1592,7 @@
           "Workouts"
         ],
         "summary": "Bulk import Strava export",
-        "description": "Uploads and processes a ZIP file containing Strava export (activities.csv + activity files),\nimporting all run activities with duplicate detection. Supports optional unitPreference form field.\nOnly \"Run\" activities are imported; others are skipped.",
+        "description": "Accepts a Strava export ZIP and returns 202 with a job document. Poll GET /workouts/import/jobs/{id}\nuntil completed or failed. Supports optional unitPreference form field. Only \"Run\" activities are imported.",
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -1605,14 +1605,62 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request"
           },
           "500": {
             "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/jobs/{id}": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Get Strava bulk import job status",
+        "description": "Returns the import job document: status, byte and activity progress, counters, and error details.",
+        "operationId": "GetImportJob",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
           }
         },
         "security": [
@@ -1838,6 +1886,71 @@
         },
         "additionalProperties": false
       },
+      "ImportJobDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "filename": {
+            "type": "string",
+            "nullable": true
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bytesReceived": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "processed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "successful": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "skipped": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updated": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errors": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errorDetails": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StravaBulkImportError"
+            },
+            "nullable": true
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "LoginRequest": {
         "type": "object",
         "properties": {
@@ -1884,6 +1997,20 @@
         },
         "additionalProperties": false,
         "description": "Request model for setting default shoe"
+      },
+      "StravaBulkImportError": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "UpdateHeartRateZonesRequest": {
         "type": "object",

@@ -27,7 +27,9 @@ public class StravaBulkImportOrchestrator
     /// Import run activities from a Strava export ZIP stream.
     /// Throws if the archive cannot be extracted or activities.csv is missing.
     /// </summary>
-    public async Task<StravaBulkImportResult> ImportFromZipAsync(Stream zipStream)
+    public async Task<StravaBulkImportResult> ImportFromZipAsync(
+        Stream zipStream,
+        Func<StravaBulkImportResult, Task>? onProgress = null)
     {
         string? tempDir = null;
         var result = new StravaBulkImportResult();
@@ -41,8 +43,10 @@ public class StravaBulkImportOrchestrator
             result.TotalProcessed = runActivities.Count;
 
             _logger.LogInformation("Found {Total} run activities to process", result.TotalProcessed);
-
-            var mediaToAdd = new List<WorkoutMedia>();
+            if (onProgress != null)
+            {
+                await onProgress(result);
+            }
 
             foreach (var activity in runActivities)
             {
@@ -55,10 +59,8 @@ public class StravaBulkImportOrchestrator
                         Filename = activity.Filename,
                         Error = activityResult.ErrorMessage
                     });
-                    continue;
                 }
-
-                if (activityResult.Action == "skipped")
+                else if (activityResult.Action == "skipped")
                 {
                     result.Skipped++;
                 }
@@ -71,21 +73,25 @@ public class StravaBulkImportOrchestrator
                     result.Successful++;
                 }
 
-                if (activityResult.Workout != null && activityResult.MediaPaths.Count > 0)
+                if (activityResult.Success
+                    && activityResult.Workout != null
+                    && activityResult.MediaPaths.Count > 0)
                 {
                     var media = await _bulkImportService.ProcessMediaFilesAsync(
                         activityResult.Workout.Id,
                         activityResult.MediaPaths,
                         tempDir);
-                    mediaToAdd.AddRange(media);
+                    if (media.Count > 0)
+                    {
+                        _db.WorkoutMedia.AddRange(media);
+                        await _db.SaveChangesAsync();
+                    }
                 }
-            }
 
-            if (mediaToAdd.Count > 0)
-            {
-                _db.WorkoutMedia.AddRange(mediaToAdd);
-                await _db.SaveChangesAsync();
-                _logger.LogInformation("Added {MediaCount} media files to database", mediaToAdd.Count);
+                if (onProgress != null)
+                {
+                    await onProgress(result);
+                }
             }
 
             return result;
