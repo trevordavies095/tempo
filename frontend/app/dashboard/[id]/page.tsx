@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -79,15 +79,6 @@ function WorkoutDetailPageContent() {
   });
 
   const hasMatchedRuns = !!(similarRoutes && similarRoutes.length > 0);
-
-  // Sync notesValue with data.notes when entering edit mode or data changes
-  useEffect(() => {
-    if (data && isEditingNotes) {
-      setNotesValue(data.notes || '');
-    }
-  }, [data, isEditingNotes]);
-
-
 
   const handleMediaClick = (media: WorkoutMedia, index: number) => {
     setSelectedMediaIndex(index);

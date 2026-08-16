@@ -34,13 +34,6 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
     }
   }, [isMenuOpen]);
 
-  // Sync nameValue with workout.name when entering edit mode or data changes
-  useEffect(() => {
-    if (workout && isEditingName) {
-      setNameValue(workout.name || '');
-    }
-  }, [workout, isEditingName]);
-
   const handleSaveName = () => {
     const trimmedName = nameValue.trim() || null;
     updateWorkoutMutation.mutate(
