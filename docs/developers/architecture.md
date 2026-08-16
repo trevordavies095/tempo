@@ -53,12 +53,11 @@ Each extension method:
 
 ### 2. Service Layer
 
-Parser services handle file format conversion:
-- `GpxParserService` - Parses GPX XML files
-- `FitParserService` - Parses binary FIT files (uses FIT SDK)
-- `StravaCsvParserService` - Parses Strava export CSV files
-
-The FIT SDK is included as source files in `api/Libraries/FitSDK/` and compiled directly into the project (not a NuGet package).
+- `GpxParserService` / `FitParserService` — decode adapters: `TrackPoint`s, raw JSON, optional device summary (and GPX name). They do not expose `CalculateSplits` and do not hand FIT `RecordMesg` to callers. The FIT SDK is compiled from `api/Libraries/FitSDK/` (not a NuGet package).
+- `StravaCsvParserService` — parses Strava export CSV metadata for bulk ZIP import.
+- `TrackGeometry` — in-process: `TrackPoint`s in; elevation gain, `WorkoutRoute`, `WorkoutSplit`s, `WorkoutTimeSeries` out. No `DbContext`.
+- `WorkoutIntake` — one persist pipeline (parse, geometry, duplicate policy, default shoe, weather, relative effort, incremental best efforts). HTTP import is a thin adapter. Bulk calls intake per activity file.
+- `TrackPointRehydration` — stored Workout fields → `TrackPoint`s for crop and split recalc.
 
 All services are registered as `Scoped` in `Program.cs` except for configuration objects (`MediaStorageConfig`, `ElevationCalculationConfig`) which are `Singleton`.
 
@@ -95,6 +94,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 ### Core Entities
 
 - **Workout**: Core entity with stats (distance, pace, elevation, heart rate, etc.) and JSONB fields for raw GPX/FIT/Strava data
+- **TrackPoint**: In-memory sample on a path (not a table). Geometry and parsers use it; see `CONTEXT.md`.
 - **WorkoutRoute**: One-to-one relationship storing GeoJSON LineString coordinates
 - **WorkoutSplit**: One-to-many relationship for distance-based splits (km or mile)
 - **WorkoutTimeSeries**: One-to-many relationship for time-series data (heart rate, pace, elevation over time)
@@ -108,25 +108,19 @@ This ensures migrations can be safely applied even when database state doesn't m
 ### Workout Import Flow
 
 1. File uploaded to `POST /workouts/import`
-2. File type detected (GPX, FIT, or CSV)
-3. Appropriate parser service extracts data
-4. Weather data fetched from Open-Meteo API based on workout location/time
-5. Elevation data smoothed using configurable thresholds
-6. Splits calculated based on unit preference (1km for metric, 1 mile for imperial)
-7. Default shoe assigned (if configured in UserSettings)
-8. Workout saved to database with raw data in JSONB fields
-9. Route stored as GeoJSON LineString in `WorkoutRoute` table
+2. HTTP maps `IFormFile` to `WorkoutIntake` (stream + filename)
+3. Parser decode: GPX or FIT → `TrackPoint`s, raw JSON, optional device summary
+4. `TrackGeometry.Derive` builds elevation, route, splits, and time series (device summary wins for distance/duration when present)
+5. Duplicate policy: same key (`StartedAt`, `DistanceM`, `DurationS`); incomplete raw JSON/bytes can `updated`; complete duplicates `skipped`
+6. Weather, default shoe, relative effort, incremental best efforts
+7. Workout persisted with JSONB raw data and `WorkoutRoute`
 
 ### Bulk Import Flow
 
-1. ZIP file uploaded to `POST /workouts/import/bulk`
-2. ZIP extracted and validated
-3. `activities.csv` parsed for metadata
-4. Workout files processed from `activities/` folder
-5. Only "Run" activities imported
-6. Duplicate detection using `StartedAt`, `DistanceM`, and `DurationS`
-7. Default shoe assigned to each workout (if configured in UserSettings)
-8. All workouts saved to database
+1. ZIP uploaded to `POST /workouts/import/bulk`
+2. `BulkImportService` validates ZIP, parses `activities.csv`, skips non-run activities, copies Strava media
+3. Each activity file is `WorkoutIntake` with overlay (name, Strava JSON)
+4. Intake outcomes map to bulk `created` / `updated` / `skipped` / error counters (same duplicate rule as single-file)
 
 ## Authentication
 
@@ -148,6 +142,7 @@ The `TempoDbContext` configures several important indexes:
 
 - **API Endpoints**: `api/Endpoints/*.cs`
 - **Models**: `api/Models/*.cs`
+- **Workout intake / geometry**: `api/Services/WorkoutIntake.cs`, `api/Services/TrackGeometry.cs`, `api/Services/TrackPointRehydration.cs`
 - **Services**: `api/Services/*.cs`
 - **Database Context**: `api/Data/TempoDbContext.cs`
 - **Frontend API Client**: `frontend/lib/api.ts` (includes `getWorkoutTimeSeries`)

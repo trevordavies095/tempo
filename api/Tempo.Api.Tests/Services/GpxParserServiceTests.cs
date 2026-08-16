@@ -1,6 +1,5 @@
 using System.Text;
 using FluentAssertions;
-using Tempo.Api.Models;
 using Tempo.Api.Services;
 using Xunit;
 
@@ -207,7 +206,6 @@ public class GpxParserServiceTests
         result.Should().NotBeNull();
         result.TrackPoints.Should().HaveCount(2);
         result.TrackPoints.All(p => !p.Elevation.HasValue).Should().BeTrue();
-        result.ElevationGainMeters.Should().BeNull();
     }
 
     [Fact]
@@ -236,68 +234,10 @@ public class GpxParserServiceTests
         // Assert
         result.Should().NotBeNull();
         result.RawGpxDataJson.Should().Contain("Morning Run");
+        result.Name.Should().Be("Morning Run");
         result.RawGpxDataJson.Should().Contain("Test workout");
         result.RawGpxDataJson.Should().Contain("Test Author");
         result.RawGpxDataJson.Should().Contain("running,test");
-    }
-
-    [Fact]
-    public void CalculateSplits_WithKnownDistances_ReturnsCorrectSplits()
-    {
-        // Arrange
-        var trackPoints = CreateTrackPointsWithKnownDistance(5000.0, 1800); // 5km in 30 minutes
-        var distanceMeters = 5000.0;
-        var durationSeconds = 1800;
-        var splitDistanceMeters = 1000.0; // 1km splits
-
-        // Act
-        var splits = _parser.CalculateSplits(trackPoints, distanceMeters, durationSeconds, splitDistanceMeters);
-
-        // Assert
-        splits.Should().NotBeNull();
-        splits.Should().HaveCountGreaterThan(0);
-        // Should have splits for 5km (exact count depends on distance calculation)
-        splits.Count.Should().BeGreaterThan(0);
-        // First split should be close to 1000m
-        splits[0].DistanceM.Should().BeApproximately(1000.0, 100.0);
-    }
-
-    [Fact]
-    public void CalculateSplits_WithMetricPreference_Returns1000mSplits()
-    {
-        // Arrange
-        var trackPoints = CreateTrackPointsWithKnownDistance(5000.0, 1800);
-        var distanceMeters = 5000.0;
-        var durationSeconds = 1800;
-        var splitDistanceMeters = 1000.0; // Metric: 1km
-
-        // Act
-        var splits = _parser.CalculateSplits(trackPoints, distanceMeters, durationSeconds, splitDistanceMeters);
-
-        // Assert
-        splits.Should().NotBeNull();
-        splits.Should().HaveCountGreaterThan(0);
-        // First split should be approximately 1000m
-        splits[0].DistanceM.Should().BeApproximately(1000.0, 50.0);
-    }
-
-    [Fact]
-    public void CalculateSplits_WithImperialPreference_Returns1609mSplits()
-    {
-        // Arrange
-        var trackPoints = CreateTrackPointsWithKnownDistance(8046.72, 1800); // ~5 miles
-        var distanceMeters = 8046.72;
-        var durationSeconds = 1800;
-        var splitDistanceMeters = 1609.344; // Imperial: 1 mile
-
-        // Act
-        var splits = _parser.CalculateSplits(trackPoints, distanceMeters, durationSeconds, splitDistanceMeters);
-
-        // Assert
-        splits.Should().NotBeNull();
-        splits.Should().HaveCountGreaterThan(0);
-        // First split should be approximately 1609m (1 mile) - allow larger tolerance due to GPS distance calculation variance
-        splits[0].DistanceM.Should().BeApproximately(1609.344, 100.0);
     }
 
     [Fact]
@@ -413,39 +353,6 @@ public class GpxParserServiceTests
   </trk>
 </gpx>";
         return new MemoryStream(Encoding.UTF8.GetBytes(xml));
-    }
-
-    private List<GpxParserService.GpxPoint> CreateTrackPointsWithKnownDistance(double totalDistanceMeters, int totalDurationSeconds)
-    {
-        // Create track points along a straight line to approximate the distance
-        // Using a simple approach: create points at regular intervals
-        var numPoints = 100;
-        var points = new List<GpxParserService.GpxPoint>();
-        var startTime = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc);
-        
-        // Create points along a line (each point is approximately totalDistanceMeters / numPoints apart)
-        // Using a simple lat/lon progression
-        var startLat = 37.7749;
-        var startLon = -122.4194;
-        
-        // Calculate actual increment to approximate total distance
-        // Using Haversine: distance between two points is roughly 111km per degree
-        // So for totalDistanceMeters, we need approximately totalDistanceMeters / 111000 degrees
-        var degreeIncrement = totalDistanceMeters / (111000.0 * (numPoints - 1));
-
-        for (int i = 0; i < numPoints; i++)
-        {
-            var elapsedSeconds = (int)((double)i / (numPoints - 1) * totalDurationSeconds);
-            points.Add(new GpxParserService.GpxPoint
-            {
-                Latitude = startLat + (i * degreeIncrement),
-                Longitude = startLon + (i * degreeIncrement),
-                Time = startTime.AddSeconds(elapsedSeconds),
-                Elevation = 100.0 + (i * 0.1) // Simple elevation profile
-            });
-        }
-
-        return points;
     }
 }
 

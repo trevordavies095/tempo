@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -7,8 +6,6 @@ using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
 using Tempo.Api.Utils;
-using static Tempo.Api.Services.WorkoutQueryService;
-using static Tempo.Api.Services.DeviceExtractionService;
 
 namespace Tempo.Api.Endpoints;
 
@@ -16,14 +13,6 @@ public static class WorkoutsEndpoints
 {
     private const int TimeSeriesDefaultPageSize = 1000;
     private const int TimeSeriesMaxPageSize = 5000;
-
-    // Result class for file processing
-    private class FileProcessResult
-    {
-        public string Action { get; set; } = "created"; // "created", "updated", "skipped", "error"
-        public string? ErrorMessage { get; set; }
-        public object? Response { get; set; }
-    }
 
     // Response class for similar routes
     private class SimilarRouteResponse
@@ -45,11 +34,7 @@ public static class WorkoutsEndpoints
     /// </summary>
     /// <param name="request">HTTP request containing multipart/form-data with file(s)</param>
     /// <param name="db">Database context</param>
-    /// <param name="gpxParser">GPX parser service</param>
-    /// <param name="fitParser">FIT parser service</param>
-    /// <param name="weatherService">Weather service</param>
-    /// <param name="zoneService">Heart rate zone service</param>
-    /// <param name="relativeEffortService">Relative effort service</param>
+    /// <param name="workoutIntake">Workout intake module</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>Import result with created/updated/skipped counts and any errors</returns>
     /// <remarks>
@@ -60,12 +45,7 @@ public static class WorkoutsEndpoints
     private static async Task<IResult> ImportWorkout(
         HttpRequest request,
         TempoDbContext db,
-        GpxParserService gpxParser,
-        FitParserService fitParser,
-        WeatherService weatherService,
-        HeartRateZoneService zoneService,
-        RelativeEffortService relativeEffortService,
-        BestEffortService bestEffortService,
+        WorkoutIntake workoutIntake,
         ILogger<Program> logger)
     {
         if (!request.HasFormContentType)
@@ -88,39 +68,18 @@ public static class WorkoutsEndpoints
             unitPreference = "metric";
         }
 
-        // Save unit preference to UserSettings
         await SaveUnitPreferenceToSettingsAsync(db, unitPreference, logger);
 
-        // Calculate split distance based on unit preference
-        // 1000.0 meters = 1 km for metric, 1609.344 meters = 1 mile for imperial
-        var splitDistanceMeters = unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
-            ? 1609.344
-            : 1000.0;
-
-        // Handle single file for backward compatibility
         if (files.Count == 1)
         {
-            var singleFileResult = await ProcessSingleFile(
-                files[0],
-                db,
-                gpxParser,
-                fitParser,
-                weatherService,
-                zoneService,
-                relativeEffortService,
-                bestEffortService,
-                splitDistanceMeters,
-                logger);
-
-            // Return single file response format for backward compatibility
+            var singleFileResult = await ProcessImportedFile(files[0], workoutIntake);
             if (singleFileResult.Action == "error")
             {
                 return Results.BadRequest(new { error = singleFileResult.ErrorMessage ?? "Error processing file" });
             }
-            return Results.Ok(singleFileResult.Response);
+            return Results.Ok(MapIntakeHttpResponse(singleFileResult));
         }
 
-        // Handle multiple files
         var successful = 0;
         var skipped = 0;
         var updated = 0;
@@ -131,17 +90,7 @@ public static class WorkoutsEndpoints
         {
             try
             {
-                var result = await ProcessSingleFile(
-                    file,
-                    db,
-                    gpxParser,
-                    fitParser,
-                    weatherService,
-                    zoneService,
-                    relativeEffortService,
-                    bestEffortService,
-                    splitDistanceMeters,
-                    logger);
+                var result = await ProcessImportedFile(file, workoutIntake);
 
                 if (result.Action == "error")
                 {
@@ -1493,7 +1442,6 @@ public static class WorkoutsEndpoints
         HttpRequest request,
         BulkImportService bulkImportService,
         TempoDbContext db,
-        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         if (!request.HasFormContentType)
@@ -1538,12 +1486,6 @@ public static class WorkoutsEndpoints
         // Save unit preference to UserSettings
         await SaveUnitPreferenceToSettingsAsync(db, unitPreference, logger);
 
-        // Calculate split distance based on unit preference
-        // 1000.0 meters = 1 km for metric, 1609.344 meters = 1 mile for imperial
-        var splitDistanceMeters = unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
-            ? 1609.344
-            : 1000.0;
-
         string? tempDir = null;
         var errors = new List<object>();
         var successful = 0;
@@ -1568,104 +1510,38 @@ public static class WorkoutsEndpoints
             logger.LogInformation("Found {Total} run activities to process", totalProcessed);
 
             // Process each activity file
-            var workoutsToAdd = new List<Workout>();
-            var routesToAdd = new List<WorkoutRoute>();
-            var splitsToAdd = new List<WorkoutSplit>();
-            var timeSeriesToAdd = new List<WorkoutTimeSeries>();
             var mediaToAdd = new List<WorkoutMedia>();
 
             foreach (var activity in runActivities)
             {
-                var result = await bulkImportService.ProcessActivityFileAsync(activity, tempDir, splitDistanceMeters);
-                
+                var result = await bulkImportService.ProcessActivityFileAsync(activity, tempDir);
+
                 if (!result.Success)
                 {
                     errors.Add(new { filename = activity.Filename, error = result.ErrorMessage });
-                        continue;
-                    }
+                    continue;
+                }
 
                 if (result.Action == "skipped")
                 {
                     skipped++;
-                    // Process media for skipped workouts
-                    if (result.MediaPaths.Count > 0)
-                    {
-                        var media = await bulkImportService.ProcessMediaFilesAsync(result.Workout!.Id, result.MediaPaths, tempDir);
-                        mediaToAdd.AddRange(media);
-                    }
-                            continue;
                 }
-
-                if (result.Action == "updated")
+                else if (result.Action == "updated")
                 {
-                            updated++;
-                    // Process media for updated workouts
-                    if (result.MediaPaths.Count > 0)
-                    {
-                        var media = await bulkImportService.ProcessMediaFilesAsync(result.Workout!.Id, result.MediaPaths, tempDir);
-                        mediaToAdd.AddRange(media);
-                    }
-                                            continue;
+                    updated++;
                 }
-
-                // Created new workout
-                if (result.Workout != null && result.Route != null && result.Splits != null)
+                else
                 {
-                    workoutsToAdd.Add(result.Workout);
-                    routesToAdd.Add(result.Route);
-                    splitsToAdd.AddRange(result.Splits);
-                    if (result.TimeSeries != null && result.TimeSeries.Count > 0)
-                    {
-                        timeSeriesToAdd.AddRange(result.TimeSeries);
-                    }
                     successful++;
+                }
 
-                    // Process media files
-                    if (result.MediaPaths.Count > 0)
-                    {
-                        var media = await bulkImportService.ProcessMediaFilesAsync(result.Workout.Id, result.MediaPaths, tempDir);
-                        mediaToAdd.AddRange(media);
-                    }
+                if (result.Workout != null && result.MediaPaths.Count > 0)
+                {
+                    var media = await bulkImportService.ProcessMediaFilesAsync(result.Workout.Id, result.MediaPaths, tempDir);
+                    mediaToAdd.AddRange(media);
                 }
             }
 
-            // Assign default shoe to all new workouts if set
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            if (settings != null && settings.DefaultShoeId.HasValue)
-            {
-                // Verify the shoe still exists
-                var defaultShoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
-                if (defaultShoe != null && !defaultShoe.IsRetired)
-                {
-                    foreach (var workout in workoutsToAdd)
-                    {
-                        workout.ShoeId = settings.DefaultShoeId.Value;
-                    }
-                    logger.LogInformation("Assigned default shoe {ShoeId} to {Count} workouts", settings.DefaultShoeId.Value, workoutsToAdd.Count);
-                }
-            }
-
-            // Batch save workouts
-            await bulkImportService.BatchSaveWorkoutsAsync(workoutsToAdd, routesToAdd, splitsToAdd, timeSeriesToAdd);
-
-            // Calculate relative effort
-            await bulkImportService.CalculateAndSaveRelativeEffortAsync(workoutsToAdd);
-
-            // Update best efforts for all newly created workouts
-            foreach (var workout in workoutsToAdd)
-            {
-                try
-                {
-                    await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to update best efforts for workout {WorkoutId}", workout.Id);
-                    // Don't fail the bulk import if best effort update fails for individual workouts
-                }
-            }
-
-            // Save media records
             if (mediaToAdd.Count > 0)
             {
                 db.WorkoutMedia.AddRange(mediaToAdd);
@@ -2564,892 +2440,57 @@ public static class WorkoutsEndpoints
         .WithDescription("Deletes a workout and all associated data (route, splits, media files, and database records)");
     }
 
-    /// <summary>
-    /// Extracts calculated metrics from RawGpxData JSON.
-    /// </summary>
-    private static Dictionary<string, object> ExtractCalculatedMetrics(string? rawGpxDataJson, ILogger logger)
+    private static async Task<WorkoutIntakeResult> ProcessImportedFile(IFormFile file, WorkoutIntake workoutIntake)
     {
-        var calculated = new Dictionary<string, object>();
-        if (!string.IsNullOrEmpty(rawGpxDataJson))
-        {
-            try
-            {
-                var rawData = JsonSerializer.Deserialize<JsonElement>(rawGpxDataJson);
-                if (rawData.TryGetProperty("calculated", out var calculatedElement))
-                {
-                    foreach (var prop in calculatedElement.EnumerateObject())
-                    {
-                        calculated[prop.Name] = prop.Value;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to parse RawGpxData JSON for additional metrics");
-            }
-        }
-        return calculated;
+        await using var stream = file.OpenReadStream();
+        return await workoutIntake.ProcessAsync(stream, file.FileName);
     }
 
-    /// <summary>
-    /// Determines the file type from the filename.
-    /// </summary>
-    private static (string? FileType, bool IsGpx, bool IsFitGz) DetermineFileType(string fileName)
+    private static object MapIntakeHttpResponse(WorkoutIntakeResult result)
     {
-        var lowerFileName = fileName.ToLowerInvariant();
-        bool isGpx = lowerFileName.EndsWith(".gpx");
-        bool isFit = lowerFileName.EndsWith(".fit");
-        bool isFitGz = lowerFileName.EndsWith(".fit.gz");
-
-        if (isGpx)
+        var workout = result.Workout!;
+        if (result.Action == "created")
         {
-            return ("gpx", true, false);
-        }
-        else if (isFitGz || isFit)
-        {
-            return ("fit", false, isFitGz);
-        }
-        else
-        {
-            return (null, false, false);
-        }
-    }
-
-    /// <summary>
-    /// Parses a workout file (GPX or FIT) and returns the parse result.
-    /// </summary>
-    private static async Task<(GpxParserService.GpxParseResult? GpxResult, FitParserService.FitParseResult? FitResult, byte[] RawFileData)> ParseWorkoutFileAsync(
-        IFormFile file,
-        string fileType,
-        bool isFitGz,
-        GpxParserService gpxParser,
-        FitParserService fitParser,
-        ILogger logger)
-        {
-            // Read file into byte array before parsing
-            byte[] rawFileData;
-            using (var stream = file.OpenReadStream())
-            using (var memoryStream = new MemoryStream())
+            return new
             {
-                await stream.CopyToAsync(memoryStream);
-                rawFileData = memoryStream.ToArray();
-            }
-
-            GpxParserService.GpxParseResult? parseResult = null;
-            FitParserService.FitParseResult? fitResult = null;
-
-            if (fileType == "gpx")
-            {
-                using (var stream = new MemoryStream(rawFileData))
-                {
-                    parseResult = gpxParser.ParseGpx(stream);
-                }
-            }
-            else if (fileType == "fit")
-            {
-                using (var stream = new MemoryStream(rawFileData))
-                {
-                    try
-                    {
-                        if (isFitGz)
-                        {
-                            fitResult = fitParser.ParseGzippedFit(stream);
-                        }
-                        else
-                        {
-                            fitResult = fitParser.ParseFit(stream);
-                        }
-                    }
-                    catch (NotSupportedException ex)
-                    {
-                    throw new InvalidOperationException(ex.Message, ex);
-                }
-            }
-        }
-
-        return (parseResult, fitResult, rawFileData);
-    }
-
-    /// <summary>
-    /// Extracts common data from parse results.
-    /// </summary>
-    private static (DateTime StartTime, int DurationSeconds, double DistanceMeters, double? ElevationGainMeters, 
-        List<GpxParserService.GpxPoint> TrackPoints, string? RawGpxDataJson, string? RawFitDataJson) 
-        ExtractParseResultData(GpxParserService.GpxParseResult? parseResult, FitParserService.FitParseResult? fitResult)
-    {
-            if (parseResult != null)
-            {
-            return (parseResult.StartTime, parseResult.DurationSeconds, parseResult.DistanceMeters,
-                parseResult.ElevationGainMeters, parseResult.TrackPoints, parseResult.RawGpxDataJson, null);
-            }
-            else if (fitResult != null)
-            {
-            return (fitResult.StartTime, fitResult.DurationSeconds, fitResult.DistanceMeters,
-                fitResult.ElevationGainMeters, fitResult.TrackPoints, null, fitResult.RawFitDataJson);
-            }
-            else
-            {
-            throw new InvalidOperationException("Failed to parse file");
-        }
-    }
-
-    /// <summary>
-    /// Handles duplicate workout detection and updates if needed.
-    /// </summary>
-    private static async Task<FileProcessResult?> HandleDuplicateWorkoutAsync(
-        Workout? existingWorkout,
-        byte[] rawFileData,
-        string fileName,
-        string fileType,
-        string? rawGpxDataJson,
-        string? rawFitDataJson,
-        DateTime startedAtUtc,
-        TempoDbContext db,
-        ILogger logger)
-    {
-        if (existingWorkout == null)
-        {
-            return null;
-        }
-
-                // Check if existing workout is missing raw file data
-                bool needsRawFileUpdate = existingWorkout.RawFileData == null || existingWorkout.RawFileData.Length == 0;
-                
-                if (needsRawFileUpdate)
-                {
-                    // Backfill raw file data for existing workout
-                    existingWorkout.RawFileData = rawFileData;
-            existingWorkout.RawFileName = fileName;
-                    existingWorkout.RawFileType = fileType;
-                    
-                    // Also update RawGpxData and RawFitData if available
-                    if (!string.IsNullOrEmpty(rawGpxDataJson))
-                    {
-                        existingWorkout.RawGpxData = rawGpxDataJson;
-                    }
-                    if (!string.IsNullOrEmpty(rawFitDataJson))
-                    {
-                        existingWorkout.RawFitData = rawFitDataJson;
-                    }
-                    
-                    // Save the update immediately
-                    await db.SaveChangesAsync();
-                    
-                    logger.LogInformation("Updated duplicate workout {WorkoutId} with raw file data: {Filename} at {StartTime}", 
-                existingWorkout.Id, LogSanitizer.Sanitize(fileName), startedAtUtc);
-                    
-                    return new FileProcessResult
-                    {
-                        Action = "updated",
-                        Response = new
-                        {
-                            id = existingWorkout.Id,
-                            startedAt = existingWorkout.StartedAt,
-                            durationS = existingWorkout.DurationS,
-                            distanceM = existingWorkout.DistanceM,
-                            avgPaceS = existingWorkout.AvgPaceS,
-                            elevGainM = existingWorkout.ElevGainM,
-                            action = "updated",
-                            message = "Workout already exists and was updated with raw file data"
-                        }
-                    };
-                }
-                else
-                {
-                    // Duplicate exists and already has raw file data
-                    logger.LogInformation("Skipped duplicate workout (already has raw file): {Filename} at {StartTime}", 
-                LogSanitizer.Sanitize(fileName), startedAtUtc);
-                    
-                    return new FileProcessResult
-                    {
-                        Action = "skipped",
-                        Response = new
-                        {
-                            id = existingWorkout.Id,
-                            startedAt = existingWorkout.StartedAt,
-                            durationS = existingWorkout.DurationS,
-                            distanceM = existingWorkout.DistanceM,
-                            avgPaceS = existingWorkout.AvgPaceS,
-                            elevGainM = existingWorkout.ElevGainM,
-                            action = "skipped",
-                            message = "Workout already exists and has raw file data"
-                        }
-                    };
-                }
-            }
-
-    /// <summary>
-    /// Creates a workout entity from parsed data.
-    /// </summary>
-    private static Workout CreateWorkoutEntity(
-        DateTime startedAtUtc,
-        int durationSeconds,
-        double distanceMeters,
-        double avgPaceS,
-        double? elevationGainMeters,
-        byte[] rawFileData,
-        string fileName,
-        string fileType,
-        string? rawGpxDataJson,
-        string? rawFitDataJson,
-        bool isGpx)
-    {
-        return new Workout
-            {
-                Id = Guid.NewGuid(),
-                StartedAt = startedAtUtc,
-                DurationS = durationSeconds,
-                DistanceM = distanceMeters,
-                AvgPaceS = avgPaceS,
-                ElevGainM = elevationGainMeters,
-                RawFileData = rawFileData,
-            RawFileName = fileName,
-                RawFileType = fileType,
-                RawGpxData = rawGpxDataJson,
-                RawFitData = rawFitDataJson,
-                Source = isGpx ? "gpx_import" : "fit_import",
-                RunType = "Easy Run",
-                CreatedAt = DateTime.UtcNow
-            };
-    }
-
-    /// <summary>
-    /// Populates workout metrics from GPX calculated data and FIT session data.
-    /// </summary>
-    private static void PopulateWorkoutMetrics(
-        Workout workout,
-        Dictionary<string, object> calculated,
-        FitParserService.FitParseResult? fitResult,
-        string? rawFitDataJson,
-        ILogger logger)
-    {
-            // Populate additional metrics from calculated data (GPX)
-            if (calculated.TryGetValue("elevLossM", out var elevLoss) && elevLoss is JsonElement elevLossElem && elevLossElem.ValueKind == JsonValueKind.Number)
-                workout.ElevLossM = elevLossElem.GetDouble();
-            if (calculated.TryGetValue("minElevM", out var minElev) && minElev is JsonElement minElevElem && minElevElem.ValueKind == JsonValueKind.Number)
-                workout.MinElevM = minElevElem.GetDouble();
-            if (calculated.TryGetValue("maxElevM", out var maxElev) && maxElev is JsonElement maxElevElem && maxElevElem.ValueKind == JsonValueKind.Number)
-                workout.MaxElevM = maxElevElem.GetDouble();
-            if (calculated.TryGetValue("maxSpeedMps", out var maxSpeed) && maxSpeed is JsonElement maxSpeedElem && maxSpeedElem.ValueKind == JsonValueKind.Number)
-                workout.MaxSpeedMps = maxSpeedElem.GetDouble();
-            if (calculated.TryGetValue("avgSpeedMps", out var avgSpeed) && avgSpeed is JsonElement avgSpeedElem && avgSpeedElem.ValueKind == JsonValueKind.Number)
-                workout.AvgSpeedMps = avgSpeedElem.GetDouble();
-
-            // Populate metrics from FIT session data
-            if (fitResult != null && !string.IsNullOrEmpty(rawFitDataJson))
-            {
-                try
-                {
-                    var rawFit = JsonSerializer.Deserialize<JsonElement>(rawFitDataJson);
-                    if (rawFit.TryGetProperty("session", out var sessionElement))
-                    {
-                        if (sessionElement.TryGetProperty("totalMovingTime", out var movingTime) && movingTime.ValueKind == JsonValueKind.Number)
-                            workout.MovingTimeS = (int)Math.Round(movingTime.GetDouble());
-                        if (sessionElement.TryGetProperty("maxHeartRate", out var maxHr) && maxHr.ValueKind == JsonValueKind.Number)
-                            workout.MaxHeartRateBpm = (byte)maxHr.GetInt32();
-                        if (sessionElement.TryGetProperty("avgHeartRate", out var avgHr) && avgHr.ValueKind == JsonValueKind.Number)
-                            workout.AvgHeartRateBpm = (byte)avgHr.GetInt32();
-                        if (sessionElement.TryGetProperty("minHeartRate", out var minHr) && minHr.ValueKind == JsonValueKind.Number)
-                            workout.MinHeartRateBpm = (byte)minHr.GetInt32();
-                        if (sessionElement.TryGetProperty("maxCadence", out var maxCad) && maxCad.ValueKind == JsonValueKind.Number)
-                            workout.MaxCadenceRpm = (byte)maxCad.GetInt32();
-                        if (sessionElement.TryGetProperty("avgCadence", out var avgCad) && avgCad.ValueKind == JsonValueKind.Number)
-                            workout.AvgCadenceRpm = (byte)avgCad.GetInt32();
-                        if (sessionElement.TryGetProperty("maxPower", out var maxPow) && maxPow.ValueKind == JsonValueKind.Number)
-                            workout.MaxPowerWatts = (ushort)maxPow.GetInt32();
-                        if (sessionElement.TryGetProperty("avgPower", out var avgPow) && avgPow.ValueKind == JsonValueKind.Number)
-                            workout.AvgPowerWatts = (ushort)avgPow.GetInt32();
-                        if (sessionElement.TryGetProperty("totalCalories", out var cals) && cals.ValueKind == JsonValueKind.Number)
-                            workout.Calories = (ushort)cals.GetInt32();
-                    }
-
-                    // Extract device information
-                    if (rawFit.TryGetProperty("device", out var deviceElement))
-                    {
-                        if (deviceElement.ValueKind == JsonValueKind.Object)
-                        {
-                            logger.LogDebug("Found device element in FIT file: {DeviceData}", deviceElement.GetRawText());
-                        workout.Device = DeviceExtractionService.ExtractDeviceName(deviceElement, logger);
-                            if (string.IsNullOrWhiteSpace(workout.Device))
-                            {
-                                logger.LogDebug("Device extraction returned null. Device element: {DeviceData}", deviceElement.GetRawText());
-                            }
-                        }
-                        else
-                        {
-                            logger.LogDebug("Device element exists but is not an object. Type: {Type}, Value: {Value}", deviceElement.ValueKind, deviceElement.GetRawText());
-                        }
-                    }
-                    else
-                    {
-                        logger.LogDebug("No device element found in RawFitData");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to extract metrics from RawFitData JSON");
-                }
-            }
-
-            // Infer device from Source field if device is missing or "Development"
-            if (string.IsNullOrWhiteSpace(workout.Device) || workout.Device == "Development")
-            {
-                if (workout.Source == "gpx_import" || workout.Source == "apple_watch")
-                {
-                    workout.Device = "Apple Watch";
-            }
-        }
-    }
-
-    /// <summary>
-    /// Creates a workout route from track points.
-    /// </summary>
-    private static WorkoutRoute CreateWorkoutRoute(Guid workoutId, List<GpxParserService.GpxPoint> trackPoints)
-    {
-            var coordinates = trackPoints.Select(p => new[] { p.Longitude, p.Latitude }).ToList();
-            var routeGeoJson = JsonSerializer.Serialize(new
-            {
-                type = "LineString",
-                coordinates = coordinates
-            });
-
-        return new WorkoutRoute
-            {
-                Id = Guid.NewGuid(),
-            WorkoutId = workoutId,
-                RouteGeoJson = routeGeoJson
-            };
-    }
-
-    /// <summary>
-    /// Creates time-series records from GPX track points with sensor data.
-    /// </summary>
-    private static List<WorkoutTimeSeries> CreateTimeSeriesFromGpxTrackPoints(
-        Guid workoutId,
-        DateTime startTime,
-        List<GpxParserService.GpxPoint> trackPoints)
-    {
-        var timeSeries = new List<WorkoutTimeSeries>();
-
-        foreach (var point in trackPoints)
-        {
-            if (!point.Time.HasValue) continue;
-
-            var elapsedSeconds = (int)(point.Time.Value - startTime).TotalSeconds;
-
-            // Only create record if there's sensor data
-            if (point.HeartRateBpm.HasValue ||
-                point.CadenceRpm.HasValue ||
-                point.PowerWatts.HasValue ||
-                point.TemperatureC.HasValue)
-            {
-                timeSeries.Add(new WorkoutTimeSeries
-                {
-                    Id = Guid.NewGuid(),
-                    WorkoutId = workoutId,
-                    ElapsedSeconds = elapsedSeconds,
-                    HeartRateBpm = point.HeartRateBpm,
-                    CadenceRpm = point.CadenceRpm,
-                    PowerWatts = point.PowerWatts,
-                    TemperatureC = point.TemperatureC,
-                    ElevationM = point.Elevation
-                });
-            }
-        }
-
-        return timeSeries;
-    }
-
-    /// <summary>
-    /// Creates time-series records from FIT RecordMesg messages with sensor data.
-    /// Returns an empty list if no sensor data is available, ensuring backward compatibility
-    /// with FIT files that don't contain sensor data.
-    /// </summary>
-    /// <param name="workoutId">The workout ID to associate time series records with.</param>
-    /// <param name="startTime">The workout start time for calculating elapsed seconds.</param>
-    /// <param name="records">The FIT RecordMesg collection. Can be null or empty for backward compatibility.</param>
-    /// <returns>List of WorkoutTimeSeries records. Empty list if no sensor data is available.</returns>
-    private static List<WorkoutTimeSeries> CreateTimeSeriesFromFitRecords(
-        Guid workoutId,
-        DateTime startTime,
-        ReadOnlyCollection<Dynastream.Fit.RecordMesg> records)
-    {
-        var timeSeries = new List<WorkoutTimeSeries>();
-
-        // Defensive null check for backward compatibility
-        if (records == null || records.Count == 0)
-        {
-            return timeSeries;
-        }
-
-        foreach (var record in records)
-        {
-            var timestamp = record.GetTimestamp()?.GetDateTime().ToUniversalTime();
-            if (timestamp == null) continue;
-
-            var elapsedSeconds = (int)(timestamp.Value - startTime).TotalSeconds;
-            if (elapsedSeconds < 0) continue; // Skip records before start time
-
-            // Extract and validate all fields first
-            // Extract and validate speed (must be non-negative, finite, and not NaN)
-            // Prefer enhanced speed if valid, otherwise fall back to standard speed
-            var enhancedSpeed = record.GetEnhancedSpeed();
-            var standardSpeed = record.GetSpeed();
-            double? validatedSpeed = null;
-            if (enhancedSpeed.HasValue && !double.IsNaN(enhancedSpeed.Value) && !double.IsInfinity(enhancedSpeed.Value) && enhancedSpeed.Value >= 0)
-            {
-                validatedSpeed = (double?)enhancedSpeed.Value;
-            }
-            else if (standardSpeed.HasValue && !double.IsNaN(standardSpeed.Value) && !double.IsInfinity(standardSpeed.Value) && standardSpeed.Value >= 0)
-            {
-                validatedSpeed = (double?)standardSpeed.Value;
-            }
-
-            // Extract and validate grade (clamp to -100 to 100 range, exclude NaN and Infinity)
-            var grade = record.GetGrade();
-            double? validatedGrade = null;
-            if (grade.HasValue)
-            {
-                var gradeValue = (double)grade.Value;
-                if (!double.IsNaN(gradeValue) && !double.IsInfinity(gradeValue))
-                {
-                    validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
-                }
-            }
-
-            // Extract and validate vertical speed (reasonable range -50 to 50 m/s, exclude NaN and Infinity)
-            var verticalSpeed = record.GetVerticalSpeed();
-            double? validatedVerticalSpeed = null;
-            if (verticalSpeed.HasValue)
-            {
-                var vsValue = verticalSpeed.Value;
-                if (!double.IsNaN(vsValue) && !double.IsInfinity(vsValue) && vsValue >= -50.0 && vsValue <= 50.0)
-                {
-                    validatedVerticalSpeed = (double)vsValue;
-                }
-                // Otherwise, set to null (invalid data)
-            }
-
-            // Extract other fields (validate NaN for double fields)
-            var heartRate = record.GetHeartRate();
-            var cadence = record.GetCadence();
-            var power = record.GetPower();
-            var temperature = record.GetTemperature();
-            
-            // Extract elevation (prefer enhanced, exclude NaN and Infinity)
-            double? elevation = null;
-            var enhancedAltitude = record.GetEnhancedAltitude();
-            var standardAltitude = record.GetAltitude();
-            if (enhancedAltitude.HasValue && !double.IsNaN(enhancedAltitude.Value) && !double.IsInfinity(enhancedAltitude.Value))
-            {
-                elevation = (double?)enhancedAltitude.Value;
-            }
-            else if (standardAltitude.HasValue && !double.IsNaN(standardAltitude.Value) && !double.IsInfinity(standardAltitude.Value))
-            {
-                elevation = (double?)standardAltitude.Value;
-            }
-            
-            // Extract distance (must be non-negative, finite, and not NaN)
-            double? distance = null;
-            var distanceValue = record.GetDistance();
-            if (distanceValue.HasValue)
-            {
-                var dist = distanceValue.Value;
-                if (!double.IsNaN(dist) && !double.IsInfinity(dist) && dist >= 0)
-                {
-                    distance = (double?)dist;
-                }
-            }
-
-            // Only create record if there's at least one valid data field after validation
-            var hasValidData = heartRate.HasValue ||
-                               cadence.HasValue ||
-                               power.HasValue ||
-                               validatedSpeed.HasValue ||
-                               temperature.HasValue ||
-                               elevation.HasValue ||
-                               validatedGrade.HasValue ||
-                               validatedVerticalSpeed.HasValue ||
-                               distance.HasValue;
-
-            if (hasValidData)
-            {
-                var timeSeriesRecord = new WorkoutTimeSeries
-                {
-                    Id = Guid.NewGuid(),
-                    WorkoutId = workoutId,
-                    ElapsedSeconds = elapsedSeconds,
-                    HeartRateBpm = heartRate,
-                    CadenceRpm = cadence,
-                    PowerWatts = power,
-                    SpeedMps = validatedSpeed,
-                    TemperatureC = temperature,
-                    ElevationM = elevation,
-                    GradePercent = validatedGrade,
-                    VerticalSpeedMps = validatedVerticalSpeed,
-                    DistanceM = distance
-                };
-
-                timeSeries.Add(timeSeriesRecord);
-            }
-        }
-
-        return timeSeries;
-    }
-
-    /// <summary>
-    /// Calculates aggregate metrics (max/avg/min) from time-series data and updates workout.
-    /// </summary>
-    private static void CalculateAggregateMetricsFromTimeSeries(Workout workout, List<WorkoutTimeSeries> timeSeries)
-    {
-        if (timeSeries == null || timeSeries.Count == 0)
-        {
-            return;
-        }
-
-        // Calculate heart rate aggregates
-        var heartRates = timeSeries.Where(ts => ts.HeartRateBpm.HasValue)
-            .Select(ts => ts.HeartRateBpm!.Value).ToList();
-        if (heartRates.Any())
-        {
-            workout.MaxHeartRateBpm = heartRates.Max();
-            workout.AvgHeartRateBpm = (byte)Math.Round(heartRates.Average(x => (double)x));
-            workout.MinHeartRateBpm = heartRates.Min();
-        }
-
-        // Calculate cadence aggregates
-        var cadences = timeSeries.Where(ts => ts.CadenceRpm.HasValue)
-            .Select(ts => ts.CadenceRpm!.Value).ToList();
-        if (cadences.Any())
-        {
-            workout.MaxCadenceRpm = cadences.Max();
-            workout.AvgCadenceRpm = (byte)Math.Round(cadences.Average(x => (double)x));
-        }
-
-        // Calculate power aggregates
-        var powers = timeSeries.Where(ts => ts.PowerWatts.HasValue)
-            .Select(ts => ts.PowerWatts!.Value).ToList();
-        if (powers.Any())
-        {
-            workout.MaxPowerWatts = powers.Max();
-            workout.AvgPowerWatts = (ushort)Math.Round(powers.Average(x => (double)x));
-        }
-
-        // Calculate speed aggregates
-        var speeds = timeSeries.Where(ts => ts.SpeedMps.HasValue)
-            .Select(ts => ts.SpeedMps!.Value).ToList();
-        if (speeds.Any())
-        {
-            // Only set if not already populated (e.g., from Strava CSV or GPX calculated data)
-            if (!workout.MaxSpeedMps.HasValue)
-            {
-                workout.MaxSpeedMps = speeds.Max();
-            }
-        }
-        
-        // Calculate average speed using total distance / duration (matches GPX import behavior)
-        // Only set if not already populated (e.g., from GPX calculated data)
-        if (!workout.AvgSpeedMps.HasValue && workout.DistanceM > 0 && workout.DurationS > 0)
-        {
-            workout.AvgSpeedMps = workout.DistanceM / workout.DurationS;
-        }
-    }
-
-    /// <summary>
-    /// Calculates splits for a workout.
-    /// </summary>
-    private static List<WorkoutSplit> CalculateSplits(
-        GpxParserService gpxParser,
-        List<GpxParserService.GpxPoint> trackPoints,
-        double distanceMeters,
-        int durationSeconds,
-        double splitDistanceMeters,
-        Guid workoutId)
-    {
-            var splits = gpxParser.CalculateSplits(
-                trackPoints,
-                distanceMeters,
-                durationSeconds,
-                splitDistanceMeters
-            );
-
-            foreach (var split in splits)
-            {
-            split.WorkoutId = workoutId;
-        }
-
-        return splits;
-    }
-
-    /// <summary>
-    /// Fetches and attaches weather data to a workout.
-    /// </summary>
-    private static async Task FetchAndAttachWeatherAsync(
-        Workout workout,
-        List<GpxParserService.GpxPoint> trackPoints,
-        string? rawFitDataJson,
-        DateTime startedAtUtc,
-        WeatherService weatherService,
-        ILogger logger)
-    {
-        if (trackPoints.Count == 0)
-        {
-            return;
-        }
-
-                var firstPoint = trackPoints[0];
-                try
-                {
-                    var weatherJson = await weatherService.GetWeatherForWorkoutAsync(
-                        rawStravaDataJson: null,
-                        rawFitDataJson: rawFitDataJson,
-                        latitude: firstPoint.Latitude,
-                        longitude: firstPoint.Longitude,
-                        startTime: startedAtUtc
-                    );
-                    if (!string.IsNullOrEmpty(weatherJson))
-                    {
-                        workout.Weather = weatherJson;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to fetch weather data for workout");
-                    // Continue without weather - not a critical error
-                }
-            }
-
-    /// <summary>
-    /// Calculates and saves relative effort for a workout.
-    /// </summary>
-    private static async Task CalculateAndSaveRelativeEffortAsync(
-        Workout workout,
-        TempoDbContext db,
-        HeartRateZoneService zoneService,
-        RelativeEffortService relativeEffortService,
-        ILogger logger)
-    {
-            try
-            {
-                var settings = await db.UserSettings.FirstOrDefaultAsync();
-                if (settings != null)
-                {
-                    var zones = zoneService.GetZonesFromUserSettings(settings);
-                    var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
-                    if (relativeEffort.HasValue)
-                    {
-                        workout.RelativeEffort = relativeEffort.Value;
-                        await db.SaveChangesAsync();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
-                // Continue - Relative Effort is optional
-        }
-    }
-
-    /// <summary>
-    /// Processes a single workout file and returns the result.
-    /// </summary>
-    private static async Task<FileProcessResult> ProcessSingleFile(
-        IFormFile file,
-        TempoDbContext db,
-        GpxParserService gpxParser,
-        FitParserService fitParser,
-        WeatherService weatherService,
-        HeartRateZoneService zoneService,
-        RelativeEffortService relativeEffortService,
-        BestEffortService bestEffortService,
-        double splitDistanceMeters,
-        ILogger logger)
-    {
-        if (file == null || file.Length == 0)
-        {
-            return new FileProcessResult { Action = "error", ErrorMessage = "File is empty" };
-        }
-
-        // Determine file type from extension
-        var (fileType, isGpx, isFitGz) = DetermineFileType(file.FileName);
-        if (fileType == null)
-        {
-            return new FileProcessResult { Action = "error", ErrorMessage = "File must be a GPX or FIT file (.gpx, .fit, or .fit.gz)" };
-        }
-
-        try
-        {
-            // Parse the file
-            var (parseResult, fitResult, rawFileData) = await ParseWorkoutFileAsync(
-                file, fileType, isFitGz, gpxParser, fitParser, logger);
-
-            // Extract data from parse result
-            var (startTime, durationSeconds, distanceMeters, elevationGainMeters, trackPoints, rawGpxDataJson, rawFitDataJson) =
-                ExtractParseResultData(parseResult, fitResult);
-
-            // Calculate average pace (seconds per km - stored in metric)
-            var avgPaceS = distanceMeters > 0 && durationSeconds > 0
-                ? durationSeconds / (distanceMeters / 1000.0)
-                : 0;
-
-            // Extract additional metrics from RawGpxData JSON (for GPX files)
-            var calculated = ExtractCalculatedMetrics(rawGpxDataJson, logger);
-
-            // Ensure StartedAt is UTC (defensive conversion)
-            var startedAtUtc = startTime.Kind switch
-            {
-                DateTimeKind.Utc => startTime,
-                DateTimeKind.Local => startTime.ToUniversalTime(),
-                _ => DateTime.SpecifyKind(startTime, DateTimeKind.Utc)
-            };
-
-            // Check for duplicate
-            var existingWorkout = await FindDuplicateWorkoutAsync(db, startedAtUtc, distanceMeters, durationSeconds);
-            var duplicateResult = await HandleDuplicateWorkoutAsync(
-                existingWorkout, rawFileData, file.FileName, fileType, rawGpxDataJson, rawFitDataJson, startedAtUtc, db, logger);
-            if (duplicateResult != null)
-            {
-                return duplicateResult;
-            }
-
-            // Create workout (no duplicate found)
-            var workout = CreateWorkoutEntity(
-                startedAtUtc, durationSeconds, distanceMeters, avgPaceS, elevationGainMeters,
-                rawFileData, file.FileName, fileType, rawGpxDataJson, rawFitDataJson, isGpx);
-
-            // Extract name from GPX metadata if available
-            if (parseResult != null && !string.IsNullOrEmpty(rawGpxDataJson))
-            {
-                try
-                {
-                    var rawData = JsonSerializer.Deserialize<JsonElement>(rawGpxDataJson);
-                    if (rawData.TryGetProperty("metadata", out var metadataElement) && metadataElement.ValueKind == JsonValueKind.Object)
-                    {
-                        if (metadataElement.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String)
-                        {
-                            var name = nameElement.GetString();
-                            if (!string.IsNullOrWhiteSpace(name))
-                            {
-                                workout.Name = name;
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to extract name from GPX metadata");
-                }
-            }
-
-            // Populate metrics
-            PopulateWorkoutMetrics(workout, calculated, fitResult, rawFitDataJson, logger);
-
-            // Create route
-            var route = CreateWorkoutRoute(workout.Id, trackPoints);
-
-            // Calculate splits
-            var splits = CalculateSplits(gpxParser, trackPoints, distanceMeters, durationSeconds, splitDistanceMeters, workout.Id);
-
-            // Create time-series from GPX track points if available
-            List<WorkoutTimeSeries> timeSeries = new List<WorkoutTimeSeries>();
-            if (parseResult != null)
-            {
-                timeSeries = CreateTimeSeriesFromGpxTrackPoints(workout.Id, startedAtUtc, trackPoints);
-                if (timeSeries.Count > 0)
-                {
-                    CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
-                }
-            }
-            // Create time-series from FIT records if available
-            // Defensive null check for backward compatibility with FIT files without sensor data
-            else if (fitResult != null && fitResult.RecordMesgs != null && fitResult.RecordMesgs.Count > 0)
-            {
-                timeSeries = CreateTimeSeriesFromFitRecords(workout.Id, startedAtUtc, fitResult.RecordMesgs);
-                if (timeSeries.Count > 0)
-                {
-                    CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
-                }
-                else
-                {
-                    // Log when FIT file has no sensor data but workout is still created successfully
-                    logger.LogInformation("FIT file imported with no sensor data. Workout created with available data (GPS, elevation, distance).");
-                }
-            }
-            else if (fitResult != null)
-            {
-                // Log when FIT file has no RecordMesgs or they're empty
-                logger.LogInformation("FIT file imported with no RecordMesg data. Workout created with available data (GPS, elevation, distance).");
-            }
-
-            // Fetch weather data
-            await FetchAndAttachWeatherAsync(workout, trackPoints, rawFitDataJson, startedAtUtc, weatherService, logger);
-
-            // Assign default shoe if set
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            if (settings != null && settings.DefaultShoeId.HasValue)
-            {
-                // Verify the shoe still exists
-                var defaultShoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
-                if (defaultShoe != null && !defaultShoe.IsRetired)
-                {
-                    workout.ShoeId = settings.DefaultShoeId.Value;
-                    logger.LogInformation("Assigned default shoe {ShoeId} to workout {WorkoutId}", settings.DefaultShoeId.Value, workout.Id);
-                }
-            }
-
-            // Save to database
-            db.Workouts.Add(workout);
-            db.WorkoutRoutes.Add(route);
-            db.WorkoutSplits.AddRange(splits);
-            if (timeSeries.Count > 0)
-            {
-                db.WorkoutTimeSeries.AddRange(timeSeries);
-            }
-            await db.SaveChangesAsync();
-
-            // Calculate Relative Effort after workout is saved
-            await CalculateAndSaveRelativeEffortAsync(workout, db, zoneService, relativeEffortService, logger);
-
-            // Update best efforts incrementally for new workout
-            try
-            {
-                await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to update best efforts for workout {WorkoutId}", workout.Id);
-                // Don't fail the import if best effort update fails
-            }
-
-            logger.LogInformation("Imported workout {WorkoutId} with {Distance} meters", workout.Id, workout.DistanceM);
-
-            return new FileProcessResult
-            {
-                Action = "created",
-                Response = new
-                {
-                    id = workout.Id,
-                    startedAt = workout.StartedAt,
-                    durationS = workout.DurationS,
-                    distanceM = workout.DistanceM,
-                    avgPaceS = workout.AvgPaceS,
-                    elevGainM = workout.ElevGainM,
-                    splitsCount = splits.Count,
-                    action = "created",
-                    message = "Workout imported successfully"
-                }
+                id = workout.Id,
+                startedAt = workout.StartedAt,
+                durationS = workout.DurationS,
+                distanceM = workout.DistanceM,
+                avgPaceS = workout.AvgPaceS,
+                elevGainM = workout.ElevGainM,
+                splitsCount = result.SplitsCount,
+                action = "created",
+                message = "Workout imported successfully"
             };
         }
-        catch (InvalidOperationException ex)
+
+        if (result.Action == "updated")
         {
-            logger.LogError(ex, "Error parsing workout file");
-            return new FileProcessResult { Action = "error", ErrorMessage = ex.Message };
+            return new
+            {
+                id = workout.Id,
+                startedAt = workout.StartedAt,
+                durationS = workout.DurationS,
+                distanceM = workout.DistanceM,
+                avgPaceS = workout.AvgPaceS,
+                elevGainM = workout.ElevGainM,
+                action = "updated",
+                message = "Workout already exists and was updated with raw file data"
+            };
         }
-        catch (Exception ex)
+
+        return new
         {
-            logger.LogError(ex, "Error importing workout file");
-            return new FileProcessResult { Action = "error", ErrorMessage = ex.Message };
-        }
+            id = workout.Id,
+            startedAt = workout.StartedAt,
+            durationS = workout.DurationS,
+            distanceM = workout.DistanceM,
+            avgPaceS = workout.AvgPaceS,
+            elevGainM = workout.ElevGainM,
+            action = "skipped",
+            message = "Workout already exists and has raw file data"
+        };
     }
 
     /// <summary>

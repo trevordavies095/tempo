@@ -11,17 +11,11 @@ namespace Tempo.Api.Tests.Services;
 /// </summary>
 public class FitParserServiceTests
 {
-    private readonly ElevationCalculationConfig _elevationConfig;
     private readonly FitParserService _parser;
 
     public FitParserServiceTests()
     {
-        _elevationConfig = new ElevationCalculationConfig
-        {
-            NoiseThresholdMeters = 2.0,
-            MinDistanceMeters = 10.0
-        };
-        _parser = new FitParserService(_elevationConfig);
+        _parser = new FitParserService();
     }
 
     [Fact]
@@ -100,8 +94,10 @@ public class FitParserServiceTests
         if (result.TrackPoints.Count > 0)
         {
             var firstPoint = result.TrackPoints[0];
-            firstPoint.Latitude.Should().BeInRange(-90.0, 90.0);
-            firstPoint.Longitude.Should().BeInRange(-180.0, 180.0);
+            firstPoint.Latitude.Should().HaveValue();
+            firstPoint.Longitude.Should().HaveValue();
+            firstPoint.Latitude!.Value.Should().BeInRange(-90.0, 90.0);
+            firstPoint.Longitude!.Value.Should().BeInRange(-180.0, 180.0);
             firstPoint.Time.Should().HaveValue();
         }
     }
@@ -245,7 +241,7 @@ public class FitParserServiceTests
     }
 
     [Fact]
-    public void ParseFit_ReturnsRecordMesgs_WhenPresent()
+    public void ParseFit_ReturnsSeriesPoints_WhenPresent()
     {
         // Arrange
         var fitFilePath = Path.Combine("..", "..", "..", "..", "..", "test_data", "20251110.fit");
@@ -261,7 +257,7 @@ public class FitParserServiceTests
 
         // Assert
         result.Should().NotBeNull();
-        result.RecordMesgs.Should().NotBeNull();
+        result.SeriesPoints.Should().NotBeNull();
     }
 
     [Fact]
@@ -285,30 +281,6 @@ public class FitParserServiceTests
         // Act & Assert
         var act = () => _parser.ParseGzippedFit(stream);
         act.Should().Throw<Exception>();
-    }
-
-    [Fact]
-    public void ParseFit_CalculatesElevationGain_WhenElevationDataPresent()
-    {
-        // Arrange
-        var fitFilePath = Path.Combine("..", "..", "..", "..", "..", "test_data", "20251110.fit");
-        if (!File.Exists(fitFilePath))
-        {
-            return;
-        }
-
-        using var stream = File.OpenRead(fitFilePath);
-
-        // Act
-        var result = _parser.ParseFit(stream);
-
-        // Assert
-        result.Should().NotBeNull();
-        // Elevation gain may be null if no elevation data, or a value if present
-        if (result.ElevationGainMeters.HasValue)
-        {
-            result.ElevationGainMeters.Value.Should().BeGreaterThanOrEqualTo(0);
-        }
     }
 }
 

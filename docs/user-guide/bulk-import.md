@@ -79,12 +79,16 @@ After processing completes, you'll see a summary showing:
 
 ## Duplicate Detection
 
-Tempo automatically detects and skips duplicate workouts based on:
+Tempo matches workouts on:
 - Start time (`StartedAt`)
 - Distance (`DistanceM`)
 - Duration (`DurationS`)
 
-If a workout with the same values already exists, it will be skipped.
+If a match already exists:
+- **Updated** when the stored Workout is missing raw file bytes or its FIT/GPX JSON is incomplete. Tempo backfills bytes/JSON, rebuilds splits, and fills an empty route or time series. Distance, duration, and elevation on a Workout that already has complete raw data are not rewritten.
+- **Skipped** when raw bytes and JSON are already complete.
+
+Strava name and media from the export can still attach after created, updated, or skipped.
 
 ## Supported Activity Types
 

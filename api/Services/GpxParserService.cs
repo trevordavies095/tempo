@@ -15,26 +15,15 @@ public class GpxParserService
     {
         _elevationConfig = elevationConfig;
     }
+
     public class GpxParseResult
     {
         public DateTime StartTime { get; set; }
         public int DurationSeconds { get; set; }
         public double DistanceMeters { get; set; }
-        public double? ElevationGainMeters { get; set; }
-        public List<GpxPoint> TrackPoints { get; set; } = new();
-        public string? RawGpxDataJson { get; set; }  // JSON string for RawGpxData field
-    }
-
-    public class GpxPoint
-    {
-        public double Latitude { get; set; }
-        public double Longitude { get; set; }
-        public double? Elevation { get; set; }
-        public DateTime? Time { get; set; }
-        public byte? HeartRateBpm { get; set; }
-        public byte? CadenceRpm { get; set; }
-        public ushort? PowerWatts { get; set; }
-        public sbyte? TemperatureC { get; set; }
+        public List<TrackPoint> TrackPoints { get; set; } = new();
+        public string? RawGpxDataJson { get; set; }
+        public string? Name { get; set; }
     }
 
     public GpxParseResult ParseGpx(Stream gpxStream)
@@ -91,7 +80,7 @@ public class GpxParserService
             }
         }
 
-        var trackPoints = new List<GpxPoint>();
+        var trackPoints = new List<TrackPoint>();
         var startTime = (DateTime?)null;
         var endTime = (DateTime?)null;
 
@@ -115,7 +104,7 @@ public class GpxParserService
                 !double.TryParse(lonAttr.Value, out var lon))
                 continue;
 
-            var point = new GpxPoint
+            var point = new TrackPoint
             {
                 Latitude = lat,
                 Longitude = lon
@@ -197,10 +186,10 @@ public class GpxParserService
         for (int i = 1; i < trackPoints.Count; i++)
         {
             totalDistance += GeoUtils.HaversineDistance(
-                trackPoints[i - 1].Latitude,
-                trackPoints[i - 1].Longitude,
-                trackPoints[i].Latitude,
-                trackPoints[i].Longitude
+                trackPoints[i - 1].Latitude!.Value,
+                trackPoints[i - 1].Longitude!.Value,
+                trackPoints[i].Latitude!.Value,
+                trackPoints[i].Longitude!.Value
             );
         }
 
@@ -245,14 +234,20 @@ public class GpxParserService
 
         var rawGpxDataJson = JsonSerializer.Serialize(rawGpxData, JsonUtils.DefaultOptions);
 
+        string? name = null;
+        if (metadata.TryGetValue("name", out var nameObj) && nameObj is string nameStr && !string.IsNullOrWhiteSpace(nameStr))
+        {
+            name = nameStr;
+        }
+
         return new GpxParseResult
         {
             StartTime = DateTime.SpecifyKind(startTime.Value, DateTimeKind.Utc),
             DurationSeconds = duration,
             DistanceMeters = totalDistance,
-            ElevationGainMeters = elevationGain,
             TrackPoints = trackPoints,
-            RawGpxDataJson = rawGpxDataJson
+            RawGpxDataJson = rawGpxDataJson,
+            Name = name
         };
     }
 
@@ -262,7 +257,7 @@ public class GpxParserService
     /// <param name="trackPoints">List of track points</param>
     /// <param name="calculateGain">If true, calculates elevation gain; if false, calculates elevation loss</param>
     /// <returns>Elevation change in meters. For gain: null if no gain; for loss: 0.0 if no loss</returns>
-    private double? CalculateElevationChange(List<GpxPoint> trackPoints, bool calculateGain)
+    private double? CalculateElevationChange(List<TrackPoint> trackPoints, bool calculateGain)
     {
         if (!trackPoints.Any(p => p.Elevation.HasValue))
         {
@@ -274,7 +269,7 @@ public class GpxParserService
         double accumulatedOpposite = 0.0; // The opposite direction
         double accumulatedDistance = 0.0;
         double? lastElevation = null;
-        GpxPoint? lastPoint = null;
+        TrackPoint? lastPoint = null;
 
         foreach (var point in trackPoints)
         {
@@ -284,10 +279,10 @@ public class GpxParserService
                 if (lastPoint != null)
                 {
                     accumulatedDistance += GeoUtils.HaversineDistance(
-                        lastPoint.Latitude,
-                        lastPoint.Longitude,
-                        point.Latitude,
-                        point.Longitude
+                        lastPoint.Latitude!.Value,
+                        lastPoint.Longitude!.Value,
+                        point.Latitude!.Value,
+                        point.Longitude!.Value
                     );
                 }
                 lastPoint = point;
@@ -300,10 +295,10 @@ public class GpxParserService
             {
                 // Calculate horizontal distance since last point
                 double segmentDistance = GeoUtils.HaversineDistance(
-                    lastPoint.Latitude,
-                    lastPoint.Longitude,
-                    point.Latitude,
-                    point.Longitude
+                    lastPoint.Latitude!.Value,
+                    lastPoint.Longitude!.Value,
+                    point.Latitude!.Value,
+                    point.Longitude!.Value
                 );
                 accumulatedDistance += segmentDistance;
 
@@ -405,7 +400,7 @@ public class GpxParserService
         }
     }
 
-    private Dictionary<string, object> CalculateAdditionalMetrics(List<GpxPoint> trackPoints, double totalDistance, int duration, double? elevationGain)
+    private Dictionary<string, object> CalculateAdditionalMetrics(List<TrackPoint> trackPoints, double totalDistance, int duration, double? elevationGain)
     {
         var calculated = new Dictionary<string, object>();
 
@@ -445,10 +440,10 @@ public class GpxParserService
                 if (timeDiff > 0)
                 {
                     var segmentDistance = GeoUtils.HaversineDistance(
-                        trackPoints[i - 1].Latitude,
-                        trackPoints[i - 1].Longitude,
-                        point.Latitude,
-                        point.Longitude
+                        trackPoints[i - 1].Latitude!.Value,
+                        trackPoints[i - 1].Longitude!.Value,
+                        point.Latitude!.Value,
+                        point.Longitude!.Value
                     );
                     var speed = segmentDistance / timeDiff;
                     if (speed > maxSpeedMps) maxSpeedMps = speed;
@@ -490,125 +485,6 @@ public class GpxParserService
         }
 
         return calculated;
-    }
-
-
-    public List<WorkoutSplit> CalculateSplits(List<GpxPoint> trackPoints, double distanceMeters, int durationSeconds, double splitDistanceMeters = 1000.0)
-    {
-        var splits = new List<WorkoutSplit>();
-        var accumulatedDistance = 0.0;
-        var splitStartDistance = 0.0;
-        var splitStartIndex = 0;
-        var lastSplitStartIndex = 0; // Track start index of the last created split
-        var splitIndex = 0;
-
-        for (int i = 1; i < trackPoints.Count; i++)
-        {
-            var segmentDistance = GeoUtils.HaversineDistance(
-                trackPoints[i - 1].Latitude,
-                trackPoints[i - 1].Longitude,
-                trackPoints[i].Latitude,
-                trackPoints[i].Longitude
-            );
-
-            accumulatedDistance += segmentDistance;
-
-            if (accumulatedDistance - splitStartDistance >= splitDistanceMeters)
-            {
-                // Calculate the actual split distance (not accumulated)
-                var splitDistance = accumulatedDistance - splitStartDistance;
-
-                // Calculate time for this split
-                var splitDuration = 0;
-                if (trackPoints[i].Time.HasValue && trackPoints[splitStartIndex].Time.HasValue)
-                {
-                    splitDuration = (int)(trackPoints[i].Time!.Value - trackPoints[splitStartIndex].Time!.Value).TotalSeconds;
-                }
-                else
-                {
-                    // Estimate based on proportion of total distance
-                    splitDuration = (int)((splitDistance / distanceMeters) * durationSeconds);
-                }
-
-                // Calculate split pace in seconds per km (stored in metric)
-                var splitPace = splitDuration > 0 ? splitDuration / (splitDistance / 1000.0) : 0;
-
-                splits.Add(new WorkoutSplit
-                {
-                    Id = Guid.NewGuid(),
-                    Idx = splitIndex++,
-                    DistanceM = splitDistance, // Store actual split distance, not accumulated
-                    DurationS = splitDuration,
-                    PaceS = splitPace
-                });
-
-                // Reset for next split
-                splitStartDistance = accumulatedDistance;
-                lastSplitStartIndex = splitStartIndex; // Store the start index of the split we just created
-                splitStartIndex = i;
-            }
-        }
-
-        // Handle final partial split
-        var remainingDistance = accumulatedDistance - splitStartDistance;
-        if (remainingDistance > 0)
-        {
-            // Create separate split if significant (>10% of split distance), otherwise merge into last split
-            if (remainingDistance >= splitDistanceMeters * 0.1 && splits.Count > 0)
-            {
-                // Calculate time for final partial split
-                var finalSplitDuration = 0;
-                if (trackPoints.Count > 1 && trackPoints[trackPoints.Count - 1].Time.HasValue && trackPoints[splitStartIndex].Time.HasValue)
-                {
-                    finalSplitDuration = (int)(trackPoints[trackPoints.Count - 1].Time!.Value - trackPoints[splitStartIndex].Time!.Value).TotalSeconds;
-                }
-                else
-                {
-                    // Estimate based on proportion
-                    finalSplitDuration = (int)((remainingDistance / distanceMeters) * durationSeconds);
-                }
-
-                var finalSplitPace = finalSplitDuration > 0 ? finalSplitDuration / (remainingDistance / 1000.0) : 0;
-
-                splits.Add(new WorkoutSplit
-                {
-                    Id = Guid.NewGuid(),
-                    Idx = splitIndex,
-                    DistanceM = remainingDistance,
-                    DurationS = finalSplitDuration,
-                    PaceS = finalSplitPace
-                });
-            }
-            else if (splits.Count > 0)
-            {
-                // Merge small remainder into last split
-                var lastSplit = splits.Last();
-                var totalLastSplitDistance = lastSplit.DistanceM + remainingDistance;
-                
-                // Recalculate duration and pace for merged split
-                var mergedDuration = lastSplit.DurationS;
-                if (trackPoints.Count > 1 && trackPoints[trackPoints.Count - 1].Time.HasValue)
-                {
-                    // Use the start time of the last split (stored in lastSplitStartIndex)
-                    var lastSplitStartTime = trackPoints[lastSplitStartIndex].Time;
-                    if (lastSplitStartTime.HasValue && trackPoints[trackPoints.Count - 1].Time.HasValue)
-                    {
-                        mergedDuration = (int)(trackPoints[trackPoints.Count - 1].Time!.Value - lastSplitStartTime.Value).TotalSeconds;
-                    }
-                }
-                else
-                {
-                    // Estimate based on proportion of total distance for the merged split
-                    mergedDuration = (int)((totalLastSplitDistance / distanceMeters) * durationSeconds);
-                }
-
-                lastSplit.DistanceM = totalLastSplitDistance;
-                lastSplit.DurationS = mergedDuration;
-                lastSplit.PaceS = mergedDuration > 0 ? mergedDuration / (totalLastSplitDistance / 1000.0) : lastSplit.PaceS;
-            }
-        }
-
-        return splits;
     }
 }
 

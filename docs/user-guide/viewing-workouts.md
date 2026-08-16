@@ -135,6 +135,8 @@ Remove time from the start or end of a workout:
 3. Specify time to remove from start and/or end
 4. Save changes
 
+Crop rebuilds route, splits, time series, and elevation from the remaining **TrackPoint**s through track geometry. Device session distance from the original FIT/GPX file is not reused on the trimmed Workout.
+
 ### Delete Workout
 
 To delete a workout:
@@ -148,7 +150,7 @@ To delete a workout:
 
 You can recalculate:
 - **Relative Effort** - Recalculate based on current heart rate zone settings
-- **Splits** - Recalculate splits if you've changed unit preferences
+- **Splits** - Recalculate splits if you've changed unit preferences (replaces `WorkoutSplit` rows only; stored distance, duration, and elevation stay)
 
 ## Statistics and Analytics
 
