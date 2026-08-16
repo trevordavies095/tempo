@@ -113,14 +113,19 @@ function OnboardingWizard() {
   }
 
   return (
-    <PageShell density="control" title={stepTitle(step)} subtitle={stepSubtitle(step)}>
+    <PageShell
+      density="control"
+      centered
+      title={stepTitle(step)}
+      subtitle={stepSubtitle(step)}
+    >
       {step === 'ask_restore' ? (
-        <Card className="max-w-lg space-y-4">
+        <Card className="w-full max-w-md space-y-4">
           <p className="text-sm text-muted">
             Restoring brings back settings, shoes, workouts, and media from a Tempo export ZIP.
             If this is a new install, choose no and configure essentials next.
           </p>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3 justify-center">
             <Button onClick={() => setStep('tempo_restore')}>Yes, restore export</Button>
             <Button variant="secondary" onClick={goEssentials}>
               No, set up fresh
@@ -130,7 +135,7 @@ function OnboardingWizard() {
       ) : null}
 
       {step === 'tempo_restore' ? (
-        <div className="space-y-4 max-w-2xl">
+        <div className="w-full max-w-lg space-y-4">
           <TempoExportImport
             key={restoreKey}
             onJobCompleted={handleRestoreCompleted}
@@ -142,7 +147,7 @@ function OnboardingWizard() {
                 Restore did not finish. Retry with another ZIP, or set up this install fresh
                 without marking onboarding complete yet.
               </p>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3 justify-center">
                 <Button
                   variant="secondary"
                   onClick={() => {
@@ -159,20 +164,24 @@ function OnboardingWizard() {
             </Card>
           ) : null}
           {error ? (
-            <p className="text-sm text-danger" role="alert">
+            <p className="text-sm text-danger text-center" role="alert">
               {error}
             </p>
           ) : null}
-          {isCompleting ? <p className="text-sm text-muted">Finishing setup…</p> : null}
+          {isCompleting ? (
+            <p className="text-sm text-muted text-center">Finishing setup…</p>
+          ) : null}
         </div>
       ) : null}
 
       {step === 'essentials' ? (
-        <EssentialsStep onContinue={() => setStep('ask_strava')} />
+        <div className="w-full max-w-lg">
+          <EssentialsStep onContinue={() => setStep('ask_strava')} />
+        </div>
       ) : null}
 
       {step === 'ask_strava' ? (
-        <Card className="max-w-lg space-y-4">
+        <Card className="w-full max-w-md space-y-4">
           <p className="text-sm text-muted">
             You can import a Strava bulk export ZIP during setup, or skip and add individual
             GPX/FIT files later from Import. Late Strava archives also live under Settings →
@@ -183,7 +192,7 @@ function OnboardingWizard() {
               {error}
             </p>
           ) : null}
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3 justify-center">
             <Button
               onClick={() => {
                 setStravaFailed(false);
@@ -205,7 +214,7 @@ function OnboardingWizard() {
       ) : null}
 
       {step === 'strava_upload' ? (
-        <div className="space-y-4 max-w-2xl">
+        <div className="w-full max-w-lg space-y-4">
           <BulkImport
             key={stravaKey}
             onJobCompleted={handleStravaCompleted}
@@ -217,7 +226,7 @@ function OnboardingWizard() {
                 Strava import did not finish. Retry with another ZIP, or skip and finish setup
                 — you can import a Strava archive later from Settings → Migrate / restore.
               </p>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3 justify-center">
                 <Button
                   variant="secondary"
                   onClick={() => {
@@ -234,23 +243,27 @@ function OnboardingWizard() {
               </div>
             </Card>
           ) : (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setStravaFailed(false);
-                setStep('ask_strava');
-              }}
-              disabled={isCompleting}
-            >
-              Back
-            </Button>
+            <div className="flex justify-center">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setStravaFailed(false);
+                  setStep('ask_strava');
+                }}
+                disabled={isCompleting}
+              >
+                Back
+              </Button>
+            </div>
           )}
           {error ? (
-            <p className="text-sm text-danger" role="alert">
+            <p className="text-sm text-danger text-center" role="alert">
               {error}
             </p>
           ) : null}
-          {isCompleting ? <p className="text-sm text-muted">Finishing setup…</p> : null}
+          {isCompleting ? (
+            <p className="text-sm text-muted text-center">Finishing setup…</p>
+          ) : null}
         </div>
       ) : null}
     </PageShell>

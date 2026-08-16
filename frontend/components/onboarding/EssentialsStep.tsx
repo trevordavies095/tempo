@@ -165,7 +165,7 @@ export function EssentialsStep({ onContinue }: EssentialsStepProps) {
   const canContinue = unitsSaved && hrSaved && !isContinuing;
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="w-full space-y-6">
       <Card className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-ink">Unit preference</h2>

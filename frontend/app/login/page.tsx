@@ -88,6 +88,7 @@ export default function LoginPage() {
   return (
     <PageShell
       density="control"
+      centered
       title={isRegistering ? 'Create Account' : 'Sign in to Tempo'}
       subtitle={
         isRegistering
@@ -95,7 +96,7 @@ export default function LoginPage() {
           : 'Enter your credentials to access your workouts'
       }
     >
-      <Card className="max-w-md mx-auto space-y-6">
+      <Card className="w-full max-w-md space-y-6">
         {isRegistering && (
           <p className="text-xs text-muted">
             Use a memorable passphrase, {PASSWORD_MIN_LENGTH}–{PASSWORD_MAX_LENGTH} characters. Spaces and
