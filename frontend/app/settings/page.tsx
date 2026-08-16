@@ -18,6 +18,7 @@ import { RecalculateEffortDialog } from '@/components/RecalculateEffortDialog';
 import { ZoneUpdateDialog } from '@/components/ZoneUpdateDialog';
 import { RecalculateSplitsDialog } from '@/components/RecalculateSplitsDialog';
 import UnitPreferenceSection from '@/components/UnitPreferenceSection';
+import AppearanceSection from '@/components/AppearanceSection';
 import { ShoeManagementSection } from '@/components/ShoeManagementSection';
 import { ExportImportSection } from '@/components/ExportImportSection';
 import { useEffect, useState, type FormEvent } from 'react';
@@ -310,6 +311,7 @@ function SettingsPageContent() {
             <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
               Display Preferences
             </h2>
+            <AppearanceSection />
             <UnitPreferenceSection />
           </div>
 

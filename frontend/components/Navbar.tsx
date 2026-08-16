@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 export function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { isAuthenticated, isLoading, logout } = useAuth();
+  const { isAuthenticated, logout } = useAuth();
 
   const isActive = (path: string) => {
     if (path === '/dashboard') {
@@ -22,36 +22,50 @@ export function Navbar() {
 
   const navLinkClasses = (path: string) => {
     const base =
-      'block px-4 py-2 text-sm font-medium rounded-md transition-colors';
-    const active =
-      'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100';
+      'block px-4 py-2 text-sm font-medium rounded-tempo transition-colors';
+    const active = 'bg-volt text-ink';
     const inactive =
-      'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800';
+      'text-muted hover:text-ink hover:bg-canvas';
 
     return `${base} ${isActive(path) ? active : inactive}`;
   };
 
-  // Close mobile menu when route changes
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
   return (
-    <nav className="w-full border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+    <nav className="w-full border-b border-border bg-raised">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo/Brand */}
           <div className="flex-shrink-0">
             <Link
-              href={isAuthenticated ? "/dashboard" : "/login"}
-              className="text-2xl font-bold text-gray-900 dark:text-gray-100 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              href={isAuthenticated ? '/dashboard' : '/login'}
+              className="flex items-center gap-2.5 text-ink hover:opacity-80 transition-opacity"
             >
-              Tempo
+              <span className="relative inline-flex h-8 w-8 shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/tempo-mark-ink.png"
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 rounded-md object-contain dark:hidden"
+                />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/tempo-mark-volt.png"
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="hidden h-8 w-8 rounded-md object-contain dark:block"
+                />
+              </span>
+              <span className="text-2xl font-bold font-sans">Tempo</span>
             </Link>
           </div>
 
           <div className="flex items-center">
-            {/* Desktop Navigation Links */}
             {isAuthenticated && (
               <div className="hidden md:flex items-center space-x-1">
                 <Link href="/dashboard" className={navLinkClasses('/dashboard')}>
@@ -69,22 +83,20 @@ export function Navbar() {
               </div>
             )}
 
-            {/* Logout button */}
             {isAuthenticated && (
               <div className="hidden md:flex items-center ml-4">
                 <button
                   onClick={logout}
-                  className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md transition-colors"
+                  className="px-3 py-1.5 text-sm font-medium text-muted hover:text-ink hover:bg-canvas rounded-tempo transition-colors"
                 >
                   Logout
                 </button>
               </div>
             )}
 
-            {/* Mobile menu button */}
             <button
               type="button"
-              className="md:hidden inline-flex flex-col items-center justify-center gap-1.5 p-2 rounded-md text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="md:hidden inline-flex flex-col items-center justify-center gap-1.5 p-2 rounded-tempo text-muted hover:text-ink hover:bg-canvas focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-volt focus:ring-offset-raised"
               aria-label="Toggle navigation menu"
               aria-expanded={mobileOpen}
               aria-controls="mobile-menu"
@@ -110,7 +122,6 @@ export function Navbar() {
           </div>
         </div>
 
-        {/* Mobile Navigation Panel */}
         {isAuthenticated && (
           <div
             id="mobile-menu"
@@ -151,7 +162,7 @@ export function Navbar() {
                 logout();
                 setMobileOpen(false);
               }}
-              className="w-full text-left px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md transition-colors"
+              className="w-full text-left px-4 py-2 text-sm font-medium text-muted hover:text-ink hover:bg-canvas rounded-tempo transition-colors"
             >
               Logout
             </button>
@@ -161,4 +172,3 @@ export function Navbar() {
     </nav>
   );
 }
-
