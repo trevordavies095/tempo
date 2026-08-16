@@ -115,6 +115,7 @@ User accounts for authentication.
 - `Username` (string, unique)
 - `PasswordHash` (string) - BCrypt hashed password
 - `CreatedAt` (DateTime)
+- `OnboardingCompleted` (bool) - `true` after first-run onboarding finishes. New registrations default to `false`. The EF migration that adds this column backfills existing user rows to `true` so upgrades are not forced through the wizard.
 
 **Indexes:**
 - Unique index on `Username`

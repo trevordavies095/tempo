@@ -114,6 +114,19 @@ GET /auth/me
 
 Requires authentication via JWT (cookie or Bearer) **or** a valid API key (`Authorization: Bearer tmp_…`).
 
+Response includes:
+
+- `userId`, `username`, `createdAt`, `lastLoginAt`
+- `onboardingCompleted` (boolean) — `false` for new registrations until first-run setup finishes; existing users are backfilled `true` by migration
+
+### Complete Onboarding
+
+```http
+POST /auth/onboarding/complete
+```
+
+Requires authentication. Marks first-run onboarding complete for the current user (`onboardingCompleted: true`). Idempotent; there is no API to set the flag back to `false`. Returns the same current-user payload as `GET /auth/me`.
+
 ### Logout
 
 ```http
@@ -147,7 +160,7 @@ Outcomes per file: `created`, `updated`, or `skipped` (plus error). Incomplete F
 
 ### Bulk Import
 
-Command-center Import uploads a Strava ZIP in **512 KiB** chunks, then polls the job. Bruno/curl can still POST the whole ZIP.
+The command center uploads a Strava ZIP in **512 KiB** chunks during [first-run onboarding](../getting-started/onboarding.md) or **Settings → Migrate / restore** (not the day-to-day Import page). Bruno/curl can still POST the whole ZIP.
 
 ```http
 POST /workouts/import/jobs

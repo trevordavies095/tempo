@@ -14,25 +14,40 @@ import { useImportJobSession } from '@/hooks/useImportJobSession';
 import { IconUpload } from '@tabler/icons-react';
 import { Button } from '@/components/ui/Button';
 
-export function BulkImport() {
+export type BulkImportProps = {
+  onJobCompleted?: (job: ImportJob) => void | Promise<void>;
+  onJobFailedOrCancelled?: (message: string) => void;
+};
+
+export function BulkImport(props: BulkImportProps = {}) {
+  const { onJobCompleted, onJobFailedOrCancelled } = props;
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<BulkImportResponse | null>(null);
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
 
   const onCompleted = useCallback(
-    (job: ImportJob) => {
+    async (job: ImportJob) => {
       invalidateWorkoutQueries(queryClient);
       setImportResult(importJobToBulkResponse(job));
       setSelectedFile(null);
+      await onJobCompleted?.(job);
     },
-    [queryClient]
+    [queryClient, onJobCompleted]
+  );
+
+  const onFailed = useCallback(
+    (message: string) => {
+      onJobFailedOrCancelled?.(message);
+    },
+    [onJobFailedOrCancelled]
   );
 
   const session = useImportJobSession({
     kind: 'strava_bulk',
     unitPreference,
     onCompleted,
+    onFailed,
   });
 
   const {

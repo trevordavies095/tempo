@@ -10,7 +10,9 @@ Tempo settings allow you to customize:
 - Heart rate zones
 - Relative effort calculation
 - Shoe tracking and management
-- Data export and import
+- **Export** (prominent under Data Management) and collapsed **Migrate / restore** (Strava archive + Tempo export restore)
+
+On a fresh install, units, heart rate zones, and an optional default shoe are usually set during [first-run onboarding](../getting-started/onboarding.md). You can change them anytime here.
 
 ## Appearance
 
@@ -215,14 +217,14 @@ To remove a shoe from your collection:
 
 ## Export / Import
 
-Tempo allows you to export all your data in a portable ZIP format for backup, migration, or data portability. You can also import previously exported data to restore your workouts, settings, and media files.
+Tempo allows you to export all your data in a portable ZIP format for backup, migration, or data portability. Under **Migrate / restore**, you can restore a previous Tempo export or import a Strava archive after onboarding.
 
 ### Exporting Your Data
 
 To export all your Tempo data:
 
 1. Navigate to Settings
-2. Find the "Export / Import" section
+2. Find the **Export** section under Data Management
 3. Click "Export All Data"
 4. Wait for the export to complete (may take a moment for large datasets)
 5. Your browser will download a ZIP file named `tempo-export-{timestamp}.zip`
@@ -300,14 +302,15 @@ Export your data for:
 - **Data Portability** - Keep a portable copy of all your data
 - **Recovery** - Restore data after accidental deletion or system failure
 
-### Importing Data
+### Importing Data {#migrate--restore}
 
-Import functionality allows you to restore data from a previously exported Tempo ZIP file. This enables you to:
+**Migrate / restore** (collapsed under Data Management) lets you restore data from a previously exported Tempo ZIP file, or import a Strava archive after onboarding. This enables you to:
 
 - Restore all workouts, media, shoes, and settings
 - Import into a new or existing Tempo instance
 - Migrate data between Tempo instances
 - Recover from data loss or accidental deletion
+- Import a late Strava archive (see [Bulk Import](bulk-import.md))
 - Handle duplicate detection automatically
 
 Settings restore runs as a background import job (same rails as [Strava bulk import](bulk-import.md)): the ZIP uploads in chunks, then Tempo restores item by item with live progress.
@@ -315,14 +318,15 @@ Settings restore runs as a background import job (same rails as [Strava bulk imp
 #### How to Import
 
 1. Navigate to Settings
-2. Find the "Export / Import" section
-3. In the "Import Data" area, click or drag and drop your Tempo export ZIP file
-4. Watch upload progress (%), then restore progress (`processed` / `total`)
-5. When finished, review the import summary showing what was imported, skipped, or had errors
+2. Under Data Management, expand **Migrate / restore**
+3. For a Tempo backup: use **Restore Tempo export** and upload your Tempo export ZIP
+4. For Strava: use **Import Strava archive** (see [Bulk Import](bulk-import.md))
+5. Watch upload progress (%), then restore/import progress (`processed` / `total`)
+6. When finished, review the summary showing what was imported, skipped, or had errors
 
 **Progress and cancel**: Large exports can take several minutes. You can cancel while uploading or restoring; items already restored stay. Re-upload the same ZIP later — duplicates are skipped (and incomplete workouts can be updated) as usual.
 
-**One import at a time**: Tempo allows only one active import job across Settings restore and the Import page’s Strava bulk import. If a Strava import is running, Settings shows a message and will not start a restore until that job finishes or is cancelled. Refreshing Settings resumes an in-progress Tempo restore.
+**One import at a time**: Tempo allows only one active import job across Tempo restore and Strava bulk import (both under Migrate / restore, or during onboarding). If the other kind is running, the UI shows a message and will not start until that job finishes or is cancelled. Refreshing Settings resumes an in-progress job.
 
 #### What Gets Imported
 
@@ -388,8 +392,8 @@ After import completes, you'll see a detailed summary including:
 - Check API logs for specific error messages
 
 **Cannot Start Import / Message About Strava**
-- Finish or cancel the Strava bulk import on the Import page first
-- Only one import job can run at a time (Settings restore or Strava bulk)
+- Finish or cancel the Strava bulk import under Settings → Migrate / restore first
+- Only one import job can run at a time (Tempo restore or Strava bulk)
 
 **Progress Seems Stuck**
 - Large restores can take 10+ minutes; watch `processed` / `total` update

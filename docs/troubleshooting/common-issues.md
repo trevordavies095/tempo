@@ -115,9 +115,9 @@ Detailed solutions for common Tempo problems.
 3. Verify CSV references correct file paths
 4. Only "Run" activities are imported
 5. Duplicates are automatically skipped
-6. Watch upload progress, then `processed` / `total`; refresh the Import page to resume an in-progress Strava job
+6. Watch upload progress, then `processed` / `total`; refresh Settings → Migrate / restore to resume an in-progress Strava job
 7. Cancel keeps workouts already imported; re-upload the same ZIP to continue (duplicates skip)
-8. If Settings is running a Tempo restore, finish or cancel that job first (only one import job at a time)
+8. If a Tempo restore is running, finish or cancel that job first (only one import job at a time)
 
 ## Performance Issues
 
@@ -184,6 +184,7 @@ Detailed solutions for common Tempo problems.
 - Can't log in
 - Session expires immediately
 - Registration fails
+- Redirected to onboarding / cannot open Dashboard or Settings
 
 **Solutions:**
 1. Verify JWT secret key is configured (production)
@@ -191,6 +192,8 @@ Detailed solutions for common Tempo problems.
 3. Clear browser cookies
 4. Verify database has user table
 5. Check API logs for authentication errors
+6. If you are on first-run setup: complete [onboarding](../getting-started/onboarding.md) (or **Skip for now** after a failed Strava import). Existing upgraded accounts should already be marked complete and not see the wizard
+7. Late Strava or Tempo ZIP migrates live under Settings → Migrate / restore, not the Import page
 
 ### CORS Errors
 

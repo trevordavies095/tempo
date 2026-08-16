@@ -235,7 +235,7 @@ These limits are already configured in the API (`Program.cs`) for Kestrel and fo
 
 After configuration, smoke-test through the command center (`:3000`):
 1. Export a large archive from Strava (typically 50–200MB), or use a Tempo Settings export with media
-2. Strava: **Import** page → Bulk Import Strava Export; Tempo restore: **Settings** → Export / Import
+2. Strava or Tempo restore: **Settings** → Data Management → **Migrate / restore** (or first-run onboarding)
 3. Confirm upload progress then import/restore progress; optional: retry with Bruno/curl against the API for the whole-ZIP adapter
 
 ## SSL/TLS Configuration

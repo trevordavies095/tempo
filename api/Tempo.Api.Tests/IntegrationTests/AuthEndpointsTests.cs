@@ -573,6 +573,7 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result!.UserId.Should().NotBeEmpty();
         result.Username.Should().Be("testuser");
         result.CreatedAt.Should().BeBefore(DateTime.UtcNow);
+        result.OnboardingCompleted.Should().BeFalse();
     }
 
     [Fact]
@@ -636,6 +637,79 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    #endregion
+
+    #region Onboarding complete
+
+    [Fact]
+    public async Task Register_NewUser_HasOnboardingCompletedFalse()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "newop", TestPasswords.Default);
+
+        var me = await client.GetAsync("/auth/me");
+        me.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await me.Content.ReadFromJsonAsync<CurrentUserResponse>();
+        body.Should().NotBeNull();
+        body!.OnboardingCompleted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CompleteOnboarding_WhenUnauthenticated_ReturnsUnauthorized()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = _factory.CreateClient();
+
+        var response = await client.PostAsync("/auth/onboarding/complete", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task CompleteOnboarding_SetsFlagTrue_AndIsIdempotent()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "setupuser", TestPasswords.Default);
+
+        var first = await client.PostAsync("/auth/onboarding/complete", null);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstBody = await first.Content.ReadFromJsonAsync<CurrentUserResponse>();
+        firstBody.Should().NotBeNull();
+        firstBody!.OnboardingCompleted.Should().BeTrue();
+
+        var second = await client.PostAsync("/auth/onboarding/complete", null);
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        var secondBody = await second.Content.ReadFromJsonAsync<CurrentUserResponse>();
+        secondBody.Should().NotBeNull();
+        secondBody!.OnboardingCompleted.Should().BeTrue();
+
+        var me = await client.GetAsync("/auth/me");
+        me.StatusCode.Should().Be(HttpStatusCode.OK);
+        var meBody = await me.Content.ReadFromJsonAsync<CurrentUserResponse>();
+        meBody!.OnboardingCompleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetCurrentUser_WhenOnboardingCompletedInDb_ReturnsTrue()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "backfilled", TestPasswords.Default);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var user = await db.Users.FirstAsync(u => u.Username == "backfilled");
+            user.OnboardingCompleted = true;
+            await db.SaveChangesAsync();
+        }
+
+        var me = await client.GetAsync("/auth/me");
+        me.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await me.Content.ReadFromJsonAsync<CurrentUserResponse>();
+        body.Should().NotBeNull();
+        body!.OnboardingCompleted.Should().BeTrue();
     }
 
     #endregion
@@ -864,6 +938,7 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public string Username { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public DateTime? LastLoginAt { get; set; }
+        public bool OnboardingCompleted { get; set; }
     }
 
     private class LogoutResponse

@@ -9,6 +9,14 @@ export function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isAuthenticated, logout } = useAuth();
+  const isOnboarding = pathname === '/onboarding';
+  const showAppLinks = isAuthenticated && !isOnboarding;
+
+  const brandHref = !isAuthenticated
+    ? '/login'
+    : isOnboarding
+      ? '/onboarding'
+      : '/dashboard';
 
   const isActive = (path: string) => {
     if (path === '/dashboard') {
@@ -40,7 +48,7 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           <div className="flex-shrink-0">
             <Link
-              href={isAuthenticated ? '/dashboard' : '/login'}
+              href={brandHref}
               className="flex items-center gap-2.5 text-ink hover:opacity-80 transition-opacity"
             >
               <span className="relative inline-flex h-8 w-8 shrink-0">
@@ -66,7 +74,7 @@ export function Navbar() {
           </div>
 
           <div className="flex items-center">
-            {isAuthenticated && (
+            {showAppLinks && (
               <div className="hidden md:flex items-center space-x-1">
                 <Link href="/dashboard" className={navLinkClasses('/dashboard')}>
                   Dashboard
@@ -94,31 +102,33 @@ export function Navbar() {
               </div>
             )}
 
-            <button
-              type="button"
-              className="md:hidden inline-flex flex-col items-center justify-center gap-1.5 p-2 rounded-tempo text-muted hover:text-ink hover:bg-canvas focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-volt focus:ring-offset-raised"
-              aria-label="Toggle navigation menu"
-              aria-expanded={mobileOpen}
-              aria-controls="mobile-menu"
-              onClick={() => setMobileOpen((open) => !open)}
-            >
-              <span className="sr-only">Open main menu</span>
-              <span
-                className={`block h-0.5 w-5 rounded-sm bg-current transition-transform ${
-                  mobileOpen ? 'translate-y-1.5 rotate-45' : ''
-                }`}
-              />
-              <span
-                className={`block h-0.5 w-5 rounded-sm bg-current transition-opacity ${
-                  mobileOpen ? 'opacity-0' : 'opacity-100'
-                }`}
-              />
-              <span
-                className={`block h-0.5 w-5 rounded-sm bg-current transition-transform ${
-                  mobileOpen ? '-translate-y-1.5 -rotate-45' : ''
-                }`}
-              />
-            </button>
+            {isAuthenticated && (
+              <button
+                type="button"
+                className="md:hidden inline-flex flex-col items-center justify-center gap-1.5 p-2 rounded-tempo text-muted hover:text-ink hover:bg-canvas focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-volt focus:ring-offset-raised"
+                aria-label="Toggle navigation menu"
+                aria-expanded={mobileOpen}
+                aria-controls="mobile-menu"
+                onClick={() => setMobileOpen((open) => !open)}
+              >
+                <span className="sr-only">Open main menu</span>
+                <span
+                  className={`block h-0.5 w-5 rounded-sm bg-current transition-transform ${
+                    mobileOpen ? 'translate-y-1.5 rotate-45' : ''
+                  }`}
+                />
+                <span
+                  className={`block h-0.5 w-5 rounded-sm bg-current transition-opacity ${
+                    mobileOpen ? 'opacity-0' : 'opacity-100'
+                  }`}
+                />
+                <span
+                  className={`block h-0.5 w-5 rounded-sm bg-current transition-transform ${
+                    mobileOpen ? '-translate-y-1.5 -rotate-45' : ''
+                  }`}
+                />
+              </button>
+            )}
           </div>
         </div>
 
@@ -129,34 +139,38 @@ export function Navbar() {
               mobileOpen ? 'block' : 'hidden'
             }`}
           >
-            <Link
-              href="/dashboard"
-              className={navLinkClasses('/dashboard')}
-              onClick={() => setMobileOpen(false)}
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/activities"
-              className={navLinkClasses('/activities')}
-              onClick={() => setMobileOpen(false)}
-            >
-              Activities
-            </Link>
-            <Link
-              href="/import"
-              className={navLinkClasses('/import')}
-              onClick={() => setMobileOpen(false)}
-            >
-              Import
-            </Link>
-            <Link
-              href="/settings"
-              className={navLinkClasses('/settings')}
-              onClick={() => setMobileOpen(false)}
-            >
-              Settings
-            </Link>
+            {showAppLinks && (
+              <>
+                <Link
+                  href="/dashboard"
+                  className={navLinkClasses('/dashboard')}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  href="/activities"
+                  className={navLinkClasses('/activities')}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Activities
+                </Link>
+                <Link
+                  href="/import"
+                  className={navLinkClasses('/import')}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Import
+                </Link>
+                <Link
+                  href="/settings"
+                  className={navLinkClasses('/settings')}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Settings
+                </Link>
+              </>
+            )}
             <button
               onClick={() => {
                 logout();

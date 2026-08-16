@@ -25,13 +25,13 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [registrationAvailable, setRegistrationAvailable] = useState(false);
-  const { login, register, isAuthenticated } = useAuth();
+  const { login, register, isAuthenticated, user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    // If already authenticated, redirect to dashboard
-    if (isAuthenticated) {
-      router.push('/dashboard');
+    // If already authenticated, redirect based on onboarding state
+    if (isAuthenticated && user) {
+      router.push(user.onboardingCompleted ? '/dashboard' : '/onboarding');
       return;
     }
 
@@ -48,8 +48,10 @@ export default function LoginPage() {
       }
     };
 
-    checkRegistration();
-  }, [isAuthenticated, router]);
+    if (!isAuthenticated) {
+      checkRegistration();
+    }
+  }, [isAuthenticated, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,6 +88,7 @@ export default function LoginPage() {
   return (
     <PageShell
       density="control"
+      centered
       title={isRegistering ? 'Create Account' : 'Sign in to Tempo'}
       subtitle={
         isRegistering
@@ -93,7 +96,7 @@ export default function LoginPage() {
           : 'Enter your credentials to access your workouts'
       }
     >
-      <Card className="max-w-md mx-auto space-y-6">
+      <Card className="w-full max-w-md space-y-6">
         {isRegistering && (
           <p className="text-xs text-muted">
             Use a memorable passphrase, {PASSWORD_MIN_LENGTH}–{PASSWORD_MAX_LENGTH} characters. Spaces and
