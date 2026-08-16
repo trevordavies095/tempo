@@ -33,6 +33,9 @@ public class ImportService
         PropertyNameCaseInsensitive = true
     };
 
+    /// <summary>Batch size for splits/time-series SaveChanges during Tempo export restore.</summary>
+    private const int EntityImportBatchSize = 1000;
+
     public ImportService(
         TempoDbContext db,
         MediaService mediaService,
@@ -962,25 +965,39 @@ public class ImportService
             var json = await File.ReadAllTextAsync(splitsPath);
             var splits = JsonSerializer.Deserialize<List<WorkoutSplit>>(json, JsonOptions) ?? new List<WorkoutSplit>();
 
-            // Track splits added in this batch - only update statistics after successful save
-            var splitsImportedCount = 0;
+            var workoutIds = await _db.Workouts.AsNoTracking().Select(w => w.Id).ToHashSetAsync(progress.CancellationToken);
+            var existingSplitIds = await _db.WorkoutSplits.AsNoTracking().Select(s => s.Id).ToHashSetAsync(progress.CancellationToken);
+            var pending = 0;
+            var sinceReport = 0;
+
+            async Task FlushSplitsAsync()
+            {
+                if (pending == 0)
+                {
+                    return;
+                }
+
+                var toCommit = pending;
+                await _db.SaveChangesAsync(progress.CancellationToken);
+                result.Statistics.Splits.Imported += toCommit;
+                pending = 0;
+                _db.ChangeTracker.Clear();
+                await progress.ReportAsync(result);
+                sinceReport = 0;
+            }
 
             foreach (var split in splits)
             {
                 progress.CancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                // Skip null elements (can occur when deserializing JSON arrays)
-                if (split == null)
-                {
-                    result.Statistics.Splits.Errors++;
-                    result.Errors.Add("Null split element found in export, skipping");
-                    continue;
-                }
+                    if (split == null)
+                    {
+                        result.Statistics.Splits.Errors++;
+                        result.Errors.Add("Null split element found in export, skipping");
+                        continue;
+                    }
 
-                try
-                {
-                    // Validate GUID
                     if (split.Id == Guid.Empty)
                     {
                         result.Statistics.Splits.Errors++;
@@ -988,68 +1005,62 @@ public class ImportService
                         continue;
                     }
 
-                    // Validate workout exists
-                    var workoutExists = await _db.Workouts.AnyAsync(w => w.Id == split.WorkoutId);
-                    if (!workoutExists)
+                    if (!workoutIds.Contains(split.WorkoutId))
                     {
                         result.Statistics.Splits.Skipped++;
                         result.Warnings.Add($"Split references non-existent workout {split.WorkoutId}, skipping");
                         continue;
                     }
 
-                    // Check if split already exists
-                    var existing = await _db.WorkoutSplits.FindAsync(split.Id);
-                    if (existing != null)
+                    if (!existingSplitIds.Add(split.Id))
                     {
                         result.Statistics.Splits.Skipped++;
                         continue;
                     }
 
-                    // Clear navigation property
                     split.Workout = null!;
-
                     _db.WorkoutSplits.Add(split);
-                    splitsImportedCount++;
+                    pending++;
                 }
                 catch (Exception ex)
                 {
                     result.Statistics.Splits.Errors++;
-                    var splitInfo = split != null 
-                        ? $"ID: {split.Id}" 
-                        : "null split";
+                    var splitInfo = split != null ? $"ID: {split.Id}" : "null split";
                     result.Errors.Add($"Error importing split {splitInfo}: {ex.Message}");
                     _logger.LogError(ex, "Error importing split {SplitId}", split?.Id);
                 }
-            
-                }
                 finally
                 {
-                    await progress.ReportAsync(result);
+                    sinceReport++;
+                    if (pending >= EntityImportBatchSize)
+                    {
+                        await FlushSplitsAsync();
+                    }
+                    else if (sinceReport >= EntityImportBatchSize)
+                    {
+                        await progress.ReportAsync(result);
+                        sinceReport = 0;
+                    }
                 }
             }
 
             try
             {
-                await _db.SaveChangesAsync();
-                // Only update statistics after successful save
-                result.Statistics.Splits.Imported += splitsImportedCount;
+                await FlushSplitsAsync();
                 await progress.ReportAsync(result);
-                _logger.LogInformation("Imported {Count} splits", splitsImportedCount);
+                _logger.LogInformation("Imported {Count} splits", result.Statistics.Splits.Imported);
             }
             catch (Exception saveEx)
             {
-                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
                 _db.ChangeTracker.Clear();
                 result.Statistics.Splits.Errors++;
                 result.Errors.Add($"Error saving splits to database: {saveEx.Message}");
                 _logger.LogError(saveEx, "Error saving splits to database");
-                throw; // Re-throw to be caught by outer catch block
+                throw;
             }
         }
         catch (Exception ex)
         {
-            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
-            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
             if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
             {
                 result.Errors.Add($"Error reading splits file: {ex.Message}");
@@ -1078,25 +1089,39 @@ public class ImportService
             var json = await File.ReadAllTextAsync(timeSeriesPath);
             var timeSeries = JsonSerializer.Deserialize<List<WorkoutTimeSeries>>(json, JsonOptions) ?? new List<WorkoutTimeSeries>();
 
-            // Track time series added in this batch - only update statistics after successful save
-            var timeSeriesImportedCount = 0;
+            var workoutIds = await _db.Workouts.AsNoTracking().Select(w => w.Id).ToHashSetAsync(progress.CancellationToken);
+            var existingTsIds = await _db.WorkoutTimeSeries.AsNoTracking().Select(t => t.Id).ToHashSetAsync(progress.CancellationToken);
+            var pending = 0;
+            var sinceReport = 0;
+
+            async Task FlushTimeSeriesAsync()
+            {
+                if (pending == 0)
+                {
+                    return;
+                }
+
+                var toCommit = pending;
+                await _db.SaveChangesAsync(progress.CancellationToken);
+                result.Statistics.TimeSeries.Imported += toCommit;
+                pending = 0;
+                _db.ChangeTracker.Clear();
+                await progress.ReportAsync(result);
+                sinceReport = 0;
+            }
 
             foreach (var ts in timeSeries)
             {
                 progress.CancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                // Skip null elements (can occur when deserializing JSON arrays)
-                if (ts == null)
-                {
-                    result.Statistics.TimeSeries.Errors++;
-                    result.Errors.Add("Null time series element found in export, skipping");
-                    continue;
-                }
+                    if (ts == null)
+                    {
+                        result.Statistics.TimeSeries.Errors++;
+                        result.Errors.Add("Null time series element found in export, skipping");
+                        continue;
+                    }
 
-                try
-                {
-                    // Validate GUID
                     if (ts.Id == Guid.Empty)
                     {
                         result.Statistics.TimeSeries.Errors++;
@@ -1104,68 +1129,62 @@ public class ImportService
                         continue;
                     }
 
-                    // Validate workout exists
-                    var workoutExists = await _db.Workouts.AnyAsync(w => w.Id == ts.WorkoutId);
-                    if (!workoutExists)
+                    if (!workoutIds.Contains(ts.WorkoutId))
                     {
                         result.Statistics.TimeSeries.Skipped++;
                         result.Warnings.Add($"Time series references non-existent workout {ts.WorkoutId}, skipping");
                         continue;
                     }
 
-                    // Check if time series already exists
-                    var existing = await _db.WorkoutTimeSeries.FindAsync(ts.Id);
-                    if (existing != null)
+                    if (!existingTsIds.Add(ts.Id))
                     {
                         result.Statistics.TimeSeries.Skipped++;
                         continue;
                     }
 
-                    // Clear navigation property
                     ts.Workout = null!;
-
                     _db.WorkoutTimeSeries.Add(ts);
-                    timeSeriesImportedCount++;
+                    pending++;
                 }
                 catch (Exception ex)
                 {
                     result.Statistics.TimeSeries.Errors++;
-                    var tsInfo = ts != null 
-                        ? $"ID: {ts.Id}" 
-                        : "null time series";
+                    var tsInfo = ts != null ? $"ID: {ts.Id}" : "null time series";
                     result.Errors.Add($"Error importing time series {tsInfo}: {ex.Message}");
                     _logger.LogError(ex, "Error importing time series {TimeSeriesId}", ts?.Id);
                 }
-            
-                }
                 finally
                 {
-                    await progress.ReportAsync(result);
+                    sinceReport++;
+                    if (pending >= EntityImportBatchSize)
+                    {
+                        await FlushTimeSeriesAsync();
+                    }
+                    else if (sinceReport >= EntityImportBatchSize)
+                    {
+                        await progress.ReportAsync(result);
+                        sinceReport = 0;
+                    }
                 }
             }
 
             try
             {
-                await _db.SaveChangesAsync();
-                // Only update statistics after successful save
-                result.Statistics.TimeSeries.Imported += timeSeriesImportedCount;
+                await FlushTimeSeriesAsync();
                 await progress.ReportAsync(result);
-                _logger.LogInformation("Imported {Count} time series records", timeSeriesImportedCount);
+                _logger.LogInformation("Imported {Count} time series records", result.Statistics.TimeSeries.Imported);
             }
             catch (Exception saveEx)
             {
-                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
                 _db.ChangeTracker.Clear();
                 result.Statistics.TimeSeries.Errors++;
                 result.Errors.Add($"Error saving time series to database: {saveEx.Message}");
                 _logger.LogError(saveEx, "Error saving time series to database");
-                throw; // Re-throw to be caught by outer catch block
+                throw;
             }
         }
         catch (Exception ex)
         {
-            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
-            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
             if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
             {
                 result.Errors.Add($"Error reading time series file: {ex.Message}");

@@ -117,21 +117,7 @@ public class ImportJobWorker : BackgroundService
                 var orchestrator = scope.ServiceProvider.GetRequiredService<StravaBulkImportOrchestrator>();
                 var result = await orchestrator.ImportFromZipAsync(zipStream, async progress =>
                 {
-                    var row = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
-                    if (row == null)
-                    {
-                        throw new InvalidOperationException("Import job was deleted");
-                    }
-
-                    ApplyStravaProgress(row, progress);
-                    await db.SaveChangesAsync(CancellationToken.None);
-                    if (row.CancelRequested)
-                    {
-                        await jobCts.CancelAsync();
-                        throw new OperationCanceledException(jobCts.Token);
-                    }
-
-                    db.Entry(row).State = EntityState.Detached;
+                    await PersistJobProgressAsync(jobId, jobCts, row => ApplyStravaProgress(row, progress));
                 }, jobCts.Token);
 
                 var completed = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
@@ -154,21 +140,7 @@ public class ImportJobWorker : BackgroundService
                 var importService = scope.ServiceProvider.GetRequiredService<ImportService>();
                 var result = await importService.ImportExportAsync(zipStream, async progress =>
                 {
-                    var row = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
-                    if (row == null)
-                    {
-                        throw new InvalidOperationException("Import job was deleted");
-                    }
-
-                    ApplyTempoProgress(row, progress);
-                    await db.SaveChangesAsync(CancellationToken.None);
-                    if (row.CancelRequested)
-                    {
-                        await jobCts.CancelAsync();
-                        throw new OperationCanceledException(jobCts.Token);
-                    }
-
-                    db.Entry(row).State = EntityState.Detached;
+                    await PersistJobProgressAsync(jobId, jobCts, row => ApplyTempoProgress(row, progress));
                 }, jobCts.Token);
 
                 var completed = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
@@ -211,6 +183,29 @@ public class ImportJobWorker : BackgroundService
             }
 
             await FailJobAsync(db, failed, ex.Message, logger);
+        }
+    }
+
+    /// <summary>
+    /// Persist job progress on a separate DbContext so SaveChanges does not flush
+    /// pending bulk-import entities from the worker's main scope.
+    /// </summary>
+    private async Task PersistJobProgressAsync(Guid jobId, CancellationTokenSource jobCts, Action<ImportJob> apply)
+    {
+        using var progressScope = _scopeFactory.CreateScope();
+        var progressDb = progressScope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var row = await progressDb.ImportJobs.FindAsync([jobId], CancellationToken.None);
+        if (row == null)
+        {
+            throw new InvalidOperationException("Import job was deleted");
+        }
+
+        apply(row);
+        await progressDb.SaveChangesAsync(CancellationToken.None);
+        if (row.CancelRequested)
+        {
+            await jobCts.CancelAsync();
+            throw new OperationCanceledException(jobCts.Token);
         }
     }
 
