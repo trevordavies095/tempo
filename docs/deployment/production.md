@@ -236,23 +236,25 @@ labels:
 
 ## Large File Upload Requirements
 
-Tempo supports bulk imports of up to 500MB (Strava exports, Tempo exports). Your reverse proxy must be configured to handle these large uploads:
+Tempo supports ZIP archives up to 500MB (Strava exports, Tempo exports). The **command center** uploads those archives in **512 KiB** chunks over `/api`, so a default reverse-proxy body limit is usually enough for the UI path. Processing runs as a background import job (poll + cancel), not as one long multipart request.
 
-### Required Settings
+**Whole-ZIP adapters** (`POST /workouts/import/bulk`, `POST /workouts/import/export`) and direct posts to the API still send the full body in one request. For those clients (Bruno, curl, scripts), configure the reverse proxy (or hit the API port directly) with:
+
+### Settings for whole-ZIP / direct API uploads
 
 - **Maximum body size**: 500MB minimum
 - **Read timeout**: 10-30 minutes (depending on expected upload speed)
 - **Write timeout**: 10-30 minutes
 - **Connect timeout**: 10 minutes
 
-These settings are already configured in the API (`Program.cs`) and only need to be set at the reverse proxy level.
+These limits are already configured in the API (`Program.cs`) for Kestrel and form options.
 
 ### Testing Large Uploads
 
-After configuration, test with a large file:
-1. Export your data from Strava (typically 50-200MB)
-2. Import via Settings > Import > Bulk Strava Import
-3. Monitor reverse proxy logs for timeout errors
+After configuration, smoke-test through the command center (`:3000`):
+1. Export a large archive from Strava (typically 50–200MB), or use a Tempo Settings export with media
+2. Strava: **Import** page → Bulk Import Strava Export; Tempo restore: **Settings** → Export / Import
+3. Confirm upload progress then import/restore progress; optional: retry with Bruno/curl against the API for the whole-ZIP adapter
 
 ## SSL/TLS Configuration
 

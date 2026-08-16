@@ -1644,7 +1644,7 @@
         "tags": [
           "Workouts"
         ],
-        "summary": "Create a receiving Strava bulk import job for chunked upload",
+        "summary": "Create a receiving import job for chunked upload",
         "description": "Creates a receiving import job. Body requires kind (strava_bulk | tempo_export), filename, byteSize. unitPreference is optional for strava_bulk and rejected for tempo_export. Upload 512 KiB chunks then POST complete.",
         "operationId": "CreateImportJob",
         "requestBody": {
@@ -1694,7 +1694,7 @@
         "tags": [
           "Workouts"
         ],
-        "summary": "Upload one 512 KiB (or final remainder) chunk of a Strava export ZIP",
+        "summary": "Upload one 512 KiB (or final remainder) chunk of an import ZIP",
         "description": "Puts one sequential 512 KiB (or final remainder) chunk. Query total is the expected chunk count. Body is application/octet-stream.",
         "operationId": "PutImportJobChunk",
         "parameters": [

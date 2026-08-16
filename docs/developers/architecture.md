@@ -58,8 +58,13 @@ Each extension method:
 - `TrackGeometry` — in-process: `TrackPoint`s in; elevation gain, `WorkoutRoute`, `WorkoutSplit`s, `WorkoutTimeSeries` out. No `DbContext`.
 - `WorkoutIntake` — one persist pipeline (parse, geometry, duplicate policy, default shoe, weather, relative effort, incremental best efforts). HTTP import is a thin adapter. Bulk calls intake per activity file.
 - `TrackPointRehydration` — stored Workout fields → `TrackPoint`s for crop and split recalc.
+- `ImportJobService` — create/chunk/complete/current/get/cancel, one-active-job rules, archive staging under `media/imports/{jobId}/`.
+- `ImportJobWorker` — hosted service; wakes on channel, new DI scope per job; branches on `kind` (`strava_bulk` | `tempo_export`).
+- `StravaBulkImportOrchestrator` — Strava ZIP extract/CSV loop calling `BulkImportService` + Workout intake; writes job counters.
+- `BulkImportService` — ZIP safety, `activities.csv`, non-run skip, per-file intake mapping, Strava media copy.
+- `ImportService` — Tempo export ZIP restore (`ImportExportAsync` with progress + cancel); not Workout intake.
 
-All services are registered as `Scoped` in `Program.cs` except for configuration objects (`MediaStorageConfig`, `ElevationCalculationConfig`) which are `Singleton`.
+Most services are registered as `Scoped` in `Program.cs`. Configuration objects (`MediaStorageConfig`, `ElevationCalculationConfig`) and `ImportJobQueue` are `Singleton`. `ImportJobWorker` is a hosted service.
 
 ### 3. Hybrid Data Storage
 
@@ -69,9 +74,9 @@ All services are registered as `Scoped` in `Program.cs` except for configuration
 
 ### 4. Media Storage
 
-- Files stored on filesystem in `media/` directory
-- Organized by workout GUID: `media/{workoutId}/filename.ext`
-- Metadata stored in database for quick access
+- Workout media on filesystem: `media/{workoutId}/filename.ext`
+- Import-job ZIP staging: `media/imports/{jobId}/archive.zip` (deleted on completed, failed, cancelled, or startup interrupt)
+- Metadata for workout media stored in database for quick access
 
 ### 5. Automatic Migrations
 
@@ -102,6 +107,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 - **Shoe**: Running shoe entity for tracking shoe mileage and assignments
 - **User**: User accounts for authentication
 - **UserSettings**: Single-row table for user preferences (heart rate zones, unit preferences, default shoe). Command-center appearance is not UserSettings.
+- **ImportJob**: Background import (`strava_bulk` | `tempo_export`) with status, byte/progress counters, ErrorDetailsJson (Strava), ResultJson (Tempo), and archive path. At most one row in `receiving` | `queued` | `running`.
 
 ## Data Flow
 
@@ -150,6 +156,7 @@ The `TempoDbContext` configures several important indexes:
 - **API Endpoints**: `api/Endpoints/*.cs`
 - **Models**: `api/Models/*.cs`
 - **Workout intake / geometry**: `api/Services/WorkoutIntake.cs`, `api/Services/TrackGeometry.cs`, `api/Services/TrackPointRehydration.cs`
+- **Import jobs**: `api/Services/ImportJobService.cs`, `api/Services/ImportJobWorker.cs`, `api/Services/StravaBulkImportOrchestrator.cs`, `api/Services/BulkImportService.cs`, `api/Services/ImportService.cs`
 - **Services**: `api/Services/*.cs`
 - **Database Context**: `api/Data/TempoDbContext.cs`
 - **Frontend API Client**: `frontend/lib/api.ts` (includes `getWorkoutTimeSeries`)

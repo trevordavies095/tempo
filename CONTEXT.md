@@ -36,6 +36,10 @@ _Avoid_: GpxParser splits, GPS smoothing (as the module name)
 The persist pipeline behind `POST /workouts/import` and Strava bulk per-file processing: parse, geometry, duplicate policy, weather, relative effort, best efforts. Not the HTTP module and not Settings ZIP restore.
 _Avoid_: import endpoint (when meaning this module), bulk persist
 
+**Import job**:
+A Postgres-backed background import (`kind`: `strava_bulk` or `tempo_export`) with chunked upload (or whole-ZIP adapter), worker processing, poll, cancel, and one-active-job rules. Not Workout intake and not single-file GPX/FIT import.
+_Avoid_: Hangfire job, sync bulk POST (as the product model)
+
 **WorkoutRoute**:
 GeoJSON LineString for one Workout.
 _Avoid_: GPS track, polyline (as the domain name)

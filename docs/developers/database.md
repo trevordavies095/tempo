@@ -157,6 +157,32 @@ Running shoe entity for tracking shoe mileage.
 - One-to-many with `Workout` (via `Workout.ShoeId`)
 - One-to-many with `UserSettings` (via `UserSettings.DefaultShoeId`)
 
+### ImportJob
+
+Background import for Strava bulk ZIP (`strava_bulk`) or Tempo export restore (`tempo_export`). At most one row may be in `receiving`, `queued`, or `running` at a time.
+
+**Columns:**
+- `Id` (Guid, Primary Key)
+- `Kind` (string) - `strava_bulk` or `tempo_export`
+- `Status` (string) - `receiving` | `queued` | `running` | `completed` | `failed`
+- `Filename` (string)
+- `ByteSize` (long) - Declared ZIP size at create
+- `BytesReceived` (long) - Bytes assembled from chunks
+- `Processed` / `Total` (int) - Progress while running
+- `Successful` / `Skipped` / `Updated` / `Errors` (int) - Flat counters (Tempo rollups nested stats into these)
+- `ErrorDetailsJson` (string, nullable) - Strava per-file `{ filename, error }` array
+- `ResultJson` (string, nullable) - Tempo `{ statistics, warnings, errors }` payload
+- `ErrorMessage` (string, nullable) - Job-level message (`cancelled`, `interrupted`, bad archive, etc.)
+- `UnitPreference` (string, nullable) - Optional for `strava_bulk`; applied when the worker starts
+- `ArchivePath` (string, nullable) - Staged ZIP under `media/imports/{jobId}/`
+- `CancelRequested` (bool)
+- `LastChunkAt` (DateTime, nullable) - Used for 15-minute stale `receiving` replacement
+- `CreatedAt` / `StartedAt` / `FinishedAt` (DateTime)
+
+**Notes:**
+- Staged archive directory is deleted on terminal status or startup interrupt; the row remains for a late GET
+- Cancel and interrupt end as `failed` with a distinct `ErrorMessage`
+
 ## Relationships
 
 ```
@@ -166,6 +192,7 @@ Workout (1) ── (N) WorkoutTimeSeries
 Workout (1) ── (N) WorkoutMedia
 Workout (N) ── (1) Shoe (via ShoeId, nullable)
 UserSettings (1) ── (1) Shoe (via DefaultShoeId, nullable)
+ImportJob (standalone; no FK to Workout)
 ```
 
 ## Migrations
@@ -222,8 +249,9 @@ GIN indexes on JSONB fields enable efficient JSON queries:
 ### Media Storage
 
 Media files are stored on the filesystem, not in the database:
-- Path: `media/{workoutId}/filename.ext`
-- Database stores metadata only (filename, MIME type, size, upload date)
+- Workout media: `media/{workoutId}/filename.ext`
+- Import-job staging: `media/imports/{jobId}/archive.zip` (deleted when the job finishes or is interrupted)
+- Database stores workout media metadata only (filename, MIME type, size, upload date)
 
 ## Backup and Restore
 

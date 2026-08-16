@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Import jobs** for Strava bulk and Tempo export restore
+  - Command center uploads ZIPs in **512 KiB** chunks, then polls job progress; cancel and refresh resume are supported
+  - At most one active import job across Strava bulk (Import page) and Tempo restore (Settings)
+  - Tempo export restore uses the same rails (`kind: tempo_export`) with nested statistics on the job document
 - **Command-center appearance**
   - System / Dark / Light in Settings (this browser only, `tempo-appearance` in `localStorage`; default System). Not UserSettings and not synced to iOS
 - **WorkoutTimeSeries on Workout overview**
@@ -15,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Shared **Highlight** across map, splits, and charts
 
 ### Changed
+- **Breaking (API clients):** `POST /workouts/import/bulk` and `POST /workouts/import/export` return **202** with an import job document instead of a blocking **200** summary. Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`.
 - **Single-file import** now uses the same duplicate rule as Strava bulk: incomplete FIT/GPX JSON (or missing raw bytes) can update an existing Workout; complete duplicates are skipped. Distance, duration, and elevation are not rewritten on those updates.
 - **Strava bulk import** per-file persist uses the same Workout intake pipeline as single-file import (ZIP extract, `activities.csv`, non-run skip, and media copy unchanged).
 - **Track geometry** + **Workout intake**: elevation, route, splits, and time series derive from `TrackPoint`s; `POST /workouts/import` and Strava bulk share one persist pipeline (HTTP JSON unchanged)

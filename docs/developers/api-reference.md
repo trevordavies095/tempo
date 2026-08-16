@@ -206,6 +206,33 @@ file: [Tempo export ZIP]
 
 Returns **202** with a job document (`kind: tempo_export`). Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Structural ZIP/manifest failure → `failed`; finished with per-item problems → `completed` with nested `statistics` / `warnings` / `errorMessages` on the job document. `DELETE /workouts/import/jobs/{id}` cancels; already restored data stays. At most one import job runs at a time across Strava and Tempo (**409** if another is active).
 
+### Import job lifecycle
+
+Statuses: `receiving` → `queued` → `running` → `completed` or `failed`. Cancel and API-startup interrupt end as `failed` with `errorMessage` `cancelled` or `interrupted` (no auto-resume; retry the ZIP). If the only active job is `receiving` and no chunk (or create) has happened for **15 minutes**, a new create replaces it. At most one job in `receiving` | `queued` | `running` across kinds.
+
+Example job document (fields present depend on kind and status):
+
+```json
+{
+  "id": "…",
+  "kind": "strava_bulk",
+  "status": "running",
+  "filename": "export.zip",
+  "byteSize": 12345,
+  "bytesReceived": 12345,
+  "processed": 12,
+  "total": 40,
+  "successful": 10,
+  "updated": 1,
+  "skipped": 1,
+  "errors": 0,
+  "errorDetails": [],
+  "errorMessage": null
+}
+```
+
+For `tempo_export`, flat counters are rollups; nested `statistics` / `warnings` / `errorMessages` come from `ResultJson` (`errorDetails` stays `[]`; `updated` stays 0).
+
 ### Export All Data
 
 Export all user data in a portable ZIP format:

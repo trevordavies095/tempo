@@ -143,7 +143,7 @@ Key configuration options:
 - `ElevationCalculation:NoiseThresholdMeters` - Elevation smoothing threshold
 - `CORS:AllowedOrigins` - Comma-separated list of allowed origins
 
-**Note**: Large file uploads (bulk import) are configured in `Program.cs` with 500MB limits.
+**Note**: Command-center Strava/Tempo ZIP uploads use **512 KiB** chunks. Whole-ZIP adapters (`POST /workouts/import/bulk`, `POST /workouts/import/export`) allow up to 500MB (configured in `Program.cs`).
 
 ### Frontend Configuration (`next.config.ts`)
 

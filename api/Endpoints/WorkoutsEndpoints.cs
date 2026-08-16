@@ -1478,7 +1478,7 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
-    /// Create a receiving Strava bulk import job for chunked upload
+    /// Create a receiving import job for chunked upload (strava_bulk or tempo_export)
     /// </summary>
     private static async Task<IResult> CreateImportJob(
         [FromBody] CreateImportJobRequest request,
@@ -1489,7 +1489,7 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
-    /// Upload one 512 KiB (or final remainder) chunk of a Strava export ZIP
+    /// Upload one 512 KiB (or final remainder) chunk of an import ZIP
     /// </summary>
     private static async Task<IResult> PutImportJobChunk(
         Guid id,
