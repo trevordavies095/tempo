@@ -1644,7 +1644,7 @@
         "tags": [
           "Workouts"
         ],
-        "summary": "Create a receiving import job for chunked upload",
+        "summary": "Create a receiving import job for chunked upload (strava_bulk or tempo_export)",
         "description": "Creates a receiving import job. Body requires kind (strava_bulk | tempo_export), filename, byteSize. unitPreference is optional for strava_bulk and rejected for tempo_export. Upload 512 KiB chunks then POST complete.",
         "operationId": "CreateImportJob",
         "requestBody": {
