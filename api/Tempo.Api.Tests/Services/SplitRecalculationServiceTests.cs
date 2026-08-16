@@ -42,7 +42,7 @@ public class SplitRecalculationServiceTests : IDisposable
             NoiseThresholdMeters = 2.0,
             MinDistanceMeters = 10.0
         };
-        _gpxParser = new GpxParserService(elevationConfig);
+        _gpxParser = new GpxParserService(elevationConfig, new TrackGeometry(elevationConfig));
         _fitParser = new FitParserService(elevationConfig);
         _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<SplitRecalculationService>();
         _service = new SplitRecalculationService(_db, _gpxParser, _fitParser, _logger);

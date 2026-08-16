@@ -24,6 +24,10 @@ _Avoid_: workout detail, activity page (when meaning this screen)
 A recorded run with stats, optional route, splits, time series, media, shoe, and weather.
 _Avoid_: activity (except the existing Activities list name), session
 
+**TrackPoint**:
+An in-memory sample on a Workout path. Latitude and longitude are optional (indoor samples). Optional elevation, time, sensors (HR, cadence, power, temperature), and motion (speed, distance, grade, vertical speed). Not a table.
+_Avoid_: GpxPoint, GPS track, polyline (as this type)
+
 **WorkoutRoute**:
 GeoJSON LineString for one Workout.
 _Avoid_: GPS track, polyline (as the domain name)

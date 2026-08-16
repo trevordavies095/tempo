@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Tempo.Api.Services;
+using Tempo.Api.Models;
 using Tempo.Api.Utils;
 using Dynastream.Fit;
 
@@ -26,6 +26,7 @@ public class FitParserService
         public double DistanceMeters { get; set; }
         public double? ElevationGainMeters { get; set; }
         public List<GpxParserService.GpxPoint> TrackPoints { get; set; } = new();
+        public List<TrackPoint> SeriesPoints { get; set; } = new();
         public string? RawFitDataJson { get; set; }  // JSON string for RawFitData field
         public ReadOnlyCollection<Dynastream.Fit.RecordMesg> RecordMesgs { get; set; } = new ReadOnlyCollection<Dynastream.Fit.RecordMesg>(new List<Dynastream.Fit.RecordMesg>());
     }
@@ -72,6 +73,7 @@ public class FitParserService
 
             // Extract track points from RecordMesg
             var trackPoints = new List<GpxParserService.GpxPoint>();
+            var seriesPoints = new List<TrackPoint>();
             System.DateTime? firstTimestamp = null;
             System.DateTime? lastTimestamp = null;
             double? lastDistance = null;
@@ -135,6 +137,8 @@ public class FitParserService
                     trackPoints.Add(point);
                 }
 
+                seriesPoints.Add(MapRecordToSeriesPoint(record, timestamp.Value, latitude, longitude));
+
                 // Track last distance for fallback calculation
                 if (distance.HasValue)
                 {
@@ -189,6 +193,7 @@ public class FitParserService
                 DistanceMeters = totalDistance,
                 ElevationGainMeters = elevationGain,
                 TrackPoints = trackPoints,
+                SeriesPoints = seriesPoints,
                 RawFitDataJson = rawFitData,
                 RecordMesgs = records
             };
@@ -210,6 +215,86 @@ public class FitParserService
         gzipStream.CopyTo(memoryStream);
         memoryStream.Position = 0; // Reset to beginning for parsing
         return ParseFit(memoryStream);
+    }
+
+    private static TrackPoint MapRecordToSeriesPoint(
+        RecordMesg record,
+        System.DateTime timestamp,
+        double? latitude,
+        double? longitude)
+    {
+        var enhancedSpeed = record.GetEnhancedSpeed();
+        var standardSpeed = record.GetSpeed();
+        double? validatedSpeed = null;
+        if (enhancedSpeed.HasValue && !double.IsNaN(enhancedSpeed.Value) && !double.IsInfinity(enhancedSpeed.Value) && enhancedSpeed.Value >= 0)
+        {
+            validatedSpeed = enhancedSpeed.Value;
+        }
+        else if (standardSpeed.HasValue && !double.IsNaN(standardSpeed.Value) && !double.IsInfinity(standardSpeed.Value) && standardSpeed.Value >= 0)
+        {
+            validatedSpeed = standardSpeed.Value;
+        }
+
+        var grade = record.GetGrade();
+        double? validatedGrade = null;
+        if (grade.HasValue)
+        {
+            var gradeValue = (double)grade.Value;
+            if (!double.IsNaN(gradeValue) && !double.IsInfinity(gradeValue))
+            {
+                validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
+            }
+        }
+
+        var verticalSpeed = record.GetVerticalSpeed();
+        double? validatedVerticalSpeed = null;
+        if (verticalSpeed.HasValue)
+        {
+            var vsValue = verticalSpeed.Value;
+            if (!double.IsNaN(vsValue) && !double.IsInfinity(vsValue) && vsValue >= -50.0 && vsValue <= 50.0)
+            {
+                validatedVerticalSpeed = vsValue;
+            }
+        }
+
+        double? elevation = null;
+        var enhancedAltitude = record.GetEnhancedAltitude();
+        var standardAltitude = record.GetAltitude();
+        if (enhancedAltitude.HasValue && !double.IsNaN(enhancedAltitude.Value) && !double.IsInfinity(enhancedAltitude.Value))
+        {
+            elevation = enhancedAltitude.Value;
+        }
+        else if (standardAltitude.HasValue && !double.IsNaN(standardAltitude.Value) && !double.IsInfinity(standardAltitude.Value))
+        {
+            elevation = standardAltitude.Value;
+        }
+
+        double? distance = null;
+        var distanceValue = record.GetDistance();
+        if (distanceValue.HasValue)
+        {
+            var dist = distanceValue.Value;
+            if (!double.IsNaN(dist) && !double.IsInfinity(dist) && dist >= 0)
+            {
+                distance = dist;
+            }
+        }
+
+        return new TrackPoint
+        {
+            Latitude = latitude,
+            Longitude = longitude,
+            Time = timestamp,
+            Elevation = elevation,
+            HeartRateBpm = record.GetHeartRate(),
+            CadenceRpm = record.GetCadence(),
+            PowerWatts = record.GetPower(),
+            TemperatureC = record.GetTemperature(),
+            SpeedMps = validatedSpeed,
+            GradePercent = validatedGrade,
+            VerticalSpeedMps = validatedVerticalSpeed,
+            DistanceM = distance
+        };
     }
 
     private double? CalculateElevationGain(List<GpxParserService.GpxPoint> trackPoints)

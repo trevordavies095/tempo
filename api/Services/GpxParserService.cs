@@ -10,10 +10,12 @@ namespace Tempo.Api.Services;
 public class GpxParserService
 {
     private readonly ElevationCalculationConfig _elevationConfig;
+    private readonly TrackGeometry _trackGeometry;
 
-    public GpxParserService(ElevationCalculationConfig elevationConfig)
+    public GpxParserService(ElevationCalculationConfig elevationConfig, TrackGeometry trackGeometry)
     {
         _elevationConfig = elevationConfig;
+        _trackGeometry = trackGeometry;
     }
     public class GpxParseResult
     {
@@ -35,6 +37,21 @@ public class GpxParserService
         public byte? CadenceRpm { get; set; }
         public ushort? PowerWatts { get; set; }
         public sbyte? TemperatureC { get; set; }
+
+        public TrackPoint ToTrackPoint()
+        {
+            return new TrackPoint
+            {
+                Latitude = Latitude,
+                Longitude = Longitude,
+                Elevation = Elevation,
+                Time = Time,
+                HeartRateBpm = HeartRateBpm,
+                CadenceRpm = CadenceRpm,
+                PowerWatts = PowerWatts,
+                TemperatureC = TemperatureC
+            };
+        }
     }
 
     public GpxParseResult ParseGpx(Stream gpxStream)
@@ -495,120 +512,18 @@ public class GpxParserService
 
     public List<WorkoutSplit> CalculateSplits(List<GpxPoint> trackPoints, double distanceMeters, int durationSeconds, double splitDistanceMeters = 1000.0)
     {
-        var splits = new List<WorkoutSplit>();
-        var accumulatedDistance = 0.0;
-        var splitStartDistance = 0.0;
-        var splitStartIndex = 0;
-        var lastSplitStartIndex = 0; // Track start index of the last created split
-        var splitIndex = 0;
+        var startedAt = trackPoints.FirstOrDefault(p => p.Time.HasValue)?.Time
+            ?? DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc);
 
-        for (int i = 1; i < trackPoints.Count; i++)
-        {
-            var segmentDistance = GeoUtils.HaversineDistance(
-                trackPoints[i - 1].Latitude,
-                trackPoints[i - 1].Longitude,
-                trackPoints[i].Latitude,
-                trackPoints[i].Longitude
-            );
+        var derived = _trackGeometry.Derive(
+            trackPoints.Select(p => p.ToTrackPoint()).ToList(),
+            startedAt,
+            splitDistanceMeters,
+            Guid.Empty,
+            distanceMeters,
+            durationSeconds);
 
-            accumulatedDistance += segmentDistance;
-
-            if (accumulatedDistance - splitStartDistance >= splitDistanceMeters)
-            {
-                // Calculate the actual split distance (not accumulated)
-                var splitDistance = accumulatedDistance - splitStartDistance;
-
-                // Calculate time for this split
-                var splitDuration = 0;
-                if (trackPoints[i].Time.HasValue && trackPoints[splitStartIndex].Time.HasValue)
-                {
-                    splitDuration = (int)(trackPoints[i].Time!.Value - trackPoints[splitStartIndex].Time!.Value).TotalSeconds;
-                }
-                else
-                {
-                    // Estimate based on proportion of total distance
-                    splitDuration = (int)((splitDistance / distanceMeters) * durationSeconds);
-                }
-
-                // Calculate split pace in seconds per km (stored in metric)
-                var splitPace = splitDuration > 0 ? splitDuration / (splitDistance / 1000.0) : 0;
-
-                splits.Add(new WorkoutSplit
-                {
-                    Id = Guid.NewGuid(),
-                    Idx = splitIndex++,
-                    DistanceM = splitDistance, // Store actual split distance, not accumulated
-                    DurationS = splitDuration,
-                    PaceS = splitPace
-                });
-
-                // Reset for next split
-                splitStartDistance = accumulatedDistance;
-                lastSplitStartIndex = splitStartIndex; // Store the start index of the split we just created
-                splitStartIndex = i;
-            }
-        }
-
-        // Handle final partial split
-        var remainingDistance = accumulatedDistance - splitStartDistance;
-        if (remainingDistance > 0)
-        {
-            // Create separate split if significant (>10% of split distance), otherwise merge into last split
-            if (remainingDistance >= splitDistanceMeters * 0.1 && splits.Count > 0)
-            {
-                // Calculate time for final partial split
-                var finalSplitDuration = 0;
-                if (trackPoints.Count > 1 && trackPoints[trackPoints.Count - 1].Time.HasValue && trackPoints[splitStartIndex].Time.HasValue)
-                {
-                    finalSplitDuration = (int)(trackPoints[trackPoints.Count - 1].Time!.Value - trackPoints[splitStartIndex].Time!.Value).TotalSeconds;
-                }
-                else
-                {
-                    // Estimate based on proportion
-                    finalSplitDuration = (int)((remainingDistance / distanceMeters) * durationSeconds);
-                }
-
-                var finalSplitPace = finalSplitDuration > 0 ? finalSplitDuration / (remainingDistance / 1000.0) : 0;
-
-                splits.Add(new WorkoutSplit
-                {
-                    Id = Guid.NewGuid(),
-                    Idx = splitIndex,
-                    DistanceM = remainingDistance,
-                    DurationS = finalSplitDuration,
-                    PaceS = finalSplitPace
-                });
-            }
-            else if (splits.Count > 0)
-            {
-                // Merge small remainder into last split
-                var lastSplit = splits.Last();
-                var totalLastSplitDistance = lastSplit.DistanceM + remainingDistance;
-                
-                // Recalculate duration and pace for merged split
-                var mergedDuration = lastSplit.DurationS;
-                if (trackPoints.Count > 1 && trackPoints[trackPoints.Count - 1].Time.HasValue)
-                {
-                    // Use the start time of the last split (stored in lastSplitStartIndex)
-                    var lastSplitStartTime = trackPoints[lastSplitStartIndex].Time;
-                    if (lastSplitStartTime.HasValue && trackPoints[trackPoints.Count - 1].Time.HasValue)
-                    {
-                        mergedDuration = (int)(trackPoints[trackPoints.Count - 1].Time!.Value - lastSplitStartTime.Value).TotalSeconds;
-                    }
-                }
-                else
-                {
-                    // Estimate based on proportion of total distance for the merged split
-                    mergedDuration = (int)((totalLastSplitDistance / distanceMeters) * durationSeconds);
-                }
-
-                lastSplit.DistanceM = totalLastSplitDistance;
-                lastSplit.DurationS = mergedDuration;
-                lastSplit.PaceS = mergedDuration > 0 ? mergedDuration / (totalLastSplitDistance / 1000.0) : lastSplit.PaceS;
-            }
-        }
-
-        return splits;
+        return derived.Splits.ToList();
     }
 }
 

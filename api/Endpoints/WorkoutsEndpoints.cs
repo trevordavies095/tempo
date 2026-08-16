@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -47,6 +46,7 @@ public static class WorkoutsEndpoints
     /// <param name="db">Database context</param>
     /// <param name="gpxParser">GPX parser service</param>
     /// <param name="fitParser">FIT parser service</param>
+    /// <param name="trackGeometry">Track geometry module</param>
     /// <param name="weatherService">Weather service</param>
     /// <param name="zoneService">Heart rate zone service</param>
     /// <param name="relativeEffortService">Relative effort service</param>
@@ -62,6 +62,7 @@ public static class WorkoutsEndpoints
         TempoDbContext db,
         GpxParserService gpxParser,
         FitParserService fitParser,
+        TrackGeometry trackGeometry,
         WeatherService weatherService,
         HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
@@ -105,6 +106,7 @@ public static class WorkoutsEndpoints
                 db,
                 gpxParser,
                 fitParser,
+                trackGeometry,
                 weatherService,
                 zoneService,
                 relativeEffortService,
@@ -136,6 +138,7 @@ public static class WorkoutsEndpoints
                     db,
                     gpxParser,
                     fitParser,
+                    trackGeometry,
                     weatherService,
                     zoneService,
                     relativeEffortService,
@@ -2902,202 +2905,6 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
-    /// Creates a workout route from track points.
-    /// </summary>
-    private static WorkoutRoute CreateWorkoutRoute(Guid workoutId, List<GpxParserService.GpxPoint> trackPoints)
-    {
-            var coordinates = trackPoints.Select(p => new[] { p.Longitude, p.Latitude }).ToList();
-            var routeGeoJson = JsonSerializer.Serialize(new
-            {
-                type = "LineString",
-                coordinates = coordinates
-            });
-
-        return new WorkoutRoute
-            {
-                Id = Guid.NewGuid(),
-            WorkoutId = workoutId,
-                RouteGeoJson = routeGeoJson
-            };
-    }
-
-    /// <summary>
-    /// Creates time-series records from GPX track points with sensor data.
-    /// </summary>
-    private static List<WorkoutTimeSeries> CreateTimeSeriesFromGpxTrackPoints(
-        Guid workoutId,
-        DateTime startTime,
-        List<GpxParserService.GpxPoint> trackPoints)
-    {
-        var timeSeries = new List<WorkoutTimeSeries>();
-
-        foreach (var point in trackPoints)
-        {
-            if (!point.Time.HasValue) continue;
-
-            var elapsedSeconds = (int)(point.Time.Value - startTime).TotalSeconds;
-
-            // Only create record if there's sensor data
-            if (point.HeartRateBpm.HasValue ||
-                point.CadenceRpm.HasValue ||
-                point.PowerWatts.HasValue ||
-                point.TemperatureC.HasValue)
-            {
-                timeSeries.Add(new WorkoutTimeSeries
-                {
-                    Id = Guid.NewGuid(),
-                    WorkoutId = workoutId,
-                    ElapsedSeconds = elapsedSeconds,
-                    HeartRateBpm = point.HeartRateBpm,
-                    CadenceRpm = point.CadenceRpm,
-                    PowerWatts = point.PowerWatts,
-                    TemperatureC = point.TemperatureC,
-                    ElevationM = point.Elevation
-                });
-            }
-        }
-
-        return timeSeries;
-    }
-
-    /// <summary>
-    /// Creates time-series records from FIT RecordMesg messages with sensor data.
-    /// Returns an empty list if no sensor data is available, ensuring backward compatibility
-    /// with FIT files that don't contain sensor data.
-    /// </summary>
-    /// <param name="workoutId">The workout ID to associate time series records with.</param>
-    /// <param name="startTime">The workout start time for calculating elapsed seconds.</param>
-    /// <param name="records">The FIT RecordMesg collection. Can be null or empty for backward compatibility.</param>
-    /// <returns>List of WorkoutTimeSeries records. Empty list if no sensor data is available.</returns>
-    private static List<WorkoutTimeSeries> CreateTimeSeriesFromFitRecords(
-        Guid workoutId,
-        DateTime startTime,
-        ReadOnlyCollection<Dynastream.Fit.RecordMesg> records)
-    {
-        var timeSeries = new List<WorkoutTimeSeries>();
-
-        // Defensive null check for backward compatibility
-        if (records == null || records.Count == 0)
-        {
-            return timeSeries;
-        }
-
-        foreach (var record in records)
-        {
-            var timestamp = record.GetTimestamp()?.GetDateTime().ToUniversalTime();
-            if (timestamp == null) continue;
-
-            var elapsedSeconds = (int)(timestamp.Value - startTime).TotalSeconds;
-            if (elapsedSeconds < 0) continue; // Skip records before start time
-
-            // Extract and validate all fields first
-            // Extract and validate speed (must be non-negative, finite, and not NaN)
-            // Prefer enhanced speed if valid, otherwise fall back to standard speed
-            var enhancedSpeed = record.GetEnhancedSpeed();
-            var standardSpeed = record.GetSpeed();
-            double? validatedSpeed = null;
-            if (enhancedSpeed.HasValue && !double.IsNaN(enhancedSpeed.Value) && !double.IsInfinity(enhancedSpeed.Value) && enhancedSpeed.Value >= 0)
-            {
-                validatedSpeed = (double?)enhancedSpeed.Value;
-            }
-            else if (standardSpeed.HasValue && !double.IsNaN(standardSpeed.Value) && !double.IsInfinity(standardSpeed.Value) && standardSpeed.Value >= 0)
-            {
-                validatedSpeed = (double?)standardSpeed.Value;
-            }
-
-            // Extract and validate grade (clamp to -100 to 100 range, exclude NaN and Infinity)
-            var grade = record.GetGrade();
-            double? validatedGrade = null;
-            if (grade.HasValue)
-            {
-                var gradeValue = (double)grade.Value;
-                if (!double.IsNaN(gradeValue) && !double.IsInfinity(gradeValue))
-                {
-                    validatedGrade = Math.Max(-100.0, Math.Min(100.0, gradeValue));
-                }
-            }
-
-            // Extract and validate vertical speed (reasonable range -50 to 50 m/s, exclude NaN and Infinity)
-            var verticalSpeed = record.GetVerticalSpeed();
-            double? validatedVerticalSpeed = null;
-            if (verticalSpeed.HasValue)
-            {
-                var vsValue = verticalSpeed.Value;
-                if (!double.IsNaN(vsValue) && !double.IsInfinity(vsValue) && vsValue >= -50.0 && vsValue <= 50.0)
-                {
-                    validatedVerticalSpeed = (double)vsValue;
-                }
-                // Otherwise, set to null (invalid data)
-            }
-
-            // Extract other fields (validate NaN for double fields)
-            var heartRate = record.GetHeartRate();
-            var cadence = record.GetCadence();
-            var power = record.GetPower();
-            var temperature = record.GetTemperature();
-            
-            // Extract elevation (prefer enhanced, exclude NaN and Infinity)
-            double? elevation = null;
-            var enhancedAltitude = record.GetEnhancedAltitude();
-            var standardAltitude = record.GetAltitude();
-            if (enhancedAltitude.HasValue && !double.IsNaN(enhancedAltitude.Value) && !double.IsInfinity(enhancedAltitude.Value))
-            {
-                elevation = (double?)enhancedAltitude.Value;
-            }
-            else if (standardAltitude.HasValue && !double.IsNaN(standardAltitude.Value) && !double.IsInfinity(standardAltitude.Value))
-            {
-                elevation = (double?)standardAltitude.Value;
-            }
-            
-            // Extract distance (must be non-negative, finite, and not NaN)
-            double? distance = null;
-            var distanceValue = record.GetDistance();
-            if (distanceValue.HasValue)
-            {
-                var dist = distanceValue.Value;
-                if (!double.IsNaN(dist) && !double.IsInfinity(dist) && dist >= 0)
-                {
-                    distance = (double?)dist;
-                }
-            }
-
-            // Only create record if there's at least one valid data field after validation
-            var hasValidData = heartRate.HasValue ||
-                               cadence.HasValue ||
-                               power.HasValue ||
-                               validatedSpeed.HasValue ||
-                               temperature.HasValue ||
-                               elevation.HasValue ||
-                               validatedGrade.HasValue ||
-                               validatedVerticalSpeed.HasValue ||
-                               distance.HasValue;
-
-            if (hasValidData)
-            {
-                var timeSeriesRecord = new WorkoutTimeSeries
-                {
-                    Id = Guid.NewGuid(),
-                    WorkoutId = workoutId,
-                    ElapsedSeconds = elapsedSeconds,
-                    HeartRateBpm = heartRate,
-                    CadenceRpm = cadence,
-                    PowerWatts = power,
-                    SpeedMps = validatedSpeed,
-                    TemperatureC = temperature,
-                    ElevationM = elevation,
-                    GradePercent = validatedGrade,
-                    VerticalSpeedMps = validatedVerticalSpeed,
-                    DistanceM = distance
-                };
-
-                timeSeries.Add(timeSeriesRecord);
-            }
-        }
-
-        return timeSeries;
-    }
-
-    /// <summary>
     /// Calculates aggregate metrics (max/avg/min) from time-series data and updates workout.
     /// </summary>
     private static void CalculateAggregateMetricsFromTimeSeries(Workout workout, List<WorkoutTimeSeries> timeSeries)
@@ -3153,32 +2960,6 @@ public static class WorkoutsEndpoints
         {
             workout.AvgSpeedMps = workout.DistanceM / workout.DurationS;
         }
-    }
-
-    /// <summary>
-    /// Calculates splits for a workout.
-    /// </summary>
-    private static List<WorkoutSplit> CalculateSplits(
-        GpxParserService gpxParser,
-        List<GpxParserService.GpxPoint> trackPoints,
-        double distanceMeters,
-        int durationSeconds,
-        double splitDistanceMeters,
-        Guid workoutId)
-    {
-            var splits = gpxParser.CalculateSplits(
-                trackPoints,
-                distanceMeters,
-                durationSeconds,
-                splitDistanceMeters
-            );
-
-            foreach (var split in splits)
-            {
-            split.WorkoutId = workoutId;
-        }
-
-        return splits;
     }
 
     /// <summary>
@@ -3258,6 +3039,7 @@ public static class WorkoutsEndpoints
         TempoDbContext db,
         GpxParserService gpxParser,
         FitParserService fitParser,
+        TrackGeometry trackGeometry,
         WeatherService weatherService,
         HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
@@ -3344,41 +3126,26 @@ public static class WorkoutsEndpoints
             // Populate metrics
             PopulateWorkoutMetrics(workout, calculated, fitResult, rawFitDataJson, logger);
 
-            // Create route
-            var route = CreateWorkoutRoute(workout.Id, trackPoints);
+            // Create route, splits, and time series
+            var geometry = trackGeometry.Derive(
+                trackPoints.Select(p => p.ToTrackPoint()).ToList(),
+                startedAtUtc,
+                splitDistanceMeters,
+                workout.Id,
+                distanceMeters,
+                durationSeconds,
+                parseResult != null ? null : fitResult?.SeriesPoints);
 
-            // Calculate splits
-            var splits = CalculateSplits(gpxParser, trackPoints, distanceMeters, durationSeconds, splitDistanceMeters, workout.Id);
-
-            // Create time-series from GPX track points if available
-            List<WorkoutTimeSeries> timeSeries = new List<WorkoutTimeSeries>();
-            if (parseResult != null)
+            var route = geometry.Route;
+            var splits = geometry.Splits.ToList();
+            var timeSeries = geometry.TimeSeries.ToList();
+            if (timeSeries.Count > 0)
             {
-                timeSeries = CreateTimeSeriesFromGpxTrackPoints(workout.Id, startedAtUtc, trackPoints);
-                if (timeSeries.Count > 0)
-                {
-                    CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
-                }
+                CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
             }
-            // Create time-series from FIT records if available
-            // Defensive null check for backward compatibility with FIT files without sensor data
-            else if (fitResult != null && fitResult.RecordMesgs != null && fitResult.RecordMesgs.Count > 0)
+            else if (parseResult == null && fitResult != null)
             {
-                timeSeries = CreateTimeSeriesFromFitRecords(workout.Id, startedAtUtc, fitResult.RecordMesgs);
-                if (timeSeries.Count > 0)
-                {
-                    CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
-                }
-                else
-                {
-                    // Log when FIT file has no sensor data but workout is still created successfully
-                    logger.LogInformation("FIT file imported with no sensor data. Workout created with available data (GPS, elevation, distance).");
-                }
-            }
-            else if (fitResult != null)
-            {
-                // Log when FIT file has no RecordMesgs or they're empty
-                logger.LogInformation("FIT file imported with no RecordMesg data. Workout created with available data (GPS, elevation, distance).");
+                logger.LogInformation("FIT file imported with no sensor data. Workout created with available data (GPS, elevation, distance).");
             }
 
             // Fetch weather data
