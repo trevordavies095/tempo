@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -13,6 +13,28 @@ if (typeof window !== 'undefined') {
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
   });
 }
+
+const CARTO_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+const DARK_TILES = {
+  url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  attribution: CARTO_ATTRIBUTION,
+};
+
+const LIGHT_TILES = {
+  url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  attribution: CARTO_ATTRIBUTION,
+};
+
+const TILE_OPTIONS: L.TileLayerOptions = {
+  attribution: CARTO_ATTRIBUTION,
+  subdomains: 'abcd',
+  maxZoom: 20,
+};
+
+/** Light-mode route stroke: `--ink` flips in `.dark`, so keep a fixed dark stroke. */
+const LIGHT_POLYLINE = '#1c1917';
 
 interface RouteGeoJson {
   type: string;
@@ -33,6 +55,42 @@ interface WorkoutMapProps {
   hoveredSplitIdx?: number | null;
   height?: string; // Optional height class (e.g., 'h-48', 'h-64')
   interactive?: boolean; // Whether the map should be interactive (default: true)
+}
+
+function readCssVar(name: string, fallback: string): string {
+  if (typeof window === 'undefined') {
+    return fallback;
+  }
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+  return value || fallback;
+}
+
+function mapStrokeColors(isDark: boolean) {
+  return {
+    polyline: isDark ? readCssVar('--volt', '#e8ff00') : LIGHT_POLYLINE,
+    highlight: readCssVar('--danger', isDark ? '#f07171' : '#e05656'),
+  };
+}
+
+function useDocumentDark(): boolean {
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== 'undefined'
+      ? document.documentElement.classList.contains('dark')
+      : false
+  );
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setIsDark(root.classList.contains('dark'));
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  return isDark;
 }
 
 // Haversine distance calculation (same as backend)
@@ -114,10 +172,12 @@ function calculateSplitSegments(
 }
 
 export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, height = 'h-64', interactive = true }: WorkoutMapProps) {
+  const isDark = useDocumentDark();
   // Ref to store the Leaflet map instance
   const mapRef = useRef<L.Map | null>(null);
   // Ref to container div element
   const containerRef = useRef<HTMLDivElement>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
   // Ref to store polyline instance for cleanup
   const polylineRef = useRef<L.Polyline | null>(null);
   // Ref to store highlighted polyline instance for cleanup
@@ -200,16 +260,18 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
       keyboard: interactive,
     });
 
-    // Add tile layer
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map);
+    const tiles = document.documentElement.classList.contains('dark')
+      ? DARK_TILES
+      : LIGHT_TILES;
+    const tileLayer = L.tileLayer(tiles.url, TILE_OPTIONS).addTo(map);
 
-    // Add polyline
+    const { polyline: polylineColor } = mapStrokeColors(
+      document.documentElement.classList.contains('dark')
+    );
     const polyline = L.polyline(leafletCoordinates, {
-      color: '#3b82f6',
+      color: polylineColor,
       weight: 4,
-      opacity: 0.8,
+      opacity: 0.9,
     }).addTo(map);
 
     // Fit bounds if available
@@ -219,6 +281,7 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
 
     // Store references
     mapRef.current = map;
+    tileLayerRef.current = tileLayer;
     polylineRef.current = polyline;
 
     // Cleanup function
@@ -245,6 +308,7 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
         }
         polylineRef.current = null;
       }
+      tileLayerRef.current = null;
       
       // Remove the map
       try {
@@ -263,6 +327,15 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
       }
     };
   }, [workoutId, center, bounds, leafletCoordinates, route, interactive]);
+
+  useEffect(() => {
+    const tiles = isDark ? DARK_TILES : LIGHT_TILES;
+    tileLayerRef.current?.setUrl(tiles.url);
+
+    const colors = mapStrokeColors(isDark);
+    polylineRef.current?.setStyle({ color: colors.polyline });
+    highlightedPolylineRef.current?.setStyle({ color: colors.highlight });
+  }, [isDark]);
 
   // Effect to handle highlighted split segment
   useEffect(() => {
@@ -305,11 +378,13 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
       return;
     }
 
-    // Create highlighted polyline
+    const { highlight } = mapStrokeColors(
+      document.documentElement.classList.contains('dark')
+    );
     const highlightedPolyline = L.polyline(segmentCoordinates, {
-      color: '#ef4444',
-      weight: 6,
-      opacity: 0.9,
+      color: highlight,
+      weight: 7,
+      opacity: 1,
     }).addTo(map);
 
     highlightedPolylineRef.current = highlightedPolyline;
@@ -317,8 +392,8 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
 
   if (!route || !route.coordinates || route.coordinates.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-        <p className="text-gray-500 dark:text-gray-400">No route data available</p>
+      <div className={`flex items-center justify-center ${height} bg-canvas rounded-tempo border border-border`}>
+        <p className="text-muted">No route data available</p>
       </div>
     );
   }
@@ -326,7 +401,7 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
   return (
     <div
       ref={containerRef}
-      className={`w-full ${height} rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700`}
+      className={`w-full ${height} rounded-tempo overflow-hidden border border-border`}
       style={{ position: 'relative', isolation: 'isolate' }}
     />
   );

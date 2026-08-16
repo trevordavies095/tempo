@@ -1319,7 +1319,7 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
-    /// Paginated heart-rate samples for a workout (from stored time series).
+    /// Paginated WorkoutTimeSeries samples for a workout.
     /// </summary>
     private static async Task<IResult> GetWorkoutTimeSeries(
         Guid id,
@@ -1349,7 +1349,7 @@ public static class WorkoutsEndpoints
         }
 
         var query = db.WorkoutTimeSeries.AsNoTracking()
-            .Where(ts => ts.WorkoutId == id && ts.HeartRateBpm != null)
+            .Where(ts => ts.WorkoutId == id)
             .OrderBy(ts => ts.ElapsedSeconds)
             .ThenBy(ts => ts.Id);
 
@@ -1369,7 +1369,15 @@ public static class WorkoutsEndpoints
             .Select(ts => new
             {
                 elapsedSeconds = ts.ElapsedSeconds,
-                heartRateBpm = (int)ts.HeartRateBpm!.Value
+                distanceM = ts.DistanceM,
+                heartRateBpm = ts.HeartRateBpm.HasValue ? (int?)ts.HeartRateBpm.Value : null,
+                cadenceRpm = ts.CadenceRpm.HasValue ? (int?)ts.CadenceRpm.Value : null,
+                powerWatts = ts.PowerWatts.HasValue ? (int?)ts.PowerWatts.Value : null,
+                speedMps = ts.SpeedMps,
+                gradePercent = ts.GradePercent,
+                elevationM = ts.ElevationM,
+                temperatureC = ts.TemperatureC.HasValue ? (int?)ts.TemperatureC.Value : null,
+                verticalSpeedMps = ts.VerticalSpeedMps
             })
             .ToListAsync();
 
@@ -2475,10 +2483,10 @@ public static class WorkoutsEndpoints
         .WithName("GetWorkoutTimeSeries")
         .Produces(200)
         .Produces(404)
-        .WithSummary("Get workout heart-rate time series")
+        .WithSummary("Get workout time series")
         .WithDescription(
-            "Returns paginated heart-rate samples from stored workout time series. Each item has elapsedSeconds (integer seconds from workout start) and heartRateBpm (integer). " +
-            "Samples are sparse: only timestamps where heart rate was recorded are included (not a dense sample for every second). GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. " +
+            "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm, powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. " +
+            "Null fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second is present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. " +
             "The server does not interpolate missing seconds; clients may interpolate if needed. " +
             "Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. " +
             $"Default pageSize is {TimeSeriesDefaultPageSize} with a maximum of {TimeSeriesMaxPageSize}; use multiple requests for long activities.");

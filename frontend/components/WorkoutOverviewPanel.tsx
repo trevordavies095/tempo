@@ -20,6 +20,20 @@ const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
   ),
 });
 
+const WorkoutTimeSeriesCharts = dynamic(
+  () =>
+    import('@/components/WorkoutTimeSeriesCharts').then(
+      (mod) => mod.WorkoutTimeSeriesCharts
+    ),
+  {
+    loading: () => (
+      <div className="bg-raised border border-border rounded-tempo p-6">
+        <p className="text-sm text-muted">Loading sensor data…</p>
+      </div>
+    ),
+  }
+);
+
 export function WorkoutOverviewPanel({ workout }: { workout: WorkoutDetail }) {
   const { unitPreference } = useSettings();
   const [hoveredSplitIdx, setHoveredSplitIdx] = useState<number | null>(null);
@@ -65,6 +79,8 @@ export function WorkoutOverviewPanel({ workout }: { workout: WorkoutDetail }) {
           )}
         </div>
       )}
+
+      <WorkoutTimeSeriesCharts workoutId={workout.id} />
     </div>
   );
 }

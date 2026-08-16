@@ -344,6 +344,92 @@ export async function getWorkout(id: string): Promise<WorkoutDetail> {
   return response.json();
 }
 
+export interface WorkoutTimeSeriesSample {
+  elapsedSeconds: number;
+  distanceM: number | null;
+  heartRateBpm: number | null;
+  cadenceRpm: number | null;
+  powerWatts: number | null;
+  speedMps: number | null;
+  gradePercent: number | null;
+  elevationM: number | null;
+  temperatureC: number | null;
+  verticalSpeedMps: number | null;
+}
+
+export interface WorkoutTimeSeriesPage {
+  items: WorkoutTimeSeriesSample[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+/** API default pageSize for GET /workouts/{id}/time-series. */
+export const WORKOUT_TIME_SERIES_DEFAULT_PAGE_SIZE = 1000;
+/** API maximum pageSize. */
+export const WORKOUT_TIME_SERIES_MAX_PAGE_SIZE = 5000;
+/**
+ * Client fetch cap for overview charts: 4 pages at max page size (20_000 samples).
+ * Longer series is truncated; charts still render the samples loaded.
+ */
+export const WORKOUT_TIME_SERIES_FETCH_CAP = 20_000;
+
+export async function getWorkoutTimeSeriesPage(
+  workoutId: string,
+  page = 1,
+  pageSize = WORKOUT_TIME_SERIES_MAX_PAGE_SIZE
+): Promise<WorkoutTimeSeriesPage> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('page', String(page));
+  searchParams.set('pageSize', String(pageSize));
+
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/workouts/${workoutId}/time-series?${searchParams.toString()}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (response.status === 404) {
+    throw new Error('Workout not found');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch time series: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Loads WorkoutTimeSeries for a Workout, following pages until complete
+ * or WORKOUT_TIME_SERIES_FETCH_CAP samples.
+ */
+export async function getWorkoutTimeSeries(
+  workoutId: string
+): Promise<WorkoutTimeSeriesSample[]> {
+  const items: WorkoutTimeSeriesSample[] = [];
+  let page = 1;
+  let totalPages = 1;
+
+  while (page <= totalPages && items.length < WORKOUT_TIME_SERIES_FETCH_CAP) {
+    const remaining = WORKOUT_TIME_SERIES_FETCH_CAP - items.length;
+    const pageSize = Math.min(WORKOUT_TIME_SERIES_MAX_PAGE_SIZE, remaining);
+    const result = await getWorkoutTimeSeriesPage(workoutId, page, pageSize);
+    items.push(...result.items);
+    totalPages = result.totalPages;
+    if (result.items.length === 0) {
+      break;
+    }
+    page += 1;
+  }
+
+  return items;
+}
+
 export interface BulkImportResponse {
   totalProcessed: number;
   successful: number;
