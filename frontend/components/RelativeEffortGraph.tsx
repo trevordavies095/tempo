@@ -174,7 +174,10 @@ export default function RelativeEffortGraph() {
       <div className="relative">
         <div style={{ height: '180px', marginBottom: '0px' }}>
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 20 }}>
+            <ComposedChart
+              data={chartData}
+              margin={{ top: 8, right: 16, left: 4, bottom: 36 }}
+            >
             <defs>
               <linearGradient id="rangeGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="var(--muted)" stopOpacity={0.25} />
@@ -208,21 +211,21 @@ export default function RelativeEffortGraph() {
                 return null;
               }}
             />
-            <XAxis 
-              dataKey="day" 
+            <XAxis
+              dataKey="day"
               type="category"
               axisLine={false}
               tickLine={false}
               tick={<CustomTick />}
-              padding={{ left: 0, right: 0 }}
+              padding={{ left: 12, right: 12 }}
             />
-            <YAxis 
+            <YAxis
               domain={[0, adjustedYAxisMax]}
               axisLine={false}
               tickLine={false}
               tick={{ fill: 'var(--muted)', fontSize: 12 }}
-              width={50}
-              tickMargin={5}
+              width={40}
+              tickMargin={8}
               ticks={yAxisTicks}
               allowDecimals={false}
             />
