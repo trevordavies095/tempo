@@ -1,6 +1,5 @@
 'use client';
 
-import { useSettings } from '@/lib/settings';
 import { 
   getHeartRateZones, 
   updateHeartRateZones,
@@ -26,6 +25,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { AuthGuard } from '@/components/AuthGuard';
+import { PageShell } from '@/components/ui/PageShell';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
@@ -293,51 +295,43 @@ function SettingsPageContent() {
     }
   };
 
-  return (
-    <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-4xl flex-col items-start py-16 px-8">
-        <div className="w-full mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            Settings
-          </h1>
-          <p className="text-lg text-gray-600 dark:text-gray-400">
-            Configure your preferences
-          </p>
-        </div>
+  const sectionHeading =
+    'text-lg font-semibold text-ink border-b border-border pb-2';
 
-        <div className="w-full space-y-12">
+  return (
+    <>
+      <PageShell
+        density="control"
+        title="Settings"
+        subtitle="Configure your preferences"
+      >
+        <div className="w-full space-y-10">
           {/* Display Preferences */}
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
-              Display Preferences
-            </h2>
+          <div className="space-y-4">
+            <h2 className={sectionHeading}>Display Preferences</h2>
             <AppearanceSection />
             <UnitPreferenceSection />
           </div>
 
           {/* Equipment Management */}
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
-              Equipment Management
-            </h2>
+          <div className="space-y-4">
+            <h2 className={sectionHeading}>Equipment Management</h2>
             <ShoeManagementSection />
           </div>
 
           {/* Training Configuration */}
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
-              Training Configuration
-            </h2>
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+          <div className="space-y-4">
+            <h2 className={sectionHeading}>Training Configuration</h2>
+            <Card>
+              <h3 className="text-lg font-semibold text-ink mb-4">
                 Heart Rate Zones
               </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+              <p className="text-sm text-muted mb-6">
                 Configure your heart rate zones for training analysis. Choose a calculation method or set custom zones.
               </p>
 
               {isLoading ? (
-                <div className="text-gray-600 dark:text-gray-400">Loading...</div>
+                <div className="text-muted">Loading...</div>
               ) : (
                 <>
                   {/* Calculation Method Selection */}
@@ -500,17 +494,12 @@ function SettingsPageContent() {
                   {/* Save Button and Messages */}
                   <div className="flex flex-col gap-4">
                     <div className="flex items-center gap-4">
-                      <button
+                      <Button
                         onClick={handleSaveHrZones}
                         disabled={isSaving}
-                        className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-                          isSaving
-                            ? 'bg-gray-400 text-white cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600'
-                        }`}
                       >
                         {isSaving ? 'Saving...' : 'Save Heart Rate Zones'}
-                      </button>
+                      </Button>
                       {saveSuccess && (
                         <span className="text-sm text-green-600 dark:text-green-400">
                           Settings saved successfully!
@@ -525,46 +514,39 @@ function SettingsPageContent() {
                   </div>
                 </>
               )}
-            </div>
+            </Card>
           </div>
 
           {/* Data Management */}
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
-              Data Management
-            </h2>
+          <div className="space-y-4">
+            <h2 className={sectionHeading}>Data Management</h2>
             <ExportImportSection />
           </div>
 
           {/* Data Recalculation */}
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
-              Data Recalculation
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+          <div className="space-y-4">
+            <h2 className={sectionHeading}>Data Recalculation</h2>
+            <p className="text-sm text-muted">
               These operations will modify existing workout data. Use with caution.
             </p>
             
             {/* Recalculate Splits */}
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+            <Card>
+              <h3 className="text-lg font-semibold text-ink mb-4">
                 Recalculate Splits
               </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              <p className="text-sm text-muted mb-4">
                 Recalculate splits for all existing workouts based on your current unit preference. New workouts will automatically use your current preference.
               </p>
               <div className="flex flex-col gap-2">
-                <button
+                <Button
+                  variant="danger"
                   onClick={handleRecalculateSplitsClick}
                   disabled={isRecalculatingSplits}
-                  className={`px-6 py-3 rounded-lg font-medium transition-colors w-fit ${
-                    isRecalculatingSplits
-                      ? 'bg-gray-400 text-white cursor-not-allowed'
-                      : 'bg-orange-600 text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600'
-                  }`}
+                  className="w-fit"
                 >
                   {isRecalculatingSplits ? 'Recalculating...' : 'Recalculate Splits'}
-                </button>
+                </Button>
                 {recalcSplitsSuccess && (
                   <span className="text-sm text-green-600 dark:text-green-400">
                     Successfully recalculated splits for {recalcSplitsWorkoutCount} workout{recalcSplitsWorkoutCount !== 1 ? 's' : ''}!
@@ -576,29 +558,26 @@ function SettingsPageContent() {
                   </span>
                 )}
               </div>
-            </div>
+            </Card>
 
             {/* Recalculate Relative Effort */}
             {hrZones && (
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              <Card>
+                <h3 className="text-lg font-semibold text-ink mb-4">
                   Recalculate Relative Effort
                 </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                <p className="text-sm text-muted mb-4">
                   Recalculate relative effort for all workouts based on your current heart rate zone settings.
                 </p>
                 <div className="flex flex-col gap-2">
-                  <button
+                  <Button
+                    variant="danger"
                     onClick={handleRecalculateClick}
                     disabled={isRecalculating || isSaving}
-                    className={`px-6 py-3 rounded-lg font-medium transition-colors w-fit ${
-                      isRecalculating || isSaving
-                        ? 'bg-gray-400 text-white cursor-not-allowed'
-                        : 'bg-orange-600 text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600'
-                    }`}
+                    className="w-fit"
                   >
                     {isRecalculating ? 'Recalculating...' : 'Recalculate Relative Effort'}
-                  </button>
+                  </Button>
                   {recalcSuccess && (
                     <span className="text-sm text-green-600 dark:text-green-400">
                       Successfully recalculated relative effort for {recalcWorkoutCount} workout{recalcWorkoutCount !== 1 ? 's' : ''}!
@@ -610,21 +589,19 @@ function SettingsPageContent() {
                     </span>
                   )}
                 </div>
-              </div>
+              </Card>
             )}
           </div>
 
           {/* Account */}
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
-              Account
-            </h2>
-            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+          <div className="space-y-4">
+            <h2 className={sectionHeading}>Account</h2>
+            <Card padding={false} className="overflow-hidden">
               <details className="group">
-                <summary className="cursor-pointer list-none flex items-center justify-between gap-4 px-6 py-4 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800/80 [&::-webkit-details-marker]:hidden">
+                <summary className="cursor-pointer list-none flex items-center justify-between gap-4 px-6 py-4 text-ink hover:bg-canvas [&::-webkit-details-marker]:hidden">
                   <span className="text-lg font-semibold">Change password</span>
                   <span
-                    className="shrink-0 text-gray-500 dark:text-gray-400 transition-transform group-open:rotate-180"
+                    className="shrink-0 text-muted transition-transform group-open:rotate-180"
                     aria-hidden
                   >
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -632,8 +609,8 @@ function SettingsPageContent() {
                     </svg>
                   </span>
                 </summary>
-                <div className="px-6 pb-6 pt-0 border-t border-gray-200 dark:border-gray-800">
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 mt-4">
+                <div className="px-6 pb-6 pt-0 border-t border-border">
+                  <p className="text-sm text-muted mb-4 mt-4">
                     Updates your password and signs out other browser sessions. This session stays signed in.
                     New passwords must be {PASSWORD_MIN_LENGTH}–{PASSWORD_MAX_LENGTH} characters (UTF-8 under
                     72 bytes). Use a memorable passphrase—no required mix of symbols or digits.
@@ -681,17 +658,13 @@ function SettingsPageContent() {
                         className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
                       />
                     </div>
-                    <button
+                    <Button
                       type="submit"
                       disabled={passwordChangeSaving}
-                      className={`w-fit px-6 py-2 rounded-lg font-medium transition-colors ${
-                        passwordChangeSaving
-                          ? 'bg-gray-400 text-white cursor-not-allowed'
-                          : 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white'
-                      }`}
+                      className="w-fit"
                     >
                       {passwordChangeSaving ? 'Updating…' : 'Update password'}
-                    </button>
+                    </Button>
                     {passwordChangeSuccess && (
                       <p className="text-sm text-green-600 dark:text-green-400">Password updated successfully.</p>
                     )}
@@ -701,17 +674,15 @@ function SettingsPageContent() {
                   </form>
                 </div>
               </details>
-            </div>
+            </Card>
           </div>
 
           {/* System Information */}
           {versionInfo && (
-            <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-800 pb-2">
-                System Information
-              </h2>
+            <div className="space-y-4">
+              <h2 className={sectionHeading}>System Information</h2>
               <div className="pt-2">
-                <div className="text-center text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-center text-sm text-muted">
                   <div className="font-mono">v{versionInfo.version}</div>
                   {versionInfo.buildDate && versionInfo.buildDate !== 'unknown' && (
                     <div className="text-xs mt-1">
@@ -723,7 +694,7 @@ function SettingsPageContent() {
             </div>
           )}
         </div>
-      </main>
+      </PageShell>
       
       {/* Recalculate Relative Effort Dialog (for first-time setup) */}
       <RecalculateEffortDialog
@@ -752,7 +723,7 @@ function SettingsPageContent() {
         workoutCount={recalcSplitsWorkoutCount}
         isLoading={isRecalculatingSplits}
       />
-    </div>
+    </>
   );
 }
 

@@ -7,6 +7,7 @@ import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { useFileDrop } from '@/hooks/useFileDrop';
 import { useSettings } from '@/lib/settings';
 import { IconUpload } from '@tabler/icons-react';
+import { Button } from '@/components/ui/Button';
 
 export function TempoExportImport() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -68,10 +69,10 @@ export function TempoExportImport() {
           onDragLeave={handleDrag}
           onDragOver={handleDrag}
           onDrop={handleDrop}
-          className={`relative border-2 border-dashed rounded-lg p-8 transition-colors ${
+          className={`relative border-2 border-dashed rounded-tempo p-8 transition-colors ${
             dragActive
-              ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
-              : 'border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900'
+              ? 'border-volt bg-canvas'
+              : 'border-border bg-canvas'
           }`}
         >
           <input
@@ -82,15 +83,15 @@ export function TempoExportImport() {
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div className="text-center">
-            <IconUpload className="mx-auto h-12 w-12 text-gray-400" />
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              <span className="font-semibold">Click to upload</span> or drag and drop
+            <IconUpload className="mx-auto h-12 w-12 text-muted" />
+            <p className="mt-2 text-sm text-muted">
+              <span className="font-semibold text-ink">Click to upload</span> or drag and drop
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-500">
+            <p className="text-xs text-muted">
               Tempo export ZIP file
             </p>
             {selectedFile && (
-              <p className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+              <p className="mt-2 text-sm font-medium text-ink">
                 Selected: {selectedFile.name}
               </p>
             )}
@@ -98,13 +99,13 @@ export function TempoExportImport() {
         </div>
 
         {selectedFile && (
-          <button
+          <Button
             type="submit"
             disabled={mutation.isPending}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full"
           >
             {mutation.isPending ? 'Importing...' : 'Import Tempo Export'}
-          </button>
+          </Button>
         )}
 
         {mutation.isError && (

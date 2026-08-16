@@ -12,7 +12,8 @@
   --inverse: #fafaf9;
   --volt: #e8ff00;
   --on-volt: #1c1917;
-  --danger: #dc2626;
+  --danger: #e05656;
+  --on-danger: #1c1917;
   --background: var(--canvas);
   --foreground: var(--ink);
 }
@@ -27,7 +28,8 @@
   --inverse: #0c0a09;
   --volt: #e8ff00;
   --on-volt: #1c1917;
-  --danger: #f87171;
+  --danger: #f07171;
+  --on-danger: #1c1917;
   --background: var(--canvas);
   --foreground: var(--ink);
 }
@@ -43,6 +45,7 @@
   --color-volt: var(--volt);
   --color-on-volt: var(--on-volt);
   --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
