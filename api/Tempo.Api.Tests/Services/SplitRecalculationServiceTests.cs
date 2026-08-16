@@ -19,8 +19,6 @@ public class SplitRecalculationServiceTests : IDisposable
 {
     private readonly TempoDbContext _db;
     private readonly SqliteConnection _connection;
-    private readonly GpxParserService _gpxParser;
-    private readonly FitParserService _fitParser;
     private readonly ILogger<SplitRecalculationService> _logger;
     private readonly SplitRecalculationService _service;
 
@@ -42,11 +40,15 @@ public class SplitRecalculationServiceTests : IDisposable
             NoiseThresholdMeters = 2.0,
             MinDistanceMeters = 10.0
         };
-        _gpxParser = new GpxParserService(elevationConfig);
-        _fitParser = new FitParserService();
+        var gpxParser = new GpxParserService(elevationConfig);
+        var fitParser = new FitParserService();
         var trackGeometry = new TrackGeometry(elevationConfig);
         _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<SplitRecalculationService>();
-        _service = new SplitRecalculationService(_db, _gpxParser, _fitParser, trackGeometry, _logger);
+        var rehydration = new TrackPointRehydration(
+            gpxParser,
+            fitParser,
+            LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<TrackPointRehydration>());
+        _service = new SplitRecalculationService(_db, rehydration, trackGeometry, _logger);
     }
 
     public void Dispose()

@@ -6,6 +6,8 @@ namespace Tempo.Api.Services;
 
 public sealed class TrackGeometryResult
 {
+    public double DistanceM { get; init; }
+    public int DurationS { get; init; }
     public double? ElevGainM { get; init; }
     public required WorkoutRoute Route { get; init; }
     public required IReadOnlyList<WorkoutSplit> Splits { get; init; }
@@ -37,6 +39,8 @@ public class TrackGeometry
 
         return new TrackGeometryResult
         {
+            DistanceM = distanceMeters,
+            DurationS = durationSeconds,
             ElevGainM = CalculateElevationGain(positioned),
             Route = CreateRoute(workoutId, positioned),
             Splits = CalculateSplits(positioned, distanceMeters, durationSeconds, splitDistanceMeters, workoutId),
@@ -44,6 +48,33 @@ public class TrackGeometry
                 ? CreateGpxTimeSeries(workoutId, startedAt, points)
                 : CreateFitTimeSeries(workoutId, startedAt, seriesPoints)
         };
+    }
+
+    public TrackGeometryResult Derive(
+        IReadOnlyList<TrackPoint> points,
+        DateTime startedAt,
+        double splitDistanceMeters,
+        Guid workoutId)
+    {
+        var positioned = points.Where(p => p.HasPosition).ToList();
+        var distanceMeters = DistanceFromPoints(positioned);
+        var timed = points.Where(p => p.Time.HasValue).Select(p => p.Time!.Value).ToList();
+        var durationSeconds = timed.Count >= 2
+            ? (int)Math.Round((timed.Max() - timed.Min()).TotalSeconds)
+            : 0;
+
+        return Derive(points, startedAt, splitDistanceMeters, workoutId, distanceMeters, durationSeconds);
+    }
+
+    private static double DistanceFromPoints(List<TrackPoint> positioned)
+    {
+        double total = 0;
+        for (var i = 1; i < positioned.Count; i++)
+        {
+            total += Haversine(positioned[i - 1], positioned[i]);
+        }
+
+        return total;
     }
 
     private double? CalculateElevationGain(List<TrackPoint> trackPoints)

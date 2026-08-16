@@ -139,6 +139,7 @@ if (!builder.Services.Any(s => s.ServiceType == typeof(TempoDbContext)))
 // Register services
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<TrackGeometry>();
+builder.Services.AddScoped<TrackPointRehydration>();
 builder.Services.AddScoped<GpxParserService>();
 builder.Services.AddScoped<StravaCsvParserService>();
 builder.Services.AddScoped<FitParserService>();
