@@ -148,9 +148,10 @@ public class ImportJobService
         Stream zipStream,
         string filename,
         long byteSize,
-        string? unitPreference)
+        string? unitPreference,
+        string kind)
     {
-        var validation = ValidateCreate(ImportJobKinds.StravaBulk, filename, byteSize, unitPreference);
+        var validation = ValidateCreate(kind, filename, byteSize, unitPreference);
         if (validation != null)
         {
             return validation;
@@ -164,7 +165,7 @@ public class ImportJobService
 
         var job = NewJob(
             ImportJobStatuses.Queued,
-            ImportJobKinds.StravaBulk,
+            kind,
             filename,
             byteSize,
             byteSize,
@@ -190,7 +191,7 @@ public class ImportJobService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to accept bulk import upload");
+            _logger.LogError(ex, "Failed to accept import upload");
             DeleteJobDirectory(job.Id);
             return ImportJobHttpResult.Fail(StatusCodes.Status500InternalServerError, ex.Message);
         }

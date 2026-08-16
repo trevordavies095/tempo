@@ -131,10 +131,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         formContent.Add(streamContent, "file", "export.zip");
 
-        var importResponse = await client.PostAsync("/workouts/import/export", formContent);
-        importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var importResult = await importResponse.Content.ReadFromJsonAsync<ImportResponse>();
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
         importResult.Should().NotBeNull();
         importResult!.Success.Should().BeTrue();
 
@@ -230,10 +227,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         formContent.Add(streamContent, "file", "export.zip");
 
-        var importResponse = await client.PostAsync("/workouts/import/export", formContent);
-        importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var importResult = await importResponse.Content.ReadFromJsonAsync<ImportResponse>();
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
         importResult.Should().NotBeNull();
         importResult!.Success.Should().BeTrue();
         importResult.Statistics.Shoes.Imported.Should().Be(0);
@@ -272,10 +266,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         formContent.Add(streamContent, "file", "export.zip");
 
-        var importResponse = await client.PostAsync("/workouts/import/export", formContent);
-        importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var importResult = await importResponse.Content.ReadFromJsonAsync<ImportResponse>();
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
         importResult.Should().NotBeNull();
         importResult!.Success.Should().BeTrue();
         importResult.Statistics.Shoes.Imported.Should().Be(0);
@@ -316,10 +307,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         formContent.Add(streamContent, "file", "export.zip");
 
-        var importResponse = await client.PostAsync("/workouts/import/export", formContent);
-        importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var importResult = await importResponse.Content.ReadFromJsonAsync<ImportResponse>();
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
         importResult.Should().NotBeNull();
         importResult!.Success.Should().BeTrue();
         importResult.Statistics.Workouts.Imported.Should().Be(0);
@@ -364,10 +352,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         formContent.Add(streamContent, "file", "export.zip");
 
-        var importResponse = await client.PostAsync("/workouts/import/export", formContent);
-        importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var importResult = await importResponse.Content.ReadFromJsonAsync<ImportResponse>();
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
         importResult.Should().NotBeNull();
         importResult!.Success.Should().BeTrue();
         importResult.Statistics.Workouts.Imported.Should().Be(0);
@@ -421,10 +406,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         formContent.Add(streamContent, "file", "export.zip");
 
-        var importResponse = await client.PostAsync("/workouts/import/export", formContent);
-        importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var importResult = await importResponse.Content.ReadFromJsonAsync<ImportResponse>();
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
         importResult.Should().NotBeNull();
         importResult!.Success.Should().BeTrue();
         importResult.Statistics.BestEfforts.Imported.Should().Be(0);
@@ -477,10 +459,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         formContent.Add(streamContent, "file", "export.zip");
 
-        var importResponse = await client.PostAsync("/workouts/import/export", formContent);
-        importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var importResult = await importResponse.Content.ReadFromJsonAsync<ImportResponse>();
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
         importResult.Should().NotBeNull();
         importResult!.Success.Should().BeTrue();
         importResult.Statistics.BestEfforts.Imported.Should().Be(0);
@@ -578,8 +557,8 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         formContent.Add(streamContent, "file", "export.zip");
 
-        var importResponse = await client.PostAsync("/workouts/import/export", formContent);
-        importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
+        importResult.Success.Should().BeTrue();
 
         // Compare data integrity (query all data before scope is disposed)
         using (var scope = _factory.Server.Services.CreateScope())
@@ -706,7 +685,26 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         formContent.Add(streamContent, "file", "export.zip");
 
         var importResponse = await client.PostAsync("/workouts/import/export", formContent);
-        importResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        importResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await importResponse.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+        started.Should().NotBeNull();
+
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        ImportJobDocument? job = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            var poll = await client.GetAsync($"/workouts/import/jobs/{started!.Id}");
+            job = await poll.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+            if (job!.Status is ImportJobStatuses.Completed or ImportJobStatuses.Failed)
+            {
+                break;
+            }
+            await Task.Delay(50);
+        }
+
+        job.Should().NotBeNull();
+        job!.Status.Should().Be(ImportJobStatuses.Failed);
+        job.ErrorMessage.Should().Contain("manifest");
 
         // Verify temp directory cleanup - the count should not have increased significantly
         // The ImportService cleans up in the finally block, so this test verifies
@@ -900,6 +898,70 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         zipStream.Position = 0;
         return zipStream;
     }
+
+
+    private static async Task<ImportResponse> ImportExportAndWaitAsync(HttpClient client, MultipartFormDataContent formContent)
+    {
+        var importResponse = await client.PostAsync("/workouts/import/export", formContent);
+        importResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await importResponse.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+        started.Should().NotBeNull();
+
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        ImportJobDocument? job = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            var poll = await client.GetAsync($"/workouts/import/jobs/{started!.Id}");
+            poll.StatusCode.Should().Be(HttpStatusCode.OK);
+            job = await poll.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+            job.Should().NotBeNull();
+            if (job!.Status is ImportJobStatuses.Completed or ImportJobStatuses.Failed)
+            {
+                break;
+            }
+            await Task.Delay(50);
+        }
+
+        job.Should().NotBeNull();
+        if (job!.Status == ImportJobStatuses.Failed && string.IsNullOrEmpty(job.ErrorMessage) == false
+            && (job.Statistics == null))
+        {
+            // structural failure
+            return new ImportResponse
+            {
+                Success = false,
+                Errors = new List<string> { job.ErrorMessage! }
+            };
+        }
+
+        job.Status.Should().Be(ImportJobStatuses.Completed);
+        var stats = job.Statistics ?? new ImportJobStatistics();
+        return new ImportResponse
+        {
+            Success = (job.ErrorMessages == null || job.ErrorMessages.Count == 0),
+            Statistics = new ImportStatisticsDto
+            {
+                Settings = MapItem(stats.Settings),
+                Shoes = MapItem(stats.Shoes),
+                Workouts = MapItem(stats.Workouts),
+                Routes = MapItem(stats.Routes),
+                Splits = MapItem(stats.Splits),
+                TimeSeries = MapItem(stats.TimeSeries),
+                Media = MapItem(stats.Media),
+                BestEfforts = MapItem(stats.BestEfforts),
+                RawFiles = MapItem(stats.RawFiles)
+            },
+            Warnings = job.Warnings,
+            Errors = job.ErrorMessages
+        };
+    }
+
+    private static ItemStatisticsDto MapItem(ImportJobItemStatistics item) => new()
+    {
+        Imported = item.Imported,
+        Skipped = item.Skipped,
+        Errors = item.Errors
+    };
 
     private static void CreateJsonFile(ZipArchive archive, string entryName, object data)
     {

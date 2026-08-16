@@ -182,6 +182,19 @@ Returns **202** with the same job document. Poll `GET /workouts/import/jobs/{id}
 
 Supports files up to 500MB. Per activity file uses the same intake outcomes (`created` / `updated` / `skipped`). ZIP extract, `activities.csv`, non-run skip, and Strava media copy stay in bulk, not in intake.
 
+### Import Tempo Export
+
+Restore a Tempo export ZIP as an import job (same rails as Strava bulk):
+
+```http
+POST /workouts/import/export
+Content-Type: multipart/form-data
+
+file: [Tempo export ZIP]
+```
+
+Returns **202** with a job document (`kind: tempo_export`). Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Command center should prefer chunked `POST /workouts/import/jobs` with `"kind": "tempo_export"` (no `unitPreference`). At most one import job runs at a time across Strava and Tempo.
+
 ### Export All Data
 
 Export all user data in a portable ZIP format:

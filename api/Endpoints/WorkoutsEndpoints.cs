@@ -1468,7 +1468,12 @@ public static class WorkoutsEndpoints
 
         var unitPreference = form["unitPreference"].ToString();
         await using var zipStream = file.OpenReadStream();
-        var result = await importJobs.AcceptWholeArchiveAsync(zipStream, file.FileName, file.Length, unitPreference);
+        var result = await importJobs.AcceptWholeArchiveAsync(
+            zipStream,
+            file.FileName,
+            file.Length,
+            unitPreference,
+            ImportJobKinds.StravaBulk);
         return result.ToHttpResult();
     }
 
@@ -1588,17 +1593,16 @@ public static class WorkoutsEndpoints
     /// Import Tempo export ZIP file
     /// </summary>
     /// <param name="request">HTTP request containing multipart/form-data with ZIP file</param>
-    /// <param name="importService">Import service</param>
+    /// <param name="importJobs">Import job module</param>
     /// <param name="logger">Logger instance</param>
-    /// <returns>Import results with counts of imported, skipped, and error details</returns>
+    /// <returns>202 with import job document; poll GET /workouts/import/jobs/{id}</returns>
     /// <remarks>
-    /// Uploads and processes a ZIP file containing a complete Tempo export, restoring all user data
-    /// including workouts, media files, settings, shoes, routes, splits, time series, and best efforts.
-    /// Duplicates are skipped by default. GUIDs and timestamps from the export are preserved.
+    /// Accepts a Tempo export ZIP and returns 202 with a job document. Poll GET /workouts/import/jobs/{id}
+    /// until completed or failed. Restores workouts, media, settings, shoes, and related entities.
     /// </remarks>
     private static async Task<IResult> ImportExport(
         HttpRequest request,
-        ImportService importService,
+        ImportJobService importJobs,
         ILogger<Program> logger)
     {
         if (!request.HasFormContentType)
@@ -1606,8 +1610,6 @@ public static class WorkoutsEndpoints
             return Results.BadRequest(new { error = "Request must be multipart/form-data" });
         }
 
-        // Enable request body buffering to ensure the full request is received before processing
-        // Use 500MB buffer size to match MaxRequestBodySize and MultipartBodyLengthLimit
         request.EnableBuffering(500_000_000);
 
         Microsoft.AspNetCore.Http.IFormCollection form;
@@ -1633,46 +1635,14 @@ public static class WorkoutsEndpoints
             return Results.BadRequest(new { error = "File must be a ZIP file" });
         }
 
-        try
-        {
-            using (var zipStream = file.OpenReadStream())
-            {
-                var result = await importService.ImportExportAsync(zipStream);
-
-                return Results.Ok(new
-                {
-                    success = result.Success,
-                    importedAt = result.ImportedAt,
-                    statistics = new
-                    {
-                        settings = new { imported = result.Statistics.Settings.Imported, skipped = result.Statistics.Settings.Skipped, errors = result.Statistics.Settings.Errors },
-                        shoes = new { imported = result.Statistics.Shoes.Imported, skipped = result.Statistics.Shoes.Skipped, errors = result.Statistics.Shoes.Errors },
-                        workouts = new { imported = result.Statistics.Workouts.Imported, skipped = result.Statistics.Workouts.Skipped, errors = result.Statistics.Workouts.Errors },
-                        routes = new { imported = result.Statistics.Routes.Imported, skipped = result.Statistics.Routes.Skipped, errors = result.Statistics.Routes.Errors },
-                        splits = new { imported = result.Statistics.Splits.Imported, skipped = result.Statistics.Splits.Skipped, errors = result.Statistics.Splits.Errors },
-                        timeSeries = new { imported = result.Statistics.TimeSeries.Imported, skipped = result.Statistics.TimeSeries.Skipped, errors = result.Statistics.TimeSeries.Errors },
-                        media = new { imported = result.Statistics.Media.Imported, skipped = result.Statistics.Media.Skipped, errors = result.Statistics.Media.Errors },
-                        bestEfforts = new { imported = result.Statistics.BestEfforts.Imported, skipped = result.Statistics.BestEfforts.Skipped, errors = result.Statistics.BestEfforts.Errors },
-                        rawFiles = new { imported = result.Statistics.RawFiles.Imported, skipped = result.Statistics.RawFiles.Skipped, errors = result.Statistics.RawFiles.Errors }
-                    },
-                    warnings = result.Warnings,
-                    errors = result.Errors
-                });
-            }
-        }
-        catch (InvalidOperationException ex)
-        {
-            logger.LogError(ex, "Invalid export format");
-            return Results.BadRequest(new { error = ex.Message });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error importing export file");
-            return Results.Problem(
-                title: "Import failed",
-                detail: ex.Message,
-                statusCode: 500);
-        }
+        await using var zipStream = file.OpenReadStream();
+        var result = await importJobs.AcceptWholeArchiveAsync(
+            zipStream,
+            file.FileName,
+            file.Length,
+            unitPreference: null,
+            ImportJobKinds.TempoExport);
+        return result.ToHttpResult();
     }
 
     /// <summary>
@@ -2392,10 +2362,12 @@ public static class WorkoutsEndpoints
         group.MapPost("/import/export", ImportExport)
         .WithName("ImportExport")
         .Accepts<IFormFile>("multipart/form-data")
-        .Produces(200)
+        .Produces<ImportJobDocument>(202)
+        .Produces<ImportJobDocument>(409)
         .Produces(400)
         .Produces(500)
         .WithSummary("Import Tempo export ZIP file")
+        .WithDescription("Accepts a whole Tempo export ZIP and returns 202 with a job document. Poll GET /workouts/import/jobs/{id} until completed or failed. Command center should use chunked create/PUT/complete with kind tempo_export.")
         .WithDescription("Uploads and processes a ZIP file containing a complete Tempo export, restoring all user data including workouts, media files, settings, shoes, routes, splits, time series, and best efforts. Duplicates are skipped by default.");
 
         group.MapGet("/recalculate-relative-effort/count", GetRecalculateRelativeEffortCount)

@@ -7,6 +7,11 @@ namespace Tempo.Api.Services;
 
 public class ImportJobWorker : BackgroundService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     private readonly ImportJobQueue _queue;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ImportJobWorker> _logger;
@@ -51,7 +56,6 @@ public class ImportJobWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-        var orchestrator = scope.ServiceProvider.GetRequiredService<StravaBulkImportOrchestrator>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<ImportJobWorker>>();
 
         var job = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
@@ -78,12 +82,13 @@ public class ImportJobWorker : BackgroundService
             return;
         }
 
-        if (job.Kind != ImportJobKinds.StravaBulk)
+        if (job.Kind is not (ImportJobKinds.StravaBulk or ImportJobKinds.TempoExport))
         {
             await FailJobAsync(db, job, $"Unsupported import kind: {job.Kind}", logger);
             return;
         }
 
+        var kind = job.Kind;
         job.Status = ImportJobStatuses.Running;
         job.StartedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(CancellationToken.None);
@@ -91,7 +96,10 @@ public class ImportJobWorker : BackgroundService
         var archivePath = job.ArchivePath;
         db.Entry(job).State = EntityState.Detached;
 
-        await ApplyUnitPreferenceAsync(db, unitPreference, logger);
+        if (kind == ImportJobKinds.StravaBulk)
+        {
+            await ApplyUnitPreferenceAsync(db, unitPreference, logger);
+        }
 
         using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
 
@@ -103,44 +111,82 @@ public class ImportJobWorker : BackgroundService
             }
 
             await using var zipStream = File.OpenRead(archivePath);
-            var result = await orchestrator.ImportFromZipAsync(zipStream, async progress =>
+
+            if (kind == ImportJobKinds.StravaBulk)
             {
-                var row = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
-                if (row == null)
+                var orchestrator = scope.ServiceProvider.GetRequiredService<StravaBulkImportOrchestrator>();
+                var result = await orchestrator.ImportFromZipAsync(zipStream, async progress =>
                 {
-                    throw new InvalidOperationException("Import job was deleted");
+                    var row = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
+                    if (row == null)
+                    {
+                        throw new InvalidOperationException("Import job was deleted");
+                    }
+
+                    ApplyStravaProgress(row, progress);
+                    await db.SaveChangesAsync(CancellationToken.None);
+                    if (row.CancelRequested)
+                    {
+                        await jobCts.CancelAsync();
+                        throw new OperationCanceledException(jobCts.Token);
+                    }
+
+                    db.Entry(row).State = EntityState.Detached;
+                }, jobCts.Token);
+
+                var completed = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
+                if (completed == null)
+                {
+                    return;
                 }
 
-                ApplyProgress(row, progress);
-                await db.SaveChangesAsync(CancellationToken.None);
-                if (row.CancelRequested)
+                ApplyStravaProgress(completed, result);
+                if (completed.CancelRequested)
                 {
-                    await jobCts.CancelAsync();
-                    throw new OperationCanceledException(jobCts.Token);
+                    await FailJobAsync(db, completed, ImportJobErrorMessages.Cancelled, logger);
+                    return;
                 }
 
-                db.Entry(row).State = EntityState.Detached;
-            }, jobCts.Token);
-
-            var completed = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
-            if (completed == null)
-            {
-                return;
+                await CompleteJobAsync(db, completed, logger);
             }
-
-            ApplyProgress(completed, result);
-            if (completed.CancelRequested)
+            else
             {
-                await FailJobAsync(db, completed, ImportJobErrorMessages.Cancelled, logger);
-                return;
-            }
+                var importService = scope.ServiceProvider.GetRequiredService<ImportService>();
+                var result = await importService.ImportExportAsync(zipStream, async progress =>
+                {
+                    var row = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
+                    if (row == null)
+                    {
+                        throw new InvalidOperationException("Import job was deleted");
+                    }
 
-            completed.Status = ImportJobStatuses.Completed;
-            completed.FinishedAt = DateTime.UtcNow;
-            completed.ErrorMessage = null;
-            DeleteArchiveDirectory(completed.ArchivePath, completed.Id, logger);
-            completed.ArchivePath = null;
-            await db.SaveChangesAsync(CancellationToken.None);
+                    ApplyTempoProgress(row, progress);
+                    await db.SaveChangesAsync(CancellationToken.None);
+                    if (row.CancelRequested)
+                    {
+                        await jobCts.CancelAsync();
+                        throw new OperationCanceledException(jobCts.Token);
+                    }
+
+                    db.Entry(row).State = EntityState.Detached;
+                }, jobCts.Token);
+
+                var completed = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
+                if (completed == null)
+                {
+                    return;
+                }
+
+                ApplyTempoProgressFromResult(completed, result, completed.Total);
+
+                if (completed.CancelRequested)
+                {
+                    await FailJobAsync(db, completed, ImportJobErrorMessages.Cancelled, logger);
+                    return;
+                }
+
+                await CompleteJobAsync(db, completed, logger);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -168,6 +214,16 @@ public class ImportJobWorker : BackgroundService
         }
     }
 
+    private static async Task CompleteJobAsync(TempoDbContext db, ImportJob job, ILogger logger)
+    {
+        job.Status = ImportJobStatuses.Completed;
+        job.FinishedAt = DateTime.UtcNow;
+        job.ErrorMessage = null;
+        DeleteArchiveDirectory(job.ArchivePath, job.Id, logger);
+        job.ArchivePath = null;
+        await db.SaveChangesAsync(CancellationToken.None);
+    }
+
     private static async Task FailJobAsync(TempoDbContext db, ImportJob job, string message, ILogger logger)
     {
         job.Status = ImportJobStatuses.Failed;
@@ -178,7 +234,7 @@ public class ImportJobWorker : BackgroundService
         await db.SaveChangesAsync(CancellationToken.None);
     }
 
-    private static void ApplyProgress(ImportJob job, StravaBulkImportResult progress)
+    private static void ApplyStravaProgress(ImportJob job, StravaBulkImportResult progress)
     {
         job.Total = progress.TotalProcessed;
         job.Successful = progress.Successful;
@@ -186,11 +242,75 @@ public class ImportJobWorker : BackgroundService
         job.Updated = progress.Updated;
         job.Errors = progress.Errors;
         job.Processed = progress.Successful + progress.Skipped + progress.Updated + progress.Errors;
-        job.ErrorDetailsJson = JsonSerializer.Serialize(progress.ErrorDetails, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
+        job.ErrorDetailsJson = JsonSerializer.Serialize(progress.ErrorDetails, JsonOptions);
     }
+
+    private static void ApplyTempoProgress(ImportJob job, TempoExportProgress progress)
+    {
+        job.Total = progress.Total;
+        job.Processed = progress.Processed;
+        ApplyTempoProgressFromResult(job, progress.Snapshot, progress.Total);
+    }
+
+    private static void ApplyTempoProgressFromResult(
+        ImportJob job,
+        ImportService.ImportResult result,
+        int? total)
+    {
+        if (total.HasValue)
+        {
+            job.Total = total.Value;
+        }
+
+        var stats = result.Statistics;
+        job.Successful = SumImported(stats);
+        job.Skipped = SumSkipped(stats);
+        job.Errors = SumErrors(stats);
+        job.Updated = 0;
+        job.Processed = job.Successful + job.Skipped + job.Errors;
+        job.ErrorDetailsJson = null;
+        job.ResultJson = JsonSerializer.Serialize(new ImportJobResultPayload
+        {
+            Statistics = ToJobStatistics(stats),
+            Warnings = result.Warnings,
+            Errors = result.Errors
+        }, JsonOptions);
+    }
+
+    private static int SumImported(ImportService.ImportStatistics s) =>
+        s.Settings.Imported + s.Shoes.Imported + s.Workouts.Imported + s.Routes.Imported
+        + s.Splits.Imported + s.TimeSeries.Imported + s.Media.Imported + s.BestEfforts.Imported
+        + s.RawFiles.Imported;
+
+    private static int SumSkipped(ImportService.ImportStatistics s) =>
+        s.Settings.Skipped + s.Shoes.Skipped + s.Workouts.Skipped + s.Routes.Skipped
+        + s.Splits.Skipped + s.TimeSeries.Skipped + s.Media.Skipped + s.BestEfforts.Skipped
+        + s.RawFiles.Skipped;
+
+    private static int SumErrors(ImportService.ImportStatistics s) =>
+        s.Settings.Errors + s.Shoes.Errors + s.Workouts.Errors + s.Routes.Errors
+        + s.Splits.Errors + s.TimeSeries.Errors + s.Media.Errors + s.BestEfforts.Errors
+        + s.RawFiles.Errors;
+
+    private static ImportJobStatistics ToJobStatistics(ImportService.ImportStatistics s) => new()
+    {
+        Settings = MapItem(s.Settings),
+        Shoes = MapItem(s.Shoes),
+        Workouts = MapItem(s.Workouts),
+        Routes = MapItem(s.Routes),
+        Splits = MapItem(s.Splits),
+        TimeSeries = MapItem(s.TimeSeries),
+        Media = MapItem(s.Media),
+        BestEfforts = MapItem(s.BestEfforts),
+        RawFiles = MapItem(s.RawFiles)
+    };
+
+    private static ImportJobItemStatistics MapItem(ImportService.ItemStatistics item) => new()
+    {
+        Imported = item.Imported,
+        Skipped = item.Skipped,
+        Errors = item.Errors
+    };
 
     public static async Task ApplyUnitPreferenceAsync(
         TempoDbContext db,

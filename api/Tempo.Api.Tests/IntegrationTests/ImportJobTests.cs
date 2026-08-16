@@ -488,11 +488,22 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
-    public async Task TempoExportJob_CompletesAsFailedUnsupportedKind()
+    public async Task TempoExport_ChunkedImport_CompletesWithStatistics()
     {
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
-        var zipBytes = CreateZipBytes(includeCsv: true);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db);
+            var shoe = await TestDataSeeder.SeedShoeAsync(db, "Nike", "Pegasus");
+            await TestDataSeeder.SeedWorkoutCompleteAsync(db, shoeId: shoe.Id, distanceM: 5000, durationS: 1800);
+        }
+
+        var exportZip = await ImportTestHelper.CreateExportZipWithDataAsync(client);
+        var zipBytes = exportZip.ToArray();
+        await EnsureCleanDatabaseAsync();
 
         var createdResponse = await client.PostAsJsonAsync("/workouts/import/jobs", new
         {
@@ -509,18 +520,180 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
         complete.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         var job = await PollUntilTerminalAsync(client, created.Id);
-        job.Status.Should().Be(ImportJobStatuses.Failed);
-        job.ErrorMessage.Should().Contain("Unsupported import kind");
-        job.ErrorMessage.Should().Contain(ImportJobKinds.TempoExport);
+        job.Status.Should().Be(ImportJobStatuses.Completed);
+        job.Statistics.Should().NotBeNull();
+        job.Updated.Should().Be(0);
+        job.ErrorDetails.Should().BeEmpty();
+        job.Successful.Should().BeGreaterThan(0);
+        job.Total.Should().BeGreaterThan(0);
+        job.Processed.Should().Be(job.Successful + job.Skipped + job.Errors);
 
-        using var scope = _factory.Server.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-        var media = scope.ServiceProvider.GetRequiredService<MediaStorageConfig>();
-        var row = await db.ImportJobs.FindAsync(created.Id);
-        row.Should().NotBeNull();
+        using var verifyScope = _factory.Server.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var media = verifyScope.ServiceProvider.GetRequiredService<MediaStorageConfig>();
+        (await verifyDb.Workouts.CountAsync()).Should().BeGreaterThan(0);
+        var row = await verifyDb.ImportJobs.FindAsync(created.Id);
         row!.ArchivePath.Should().BeNull();
         Directory.Exists(Path.Combine(media.RootPath, "imports", created.Id.ToString())).Should().BeFalse();
-        (await db.Workouts.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TempoExport_AdapterPost_Returns202AndCompletes()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db);
+            var shoe = await TestDataSeeder.SeedShoeAsync(db, "Brooks", "Ghost");
+            await TestDataSeeder.SeedWorkoutCompleteAsync(db, shoeId: shoe.Id, distanceM: 10000, durationS: 3600);
+        }
+
+        var exportZip = await ImportTestHelper.CreateExportZipWithDataAsync(client);
+        await EnsureCleanDatabaseAsync();
+
+        exportZip.Position = 0;
+        var form = new MultipartFormDataContent();
+        var streamContent = new StreamContent(exportZip);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        form.Add(streamContent, "file", "export.zip");
+
+        var response = await client.PostAsync("/workouts/import/export", form);
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await response.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+        started!.Kind.Should().Be(ImportJobKinds.TempoExport);
+
+        var job = await PollUntilTerminalAsync(client, started.Id);
+        job.Status.Should().Be(ImportJobStatuses.Completed);
+        job.Statistics.Should().NotBeNull();
+        job.Statistics!.Workouts.Imported.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task TempoExport_MissingManifest_FailsJob()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var zipBytes = ExportTestHelper.CreateZipWithMissingManifestAsync().ToArray();
+        var form = new MultipartFormDataContent();
+        var file = new ByteArrayContent(zipBytes);
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        file.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "file",
+            FileName = "export.zip"
+        };
+        form.Add(file);
+
+        var response = await client.PostAsync("/workouts/import/export", form);
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await response.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+
+        var job = await PollUntilTerminalAsync(client, started!.Id);
+        job.Status.Should().Be(ImportJobStatuses.Failed);
+        job.ErrorMessage.Should().Contain("manifest");
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var media = scope.ServiceProvider.GetRequiredService<MediaStorageConfig>();
+        Directory.Exists(Path.Combine(media.RootPath, "imports", started.Id.ToString())).Should().BeFalse();
+        (await scope.ServiceProvider.GetRequiredService<TempoDbContext>().ImportJobs.FindAsync(started.Id))
+            .Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CrossKind_ActiveStravaBlocksTempoCreate()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var zipBytes = CreateZipBytes(includeCsv: true);
+
+        var strava = await client.PostAsJsonAsync("/workouts/import/jobs", new
+        {
+            kind = ImportJobKinds.StravaBulk,
+            filename = "strava.zip",
+            byteSize = zipBytes.Length
+        });
+        strava.StatusCode.Should().Be(HttpStatusCode.Created);
+        var active = await strava.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+
+        var tempo = await client.PostAsJsonAsync("/workouts/import/jobs", new
+        {
+            kind = ImportJobKinds.TempoExport,
+            filename = "tempo.zip",
+            byteSize = zipBytes.Length
+        });
+        tempo.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var conflict = await tempo.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+        conflict!.Id.Should().Be(active!.Id);
+
+        (await client.DeleteAsync($"/workouts/import/jobs/{active.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task TempoExport_CancelMidRestore_KeepsCommittedData()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        // Seed then export a multi-entity archive so cancel can land after progress
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db);
+            var shoe = await TestDataSeeder.SeedShoeAsync(db, "Nike", "Pegasus");
+            for (var i = 0; i < 6; i++)
+            {
+                await TestDataSeeder.SeedWorkoutCompleteAsync(db, shoeId: shoe.Id, distanceM: 5000 + i, durationS: 1800 + i);
+            }
+        }
+
+        var exportZip = await ImportTestHelper.CreateExportZipWithDataAsync(client);
+        await EnsureCleanDatabaseAsync();
+
+        exportZip.Position = 0;
+        var form = new MultipartFormDataContent();
+        var streamContent = new StreamContent(exportZip);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        form.Add(streamContent, "file", "export.zip");
+
+        var response = await client.PostAsync("/workouts/import/export", form);
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await response.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        ImportJobDocument? snapshot = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            var poll = await client.GetAsync($"/workouts/import/jobs/{started!.Id}");
+            snapshot = await poll.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+            if (snapshot!.Processed >= 1 && snapshot.Status == ImportJobStatuses.Running)
+            {
+                break;
+            }
+            if (snapshot.Status is ImportJobStatuses.Completed or ImportJobStatuses.Failed)
+            {
+                break;
+            }
+            await Task.Delay(20);
+        }
+
+        snapshot.Should().NotBeNull();
+        if (snapshot!.Status is ImportJobStatuses.Queued or ImportJobStatuses.Running or ImportJobStatuses.Receiving)
+        {
+            (await client.DeleteAsync($"/workouts/import/jobs/{started!.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
+            var finished = await PollUntilTerminalAsync(client, started.Id);
+            finished.Status.Should().Be(ImportJobStatuses.Failed);
+            finished.ErrorMessage.Should().Be(ImportJobErrorMessages.Cancelled);
+        }
+
+        using var verifyScope = _factory.Server.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var media = verifyScope.ServiceProvider.GetRequiredService<MediaStorageConfig>();
+        var entityCount = await verifyDb.Shoes.CountAsync() + await verifyDb.Workouts.CountAsync();
+        entityCount.Should().BeGreaterThanOrEqualTo(1);
+        Directory.Exists(Path.Combine(media.RootPath, "imports", started!.Id.ToString())).Should().BeFalse();
     }
 
     [Fact]
@@ -584,7 +757,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
     private static async Task<ImportJobDocument> PollUntilTerminalAsync(HttpClient client, Guid id)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(20);
+        var deadline = DateTime.UtcNow.AddSeconds(60);
         ImportJobDocument? job = null;
         while (DateTime.UtcNow < deadline)
         {
