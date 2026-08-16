@@ -148,8 +148,8 @@ Key configuration options:
 ### Frontend Configuration (`next.config.ts`)
 
 - API rewrites: `/api/*` → `http://localhost:5001/*` (dev) or `http://api:5001/*` (Docker)
-- `NEXT_PUBLIC_API_URL`: Used for direct API calls (bypasses Next.js for large uploads)
 - `API_SERVICE_URL`: Environment variable to override API URL for rewrites
+- Command-center clients always call same-origin `/api` (including chunked import jobs); do not post to `:5001` from the browser
 
 ## Testing
 

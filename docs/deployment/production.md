@@ -142,7 +142,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # Large file upload support (bulk imports up to 500MB)
+        # Optional: whole-ZIP adapters through this host (command center uses 512 KiB chunks)
         client_max_body_size 500M;
         proxy_read_timeout 600s;
         proxy_connect_timeout 600s;
@@ -154,13 +154,13 @@ server {
 ### Caddy Example
 
 ```caddy
-# API endpoint for iOS app (direct API access)
+# API endpoint for iOS app / Bruno / whole-ZIP adapters (direct API access)
 api-tempo.yourdomain.com {
     tls {
         protocols tls1.2 tls1.3
     }
-    
-    # Large file uploads (bulk imports up to 500MB)
+
+    # Whole-ZIP uploads up to 500MB (command center uses 512 KiB chunks via the web host)
     reverse_proxy localhost:5001 {
         transport http {
             read_timeout 30m
@@ -174,26 +174,8 @@ tempo.yourdomain.com {
     tls {
         protocols tls1.2 tls1.3
     }
-    
-    # Large file uploads (bulk imports) - route to API (strip only /api prefix)
-    @large_upload {
-        path /api/workouts/import/*
-    }
-    handle @large_upload {
-        uri strip_prefix /api
-        reverse_proxy localhost:5001 {
-            transport http {
-                read_timeout 30m
-                write_timeout 30m
-            }
-            header_up Host {host}
-            header_up X-Real-IP {remote}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-    
-    # Other API routes (strip only /api prefix)
+
+    # API routes (strip only /api prefix). Command-center import jobs use small chunks here.
     handle_path /api/* {
         reverse_proxy localhost:5001 {
             header_up Host {host}
@@ -202,7 +184,7 @@ tempo.yourdomain.com {
             header_up X-Forwarded-Proto {scheme}
         }
     }
-    
+
     # Frontend
     handle {
         reverse_proxy localhost:3004 {
@@ -217,8 +199,8 @@ tempo.yourdomain.com {
 
 **Note**: 
 - Adjust the hostnames and ports based on your deployment setup
-- The `api-tempo.yourdomain.com` subdomain is optional and only needed if you have a mobile app that requires direct API access
-- The `uri strip_prefix /api` directive ensures that `/api/workouts/import/bulk` is forwarded to the API as `/workouts/import/bulk` (stripping only the `/api` prefix)
+- The `api-tempo.yourdomain.com` subdomain is optional and only needed if you have a mobile app or whole-ZIP clients that require direct API access
+- `handle_path /api/*` strips the `/api` prefix so `/api/workouts/import/jobs` reaches the API as `/workouts/import/jobs`
 
 ### Traefik Example
 
