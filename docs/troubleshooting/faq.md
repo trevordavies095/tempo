@@ -60,7 +60,7 @@ Tempo doesn't automatically sync with devices. You need to export files from you
 
 ### Can I export my data from Tempo?
 
-Export functionality is planned but not yet implemented. Your data is stored in PostgreSQL and can be accessed directly.
+Yes. Use **Settings → Export / Import** to download a ZIP of workouts, routes, splits, time series, media, shoes, settings, and best efforts, or to restore a previous export. See the [Settings export/import](../user-guide/settings.md#export--import) guide and [Backup and Restore](../deployment/backup-restore.md). You can also access PostgreSQL and the `media/` directory directly.
 
 ### Does Tempo work offline?
 

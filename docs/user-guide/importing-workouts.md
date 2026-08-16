@@ -62,11 +62,11 @@ Tempo will:
 - Generate splits and time-series data
 - Assign your default shoe (if you have one set in Settings)
 
-**Note**: If you've set a default shoe in Settings, new workouts will automatically be assigned to that shoe. You can change or remove the shoe assignment later from the workout details page.
+**Note**: If you've set a default shoe in Settings, new workouts will automatically be assigned to that shoe. You can change or remove the shoe assignment later from Workout overview.
 
 ### Step 4: View Your Workout
 
-Once processing is complete, you'll be redirected to the workout details page where you can:
+Once processing is complete, you'll be redirected to Workout overview where you can:
 - View the route on an interactive map
 - See detailed statistics
 - Review splits

@@ -8,11 +8,14 @@ Tempo is a self-hosted running tracker built as a full-stack application with a 
 
 - **Framework**: Next.js 16 with React 19
 - **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Icons**: Tabler Icons (@tabler/icons-react) - All icons use tabler-icons for consistency
+- **Styling**: Tailwind CSS with semantic identity tokens (`canvas`, `ink`, `muted`, `volt`, and related). Geist is the UI typeface. Do not use tutorial `blue-600` as the brand accent.
+- **UI kit**: Hand-rolled primitives in `frontend/components/ui/` — `PageShell` (density `control` | `overview`), `Card`, `Button`, `Dialog`, `EmptyState`, `Tabs`
+- **Appearance**: Dark-first. Tailwind `class` strategy on `<html>` (`dark`). Preference is `system` | `dark` | `light` in `localStorage` (`tempo-appearance`); not UserSettings. See `frontend/lib/appearance.ts`.
+- **Icons**: Tabler Icons (`@tabler/icons-react`) for UI icons. Brand marks live in `frontend/public/` (`tempo-mark-volt.png`, `tempo-mark-ink.png`).
 - **State Management**: TanStack Query for server state
-- **Maps**: Leaflet/React-Leaflet for route visualization
-- **Charts**: Recharts for analytics
+- **Maps**: Leaflet/React-Leaflet. Carto Dark Matter in Dark appearance, Voyager in Light; polyline and Highlight from tokens; OSM + CARTO attribution (no OSM-only fallback).
+- **Charts**: Recharts; series colors from identity tokens. Workout overview charts HR, pace, and elevation via `getWorkoutTimeSeries` in `frontend/lib/api.ts` (pages until complete or 20,000 samples).
+- **Highlight**: Shared overview focus (`splitIdx` and/or `elapsedSeconds`) in `frontend/lib/workoutHighlight.ts` — map, splits, and charts follow together.
 
 ### Backend
 
@@ -98,7 +101,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 - **WorkoutMedia**: One-to-many relationship for photos/videos attached to workouts
 - **Shoe**: Running shoe entity for tracking shoe mileage and assignments
 - **User**: User accounts for authentication
-- **UserSettings**: Single-row table for user preferences (heart rate zones, unit preferences, default shoe)
+- **UserSettings**: Single-row table for user preferences (heart rate zones, unit preferences, default shoe). Command-center appearance is not UserSettings.
 
 ## Data Flow
 
@@ -147,9 +150,12 @@ The `TempoDbContext` configures several important indexes:
 - **Models**: `api/Models/*.cs`
 - **Services**: `api/Services/*.cs`
 - **Database Context**: `api/Data/TempoDbContext.cs`
-- **Frontend API Client**: `frontend/lib/api.ts`
-- **Frontend Pages**: `frontend/app/*/page.tsx`
+- **Frontend API Client**: `frontend/lib/api.ts` (includes `getWorkoutTimeSeries`)
+- **Appearance**: `frontend/lib/appearance.ts`
+- **Highlight**: `frontend/lib/workoutHighlight.ts`
+- **Frontend Pages**: `frontend/app/*/page.tsx` — Workout overview composer is `frontend/app/dashboard/[id]/page.tsx`
 - **Frontend Components**: `frontend/components/*.tsx`
+- **UI kit**: `frontend/components/ui/`
 
 ## Next Steps
 
