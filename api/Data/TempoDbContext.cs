@@ -140,6 +140,7 @@ public class TempoDbContext : DbContext
         {
             entity.HasIndex(e => e.Status);
             entity.Property(e => e.ErrorDetailsJson).HasColumnType("text");
+            entity.Property(e => e.ResultJson).HasColumnType("text");
         });
     }
 }

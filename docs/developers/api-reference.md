@@ -153,7 +153,7 @@ Command-center Import uploads a Strava ZIP in **512 KiB** chunks, then polls the
 POST /workouts/import/jobs
 Content-Type: application/json
 
-{ "filename": "export.zip", "byteSize": 12345, "unitPreference": "metric" }
+{ "kind": "strava_bulk", "filename": "export.zip", "byteSize": 12345, "unitPreference": "metric" }
 ```
 
 Returns **201** (`receiving`). Then sequential:

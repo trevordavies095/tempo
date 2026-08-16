@@ -51,7 +51,8 @@ public static class DatabaseMigrationHelper
         // AddRpeToWorkout migration
         { ("Workouts", "Rpe"), "20260511200212_AddRpeToWorkout" },
         { ("ImportJobs", "CancelRequested"), "20260816182633_AddImportJobCancelAndChunks" },
-        { ("ImportJobs", "LastChunkAt"), "20260816182633_AddImportJobCancelAndChunks" }
+        { ("ImportJobs", "LastChunkAt"), "20260816182633_AddImportJobCancelAndChunks" },
+        { ("ImportJobs", "ResultJson"), "20260816191738_AddImportJobResultJson" }
     };
 
     private const string ProductVersion = "10.0.0";

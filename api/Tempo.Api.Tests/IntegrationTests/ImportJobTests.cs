@@ -131,6 +131,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
         var createdResponse = await client.PostAsJsonAsync("/workouts/import/jobs", new
         {
+            kind = ImportJobKinds.StravaBulk,
             filename = "export.zip",
             byteSize = zipBytes.Length,
             unitPreference = "metric"
@@ -150,6 +151,9 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
         var job = await PollUntilTerminalAsync(client, created.Id);
         job.Status.Should().Be(ImportJobStatuses.Completed);
         job.Successful.Should().Be(1);
+        job.Statistics.Should().BeNull();
+        job.Warnings.Should().BeNull();
+        job.ErrorMessages.Should().BeNull();
 
         using var scope = _factory.Server.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
@@ -165,6 +169,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
         var createdResponse = await client.PostAsJsonAsync("/workouts/import/jobs", new
         {
+            kind = ImportJobKinds.StravaBulk,
             filename = "export.zip",
             byteSize = zipBytes.Length
         });
@@ -197,6 +202,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
         var first = await client.PostAsJsonAsync("/workouts/import/jobs", new
         {
+            kind = ImportJobKinds.StravaBulk,
             filename = "export.zip",
             byteSize = zipBytes.Length
         });
@@ -205,6 +211,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
         var second = await client.PostAsJsonAsync("/workouts/import/jobs", new
         {
+            kind = ImportJobKinds.StravaBulk,
             filename = "other.zip",
             byteSize = zipBytes.Length
         });
@@ -293,6 +300,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
         var first = await client.PostAsJsonAsync("/workouts/import/jobs", new
         {
+            kind = ImportJobKinds.StravaBulk,
             filename = "old.zip",
             byteSize = zipBytes.Length
         });
@@ -309,6 +317,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
         var second = await client.PostAsJsonAsync("/workouts/import/jobs", new
         {
+            kind = ImportJobKinds.StravaBulk,
             filename = "new.zip",
             byteSize = zipBytes.Length
         });
@@ -335,6 +344,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
         var first = await client.PostAsJsonAsync("/workouts/import/jobs", new
         {
+            kind = ImportJobKinds.StravaBulk,
             filename = "export.zip",
             byteSize = zipBytes.Length
         });
@@ -352,6 +362,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
         var second = await client.PostAsJsonAsync("/workouts/import/jobs", new
         {
+            kind = ImportJobKinds.StravaBulk,
             filename = "new.zip",
             byteSize = zipBytes.Length
         });
@@ -429,12 +440,127 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
         var next = await client.PostAsJsonAsync("/workouts/import/jobs", new
         {
+            kind = ImportJobKinds.StravaBulk,
             filename = "export.zip",
             byteSize = 12
         });
         next.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await next.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
         (await client.DeleteAsync($"/workouts/import/jobs/{created!.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task CreateImportJob_RequiresKind()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var missing = await client.PostAsJsonAsync("/workouts/import/jobs", new
+        {
+            filename = "export.zip",
+            byteSize = 10
+        });
+        missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var unknown = await client.PostAsJsonAsync("/workouts/import/jobs", new
+        {
+            kind = "other_kind",
+            filename = "export.zip",
+            byteSize = 10
+        });
+        unknown.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task CreateTempoExport_RejectsUnitPreference()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var response = await client.PostAsJsonAsync("/workouts/import/jobs", new
+        {
+            kind = ImportJobKinds.TempoExport,
+            filename = "export.zip",
+            byteSize = 10,
+            unitPreference = "metric"
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task TempoExportJob_CompletesAsFailedUnsupportedKind()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var zipBytes = CreateZipBytes(includeCsv: true);
+
+        var createdResponse = await client.PostAsJsonAsync("/workouts/import/jobs", new
+        {
+            kind = ImportJobKinds.TempoExport,
+            filename = "tempo-export.zip",
+            byteSize = zipBytes.Length
+        });
+        createdResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createdResponse.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+        created!.Kind.Should().Be(ImportJobKinds.TempoExport);
+
+        await PutAllChunksAsync(client, created.Id, zipBytes);
+        var complete = await client.PostAsync($"/workouts/import/jobs/{created.Id}/complete", null);
+        complete.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var job = await PollUntilTerminalAsync(client, created.Id);
+        job.Status.Should().Be(ImportJobStatuses.Failed);
+        job.ErrorMessage.Should().Contain("Unsupported import kind");
+        job.ErrorMessage.Should().Contain(ImportJobKinds.TempoExport);
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var media = scope.ServiceProvider.GetRequiredService<MediaStorageConfig>();
+        var row = await db.ImportJobs.FindAsync(created.Id);
+        row.Should().NotBeNull();
+        row!.ArchivePath.Should().BeNull();
+        Directory.Exists(Path.Combine(media.RootPath, "imports", created.Id.ToString())).Should().BeFalse();
+        (await db.Workouts.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public void ImportJobDocument_MapsResultJson_AndLeavesStravaNull()
+    {
+        var withResult = new ImportJob
+        {
+            Kind = ImportJobKinds.TempoExport,
+            Status = ImportJobStatuses.Completed,
+            Filename = "export.zip",
+            ResultJson = """
+                {
+                  "statistics": {
+                    "workouts": { "imported": 2, "skipped": 1, "errors": 0 },
+                    "shoes": { "imported": 1, "skipped": 0, "errors": 0 }
+                  },
+                  "warnings": ["duplicate shoe"],
+                  "errors": ["bad media"]
+                }
+                """
+        };
+
+        var doc = ImportJobDocument.FromEntity(withResult);
+        doc.Statistics.Should().NotBeNull();
+        doc.Statistics!.Workouts.Imported.Should().Be(2);
+        doc.Statistics.Workouts.Skipped.Should().Be(1);
+        doc.Statistics.Shoes.Imported.Should().Be(1);
+        doc.Warnings.Should().Equal("duplicate shoe");
+        doc.ErrorMessages.Should().Equal("bad media");
+
+        var strava = ImportJobDocument.FromEntity(new ImportJob
+        {
+            Kind = ImportJobKinds.StravaBulk,
+            Status = ImportJobStatuses.Completed,
+            Filename = "export.zip",
+            Successful = 1
+        });
+        strava.Statistics.Should().BeNull();
+        strava.Warnings.Should().BeNull();
+        strava.ErrorMessages.Should().BeNull();
     }
 
     private static async Task PutAllChunksAsync(HttpClient client, Guid jobId, byte[] zipBytes)

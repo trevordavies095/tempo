@@ -29,7 +29,7 @@ public class ImportJobService
 
     public async Task<ImportJobHttpResult> CreateReceivingAsync(CreateImportJobRequest request)
     {
-        var validation = ValidateCreate(request.Filename, request.ByteSize, request.UnitPreference);
+        var validation = ValidateCreate(request.Kind, request.Filename, request.ByteSize, request.UnitPreference);
         if (validation != null)
         {
             return validation;
@@ -41,7 +41,13 @@ public class ImportJobService
             return blocked;
         }
 
-        var job = NewJob(ImportJobStatuses.Receiving, request.Filename, request.ByteSize, 0, request.UnitPreference);
+        var job = NewJob(
+            ImportJobStatuses.Receiving,
+            request.Kind,
+            request.Filename,
+            request.ByteSize,
+            0,
+            request.UnitPreference);
         Directory.CreateDirectory(JobDirectory(job.Id));
         _db.ImportJobs.Add(job);
         await _db.SaveChangesAsync();
@@ -144,7 +150,7 @@ public class ImportJobService
         long byteSize,
         string? unitPreference)
     {
-        var validation = ValidateCreate(filename, byteSize, unitPreference);
+        var validation = ValidateCreate(ImportJobKinds.StravaBulk, filename, byteSize, unitPreference);
         if (validation != null)
         {
             return validation;
@@ -156,7 +162,13 @@ public class ImportJobService
             return blocked;
         }
 
-        var job = NewJob(ImportJobStatuses.Queued, filename, byteSize, byteSize, unitPreference);
+        var job = NewJob(
+            ImportJobStatuses.Queued,
+            ImportJobKinds.StravaBulk,
+            filename,
+            byteSize,
+            byteSize,
+            unitPreference);
         var jobDir = JobDirectory(job.Id);
         Directory.CreateDirectory(jobDir);
         var archivePath = ArchiveFilePath(job.Id);
@@ -308,12 +320,18 @@ public class ImportJobService
         return DateTime.UtcNow - last >= ImportJobLimits.StaleReceivingAfter;
     }
 
-    private ImportJob NewJob(string status, string filename, long byteSize, long bytesReceived, string? unitPreference)
+    private ImportJob NewJob(
+        string status,
+        string kind,
+        string filename,
+        long byteSize,
+        long bytesReceived,
+        string? unitPreference)
     {
         var now = DateTime.UtcNow;
         var job = new ImportJob
         {
-            Kind = ImportJobKinds.StravaBulk,
+            Kind = kind,
             Status = status,
             Filename = Path.GetFileName(filename),
             ByteSize = byteSize,
@@ -326,8 +344,25 @@ public class ImportJobService
         return job;
     }
 
-    private ImportJobHttpResult? ValidateCreate(string filename, long byteSize, string? unitPreference)
+    private ImportJobHttpResult? ValidateCreate(string kind, string filename, long byteSize, string? unitPreference)
     {
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            return ImportJobHttpResult.Fail(StatusCodes.Status400BadRequest, "kind is required");
+        }
+
+        if (kind is not (ImportJobKinds.StravaBulk or ImportJobKinds.TempoExport))
+        {
+            return ImportJobHttpResult.Fail(StatusCodes.Status400BadRequest, "kind must be strava_bulk or tempo_export");
+        }
+
+        if (kind == ImportJobKinds.TempoExport && !string.IsNullOrWhiteSpace(unitPreference))
+        {
+            return ImportJobHttpResult.Fail(
+                StatusCodes.Status400BadRequest,
+                "unitPreference is not allowed for tempo_export");
+        }
+
         if (string.IsNullOrWhiteSpace(filename) || !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
         {
             return ImportJobHttpResult.Fail(StatusCodes.Status400BadRequest, "File must be a ZIP file");
@@ -343,7 +378,6 @@ public class ImportJobService
             return ImportJobHttpResult.Fail(StatusCodes.Status400BadRequest, "File exceeds the 500MB limit");
         }
 
-        _ = unitPreference;
         return null;
     }
 

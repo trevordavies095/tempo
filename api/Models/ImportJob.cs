@@ -5,6 +5,7 @@ namespace Tempo.Api.Models;
 public static class ImportJobKinds
 {
     public const string StravaBulk = "strava_bulk";
+    public const string TempoExport = "tempo_export";
 }
 
 public static class ImportJobStatuses
@@ -65,6 +66,11 @@ public class ImportJob
     /// JSON array of { filename, error }.
     /// </summary>
     public string? ErrorDetailsJson { get; set; }
+
+    /// <summary>
+    /// JSON object { statistics, warnings, errors } for tempo_export jobs.
+    /// </summary>
+    public string? ResultJson { get; set; }
 
     public string? ErrorMessage { get; set; }
 

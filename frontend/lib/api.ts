@@ -445,6 +445,18 @@ export interface BulkImportResponse {
 export const IMPORT_JOB_CHUNK_SIZE = 512 * 1024;
 export const IMPORT_JOB_HINT_KEY = 'tempo-import-job-id';
 
+export interface ImportJobStatistics {
+  settings: { imported: number; skipped: number; errors: number };
+  shoes: { imported: number; skipped: number; errors: number };
+  workouts: { imported: number; skipped: number; errors: number };
+  routes: { imported: number; skipped: number; errors: number };
+  splits: { imported: number; skipped: number; errors: number };
+  timeSeries: { imported: number; skipped: number; errors: number };
+  media: { imported: number; skipped: number; errors: number };
+  bestEfforts: { imported: number; skipped: number; errors: number };
+  rawFiles: { imported: number; skipped: number; errors: number };
+}
+
 export interface ImportJob {
   id: string;
   kind: string;
@@ -463,6 +475,9 @@ export interface ImportJob {
     error: string;
   }>;
   errorMessage: string | null;
+  statistics?: ImportJobStatistics | null;
+  warnings?: string[] | null;
+  errorMessages?: string[] | null;
 }
 
 export class ImportJobConflictError extends Error {
@@ -548,6 +563,7 @@ async function readImportJobResponse(response: Response, fallback: string): Prom
 }
 
 export async function createImportJob(
+  kind: 'strava_bulk' | 'tempo_export',
   filename: string,
   byteSize: number,
   unitPreference?: 'metric' | 'imperial'
@@ -556,7 +572,7 @@ export async function createImportJob(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ filename, byteSize, unitPreference }),
+    body: JSON.stringify({ kind, filename, byteSize, unitPreference }),
   });
   return readImportJobResponse(response, 'Failed to create import job');
 }
@@ -593,7 +609,7 @@ export async function importStravaExportChunked(
   onProgress: (bytesReceived: number, byteSize: number) => void,
   onJob?: (job: ImportJob) => void
 ): Promise<ImportJob> {
-  const created = await createImportJob(zipFile.name, zipFile.size, unitPreference);
+  const created = await createImportJob('strava_bulk', zipFile.name, zipFile.size, unitPreference);
   onJob?.(created);
   const total = Math.max(1, Math.ceil(zipFile.size / IMPORT_JOB_CHUNK_SIZE));
   onProgress(0, zipFile.size);

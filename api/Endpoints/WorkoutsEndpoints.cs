@@ -2341,7 +2341,7 @@ public static class WorkoutsEndpoints
         .Produces<ImportJobDocument>(409)
         .Produces(400)
         .WithSummary("Create chunked import job")
-        .WithDescription("Creates a receiving Strava bulk import job (filename, byteSize, optional unitPreference). Upload 512 KiB chunks then POST complete.");
+        .WithDescription("Creates a receiving import job. Body requires kind (strava_bulk | tempo_export), filename, byteSize. unitPreference is optional for strava_bulk and rejected for tempo_export. Upload 512 KiB chunks then POST complete.");
 
         group.MapPut("/import/jobs/{id:guid}/chunks/{index:int}", PutImportJobChunk)
         .WithName("PutImportJobChunk")

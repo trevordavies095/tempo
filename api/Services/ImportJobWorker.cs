@@ -78,6 +78,12 @@ public class ImportJobWorker : BackgroundService
             return;
         }
 
+        if (job.Kind != ImportJobKinds.StravaBulk)
+        {
+            await FailJobAsync(db, job, $"Unsupported import kind: {job.Kind}", logger);
+            return;
+        }
+
         job.Status = ImportJobStatuses.Running;
         job.StartedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(CancellationToken.None);
