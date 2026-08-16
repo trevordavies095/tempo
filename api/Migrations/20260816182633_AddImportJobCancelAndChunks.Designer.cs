@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Tempo.Api.Data;
@@ -11,9 +12,11 @@ using Tempo.Api.Data;
 namespace Tempo.Api.Migrations
 {
     [DbContext(typeof(TempoDbContext))]
-    partial class TempoDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260816182633_AddImportJobCancelAndChunks")]
+    partial class AddImportJobCancelAndChunks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -146,9 +149,6 @@ namespace Tempo.Api.Migrations
 
                     b.Property<int>("Processed")
                         .HasColumnType("integer");
-
-                    b.Property<string>("ResultJson")
-                        .HasColumnType("text");
 
                     b.Property<int>("Skipped")
                         .HasColumnType("integer");

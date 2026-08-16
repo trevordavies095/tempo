@@ -147,7 +147,29 @@ Outcomes per file: `created`, `updated`, or `skipped` (plus error). Incomplete F
 
 ### Bulk Import
 
-Import multiple workouts from a Strava export ZIP:
+Command-center Import uploads a Strava ZIP in **512 KiB** chunks, then polls the job. Bruno/curl can still POST the whole ZIP.
+
+```http
+POST /workouts/import/jobs
+Content-Type: application/json
+
+{ "kind": "strava_bulk", "filename": "export.zip", "byteSize": 12345, "unitPreference": "metric" }
+```
+
+Returns **201** (`receiving`). Then sequential:
+
+```http
+PUT /workouts/import/jobs/{id}/chunks/{index}?total={n}
+Content-Type: application/octet-stream
+```
+
+```http
+POST /workouts/import/jobs/{id}/complete
+```
+
+Complete returns **202** when every chunk index is present and the assembled length equals `byteSize`. A size mismatch does not enqueue or run intake.
+
+Whole-file adapter (Bruno/curl):
 
 ```http
 POST /workouts/import/bulk
@@ -156,9 +178,60 @@ Content-Type: multipart/form-data
 file: [ZIP file]
 ```
 
-Supports files up to 500MB.
+Returns **202** with the same job document. Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. `GET /workouts/import/jobs/current` is **200** plus that document or **204**. A second start while a job is `receiving`/`queued`/`running` is **409** with the active `id`. `DELETE /workouts/import/jobs/{id}` cancels; already imported Workouts stay.
 
-Per activity file uses the same intake outcomes (`created` / `updated` / `skipped`). ZIP extract, `activities.csv`, non-run skip, and Strava media copy stay in bulk, not in intake.
+Supports files up to 500MB. Per activity file uses the same intake outcomes (`created` / `updated` / `skipped`). ZIP extract, `activities.csv`, non-run skip, and Strava media copy stay in bulk, not in intake.
+
+### Import Tempo Export
+
+Restore a Tempo export ZIP as an import job (same rails as Strava bulk):
+
+```http
+POST /workouts/import/jobs
+Content-Type: application/json
+
+{ "kind": "tempo_export", "filename": "tempo-export.zip", "byteSize": 12345 }
+```
+
+Then the same chunk PUT + complete flow as Strava (`unitPreference` must not be sent — **400** if present). Command center uses this path.
+
+Whole-file adapter (Bruno/curl):
+
+```http
+POST /workouts/import/export
+Content-Type: multipart/form-data
+
+file: [Tempo export ZIP]
+```
+
+Returns **202** with a job document (`kind: tempo_export`). Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Structural ZIP/manifest failure → `failed`; finished with per-item problems → `completed` with nested `statistics` / `warnings` / `errorMessages` on the job document. `DELETE /workouts/import/jobs/{id}` cancels; already restored data stays. At most one import job runs at a time across Strava and Tempo (**409** if another is active).
+
+### Import job lifecycle
+
+Statuses: `receiving` → `queued` → `running` → `completed` or `failed`. Cancel and API-startup interrupt end as `failed` with `errorMessage` `cancelled` or `interrupted` (no auto-resume; retry the ZIP). If the only active job is `receiving` and no chunk (or create) has happened for **15 minutes**, a new create replaces it. At most one job in `receiving` | `queued` | `running` across kinds.
+
+Example job document (fields present depend on kind and status):
+
+```json
+{
+  "id": "…",
+  "kind": "strava_bulk",
+  "status": "running",
+  "filename": "export.zip",
+  "byteSize": 12345,
+  "bytesReceived": 12345,
+  "processed": 12,
+  "total": 40,
+  "successful": 10,
+  "updated": 1,
+  "skipped": 1,
+  "errors": 0,
+  "errorDetails": [],
+  "errorMessage": null
+}
+```
+
+For `tempo_export`, flat counters are rollups; nested `statistics` / `warnings` / `errorMessages` come from `ResultJson` (`errorDetails` stays `[]`; `updated` stays 0).
 
 ### Export All Data
 

@@ -1,10 +1,16 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
-import { importTempoExport, type ExportImportResponse, getUnitPreference } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  getUnitPreference,
+  importJobToExportImportResponse,
+  type ExportImportResponse,
+  type ImportJob,
+} from '@/lib/api';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { useFileDrop } from '@/hooks/useFileDrop';
+import { useImportJobSession } from '@/hooks/useImportJobSession';
 import { useSettings } from '@/lib/settings';
 import { IconUpload } from '@tabler/icons-react';
 import { Button } from '@/components/ui/Button';
@@ -15,51 +21,66 @@ export function TempoExportImport() {
   const queryClient = useQueryClient();
   const { setUnitPreference } = useSettings();
 
-  const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
-    onFilesSelected: (files) => {
-      if (files.length > 0) {
-        setSelectedFile(files[0]);
-        setImportResult(null);
-      }
-    },
-    acceptExtensions: ['.zip'],
-    maxFiles: 1,
-  });
-
-  const mutation = useMutation({
-    mutationFn: (file: File) => importTempoExport(file),
-    onSuccess: async (data) => {
+  const onCompleted = useCallback(
+    async (job: ImportJob) => {
       invalidateWorkoutQueries(queryClient);
-      
-      // Invalidate settings-related queries
       queryClient.invalidateQueries({ queryKey: ['heart-rate-zones'] });
       queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
-      
-      // Refresh unit preference from backend
       try {
         const unitPref = await getUnitPreference();
         setUnitPreference(unitPref.unitPreference);
       } catch (error) {
         console.warn('Failed to refresh unit preference after import:', error);
       }
-      
-      setImportResult(data);
+      setImportResult(importJobToExportImportResponse(job));
       setSelectedFile(null);
     },
-    onError: (error: Error) => {
-      alert(`Error importing Tempo export: ${error.message}`);
+    [queryClient, setUnitPreference]
+  );
+
+  const session = useImportJobSession({
+    kind: 'tempo_export',
+    onCompleted,
+  });
+
+  const {
+    canStart,
+    isWorking,
+    jobId,
+    jobError,
+    otherKindMessage,
+    uploadError,
+    cancelPending,
+    progressLabel: getProgressLabel,
+    startUpload,
+    cancel,
+    clearError,
+  } = session;
+
+  const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
+    onFilesSelected: (files) => {
+      if (files.length > 0) {
+        setSelectedFile(files[0]);
+        setImportResult(null);
+        clearError();
+      }
     },
+    acceptExtensions: ['.zip'],
+    maxFiles: 1,
   });
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      if (selectedFile) {
-        mutation.mutate(selectedFile);
+      if (selectedFile && canStart) {
+        startUpload(selectedFile);
       }
     },
-    [selectedFile, mutation]
+    [selectedFile, canStart, startUpload]
   );
+
+  const progressLabel = getProgressLabel('Import Tempo Export');
+  const showError = !!jobError || !!uploadError;
 
   return (
     <div className="w-full max-w-2xl">
@@ -80,6 +101,7 @@ export function TempoExportImport() {
             id="tempo-export-upload"
             accept=".zip"
             onChange={handleFileInput}
+            disabled={isWorking}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div className="text-center">
@@ -98,20 +120,46 @@ export function TempoExportImport() {
           </div>
         </div>
 
+        {otherKindMessage && (
+          <div className="p-4 bg-canvas border border-border rounded-tempo">
+            <p className="text-sm text-ink">{otherKindMessage}</p>
+          </div>
+        )}
+
         {selectedFile && (
           <Button
             type="submit"
-            disabled={mutation.isPending}
+            disabled={!canStart}
             className="w-full"
           >
-            {mutation.isPending ? 'Importing...' : 'Import Tempo Export'}
+            {isWorking ? progressLabel : 'Import Tempo Export'}
           </Button>
         )}
 
-        {mutation.isError && (
+        {isWorking && !selectedFile && (
+          <p className="text-sm text-ink">{progressLabel}</p>
+        )}
+
+        {isWorking && jobId && (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={cancelPending}
+            className="w-full"
+            onClick={() => cancel()}
+          >
+            Cancel import
+          </Button>
+        )}
+
+        {showError && (
           <div className="p-4 bg-canvas border border-danger rounded-tempo">
             <p className="text-sm text-danger">
-              Error: {mutation.error instanceof Error ? mutation.error.message : 'Unknown error'}
+              Error:{' '}
+              {jobError ||
+                (uploadError instanceof Error
+                  ? uploadError.message
+                  : 'Unknown error')}
             </p>
           </div>
         )}
@@ -197,7 +245,7 @@ export function TempoExportImport() {
                   )}
                 </div>
               </div>
-              
+
               {importResult.warnings && importResult.warnings.length > 0 && (
                 <details className="mt-2">
                   <summary className="cursor-pointer text-muted hover:underline">
@@ -212,7 +260,7 @@ export function TempoExportImport() {
                   </ul>
                 </details>
               )}
-              
+
               {importResult.errors && importResult.errors.length > 0 && (
                 <details className="mt-2">
                   <summary className="cursor-pointer text-danger hover:underline">
@@ -234,4 +282,3 @@ export function TempoExportImport() {
     </div>
   );
 }
-

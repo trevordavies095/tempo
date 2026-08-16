@@ -121,7 +121,6 @@ jobs:
             APP_VERSION=${{ steps.build_meta.outputs.app_version }}
             BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
             GIT_COMMIT=${{ steps.build_meta.outputs.git_commit }}
-            NEXT_PUBLIC_API_URL=http://localhost:5001
           tags: |
             ${{ steps.meta.outputs.frontend_tag_version }}
             ${{ steps.meta.outputs.frontend_tag_latest }}

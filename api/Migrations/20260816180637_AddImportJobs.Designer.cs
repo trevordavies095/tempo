@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Tempo.Api.Data;
@@ -11,9 +12,11 @@ using Tempo.Api.Data;
 namespace Tempo.Api.Migrations
 {
     [DbContext(typeof(TempoDbContext))]
-    partial class TempoDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260816180637_AddImportJobs")]
+    partial class AddImportJobs
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -113,9 +116,6 @@ namespace Tempo.Api.Migrations
                     b.Property<long>("BytesReceived")
                         .HasColumnType("bigint");
 
-                    b.Property<bool>("CancelRequested")
-                        .HasColumnType("boolean");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -141,14 +141,8 @@ namespace Tempo.Api.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<DateTime?>("LastChunkAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<int>("Processed")
                         .HasColumnType("integer");
-
-                    b.Property<string>("ResultJson")
-                        .HasColumnType("text");
 
                     b.Property<int>("Skipped")
                         .HasColumnType("integer");

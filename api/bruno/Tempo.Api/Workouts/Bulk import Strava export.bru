@@ -11,26 +11,19 @@ post {
 }
 
 example {
-  name: 200 Response
-  description: OK
+  name: 202 Response
+  description: Accepted — poll GET /workouts/import/jobs/{id}
   
-  request: {
+  request {
     url: {{baseUrl}}/workouts/import/bulk
     method: POST
     mode: multipartForm
   }
   
-  response: {
-    status: {
-      code: 200
-      text: OK
-    }
-  
-    body: {
-      type: text
-      content: '''
-  
-      '''
+  response {
+    status {
+      code: 202
+      text: Accepted
     }
   }
 }
@@ -39,48 +32,16 @@ example {
   name: 400 Response
   description: Bad Request
   
-  request: {
+  request {
     url: {{baseUrl}}/workouts/import/bulk
     method: POST
     mode: multipartForm
   }
   
-  response: {
-    status: {
+  response {
+    status {
       code: 400
       text: Bad Request
-    }
-  
-    body: {
-      type: text
-      content: '''
-  
-      '''
-    }
-  }
-}
-
-example {
-  name: 500 Response
-  description: Internal Server Error
-  
-  request: {
-    url: {{baseUrl}}/workouts/import/bulk
-    method: POST
-    mode: multipartForm
-  }
-  
-  response: {
-    status: {
-      code: 500
-      text: Internal Server Error
-    }
-  
-    body: {
-      type: text
-      content: '''
-  
-      '''
     }
   }
 }

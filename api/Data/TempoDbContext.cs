@@ -19,6 +19,7 @@ public class TempoDbContext : DbContext
     public DbSet<ApiKey> ApiKeys { get; set; }
     public DbSet<BestEffort> BestEfforts { get; set; }
     public DbSet<Shoe> Shoes { get; set; }
+    public DbSet<ImportJob> ImportJobs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -133,6 +134,13 @@ public class TempoDbContext : DbContext
             
             // Index for efficient queries
             entity.HasIndex(e => e.DistanceM);
+        });
+
+        modelBuilder.Entity<ImportJob>(entity =>
+        {
+            entity.HasIndex(e => e.Status);
+            entity.Property(e => e.ErrorDetailsJson).HasColumnType("text");
+            entity.Property(e => e.ResultJson).HasColumnType("text");
         });
     }
 }

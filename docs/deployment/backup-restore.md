@@ -150,8 +150,10 @@ Tempo's import feature provides a user-friendly way to restore data from an expo
 2. Navigate to Settings
 3. Find the "Export / Import" section
 4. In the "Import Data" area, click or drag and drop your export ZIP file
-5. Wait for the import to complete
-6. Review the import summary
+5. Watch upload progress, then restore progress (`processed` / `total`)
+6. When finished, review the import summary
+
+You can cancel while uploading or restoring; data already restored stays. At most one import job runs at a time across Settings restore and Strava bulk import on the Import page. See [Settings export/import](../user-guide/settings.md#export--import) for details.
 
 The import will:
 - Restore all workouts, media, shoes, and settings

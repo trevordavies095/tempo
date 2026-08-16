@@ -44,8 +44,8 @@ If you're new to Tempo, start with:
 1. Navigate to Settings → Export / Import
 2. Click "Export All Data" to create a backup
 3. Store the ZIP file safely
-4. To restore, use "Import Data" and upload the export file
-5. Review import statistics to verify restoration
+4. To restore, use "Import Data" and upload the export file — watch upload then restore progress (you can cancel; already restored data stays)
+5. Only one import runs at a time (Settings restore or Strava bulk on Import); then review the import summary
 
 ### Analyzing Performance
 

@@ -26,7 +26,8 @@ public static class DatabaseMigrationHelper
         // AddBestEffortsTable migration
         { "BestEfforts", "20251130201906_AddBestEffortsTable" },
         // AddShoeTracking migration
-        { "Shoes", "20251201120000_AddShoeTracking" }
+        { "Shoes", "20251201120000_AddShoeTracking" },
+        { "ImportJobs", "20260816180637_AddImportJobs" }
     };
 
     // Map of (table, column) pairs to their corresponding migration IDs
@@ -48,7 +49,10 @@ public static class DatabaseMigrationHelper
         { ("Shoes", "IsRetired"), "20260429231609_AddShoeIsRetired" },
         { ("Users", "SessionVersion"), "20260510120000_AddUserSessionVersion" },
         // AddRpeToWorkout migration
-        { ("Workouts", "Rpe"), "20260511200212_AddRpeToWorkout" }
+        { ("Workouts", "Rpe"), "20260511200212_AddRpeToWorkout" },
+        { ("ImportJobs", "CancelRequested"), "20260816182633_AddImportJobCancelAndChunks" },
+        { ("ImportJobs", "LastChunkAt"), "20260816182633_AddImportJobCancelAndChunks" },
+        { ("ImportJobs", "ResultJson"), "20260816191738_AddImportJobResultJson" }
     };
 
     private const string ProductVersion = "10.0.0";

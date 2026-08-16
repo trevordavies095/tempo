@@ -150,6 +150,10 @@ builder.Services.AddScoped<IRelativeEffortService>(sp => sp.GetRequiredService<R
 builder.Services.AddScoped<BestEffortService>();
 builder.Services.AddScoped<IBestEffortService>(sp => sp.GetRequiredService<BestEffortService>());
 builder.Services.AddScoped<BulkImportService>();
+builder.Services.AddScoped<StravaBulkImportOrchestrator>();
+builder.Services.AddSingleton<ImportJobQueue>();
+builder.Services.AddScoped<ImportJobService>();
+builder.Services.AddHostedService<ImportJobWorker>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();

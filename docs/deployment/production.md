@@ -142,7 +142,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # Large file upload support (bulk imports up to 500MB)
+        # Optional: whole-ZIP adapters through this host (command center uses 512 KiB chunks)
         client_max_body_size 500M;
         proxy_read_timeout 600s;
         proxy_connect_timeout 600s;
@@ -154,13 +154,13 @@ server {
 ### Caddy Example
 
 ```caddy
-# API endpoint for iOS app (direct API access)
+# API endpoint for iOS app / Bruno / whole-ZIP adapters (direct API access)
 api-tempo.yourdomain.com {
     tls {
         protocols tls1.2 tls1.3
     }
-    
-    # Large file uploads (bulk imports up to 500MB)
+
+    # Whole-ZIP uploads up to 500MB (command center uses 512 KiB chunks via the web host)
     reverse_proxy localhost:5001 {
         transport http {
             read_timeout 30m
@@ -174,26 +174,8 @@ tempo.yourdomain.com {
     tls {
         protocols tls1.2 tls1.3
     }
-    
-    # Large file uploads (bulk imports) - route to API (strip only /api prefix)
-    @large_upload {
-        path /api/workouts/import/*
-    }
-    handle @large_upload {
-        uri strip_prefix /api
-        reverse_proxy localhost:5001 {
-            transport http {
-                read_timeout 30m
-                write_timeout 30m
-            }
-            header_up Host {host}
-            header_up X-Real-IP {remote}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-    
-    # Other API routes (strip only /api prefix)
+
+    # API routes (strip only /api prefix). Command-center import jobs use small chunks here.
     handle_path /api/* {
         reverse_proxy localhost:5001 {
             header_up Host {host}
@@ -202,7 +184,7 @@ tempo.yourdomain.com {
             header_up X-Forwarded-Proto {scheme}
         }
     }
-    
+
     # Frontend
     handle {
         reverse_proxy localhost:3004 {
@@ -217,8 +199,8 @@ tempo.yourdomain.com {
 
 **Note**: 
 - Adjust the hostnames and ports based on your deployment setup
-- The `api-tempo.yourdomain.com` subdomain is optional and only needed if you have a mobile app that requires direct API access
-- The `uri strip_prefix /api` directive ensures that `/api/workouts/import/bulk` is forwarded to the API as `/workouts/import/bulk` (stripping only the `/api` prefix)
+- The `api-tempo.yourdomain.com` subdomain is optional and only needed if you have a mobile app or whole-ZIP clients that require direct API access
+- `handle_path /api/*` strips the `/api` prefix so `/api/workouts/import/jobs` reaches the API as `/workouts/import/jobs`
 
 ### Traefik Example
 
@@ -236,23 +218,25 @@ labels:
 
 ## Large File Upload Requirements
 
-Tempo supports bulk imports of up to 500MB (Strava exports, Tempo exports). Your reverse proxy must be configured to handle these large uploads:
+Tempo supports ZIP archives up to 500MB (Strava exports, Tempo exports). The **command center** uploads those archives in **512 KiB** chunks over `/api`, so a default reverse-proxy body limit is usually enough for the UI path. Processing runs as a background import job (poll + cancel), not as one long multipart request.
 
-### Required Settings
+**Whole-ZIP adapters** (`POST /workouts/import/bulk`, `POST /workouts/import/export`) and direct posts to the API still send the full body in one request. For those clients (Bruno, curl, scripts), configure the reverse proxy (or hit the API port directly) with:
+
+### Settings for whole-ZIP / direct API uploads
 
 - **Maximum body size**: 500MB minimum
 - **Read timeout**: 10-30 minutes (depending on expected upload speed)
 - **Write timeout**: 10-30 minutes
 - **Connect timeout**: 10 minutes
 
-These settings are already configured in the API (`Program.cs`) and only need to be set at the reverse proxy level.
+These limits are already configured in the API (`Program.cs`) for Kestrel and form options.
 
 ### Testing Large Uploads
 
-After configuration, test with a large file:
-1. Export your data from Strava (typically 50-200MB)
-2. Import via Settings > Import > Bulk Strava Import
-3. Monitor reverse proxy logs for timeout errors
+After configuration, smoke-test through the command center (`:3000`):
+1. Export a large archive from Strava (typically 50–200MB), or use a Tempo Settings export with media
+2. Strava: **Import** page → Bulk Import Strava Export; Tempo restore: **Settings** → Export / Import
+3. Confirm upload progress then import/restore progress; optional: retry with Bruno/curl against the API for the whole-ZIP adapter
 
 ## SSL/TLS Configuration
 

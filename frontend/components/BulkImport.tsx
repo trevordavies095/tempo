@@ -1,11 +1,16 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
-import { importBulkStravaExport, type BulkImportResponse } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  importJobToBulkResponse,
+  type BulkImportResponse,
+  type ImportJob,
+} from '@/lib/api';
 import { useSettings } from '@/lib/settings';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { useFileDrop } from '@/hooks/useFileDrop';
+import { useImportJobSession } from '@/hooks/useImportJobSession';
 import { IconUpload } from '@tabler/icons-react';
 import { Button } from '@/components/ui/Button';
 
@@ -15,39 +20,59 @@ export function BulkImport() {
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
 
+  const onCompleted = useCallback(
+    (job: ImportJob) => {
+      invalidateWorkoutQueries(queryClient);
+      setImportResult(importJobToBulkResponse(job));
+      setSelectedFile(null);
+    },
+    [queryClient]
+  );
+
+  const session = useImportJobSession({
+    kind: 'strava_bulk',
+    unitPreference,
+    onCompleted,
+  });
+
+  const {
+    canStart,
+    isWorking,
+    jobId,
+    jobError,
+    otherKindMessage,
+    uploadError,
+    cancelPending,
+    progressLabel: getProgressLabel,
+    startUpload,
+    cancel,
+    clearError,
+  } = session;
+
   const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
     onFilesSelected: (files) => {
       if (files.length > 0) {
         setSelectedFile(files[0]);
         setImportResult(null);
+        clearError();
       }
     },
     acceptExtensions: ['.zip'],
     maxFiles: 1,
   });
 
-  const mutation = useMutation({
-    mutationFn: (file: File) => importBulkStravaExport(file, unitPreference),
-    onSuccess: (data) => {
-      invalidateWorkoutQueries(queryClient);
-      setImportResult(data);
-      setSelectedFile(null);
-    },
-    onError: (error: Error) => {
-      alert(`Error importing Strava export: ${error.message}`);
-    },
-  });
-
-
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      if (selectedFile) {
-        mutation.mutate(selectedFile);
+      if (selectedFile && canStart) {
+        startUpload(selectedFile);
       }
     },
-    [selectedFile, mutation, unitPreference]
+    [selectedFile, canStart, startUpload]
   );
+
+  const progressLabel = getProgressLabel('Import Strava Export');
+  const showError = !!jobError || !!uploadError;
 
   return (
     <div className="w-full">
@@ -68,6 +93,7 @@ export function BulkImport() {
             id="bulk-upload"
             accept=".zip"
             onChange={handleFileInput}
+            disabled={isWorking}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div className="text-center">
@@ -86,20 +112,46 @@ export function BulkImport() {
           </div>
         </div>
 
+        {otherKindMessage && (
+          <div className="p-4 bg-raised border border-border rounded-tempo">
+            <p className="text-sm text-ink">{otherKindMessage}</p>
+          </div>
+        )}
+
         {selectedFile && (
           <Button
             type="submit"
-            disabled={mutation.isPending}
+            disabled={!canStart}
             className="w-full"
           >
-            {mutation.isPending ? 'Importing...' : 'Import Strava Export'}
+            {progressLabel}
           </Button>
         )}
 
-        {mutation.isError && (
+        {isWorking && !selectedFile && (
+          <p className="text-sm text-ink">{progressLabel}</p>
+        )}
+
+        {isWorking && jobId && (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={cancelPending}
+            className="w-full"
+            onClick={() => cancel()}
+          >
+            Cancel import
+          </Button>
+        )}
+
+        {showError && (
           <div className="p-4 bg-canvas border border-danger/40 rounded-tempo">
             <p className="text-sm text-danger">
-              Error: {mutation.error instanceof Error ? mutation.error.message : 'Unknown error'}
+              Error:{' '}
+              {jobError ||
+                (uploadError instanceof Error
+                  ? uploadError.message
+                  : 'Unknown error')}
             </p>
           </div>
         )}

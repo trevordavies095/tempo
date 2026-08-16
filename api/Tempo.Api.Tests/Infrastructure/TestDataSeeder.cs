@@ -462,6 +462,7 @@ public static class TestDataSeeder
             await SafeDeleteFromTableAsync(db, "BestEfforts");
             await SafeDeleteFromTableAsync(db, "WorkoutRoutes");
             await SafeDeleteFromTableAsync(db, "Workouts");
+            await SafeDeleteFromTableAsync(db, "ImportJobs");
             await SafeDeleteFromTableAsync(db, "UserSettings");
             await SafeDeleteFromTableAsync(db, "Shoes");
             

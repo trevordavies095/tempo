@@ -1,0 +1,15 @@
+meta {
+  name: Put import job chunk
+  type: http
+  seq: 16
+}
+
+put {
+  url: {{baseUrl}}/workouts/import/jobs/{{jobId}}/chunks/0?total=1
+  body: binary
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/octet-stream
+}

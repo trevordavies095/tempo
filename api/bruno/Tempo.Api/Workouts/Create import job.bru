@@ -1,0 +1,20 @@
+meta {
+  name: Create import job
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{baseUrl}}/workouts/import/jobs
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "kind": "strava_bulk",
+    "filename": "export.zip",
+    "byteSize": 1024,
+    "unitPreference": "metric"
+  }
+}
