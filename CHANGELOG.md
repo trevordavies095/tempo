@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-08-16
+
 ### Added
 - **First-run onboarding**
   - Hard-gated wizard after registration: optional Tempo export restore, essential units/HR zones (optional default shoe), optional Strava archive
@@ -15,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Command center uploads ZIPs in **512 KiB** chunks, then polls job progress; cancel and refresh resume are supported
   - At most one active import job across Strava bulk and Tempo restore (onboarding or Settings → Migrate / restore)
   - Tempo export restore uses the same rails (`kind: tempo_export`) with nested statistics on the job document
+- **Shoe retirement**
+  - `IsRetired` on shoes; retire/restore from Settings; retired shoes stay on historical workouts but are hidden from active assignment defaults
 - **Command-center appearance**
   - System / Dark / Light in Settings (this browser only, `tempo-appearance` in `localStorage`; default System). Not UserSettings and not synced to iOS
 - **WorkoutTimeSeries on Workout overview**
@@ -33,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Control plane and Workout overview reskinned without IA changes
 - **Maps**
   - Carto Dark Matter in Dark appearance and Voyager in Light; polyline and highlight from identity tokens (OSM + CARTO attribution)
+
+### Migration
+- **Database:** applies `AddShoeIsRetired` (`IsRetired` on `Shoes`), `AddImportJobs` / `AddImportJobCancelAndChunks` / `AddImportJobResultJson` (`ImportJobs` table and related columns), and `AddUserOnboardingCompleted` (`OnboardingCompleted` on `Users`, existing users backfilled `true`). Run migrations or rely on automatic migration on startup.
 
 ## [2.6.0] - 2026-05-13
 
