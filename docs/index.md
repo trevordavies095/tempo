@@ -3,7 +3,7 @@
 > A privacy-first, self-hosted Strava alternative. Import GPX, FIT, and CSV files from Garmin, Apple Watch, Strava, and more. Keep all your data local—no subscriptions, no cloud required.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-2.0.0-green.svg)
+![Version](https://img.shields.io/badge/version-2.6.0-green.svg)
 ![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
@@ -16,7 +16,9 @@ Tempo is a self-hostable running tracker that gives you complete control over yo
 
 - **Multi-Format Support** - Import GPX, FIT (.fit, .fit.gz), and Strava CSV files from Garmin, Apple Watch, and other devices
 - **Workout Analytics** - Track distance, pace, elevation, splits, and time series data
-- **Interactive Maps** - Visualize routes with elevation profiles
+- **Workout Overview** - Map, splits, and HR/pace/elevation charts sharing one Highlight
+- **Appearance** - System, Dark, or Light on the command center (this browser only)
+- **Interactive Maps** - Themed route maps (dark/light tiles) with tokenized polylines
 - **Media Support** - Attach photos and videos to workouts
 - **Weather Data** - Automatic weather conditions for each workout
 - **Bulk Import** - Import multiple workouts at once via ZIP file (up to 500MB)

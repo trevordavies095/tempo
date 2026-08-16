@@ -9,10 +9,9 @@ export default function ErrorState({ error, message, className = '' }: ErrorStat
   
   return (
     <div className={`flex items-center justify-center ${className}`}>
-      <p className="text-sm text-red-600 dark:text-red-400">
+      <p className="text-sm text-danger">
         Error: {errorMessage}
       </p>
     </div>
   );
 }
-

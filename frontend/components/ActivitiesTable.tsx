@@ -15,12 +15,12 @@ interface ActivitiesTableProps {
 
 function getSortIcon(column: SortColumn, currentSortBy: SortColumn, currentSortOrder: SortOrder) {
   if (currentSortBy !== column) {
-    return <IconArrowDown className="inline-block w-3 h-3 ml-1 text-gray-400 dark:text-gray-500" />;
+    return <IconArrowDown className="inline-block w-3 h-3 ml-1 text-muted" />;
   }
   return currentSortOrder === 'desc' ? (
-    <IconArrowDown className="inline-block w-3 h-3 ml-1 text-gray-900 dark:text-gray-100" />
+    <IconArrowDown className="inline-block w-3 h-3 ml-1 text-ink" />
   ) : (
-    <IconArrowUp className="inline-block w-3 h-3 ml-1 text-gray-900 dark:text-gray-100" />
+    <IconArrowUp className="inline-block w-3 h-3 ml-1 text-ink" />
   );
 }
 
@@ -34,10 +34,10 @@ export default function ActivitiesTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full">
-        <thead className="bg-gray-50 dark:bg-gray-800">
+        <thead className="bg-canvas">
           <tr>
             <th
-              className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider cursor-pointer hover:bg-raised"
               onClick={() => onSort('startedAt')}
             >
               <div className="flex items-center">
@@ -46,7 +46,7 @@ export default function ActivitiesTable({
               </div>
             </th>
             <th
-              className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider cursor-pointer hover:bg-raised"
               onClick={() => onSort('name')}
             >
               <div className="flex items-center">
@@ -55,7 +55,7 @@ export default function ActivitiesTable({
               </div>
             </th>
             <th
-              className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider cursor-pointer hover:bg-raised"
               onClick={() => onSort('durationS')}
             >
               <div className="flex items-center">
@@ -64,7 +64,7 @@ export default function ActivitiesTable({
               </div>
             </th>
             <th
-              className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider cursor-pointer hover:bg-raised"
               onClick={() => onSort('distanceM')}
             >
               <div className="flex items-center">
@@ -73,7 +73,7 @@ export default function ActivitiesTable({
               </div>
             </th>
             <th
-              className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider cursor-pointer hover:bg-raised"
               onClick={() => onSort('elevGainM')}
             >
               <div className="flex items-center">
@@ -82,7 +82,7 @@ export default function ActivitiesTable({
               </div>
             </th>
             <th
-              className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider cursor-pointer hover:bg-raised"
               onClick={() => onSort('relativeEffort')}
             >
               <div className="flex items-center">
@@ -92,32 +92,32 @@ export default function ActivitiesTable({
             </th>
           </tr>
         </thead>
-        <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
+        <tbody className="divide-y divide-border">
           {workouts.map((workout) => (
-            <tr key={workout.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+            <tr key={workout.id} className="hover:bg-canvas">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                 {formatActivityDate(workout.startedAt)}
               </td>
               <td className="px-6 py-4 text-sm">
                 <Link
                   href={`/dashboard/${workout.id}`}
-                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline"
+                  className="text-ink underline decoration-border hover:decoration-ink"
                 >
                   {getWorkoutDisplayName(workout.name, workout.startedAt)}
                 </Link>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                 {formatDuration(workout.durationS)}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                 {formatDistance(workout.distanceM, unitPreference)}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                 {workout.elevGainM !== null && workout.elevGainM !== undefined
                   ? formatElevation(workout.elevGainM, unitPreference)
                   : '—'}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                 {workout.relativeEffort !== null && workout.relativeEffort !== undefined
                   ? workout.relativeEffort
                   : '—'}
@@ -129,4 +129,3 @@ export default function ActivitiesTable({
     </div>
   );
 }
-

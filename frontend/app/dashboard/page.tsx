@@ -10,10 +10,12 @@ import BestEffortsChart from '@/components/BestEffortsChart';
 import WorkoutCard from '@/components/WorkoutCard';
 import YearlyWeeklyChart from '@/components/YearlyWeeklyChart';
 import Pagination from '@/components/Pagination';
-import LoadingState from '@/components/LoadingState';
-import ErrorState from '@/components/ErrorState';
 import { calculateWeekFromInterval, generateIntervalFromWeek } from '@/utils/weekUtils';
 import { AuthGuard } from '@/components/AuthGuard';
+import { PageShell } from '@/components/ui/PageShell';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 function DashboardPageContent() {
   const [page, setPage] = useState(1);
@@ -88,107 +90,87 @@ function DashboardPageContent() {
     queryFn: () => getWorkouts(queryParams),
   });
 
+  const subtitle = !data || data.items.length === 0
+    ? selectedWeek
+      ? 'No workouts found for selected week'
+      : 'No workouts found in the last 7 days'
+    : selectedWeek
+      ? `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} for selected week`
+      : `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} in the last 7 days`;
+
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
-          <div className="w-full">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Dashboard
-            </h1>
-            <LoadingState message="Loading workouts..." className="mb-8" />
-          </div>
-        </main>
-      </div>
+      <PageShell density="control" title="Dashboard">
+        <EmptyState title="Loading workouts..." />
+      </PageShell>
     );
   }
 
   if (isError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
-          <div className="w-full">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Dashboard
-            </h1>
-            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-              <ErrorState error={error} message="Failed to load workouts" />
-            </div>
-          </div>
-        </main>
-      </div>
+      <PageShell density="control" title="Dashboard">
+        <Card>
+          <EmptyState
+            title="Failed to load workouts"
+            description={error instanceof Error ? error.message : 'The dashboard could not load your recent Workouts.'}
+          />
+        </Card>
+      </PageShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-16 px-8">
-        <div className="w-full mb-8">
-          <div className="mb-4">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Dashboard
-            </h1>
-            <p className="text-lg text-gray-600 dark:text-gray-400">
-              {!data || data.items.length === 0
-                ? selectedWeek
-                  ? 'No workouts found for selected week'
-                  : 'No workouts found in the last 7 days'
-                : selectedWeek
-                  ? `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} for selected week`
-                  : `${data.totalCount} workout${data.totalCount !== 1 ? 's' : ''} in the last 7 days`}
-            </p>
-          </div>
-        </div>
+    <PageShell density="control" title="Dashboard" subtitle={subtitle}>
+      <div className="w-full mb-8">
+        <YearlyWeeklyChart
+          selectedPeriodEndDate={selectedPeriodEndDate}
+          onPeriodChange={setSelectedPeriodEndDate}
+          selectedWeek={selectedWeek}
+          onWeekSelect={setSelectedWeek}
+        />
+      </div>
 
-        <div className="w-full mb-8">
-          <YearlyWeeklyChart
-            selectedPeriodEndDate={selectedPeriodEndDate}
-            onPeriodChange={setSelectedPeriodEndDate}
-            selectedWeek={selectedWeek}
-            onWeekSelect={setSelectedWeek}
-          />
+      <div className="w-full flex flex-col md:flex-row gap-6 mb-8">
+        <div className="flex flex-col gap-6 md:w-80 flex-shrink-0">
+          <WeeklyStatsWidget />
+          <RelativeEffortGraph />
+          <BestEffortsChart />
         </div>
-
-        <div className="w-full flex flex-col md:flex-row gap-6 mb-8">
-          <div className="flex flex-col gap-6 md:w-80 flex-shrink-0">
-            <WeeklyStatsWidget />
-            <RelativeEffortGraph />
-            <BestEffortsChart />
-          </div>
-          <div className="flex-1 min-w-0">
-            {!data || data.items.length === 0 ? (
-              <div className="p-8 text-center text-gray-600 dark:text-gray-400">
-                <p className="mb-4">
-                  {selectedWeek
-                    ? 'No workouts found for the selected week.'
-                    : 'No workouts found in the last 7 days.'}
-                </p>
-                <p>
-                  <Link href="/import" className="text-blue-600 dark:text-blue-400 hover:underline">
-                    Import a GPX file
-                  </Link>{' '}
-                  to get started, or select a different week from the chart above.
-                </p>
+        <div className="flex-1 min-w-0">
+          {!data || data.items.length === 0 ? (
+            <Card>
+              <EmptyState
+                title={
+                  selectedWeek
+                    ? 'No workouts found for the selected week'
+                    : 'No workouts found in the last 7 days'
+                }
+                description="Import a GPX file to get started, or select a different week from the chart above."
+                action={
+                  <Link href="/import">
+                    <Button>Import a GPX file</Button>
+                  </Link>
+                }
+              />
+            </Card>
+          ) : (
+            <>
+              <div className="flex flex-col gap-4">
+                {data.items.map((workout) => (
+                  <WorkoutCard key={workout.id} workout={workout} />
+                ))}
               </div>
-            ) : (
-              <>
-                <div className="flex flex-col gap-4">
-                  {data.items.map((workout) => (
-                    <WorkoutCard key={workout.id} workout={workout} />
-                  ))}
-                </div>
-                <Pagination
-                  currentPage={data.page}
-                  totalPages={data.totalPages}
-                  onPageChange={setPage}
-                  className="w-full mt-8"
-                />
-              </>
-            )}
-          </div>
+              <Pagination
+                currentPage={data.page}
+                totalPages={data.totalPages}
+                onPageChange={setPage}
+                className="w-full mt-8"
+              />
+            </>
+          )}
         </div>
-      </main>
-    </div>
+      </div>
+    </PageShell>
   );
 }
 

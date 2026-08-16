@@ -42,7 +42,31 @@ public class WorkoutTimeSeriesEndpointTests : IClassFixture<TempoWebApplicationF
     }
 
     [Fact]
-    public async Task GetWorkoutTimeSeries_ReturnsEmptyItems_WhenNoHeartRateSamples()
+    public async Task GetWorkoutTimeSeries_ReturnsEmptyItems_WhenNoSamples()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db, durationS: 600);
+        }
+
+        var response = await client.GetAsync($"/workouts/{workout.Id}/time-series");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<WorkoutTimeSeriesResponse>();
+        body.Should().NotBeNull();
+        body!.Items.Should().BeEmpty();
+        body.TotalCount.Should().Be(0);
+        body.TotalPages.Should().Be(0);
+        body.Page.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetWorkoutTimeSeries_ReturnsSamples_WhenNoHeartRateButOtherSensors()
     {
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
@@ -66,10 +90,9 @@ public class WorkoutTimeSeriesEndpointTests : IClassFixture<TempoWebApplicationF
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<WorkoutTimeSeriesResponse>();
         body.Should().NotBeNull();
-        body!.Items.Should().BeEmpty();
-        body.TotalCount.Should().Be(0);
-        body.TotalPages.Should().Be(0);
-        body.Page.Should().Be(1);
+        body!.Items.Should().NotBeEmpty();
+        body.Items.Should().OnlyContain(i => i.HeartRateBpm == null);
+        body.Items.Should().OnlyContain(i => i.ElevationM != null);
     }
 
     [Fact]
@@ -131,6 +154,7 @@ public class WorkoutTimeSeriesEndpointTests : IClassFixture<TempoWebApplicationF
         elapsed.Should().BeInAscendingOrder();
 
         body.Items.Should().OnlyContain(i => i.HeartRateBpm >= 60 && i.HeartRateBpm <= 200);
+        body.Items.Should().OnlyContain(i => i.ElevationM != null);
     }
 
     [Fact]
@@ -227,8 +251,20 @@ public class WorkoutTimeSeriesEndpointTests : IClassFixture<TempoWebApplicationF
         [JsonPropertyName("elapsedSeconds")]
         public int ElapsedSeconds { get; set; }
 
+        [JsonPropertyName("distanceM")]
+        public double? DistanceM { get; set; }
+
         [JsonPropertyName("heartRateBpm")]
-        public int HeartRateBpm { get; set; }
+        public int? HeartRateBpm { get; set; }
+
+        [JsonPropertyName("cadenceRpm")]
+        public int? CadenceRpm { get; set; }
+
+        [JsonPropertyName("speedMps")]
+        public double? SpeedMps { get; set; }
+
+        [JsonPropertyName("elevationM")]
+        public double? ElevationM { get; set; }
     }
 
     private sealed class ErrorResponse

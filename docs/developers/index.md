@@ -16,7 +16,7 @@ Tempo is a full-stack application built with modern web technologies. This docum
 
 ## Technology Stack
 
-- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS
+- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS (semantic tokens, Geist, hand-rolled UI kit)
 - **Icons**: Tabler Icons (@tabler/icons-react)
 - **Backend**: ASP.NET Core 9 Minimal APIs (C#)
 - **Database**: PostgreSQL 16 with JSONB fields

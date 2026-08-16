@@ -70,3 +70,5 @@ coverage-report/
 site/
 
 Tempo_Icons/
+
+.scratch/

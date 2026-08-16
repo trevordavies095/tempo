@@ -348,6 +348,22 @@ Recalculate splits for all workouts:
 POST /workouts/recalculate-splits
 ```
 
+### Get Workout Time Series
+
+Paginated WorkoutTimeSeries samples for charts and analysis:
+
+```http
+GET /workouts/{id}/time-series?page=1&pageSize=1000
+```
+
+Query parameters:
+- `page` - Page number (default: 1)
+- `pageSize` - Items per page (default: 1000, maximum: 5000)
+
+Each item includes `elapsedSeconds` plus optional sensors: `distanceM`, `heartRateBpm`, `cadenceRpm`, `powerWatts`, `speedMps`, `gradePercent`, `elevationM`, `temperatureC`, `verticalSpeedMps`. Null fields mean that sensor was not recorded at that sample. Samples are sparse (not every elapsed second). The server does not interpolate. Ordering is ascending by `elapsedSeconds`, then by row id.
+
+The command-center overview client follows pages until complete or 20,000 samples and still renders what it loaded.
+
 ### Get Similar Routes
 
 Find workouts with similar routes to a given workout:

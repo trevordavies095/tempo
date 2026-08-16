@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Command-center appearance**
+  - System / Dark / Light in Settings (this browser only, `tempo-appearance` in `localStorage`; default System). Not UserSettings and not synced to iOS
+- **WorkoutTimeSeries on Workout overview**
+  - Heart rate, pace (from speed), and elevation charts when samples exist; empty state when they do not
+  - Shared **Highlight** across map, splits, and charts
+
+### Changed
+- **WebUI visual identity**
+  - Dark-first command center: Geist, T mark, black + volt yellow tokens; hand-rolled kit (`PageShell`, `Card`, `Button`, `Dialog`, `EmptyState`, `Tabs`)
+  - Control plane and Workout overview reskinned without IA changes
+- **Maps**
+  - Carto Dark Matter in Dark appearance and Voyager in Light; polyline and highlight from identity tokens (OSM + CARTO attribution)
+
 ## [2.6.0] - 2026-05-13
 
 ### Added

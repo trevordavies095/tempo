@@ -47,7 +47,7 @@ Write clear, descriptive commit messages:
 git commit -m "Add workout export functionality
 
 - Implement GPX export endpoint
-- Add export button to workout details page
+- Add export button to Workout overview
 - Include route and metadata in export"
 ```
 
@@ -75,8 +75,9 @@ Then create a pull request on GitHub.
 - Follow React best practices
 - Use functional components with hooks
 - Keep components small and focused
-- Use Tailwind CSS for styling
-- **Icons**: Use Tabler Icons (`@tabler/icons-react`) for all icons - do not create custom SVG icons. Import icons as needed: `import { IconName } from '@tabler/icons-react'`
+- Use Tailwind CSS with semantic tokens (`canvas`, `ink`, `volt`, …), not `blue-600` as the brand accent
+- Prefer kit primitives in `frontend/components/ui/` (`PageShell`, `Card`, `Button`, `Dialog`, `EmptyState`, `Tabs`) over one-off page chrome
+- **Icons**: Use Tabler Icons (`@tabler/icons-react`) for UI icons. Do not invent custom SVG icons. Brand marks in `frontend/public/` (`tempo-mark-volt.png`, `tempo-mark-ink.png`) are the exception. Import icons as needed: `import { IconName } from '@tabler/icons-react'`
 
 ### General
 
@@ -117,8 +118,6 @@ Include:
 
 - New workout import formats
 - Additional analytics and statistics
-- Export functionality
-- Mobile app support
 - Integration with other services
 
 ### Improvements

@@ -10,7 +10,7 @@ Tempo is a self-hosted running tracker that helps you track and analyze your wor
 
 - **[Importing Workouts](importing-workouts.md)** - Learn how to import single workout files (GPX, FIT, CSV)
 - **[Bulk Import](bulk-import.md)** - Import your entire Strava history at once
-- **[Viewing Workouts](viewing-workouts.md)** - Explore the dashboard, activity list, and detailed workout views
+- **[Viewing Workouts](viewing-workouts.md)** - Explore the dashboard, activities list, and Workout overview
 - **[Media](media.md)** - Add photos and videos to your workouts
 - **[Analytics](analytics.md)** - Understand metrics, statistics, and performance data
 - **[Settings](settings.md)** - Configure preferences, heart rate zones, unit preferences, shoe tracking, and export/import data (including backup restoration)

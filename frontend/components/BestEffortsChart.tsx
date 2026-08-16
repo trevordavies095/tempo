@@ -2,9 +2,12 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getBestEfforts, recalculateBestEfforts, type BestEffortItem } from '@/lib/api';
+import { getBestEfforts, recalculateBestEfforts } from '@/lib/api';
 import Link from 'next/link';
 import { IconRefresh } from '@tabler/icons-react';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 /// <summary>
 /// Format seconds as MM:SS or HH:MM:SS
@@ -20,6 +23,45 @@ function formatTime(seconds: number): string {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
+function RecalculateConfirm({
+  onCancel,
+  onConfirm,
+  isPending,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+  isPending: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50">
+      <Card className="max-w-md mx-4">
+        <h3 className="text-lg font-semibold text-ink mb-2">
+          Recalculate Best Efforts
+        </h3>
+        <p className="text-sm text-muted mb-4">
+          Recalculating best efforts may take a few moments. Continue?
+        </p>
+        <div className="flex gap-3 justify-end">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onCancel}
+            disabled={isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={onConfirm}
+            disabled={isPending}
+          >
+            {isPending ? 'Recalculating...' : 'Recalculate'}
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
 
 export default function BestEffortsChart() {
   const [showRecalculateConfirm, setShowRecalculateConfirm] = useState(false);
@@ -52,84 +94,60 @@ export default function BestEffortsChart() {
 
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+      <Card>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <h2 className="text-lg font-semibold text-ink">
             Best Efforts
           </h2>
         </div>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Loading...</p>
-        </div>
-      </div>
+        <EmptyState title="Loading..." />
+      </Card>
     );
   }
 
   if (isError) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+      <Card>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <h2 className="text-lg font-semibold text-ink">
             Best Efforts
           </h2>
         </div>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-sm text-red-600 dark:text-red-400">
-            Error: {error instanceof Error ? error.message : 'Failed to load best efforts'}
-          </p>
-        </div>
-      </div>
+        <EmptyState
+          title="Could not load best efforts"
+          description={error instanceof Error ? error.message : 'Failed to load best efforts'}
+        />
+      </Card>
     );
   }
 
   if (!data || !data.distances || data.distances.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+      <Card>
         <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <h2 className="text-lg font-semibold text-ink">
             Best Efforts
           </h2>
           <button
             onClick={handleRecalculate}
-            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+            className="p-1.5 text-muted hover:text-ink transition-colors"
             title="Recalculate best efforts"
           >
             <IconRefresh className="w-4 h-4" />
           </button>
         </div>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            No best efforts data available. Click "Recalculate" to calculate best efforts from your workouts.
-          </p>
-        </div>
+        <EmptyState
+          title="No best efforts yet"
+          description='Click "Recalculate" to calculate best efforts from your workouts.'
+        />
         {showRecalculateConfirm && (
-          <div className="fixed inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md mx-4 border border-gray-200 dark:border-gray-700 shadow-xl">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                Recalculate Best Efforts
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Recalculating best efforts may take a few moments. Continue?
-              </p>
-              <div className="flex gap-3 justify-end">
-                <button
-                  onClick={handleCancelRecalculate}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmRecalculate}
-                  disabled={recalculateMutation.isPending}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {recalculateMutation.isPending ? 'Recalculating...' : 'Recalculate'}
-                </button>
-              </div>
-            </div>
-          </div>
+          <RecalculateConfirm
+            onCancel={handleCancelRecalculate}
+            onConfirm={handleConfirmRecalculate}
+            isPending={recalculateMutation.isPending}
+          />
         )}
-      </div>
+      </Card>
     );
   }
 
@@ -137,15 +155,15 @@ export default function BestEffortsChart() {
   const sortedData = [...data.distances].sort((a, b) => a.distanceM - b.distanceM);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+    <Card>
       <div className="flex items-center gap-2 mb-4">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <h2 className="text-lg font-semibold text-ink">
           Best Efforts
         </h2>
         <button
           onClick={handleRecalculate}
           disabled={recalculateMutation.isPending}
-          className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="p-1.5 text-muted hover:text-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           title="Recalculate best efforts"
         >
           <IconRefresh className={`w-4 h-4 ${recalculateMutation.isPending ? 'animate-spin' : ''}`} />
@@ -154,16 +172,16 @@ export default function BestEffortsChart() {
 
       <div className="overflow-x-auto">
         <table className="w-full">
-          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+          <tbody className="divide-y divide-border">
             {sortedData.map((item) => (
-              <tr key={item.distance} className="bg-white dark:bg-gray-800">
-                <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
+              <tr key={item.distance}>
+                <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-ink">
                   {item.distance}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-sm">
                   <Link
                     href={`/dashboard/${item.workoutId}`}
-                    className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline"
+                    className="text-ink underline decoration-border hover:decoration-ink"
                   >
                     {formatTime(item.timeS)}
                   </Link>
@@ -175,34 +193,12 @@ export default function BestEffortsChart() {
       </div>
 
       {showRecalculateConfirm && (
-        <div className="fixed inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md mx-4 border border-gray-200 dark:border-gray-700 shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-              Recalculate Best Efforts
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Recalculating best efforts may take a few moments. Continue?
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={handleCancelRecalculate}
-                disabled={recalculateMutation.isPending}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmRecalculate}
-                disabled={recalculateMutation.isPending}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {recalculateMutation.isPending ? 'Recalculating...' : 'Recalculate'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <RecalculateConfirm
+          onCancel={handleCancelRecalculate}
+          onConfirm={handleConfirmRecalculate}
+          isPending={recalculateMutation.isPending}
+        />
       )}
-    </div>
+    </Card>
   );
 }
-

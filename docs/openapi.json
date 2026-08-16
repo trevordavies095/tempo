@@ -1435,8 +1435,8 @@
         "tags": [
           "Workouts"
         ],
-        "summary": "Paginated heart-rate samples for a workout (from stored time series).",
-        "description": "Returns paginated heart-rate samples from stored workout time series. Each item has elapsedSeconds (integer seconds from workout start) and heartRateBpm (integer). Samples are sparse: only timestamps where heart rate was recorded are included (not a dense sample for every second). GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. The server does not interpolate missing seconds; clients may interpolate if needed. Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. Default pageSize is 1000 with a maximum of 5000; use multiple requests for long activities.",
+        "summary": "Paginated WorkoutTimeSeries samples for a workout.",
+        "description": "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm, powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. Null fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second is present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. The server does not interpolate missing seconds; clients may interpolate if needed. Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. Default pageSize is 1000 with a maximum of 5000; use multiple requests for long activities.",
         "operationId": "GetWorkoutTimeSeries",
         "parameters": [
           {

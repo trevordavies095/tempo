@@ -1,9 +1,11 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { LineChart, Line, Area, AreaChart, XAxis, YAxis, ResponsiveContainer, Tooltip, ComposedChart, ReferenceArea } from 'recharts';
+import { Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ComposedChart, ReferenceArea } from 'recharts';
 import { getRelativeEffortStats } from '@/lib/api';
 import { calculateYAxisTicks, calculateYAxisMax } from '@/utils/chartUtils';
+import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 export default function RelativeEffortGraph() {
   // Get timezone offset in minutes (negative for timezones ahead of UTC)
@@ -20,29 +22,26 @@ export default function RelativeEffortGraph() {
 
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+      <Card>
+        <h2 className="text-lg font-semibold text-ink mb-4">
           Relative Effort
         </h2>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Loading...</p>
-        </div>
-      </div>
+        <EmptyState title="Loading..." />
+      </Card>
     );
   }
 
   if (isError) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+      <Card>
+        <h2 className="text-lg font-semibold text-ink mb-4">
           Relative Effort
         </h2>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-sm text-red-600 dark:text-red-400">
-            Error: {error instanceof Error ? error.message : 'Failed to load relative effort'}
-          </p>
-        </div>
-      </div>
+        <EmptyState
+          title="Could not load relative effort"
+          description={error instanceof Error ? error.message : 'Failed to load relative effort'}
+        />
+      </Card>
     );
   }
 
@@ -54,16 +53,15 @@ export default function RelativeEffortGraph() {
   const hasData = (data.currentWeek?.some(val => val > 0) || false) || (data.previousWeeks?.some(val => val > 0) || false);
   if (!hasData) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+      <Card>
+        <h2 className="text-lg font-semibold text-ink mb-4">
           Relative Effort
         </h2>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            No relative effort data available. Relative effort is calculated from heart rate zones.
-          </p>
-        </div>
-      </div>
+        <EmptyState
+          title="No relative effort data"
+          description="Relative effort is calculated from heart rate zones."
+        />
+      </Card>
     );
   }
 
@@ -108,11 +106,11 @@ export default function RelativeEffortGraph() {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-2">
-          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+        <div className="bg-raised border border-border rounded-tempo shadow-lg p-2">
+          <p className="text-sm font-medium text-ink">
             {data.day}: {data.cumulativeEffort}
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-xs text-muted">
             Range: {data.rangeMin} - {data.rangeMax}
           </p>
         </div>
@@ -131,16 +129,15 @@ export default function RelativeEffortGraph() {
           y={0}
           dy={16}
           textAnchor="middle"
-          fill="currentColor"
-          className="text-sm font-medium text-gray-700 dark:text-gray-300"
+          fill="var(--ink)"
+          className="text-sm font-medium"
         >
           {payload.value}
         </text>
         {isCurrentDay && (
           <polygon
             points="0,24 -6,32 6,32"
-            fill="#f97316"
-            className="text-orange-500"
+            fill="var(--volt)"
           />
         )}
       </g>
@@ -148,28 +145,28 @@ export default function RelativeEffortGraph() {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+    <Card>
+      <h2 className="text-lg font-semibold text-ink mb-4">
         Relative Effort
       </h2>
       
       <div className="mb-4">
-        <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+        <div className="text-2xl font-bold text-ink">
           {data.currentWeekTotal}
         </div>
         <div className="flex items-center gap-2 mt-1">
-          <div className="text-xs text-gray-500 dark:text-gray-400">
+          <div className="text-xs text-muted">
             {status === 'within' && 'Within range'}
             {status === 'above' && 'Above range'}
             {status === 'below' && 'Below range'}
           </div>
           {lastWeekTotal > 0 && (
-            <div className={`text-xs ${weekOverWeekChange > 0 ? 'text-green-600 dark:text-green-400' : weekOverWeekChange < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
+            <div className={`text-xs ${weekOverWeekChange > 0 ? 'text-ink' : weekOverWeekChange < 0 ? 'text-danger' : 'text-muted'}`}>
               {weekOverWeekDirection} {Math.abs(weekOverWeekChange).toFixed(0)}% vs last week
             </div>
           )}
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        <div className="text-xs text-muted mt-1">
           3-week avg: {(data.threeWeekAverage || 0).toFixed(0)} (range: {data.rangeMin || 0} - {data.rangeMax || 0})
         </div>
       </div>
@@ -180,8 +177,8 @@ export default function RelativeEffortGraph() {
             <ComposedChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 20 }}>
             <defs>
               <linearGradient id="rangeGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="rgba(156, 163, 175, 0.25)" stopOpacity={0.25} />
-                <stop offset="100%" stopColor="rgba(156, 163, 175, 0.1)" stopOpacity={0.1} />
+                <stop offset="0%" stopColor="var(--muted)" stopOpacity={0.25} />
+                <stop offset="100%" stopColor="var(--muted)" stopOpacity={0.1} />
               </linearGradient>
             </defs>
             {/* Range band using ReferenceArea - horizontal band showing suggested range */}
@@ -200,13 +197,13 @@ export default function RelativeEffortGraph() {
               dot={(props: any) => {
                 // Only show dot if this day has data
                 if (props.payload?.hasData) {
-                  return <circle cx={props.cx} cy={props.cy} r={4} fill="#3b82f6" />;
+                  return <circle cx={props.cx} cy={props.cy} r={4} fill="var(--volt)" />;
                 }
                 return null;
               }}
               activeDot={(props: any) => {
                 if (props.payload?.hasData) {
-                  return <circle cx={props.cx} cy={props.cy} r={6} fill="#3b82f6" />;
+                  return <circle cx={props.cx} cy={props.cy} r={6} fill="var(--volt)" />;
                 }
                 return null;
               }}
@@ -223,7 +220,7 @@ export default function RelativeEffortGraph() {
               domain={[0, adjustedYAxisMax]}
               axisLine={false}
               tickLine={false}
-              tick={{ fill: '#6b7280', fontSize: 12 }}
+              tick={{ fill: 'var(--muted)', fontSize: 12 }}
               width={50}
               tickMargin={5}
               ticks={yAxisTicks}
@@ -234,7 +231,6 @@ export default function RelativeEffortGraph() {
         </ResponsiveContainer>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
-

@@ -5,11 +5,31 @@ Configure Tempo to match your preferences and needs.
 ## Overview
 
 Tempo settings allow you to customize:
+- Appearance (System, Dark, or Light) on this browser
 - Unit preferences (metric/imperial)
 - Heart rate zones
 - Relative effort calculation
 - Shoe tracking and management
 - Data export and import
+
+## Appearance
+
+The command center is dark-first (black canvas, volt yellow accent). Light theme still exists. Appearance is a **browser preference**, not UserSettings: it is not stored on the server and does not sync to the iOS app.
+
+### Options
+
+- **System** (default) — Follows the operating system light/dark preference
+- **Dark** — Forces the dark theme
+- **Light** — Forces the light theme
+
+The choice is stored in this browser as `tempo-appearance` and survives reload. Volt yellow is used for primary actions, active navigation, and highlights — never as body text.
+
+### Changing Appearance
+
+1. Navigate to Settings
+2. In **Display Preferences**, choose System, Dark, or Light
+
+No Save button is required; the selection applies immediately.
 
 ## Unit Preferences
 
@@ -393,6 +413,7 @@ Import your data for:
 ### Viewing Settings
 
 All settings are accessible from the Settings page:
+- Appearance (this browser only)
 - Unit preferences
 - Heart rate zone configuration
 - Relative effort management
