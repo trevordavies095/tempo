@@ -9,6 +9,7 @@ interface User {
   username: string;
   createdAt: string;
   lastLoginAt: string | null;
+  onboardingCompleted: boolean;
 }
 
 interface AuthContextType {
@@ -19,9 +20,14 @@ interface AuthContextType {
   logout: () => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
   checkAuth: () => Promise<void>;
+  completeOnboarding: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function postAuthPath(user: User): string {
+  return user.onboardingCompleted ? '/dashboard' : '/onboarding';
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -61,8 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (username: string, password: string, rememberMe?: boolean) => {
     try {
       await api.login(username, password, rememberMe);
-      await checkAuth();
-      router.push('/dashboard');
+      const userInfo = await api.getCurrentUser();
+      setUser(userInfo);
+      setIsLoading(false);
+      router.push(postAuthPath(userInfo));
     } catch (error) {
       throw error;
     }
@@ -90,6 +98,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const completeOnboarding = async () => {
+    const userInfo = await api.completeOnboarding();
+    setUser(userInfo);
+    router.push('/dashboard');
+  };
+
   const value: AuthContextType = {
     user,
     isAuthenticated: !!user,
@@ -98,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     register,
     checkAuth,
+    completeOnboarding,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -110,4 +125,3 @@ export function useAuth() {
   }
   return context;
 }
-

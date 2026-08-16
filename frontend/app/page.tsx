@@ -6,17 +6,17 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export default function Home() {
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   useEffect(() => {
     if (!isLoading) {
-      if (isAuthenticated) {
-        router.push('/dashboard');
-      } else {
+      if (isAuthenticated && user) {
+        router.push(user.onboardingCompleted ? '/dashboard' : '/onboarding');
+      } else if (!isAuthenticated) {
         router.push('/login');
       }
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isAuthenticated, isLoading, user, router]);
 
   // Show loading state while checking
   return (

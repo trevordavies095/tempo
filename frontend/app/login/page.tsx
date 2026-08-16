@@ -25,13 +25,13 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [registrationAvailable, setRegistrationAvailable] = useState(false);
-  const { login, register, isAuthenticated } = useAuth();
+  const { login, register, isAuthenticated, user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    // If already authenticated, redirect to dashboard
-    if (isAuthenticated) {
-      router.push('/dashboard');
+    // If already authenticated, redirect based on onboarding state
+    if (isAuthenticated && user) {
+      router.push(user.onboardingCompleted ? '/dashboard' : '/onboarding');
       return;
     }
 
@@ -48,8 +48,10 @@ export default function LoginPage() {
       }
     };
 
-    checkRegistration();
-  }, [isAuthenticated, router]);
+    if (!isAuthenticated) {
+      checkRegistration();
+    }
+  }, [isAuthenticated, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

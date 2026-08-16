@@ -23,6 +23,12 @@ public class User
     /// </summary>
     public int SessionVersion { get; set; }
 
+    /// <summary>
+    /// True after first-run onboarding finishes. New registrations default to false;
+    /// existing users are backfilled to true by migration.
+    /// </summary>
+    public bool OnboardingCompleted { get; set; }
+
     public ICollection<ApiKey> ApiKeys { get; set; } = new List<ApiKey>();
 }
 

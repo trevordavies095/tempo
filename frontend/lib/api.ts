@@ -88,6 +88,7 @@ export interface UserInfo {
   username: string;
   createdAt: string;
   lastLoginAt: string | null;
+  onboardingCompleted: boolean;
 }
 
 export interface RegistrationAvailableResponse {
@@ -1417,6 +1418,24 @@ export async function getCurrentUser(): Promise<UserInfo> {
 
   if (!response.ok) {
     throw new Error(`Failed to get current user: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function completeOnboarding(): Promise<UserInfo> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/onboarding/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (response.status === 401) {
+    throw new Error('Not authenticated');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to complete onboarding: ${response.status}`);
   }
 
   return response.json();
