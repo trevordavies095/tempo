@@ -66,9 +66,13 @@ Bulk import processing may take several minutes depending on:
 - File sizes
 - Server performance
 
-You'll see progress updates during processing.
+You'll see upload progress, then import progress (`processed` / `total`). You can cancel while the job is active; workouts already imported stay. Refreshing the Import page resumes an in-progress Strava job.
 
 **Note**: If you've set a default shoe in Settings, all imported workouts will automatically be assigned to that shoe. You can change or remove shoe assignments later from each Workout's overview.
+
+### One import at a time
+
+Tempo runs at most one import job at a time across Strava bulk import and [Tempo export restore in Settings](settings.md#importing-data). If a Tempo restore is already running, the Import page shows a message and will not start a Strava import until that job finishes or is cancelled in Settings. Tempo backups use Settings export/import — not this Strava bulk flow.
 
 ### Step 5: Review Import Summary
 
@@ -126,9 +130,19 @@ If processing seems stuck:
 - Verify server has sufficient resources
 - Consider splitting very large exports into smaller ZIP files
 
+### Cannot Start / Message About Tempo Restore
+
+- Finish or cancel the Tempo export restore in [Settings](settings.md#importing-data) first
+- Only one import job can run at a time (Strava bulk or Settings restore)
+
+### Partial Import After Cancel
+
+- Already imported workouts remain
+- Re-upload the same ZIP; duplicates skip and incomplete workouts can update
+
 ## Next Steps
 
 - [View your imported workouts](viewing-workouts.md)
-- [Configure settings](settings.md) for your preferences
+- [Configure settings](settings.md) for your preferences (including Tempo backup restore)
 - [Add media](media.md) to enhance your workouts
 

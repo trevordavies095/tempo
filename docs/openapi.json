@@ -1645,7 +1645,7 @@
           "Workouts"
         ],
         "summary": "Create a receiving Strava bulk import job for chunked upload",
-        "description": "Creates a receiving Strava bulk import job (filename, byteSize, optional unitPreference). Upload 512 KiB chunks then POST complete.",
+        "description": "Creates a receiving import job. Body requires kind (strava_bulk | tempo_export), filename, byteSize. unitPreference is optional for strava_bulk and rejected for tempo_export. Upload 512 KiB chunks then POST complete.",
         "operationId": "CreateImportJob",
         "requestBody": {
           "content": {
@@ -1948,7 +1948,7 @@
           "Workouts"
         ],
         "summary": "Import Tempo export ZIP file",
-        "description": "Uploads and processes a ZIP file containing a complete Tempo export, restoring all user data\nincluding workouts, media files, settings, shoes, routes, splits, time series, and best efforts.\nDuplicates are skipped by default. GUIDs and timestamps from the export are preserved.",
+        "description": "Accepts a Tempo export ZIP and returns 202 with a job document. Poll GET /workouts/import/jobs/{id}\nuntil completed or failed. Restores workouts, media, settings, shoes, and related entities.",
         "operationId": "ImportExport",
         "requestBody": {
           "content": {
@@ -1962,8 +1962,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request"
@@ -2096,6 +2113,10 @@
       "CreateImportJobRequest": {
         "type": "object",
         "properties": {
+          "kind": {
+            "type": "string",
+            "nullable": true
+          },
           "filename": {
             "type": "string",
             "nullable": true
@@ -2214,6 +2235,75 @@
           "errorMessage": {
             "type": "string",
             "nullable": true
+          },
+          "statistics": {
+            "$ref": "#/components/schemas/ImportJobStatistics"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "errorMessages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tempo export string errors from ResultJson (avoids clashing with flat int Tempo.Api.Models.ImportJobDocument.Errors).",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportJobItemStatistics": {
+        "type": "object",
+        "properties": {
+          "imported": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "skipped": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errors": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportJobStatistics": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "shoes": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "workouts": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "routes": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "splits": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "timeSeries": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "media": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "bestEfforts": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "rawFiles": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
           }
         },
         "additionalProperties": false

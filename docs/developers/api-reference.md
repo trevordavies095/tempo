@@ -187,13 +187,24 @@ Supports files up to 500MB. Per activity file uses the same intake outcomes (`cr
 Restore a Tempo export ZIP as an import job (same rails as Strava bulk):
 
 ```http
+POST /workouts/import/jobs
+Content-Type: application/json
+
+{ "kind": "tempo_export", "filename": "tempo-export.zip", "byteSize": 12345 }
+```
+
+Then the same chunk PUT + complete flow as Strava (`unitPreference` must not be sent — **400** if present). Command center uses this path.
+
+Whole-file adapter (Bruno/curl):
+
+```http
 POST /workouts/import/export
 Content-Type: multipart/form-data
 
 file: [Tempo export ZIP]
 ```
 
-Returns **202** with a job document (`kind: tempo_export`). Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Command center should prefer chunked `POST /workouts/import/jobs` with `"kind": "tempo_export"` (no `unitPreference`). At most one import job runs at a time across Strava and Tempo.
+Returns **202** with a job document (`kind: tempo_export`). Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Structural ZIP/manifest failure → `failed`; finished with per-item problems → `completed` with nested `statistics` / `warnings` / `errorMessages` on the job document. `DELETE /workouts/import/jobs/{id}` cancels; already restored data stays. At most one import job runs at a time across Strava and Tempo (**409** if another is active).
 
 ### Export All Data
 

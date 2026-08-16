@@ -310,15 +310,19 @@ Import functionality allows you to restore data from a previously exported Tempo
 - Recover from data loss or accidental deletion
 - Handle duplicate detection automatically
 
+Settings restore runs as a background import job (same rails as [Strava bulk import](bulk-import.md)): the ZIP uploads in chunks, then Tempo restores item by item with live progress.
+
 #### How to Import
 
 1. Navigate to Settings
 2. Find the "Export / Import" section
 3. In the "Import Data" area, click or drag and drop your Tempo export ZIP file
-4. Wait for the import to complete (may take several minutes for large exports)
-5. Review the import summary showing what was imported, skipped, or had errors
+4. Watch upload progress (%), then restore progress (`processed` / `total`)
+5. When finished, review the import summary showing what was imported, skipped, or had errors
 
-**Note**: The import process may take several minutes if you have many workouts or large media files. The page will show "Importing..." while the process is running.
+**Progress and cancel**: Large exports can take several minutes. You can cancel while uploading or restoring; items already restored stay. Re-upload the same ZIP later — duplicates are skipped (and incomplete workouts can be updated) as usual.
+
+**One import at a time**: Tempo allows only one active import job across Settings restore and the Import page’s Strava bulk import. If a Strava import is running, Settings shows a message and will not start a restore until that job finishes or is cancelled. Refreshing Settings resumes an in-progress Tempo restore.
 
 #### What Gets Imported
 
@@ -382,6 +386,21 @@ After import completes, you'll see a detailed summary including:
 - Check that the file size is under 500MB
 - Ensure you're logged in
 - Check API logs for specific error messages
+
+**Cannot Start Import / Message About Strava**
+- Finish or cancel the Strava bulk import on the Import page first
+- Only one import job can run at a time (Settings restore or Strava bulk)
+
+**Progress Seems Stuck**
+- Large restores can take 10+ minutes; watch `processed` / `total` update
+- Refresh the Settings page — an active Tempo restore resumes from the server
+- Check whether you cancelled; partial restore is expected after cancel
+- Verify server resources and API logs
+
+**Partial Restore After Cancel**
+- Already imported shoes, workouts, media, and settings remain
+- Re-import the same ZIP; duplicates skip and incomplete items can update
+- Review the previous summary warnings/errors if present
 
 **Some Items Not Imported**
 - Check the import summary for skipped items

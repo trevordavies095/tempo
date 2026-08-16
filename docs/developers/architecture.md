@@ -122,6 +122,13 @@ This ensures migrations can be safely applied even when database state doesn't m
 3. Orchestrator uses `BulkImportService` for ZIP safety, `activities.csv`, non-run skip, per-file Workout intake, and Strava media
 4. Intake outcomes map to job counters (`created` / `updated` / `skipped` / error). Poll GET until `completed` or `failed`
 
+### Tempo Export Restore Flow
+
+1. Command center creates a receiving job with `kind: tempo_export` and PUTs 512 KiB ZIP chunks (or Bruno/curl POSTs the whole ZIP to `/workouts/import/export`)
+2. Complete (or adapter accept) queues the job; `ImportJobWorker` runs `ImportService.ImportExportAsync`
+3. Restore walks settings, shoes, workouts, routes, splits, time series, media, best efforts, and raw files with progress/cancel between items
+4. Nested `statistics` / `warnings` / `errorMessages` land on the job document. Same global one-active-job mutex as Strava bulk
+
 ## Authentication
 
 - JWT-based authentication with httpOnly cookies
