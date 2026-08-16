@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getWeeklyStats, getYearlyStats } from '@/lib/api';
 import { formatDistance } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
+import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 export default function WeeklyStatsWidget() {
   // Get timezone offset in minutes (negative for timezones ahead of UTC)
@@ -26,29 +28,26 @@ export default function WeeklyStatsWidget() {
 
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+      <Card>
+        <h2 className="text-lg font-semibold text-ink mb-4">
           This Week
         </h2>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Loading...</p>
-        </div>
-      </div>
+        <EmptyState title="Loading..." />
+      </Card>
     );
   }
 
   if (isError) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+      <Card>
+        <h2 className="text-lg font-semibold text-ink mb-4">
           This Week
         </h2>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-sm text-red-600 dark:text-red-400">
-            Error: {error instanceof Error ? error.message : 'Failed to load stats'}
-          </p>
-        </div>
-      </div>
+        <EmptyState
+          title="Could not load stats"
+          description={error instanceof Error ? error.message : 'Failed to load stats'}
+        />
+      </Card>
     );
   }
 
@@ -74,17 +73,17 @@ export default function WeeklyStatsWidget() {
   const scaleMax = maxValue * 1.1; // Scale goes 10% higher than max value
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+    <Card>
+      <h2 className="text-lg font-semibold text-ink mb-4">
         This Week
       </h2>
       
       <div className="mb-6">
-        <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+        <div className="text-2xl font-bold text-ink">
           {formatDistance(totalWeeklyMeters, unitPreference)}
         </div>
         {yearlyData && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <div className="text-xs text-muted mt-1">
             {new Date().getFullYear()} total: {formatDistance(yearlyData.currentYear * 1609.344, unitPreference)}
           </div>
         )}
@@ -100,7 +99,7 @@ export default function WeeklyStatsWidget() {
             return (
               <div key={index} className="flex flex-col items-center justify-end relative flex-1" style={{ height: '100%' }}>
                 <div
-                  className="w-3/4 bg-gray-300 dark:bg-gray-600 rounded-t"
+                  className="w-3/4 bg-ink dark:bg-volt rounded-t"
                   style={{ height: `${barHeight}%`, minHeight: value > 0 ? '4px' : '0' }}
                 />
               </div>
@@ -110,17 +109,16 @@ export default function WeeklyStatsWidget() {
         <div className="flex justify-between items-center relative">
           {days.map((day, index) => (
             <div key={index} className="flex flex-col items-center relative flex-1">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <span className="text-sm font-medium text-ink">
                 {day}
               </span>
               {index === currentDayOfWeek && (
-                <div className="absolute top-5 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-orange-500"></div>
+                <div className="absolute top-5 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-volt"></div>
               )}
             </div>
           ))}
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
-

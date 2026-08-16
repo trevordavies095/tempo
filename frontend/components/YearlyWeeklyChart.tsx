@@ -3,11 +3,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
-import { getYearlyWeeklyStats, getAvailablePeriods, type AvailablePeriod } from '@/lib/api';
+import { getYearlyWeeklyStats, getAvailablePeriods } from '@/lib/api';
 import { formatDistance } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
-import { formatDateRange, formatOverallDateRange } from '@/utils/dateUtils';
+import { formatDateRange } from '@/utils/dateUtils';
 import PeriodSelector from '@/components/PeriodSelector';
+import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 interface YearlyWeeklyChartProps {
   selectedPeriodEndDate: string | null;
@@ -76,7 +78,6 @@ export default function YearlyWeeklyChart({
     };
   });
 
-  const maxDistance = Math.max(...chartData.map(d => d.distance), 0.1);
   const selectedWeekData = chartData.find(
     w => w.weekStart === selectedWeek?.weekStart && w.weekEnd === selectedWeek?.weekEnd
   );
@@ -93,9 +94,9 @@ export default function YearlyWeeklyChart({
 
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+      <Card>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <h2 className="text-lg font-semibold text-ink">
             Activities
           </h2>
           <PeriodSelector
@@ -106,18 +107,16 @@ export default function YearlyWeeklyChart({
             isError={isErrorPeriods}
           />
         </div>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Loading...</p>
-        </div>
-      </div>
+        <EmptyState title="Loading..." />
+      </Card>
     );
   }
 
   if (isError) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+      <Card>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <h2 className="text-lg font-semibold text-ink">
             Activities
           </h2>
           <PeriodSelector
@@ -128,27 +127,26 @@ export default function YearlyWeeklyChart({
             isError={isErrorPeriods}
           />
         </div>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-sm text-red-600 dark:text-red-400">
-            Error: {error instanceof Error ? error.message : 'Failed to load stats'}
-          </p>
-        </div>
-      </div>
+        <EmptyState
+          title="Could not load weekly stats"
+          description={error instanceof Error ? error.message : 'Failed to load stats'}
+        />
+      </Card>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+    <Card>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <h2 className="text-lg font-semibold text-ink">
             {selectedWeek
               ? `Activities for ${formatDateRange(selectedWeek.weekStart, selectedWeek.weekEnd)}`
               : 'Activities'}
           </h2>
           {selectedWeekData && (
             <div className="flex items-center gap-4 mt-2">
-              <div className="text-sm text-gray-600 dark:text-gray-400">
+              <div className="text-sm text-muted">
                 {formatDistance(selectedWeekData.distance * (unitPreference === 'metric' ? 1000 : 1609.344), unitPreference)}
               </div>
             </div>
@@ -171,7 +169,7 @@ export default function YearlyWeeklyChart({
           >
             <XAxis
               dataKey="weekNumber"
-              tick={{ fontSize: 10, fill: 'currentColor' }}
+              tick={{ fontSize: 10, fill: 'var(--muted)' }}
               tickFormatter={(value, index) => {
                 const item = chartData[index];
                 return item?.label || '';
@@ -182,7 +180,7 @@ export default function YearlyWeeklyChart({
               height={40}
             />
             <YAxis
-              tick={{ fontSize: 12, fill: 'currentColor' }}
+              tick={{ fontSize: 12, fill: 'var(--muted)' }}
               tickFormatter={(value) => {
                 if (unitPreference === 'metric') {
                   return `${value} km`;
@@ -195,14 +193,14 @@ export default function YearlyWeeklyChart({
                 if (active && payload && payload[0]) {
                   const data = payload[0].payload;
                   return (
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-lg">
-                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    <div className="bg-raised border border-border rounded-tempo p-2 shadow-lg">
+                      <p className="text-sm font-medium text-ink">
                         Week {data.weekNumber}
                       </p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                      <p className="text-xs text-muted">
                         {formatDateRange(data.weekStart, data.weekEnd)}
                       </p>
-                      <p className="text-sm text-gray-900 dark:text-gray-100 mt-1">
+                      <p className="text-sm text-ink mt-1">
                         {formatDistance(data.distance * (unitPreference === 'metric' ? 1000 : 1609.344), unitPreference)}
                       </p>
                     </div>
@@ -217,12 +215,11 @@ export default function YearlyWeeklyChart({
               cursor="pointer"
             >
               {chartData.map((entry, index) => {
-                // Determine fill color: selected > hovered > default
-                let fillColor = '#3b82f6'; // default blue
+                let fillColor = 'var(--volt)';
                 if (entry.isSelected) {
-                  fillColor = '#1e40af'; // darker blue for selected
+                  fillColor = 'var(--ink)';
                 } else if (hoveredIndex === index) {
-                  fillColor = '#2563eb'; // medium blue for hover
+                  fillColor = 'var(--muted)';
                 }
                 
                 return (
@@ -240,7 +237,6 @@ export default function YearlyWeeklyChart({
           </BarChart>
         </ResponsiveContainer>
       </div>
-    </div>
+    </Card>
   );
 }
-
