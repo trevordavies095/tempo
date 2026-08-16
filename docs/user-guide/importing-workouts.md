@@ -1,6 +1,6 @@
 # Importing Workouts
 
-Learn how to import individual workout files into Tempo.
+Learn how to import individual workout files into Tempo. For a full Strava archive ZIP, see [Bulk Import](bulk-import.md) (Settings → Migrate / restore, or first-run onboarding).
 
 ## Supported File Formats
 
@@ -8,7 +8,6 @@ Tempo supports the following workout file formats:
 
 - **GPX** (`.gpx`) - GPS Exchange Format, commonly used by Garmin, Strava, and other services
 - **FIT** (`.fit`, `.fit.gz`) - Garmin's native format, supports compressed files
-- **CSV** (`.csv`) - Strava export format with activity metadata
 
 ## How to Export from Different Devices
 
@@ -32,6 +31,8 @@ Tempo supports the following workout file formats:
 2. Click the three-dot menu (⋮)
 3. Select "Export GPX"
 4. Download the GPX file
+
+For your full Strava history as a ZIP, use [Bulk Import](bulk-import.md).
 
 ## Import Process
 

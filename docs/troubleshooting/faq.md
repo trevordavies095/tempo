@@ -51,8 +51,8 @@ Tempo supports:
 ### Can I import from Strava?
 
 Yes! You can:
-- Import individual GPX files from Strava
-- Bulk import your entire Strava history using a Strava data export
+- Import individual GPX files from Strava on the Import page
+- Bulk import your entire Strava history using a Strava data export (first-run onboarding, or Settings → Migrate / restore)
 
 ### Does Tempo sync with my devices?
 
@@ -60,7 +60,7 @@ Tempo doesn't automatically sync with devices. You need to export files from you
 
 ### Can I export my data from Tempo?
 
-Yes. Use **Settings → Export / Import** to download a ZIP of workouts, routes, splits, time series, media, shoes, settings, and best efforts, or to restore a previous export. See the [Settings export/import](../user-guide/settings.md#export--import) guide and [Backup and Restore](../deployment/backup-restore.md). You can also access PostgreSQL and the `media/` directory directly.
+Yes. Use **Settings → Export** to download a ZIP of workouts, routes, splits, time series, media, shoes, settings, and best efforts. Restore a previous export under **Settings → Migrate / restore**. See the [Settings export/import](../user-guide/settings.md#export--import) guide and [Backup and Restore](../deployment/backup-restore.md). You can also access PostgreSQL and the `media/` directory directly.
 
 ### Does Tempo work offline?
 

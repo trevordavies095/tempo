@@ -175,7 +175,8 @@ function OnboardingWizard() {
         <Card className="max-w-lg space-y-4">
           <p className="text-sm text-muted">
             You can import a Strava bulk export ZIP during setup, or skip and add individual
-            GPX/FIT files later from Import.
+            GPX/FIT files later from Import. Late Strava archives also live under Settings →
+            Migrate / restore.
           </p>
           {error ? (
             <p className="text-sm text-danger" role="alert">
@@ -214,7 +215,7 @@ function OnboardingWizard() {
             <Card className="space-y-3">
               <p className="text-sm text-muted">
                 Strava import did not finish. Retry with another ZIP, or skip and finish setup
-                — you can import later from Import.
+                — you can import a Strava archive later from Settings → Migrate / restore.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Button

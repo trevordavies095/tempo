@@ -115,9 +115,9 @@ Detailed solutions for common Tempo problems.
 3. Verify CSV references correct file paths
 4. Only "Run" activities are imported
 5. Duplicates are automatically skipped
-6. Watch upload progress, then `processed` / `total`; refresh the Import page to resume an in-progress Strava job
+6. Watch upload progress, then `processed` / `total`; refresh Settings → Migrate / restore to resume an in-progress Strava job
 7. Cancel keeps workouts already imported; re-upload the same ZIP to continue (duplicates skip)
-8. If Settings is running a Tempo restore, finish or cancel that job first (only one import job at a time)
+8. If a Tempo restore is running, finish or cancel that job first (only one import job at a time)
 
 ## Performance Issues
 

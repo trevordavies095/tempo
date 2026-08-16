@@ -27,7 +27,7 @@ Tempo's export feature provides a user-friendly way to backup your data directly
 
 1. Log into Tempo
 2. Navigate to Settings
-3. Find the "Export / Import" section
+3. Find the **Export** section under Data Management
 4. Click "Export All Data"
 5. Wait for the download to complete
 
@@ -148,12 +148,12 @@ Tempo's import feature provides a user-friendly way to restore data from an expo
 
 1. Log into Tempo
 2. Navigate to Settings
-3. Find the "Export / Import" section
-4. In the "Import Data" area, click or drag and drop your export ZIP file
+3. Under Data Management, expand **Migrate / restore**
+4. In **Restore Tempo export**, click or drag and drop your export ZIP file
 5. Watch upload progress, then restore progress (`processed` / `total`)
 6. When finished, review the import summary
 
-You can cancel while uploading or restoring; data already restored stays. At most one import job runs at a time across Settings restore and Strava bulk import on the Import page. See [Settings export/import](../user-guide/settings.md#export--import) for details.
+You can cancel while uploading or restoring; data already restored stays. At most one import job runs at a time across Tempo restore and Strava bulk import (both under Migrate / restore). See [Settings export/import](../user-guide/settings.md#export--import) for details.
 
 The import will:
 - Restore all workouts, media, shoes, and settings

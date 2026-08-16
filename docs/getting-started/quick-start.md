@@ -44,7 +44,8 @@ Once all services are running, access Tempo at:
 3. Register your account (only available when no users exist)
    - Choose a username and a passphrase (**16–64** characters; see [Security](../deployment/security.md#password-requirements) for full rules)
    - Confirm your password
-   - After registration, you'll be automatically logged in
+   - After registration, you'll be automatically logged in and guided through **onboarding** (optional Tempo restore, essential settings, optional Strava archive)
+4. When setup finishes, use the Import page for day-to-day GPX/FIT files
 
 **Note:** Registration is automatically locked after the first user is created. This is a security feature for single-user deployments.
 
