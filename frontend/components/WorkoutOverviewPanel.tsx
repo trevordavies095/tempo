@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { WorkoutDetail } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
+import { useWorkoutHighlight } from '@/lib/workoutHighlight';
 import WorkoutDetailSplits from '@/components/WorkoutDetailSplits';
 import { RouteMatchesSummary } from '@/components/RouteMatchesSummary';
 import { WorkoutOverviewEditors } from '@/components/WorkoutOverviewEditors';
@@ -36,7 +36,8 @@ const WorkoutTimeSeriesCharts = dynamic(
 
 export function WorkoutOverviewPanel({ workout }: { workout: WorkoutDetail }) {
   const { unitPreference } = useSettings();
-  const [hoveredSplitIdx, setHoveredSplitIdx] = useState<number | null>(null);
+  const { highlight, setFromSplit, setFromElapsed, setFromMap } =
+    useWorkoutHighlight(workout.splits ?? []);
   const hasSplits = !!(workout.splits && workout.splits.length > 0);
 
   return (
@@ -61,8 +62,8 @@ export function WorkoutOverviewPanel({ workout }: { workout: WorkoutDetail }) {
           <WorkoutDetailSplits
             splits={workout.splits}
             unitPreference={unitPreference}
-            hoveredSplitIdx={hoveredSplitIdx}
-            onSplitHover={setHoveredSplitIdx}
+            hoveredSplitIdx={highlight?.splitIdx ?? null}
+            onSplitHover={setFromSplit}
           />
 
           {workout.route && (
@@ -73,14 +74,22 @@ export function WorkoutOverviewPanel({ workout }: { workout: WorkoutDetail }) {
                 route={workout.route}
                 workoutId={workout.id}
                 splits={workout.splits}
-                hoveredSplitIdx={hoveredSplitIdx}
+                hoveredSplitIdx={highlight?.splitIdx ?? null}
+                highlightElapsedSeconds={highlight?.elapsedSeconds ?? null}
+                workoutDistanceM={workout.distanceM}
+                workoutDurationS={workout.durationS}
+                onHighlightFromMap={setFromMap}
               />
             </Card>
           )}
         </div>
       )}
 
-      <WorkoutTimeSeriesCharts workoutId={workout.id} />
+      <WorkoutTimeSeriesCharts
+        workoutId={workout.id}
+        highlight={highlight}
+        onElapsedChange={setFromElapsed}
+      />
     </div>
   );
 }

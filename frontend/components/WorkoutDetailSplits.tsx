@@ -51,6 +51,7 @@ export default function WorkoutDetailSplits({
                   hoveredSplitIdx === split.idx ? 'bg-canvas' : ''
                 }`}
                 onMouseEnter={() => onSplitHover(split.idx)}
+                onClick={() => onSplitHover(split.idx)}
                 onMouseLeave={() => onSplitHover(null)}
               >
                 <td className="py-1.5 px-2.5 text-xs text-ink">

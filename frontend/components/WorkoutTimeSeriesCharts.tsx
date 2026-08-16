@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Line,
   LineChart,
+  ReferenceDot,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -13,6 +15,7 @@ import {
 import { getWorkoutTimeSeries, type WorkoutTimeSeriesSample } from '@/lib/api';
 import { formatDuration, formatElevation, formatPace } from '@/lib/format';
 import { useSettings, type UnitPreference } from '@/lib/settings';
+import type { WorkoutHighlight } from '@/lib/workoutHighlight';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 
@@ -206,24 +209,86 @@ function ChartTooltip({
   );
 }
 
+function nearestChartPoint(
+  data: ChartPoint[],
+  elapsedSeconds: number
+): ChartPoint | null {
+  if (data.length === 0) {
+    return null;
+  }
+
+  let nearest = data[0];
+  let best = Math.abs(data[0].elapsedSeconds - elapsedSeconds);
+  for (let i = 1; i < data.length; i++) {
+    const delta = Math.abs(data[i].elapsedSeconds - elapsedSeconds);
+    if (delta < best) {
+      best = delta;
+      nearest = data[i];
+    }
+  }
+  return nearest;
+}
+
+function elapsedFromChartEvent(state: {
+  activeLabel?: string | number;
+  activePayload?: Array<{ payload: ChartPoint }>;
+}): number | null {
+  const fromPayload = state.activePayload?.[0]?.payload?.elapsedSeconds;
+  if (typeof fromPayload === 'number' && Number.isFinite(fromPayload)) {
+    return fromPayload;
+  }
+  if (typeof state.activeLabel === 'number' && Number.isFinite(state.activeLabel)) {
+    return state.activeLabel;
+  }
+  return null;
+}
+
 function SensorLineChart({
   data,
   dataKey,
   color,
+  cursorColor,
   unitPreference,
   yTickFormatter,
+  highlightElapsedSeconds,
+  onElapsedChange,
   reversed = false,
 }: {
   data: ChartPoint[];
   dataKey: 'heartRateBpm' | 'paceSeconds' | 'elevation';
   color: string;
+  cursorColor: string;
   unitPreference: UnitPreference;
   yTickFormatter: (value: number) => string;
+  highlightElapsedSeconds: number | null;
+  onElapsedChange?: (elapsedSeconds: number | null) => void;
   reversed?: boolean;
 }) {
+  const cursorPoint =
+    highlightElapsedSeconds == null
+      ? null
+      : nearestChartPoint(data, highlightElapsedSeconds);
+  const cursorValue = cursorPoint?.[dataKey] ?? null;
+
   return (
     <ResponsiveContainer width="100%" height={180}>
-      <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <LineChart
+        data={data}
+        margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+        onMouseMove={(state) => {
+          const elapsed = elapsedFromChartEvent(state);
+          if (elapsed != null) {
+            onElapsedChange?.(elapsed);
+          }
+        }}
+        onClick={(state) => {
+          const elapsed = elapsedFromChartEvent(state);
+          if (elapsed != null) {
+            onElapsedChange?.(elapsed);
+          }
+        }}
+        onMouseLeave={() => onElapsedChange?.(null)}
+      >
         <XAxis
           dataKey="elapsedSeconds"
           tick={{ fontSize: 11, fill: 'var(--muted)' }}
@@ -242,6 +307,24 @@ function SensorLineChart({
             <ChartTooltip unitPreference={unitPreference} series={dataKey} />
           }
         />
+        {cursorPoint ? (
+          <ReferenceLine
+            x={cursorPoint.elapsedSeconds}
+            stroke={cursorColor}
+            strokeWidth={1.5}
+            ifOverflow="extendDomain"
+          />
+        ) : null}
+        {cursorPoint && cursorValue != null ? (
+          <ReferenceDot
+            x={cursorPoint.elapsedSeconds}
+            y={cursorValue}
+            r={4}
+            fill={cursorColor}
+            stroke="none"
+            ifOverflow="extendDomain"
+          />
+        ) : null}
         <Line
           type="monotone"
           dataKey={dataKey}
@@ -256,7 +339,15 @@ function SensorLineChart({
   );
 }
 
-export function WorkoutTimeSeriesCharts({ workoutId }: { workoutId: string }) {
+export function WorkoutTimeSeriesCharts({
+  workoutId,
+  highlight = null,
+  onElapsedChange,
+}: {
+  workoutId: string;
+  highlight?: WorkoutHighlight | null;
+  onElapsedChange?: (elapsedSeconds: number | null) => void;
+}) {
   const { unitPreference } = useSettings();
   const tokens = useChartTokens();
   const primary = tokens.isDark ? tokens.volt : tokens.ink;
@@ -275,6 +366,8 @@ export function WorkoutTimeSeriesCharts({ workoutId }: { workoutId: string }) {
   const showHr = hasSeries(points, 'heartRateBpm');
   const showPace = hasSeries(points, 'paceSeconds');
   const showElev = hasSeries(points, 'elevation');
+  const highlightElapsed = highlight?.elapsedSeconds ?? null;
+  const cursorColor = tokens.danger;
 
   if (isLoading) {
     return (
@@ -314,7 +407,10 @@ export function WorkoutTimeSeriesCharts({ workoutId }: { workoutId: string }) {
             data={points}
             dataKey="heartRateBpm"
             color={tokens.danger}
+            cursorColor={cursorColor}
             unitPreference={unitPreference}
+            highlightElapsedSeconds={highlightElapsed}
+            onElapsedChange={onElapsedChange}
             yTickFormatter={(value) => `${Math.round(value)}`}
           />
         </section>
@@ -327,7 +423,10 @@ export function WorkoutTimeSeriesCharts({ workoutId }: { workoutId: string }) {
             data={points}
             dataKey="paceSeconds"
             color={primary}
+            cursorColor={cursorColor}
             unitPreference={unitPreference}
+            highlightElapsedSeconds={highlightElapsed}
+            onElapsedChange={onElapsedChange}
             reversed
             yTickFormatter={(value) => {
               const secondsPerKm =
@@ -345,7 +444,10 @@ export function WorkoutTimeSeriesCharts({ workoutId }: { workoutId: string }) {
             data={points}
             dataKey="elevation"
             color={tokens.muted}
+            cursorColor={cursorColor}
             unitPreference={unitPreference}
+            highlightElapsedSeconds={highlightElapsed}
+            onElapsedChange={onElapsedChange}
             yTickFormatter={(value) =>
               formatElevation(
                 unitPreference === 'imperial' ? value / 3.28084 : value,
