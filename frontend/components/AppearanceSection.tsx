@@ -30,7 +30,7 @@ export default function AppearanceSection() {
             onClick={() => setPreference(value)}
             className={`px-6 py-3 rounded-lg font-medium transition-colors ${
               preference === value
-                ? 'bg-volt text-ink'
+                ? 'bg-volt text-on-volt'
                 : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
             }`}
           >

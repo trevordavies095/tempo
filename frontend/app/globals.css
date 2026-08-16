@@ -11,6 +11,7 @@
   --muted: #57534e;
   --inverse: #fafaf9;
   --volt: #e8ff00;
+  --on-volt: #1c1917;
   --danger: #dc2626;
   --background: var(--canvas);
   --foreground: var(--ink);
@@ -25,6 +26,7 @@
   --muted: #a8a29e;
   --inverse: #0c0a09;
   --volt: #e8ff00;
+  --on-volt: #1c1917;
   --danger: #f87171;
   --background: var(--canvas);
   --foreground: var(--ink);
@@ -39,6 +41,7 @@
   --color-muted: var(--muted);
   --color-inverse: var(--inverse);
   --color-volt: var(--volt);
+  --color-on-volt: var(--on-volt);
   --color-danger: var(--danger);
   --color-background: var(--background);
   --color-foreground: var(--foreground);

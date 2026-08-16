@@ -23,7 +23,7 @@ export function Navbar() {
   const navLinkClasses = (path: string) => {
     const base =
       'block px-4 py-2 text-sm font-medium rounded-tempo transition-colors';
-    const active = 'bg-volt text-ink';
+    const active = 'bg-volt text-on-volt';
     const inactive =
       'text-muted hover:text-ink hover:bg-canvas';
 
