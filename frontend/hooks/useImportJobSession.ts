@@ -27,18 +27,24 @@ function persistJobHint(id: string | null) {
 
 function otherKindBanner(kind: ImportJobKind): string {
   if (kind === 'tempo_export') {
-    return 'A Strava import is already running on the Import page. Finish or cancel it before restoring a Tempo export.';
+    return 'A Strava import is already in progress. Finish or cancel it before restoring a Tempo export.';
   }
-  return 'A Tempo export restore is already running in Settings. Finish or cancel it before starting a Strava import.';
+  return 'A Tempo export restore is already in progress. Finish or cancel it before starting a Strava import.';
 }
 
 export type UseImportJobSessionOptions = {
   kind: ImportJobKind;
   unitPreference?: 'metric' | 'imperial';
   onCompleted: (job: ImportJob) => void | Promise<void>;
+  onFailed?: (message: string) => void;
 };
 
-export function useImportJobSession({ kind, unitPreference, onCompleted }: UseImportJobSessionOptions) {
+export function useImportJobSession({
+  kind,
+  unitPreference,
+  onCompleted,
+  onFailed,
+}: UseImportJobSessionOptions) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [uploadBytes, setUploadBytes] = useState<{ received: number; size: number } | null>(null);
   const [jobError, setJobError] = useState<string | null>(null);
@@ -93,7 +99,9 @@ export function useImportJobSession({ kind, unitPreference, onCompleted }: UseIm
           await onCompleted(hinted);
           persistJobHint(null);
         } else if (hinted.status === 'failed') {
-          setJobError(hinted.errorMessage || 'Import failed');
+          const message = hinted.errorMessage || 'Import failed';
+          setJobError(message);
+          onFailed?.(message);
           persistJobHint(null);
         } else {
           attachJob(hinted.id);
@@ -105,7 +113,7 @@ export function useImportJobSession({ kind, unitPreference, onCompleted }: UseIm
     return () => {
       cancelled = true;
     };
-  }, [attachJob, kind, onCompleted]);
+  }, [attachJob, kind, onCompleted, onFailed]);
 
   const { data: job } = useQuery({
     queryKey: ['import-job', kind, jobId],
@@ -136,12 +144,14 @@ export function useImportJobSession({ kind, unitPreference, onCompleted }: UseIm
         setJobError(null);
         void onCompleted(terminal);
       } else {
-        setJobError(terminal.errorMessage || 'Import failed');
+        const message = terminal.errorMessage || 'Import failed';
+        setJobError(message);
         clearWorkingState();
+        onFailed?.(message);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [job, onCompleted, clearWorkingState]);
+  }, [job, onCompleted, onFailed, clearWorkingState]);
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => {
@@ -173,17 +183,21 @@ export function useImportJobSession({ kind, unitPreference, onCompleted }: UseIm
         return;
       }
       setJobError(error.message);
+      onFailed?.(error.message);
     },
   });
 
   const cancelMutation = useMutation({
     mutationFn: (id: string) => cancelImportJob(id),
     onSuccess: (cancelled: ImportJob) => {
-      setJobError(cancelled.errorMessage || 'cancelled');
+      const message = cancelled.errorMessage || 'cancelled';
+      setJobError(message);
       clearWorkingState();
+      onFailed?.(message);
     },
     onError: (error: Error) => {
       setJobError(error.message);
+      onFailed?.(error.message);
     },
   });
 

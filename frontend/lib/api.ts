@@ -525,6 +525,11 @@ export function importJobToExportImportResponse(job: ImportJob): ExportImportRes
   };
 }
 
+/** True when a tempo_export job imported UserSettings (units / HR zones). */
+export function importJobHasSettings(job: ImportJob): boolean {
+  return (job.statistics?.settings?.imported ?? 0) > 0;
+}
+
 export async function exportAllData(): Promise<Blob> {
   const response = await fetchWithAuth(`${API_BASE_URL}/workouts/export`, {
     method: 'POST',
