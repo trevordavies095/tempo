@@ -1442,7 +1442,6 @@ public static class WorkoutsEndpoints
         HttpRequest request,
         BulkImportService bulkImportService,
         TempoDbContext db,
-        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         if (!request.HasFormContentType)
@@ -1487,12 +1486,6 @@ public static class WorkoutsEndpoints
         // Save unit preference to UserSettings
         await SaveUnitPreferenceToSettingsAsync(db, unitPreference, logger);
 
-        // Calculate split distance based on unit preference
-        // 1000.0 meters = 1 km for metric, 1609.344 meters = 1 mile for imperial
-        var splitDistanceMeters = unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
-            ? 1609.344
-            : 1000.0;
-
         string? tempDir = null;
         var errors = new List<object>();
         var successful = 0;
@@ -1517,104 +1510,38 @@ public static class WorkoutsEndpoints
             logger.LogInformation("Found {Total} run activities to process", totalProcessed);
 
             // Process each activity file
-            var workoutsToAdd = new List<Workout>();
-            var routesToAdd = new List<WorkoutRoute>();
-            var splitsToAdd = new List<WorkoutSplit>();
-            var timeSeriesToAdd = new List<WorkoutTimeSeries>();
             var mediaToAdd = new List<WorkoutMedia>();
 
             foreach (var activity in runActivities)
             {
-                var result = await bulkImportService.ProcessActivityFileAsync(activity, tempDir, splitDistanceMeters);
-                
+                var result = await bulkImportService.ProcessActivityFileAsync(activity, tempDir);
+
                 if (!result.Success)
                 {
                     errors.Add(new { filename = activity.Filename, error = result.ErrorMessage });
-                        continue;
-                    }
+                    continue;
+                }
 
                 if (result.Action == "skipped")
                 {
                     skipped++;
-                    // Process media for skipped workouts
-                    if (result.MediaPaths.Count > 0)
-                    {
-                        var media = await bulkImportService.ProcessMediaFilesAsync(result.Workout!.Id, result.MediaPaths, tempDir);
-                        mediaToAdd.AddRange(media);
-                    }
-                            continue;
                 }
-
-                if (result.Action == "updated")
+                else if (result.Action == "updated")
                 {
-                            updated++;
-                    // Process media for updated workouts
-                    if (result.MediaPaths.Count > 0)
-                    {
-                        var media = await bulkImportService.ProcessMediaFilesAsync(result.Workout!.Id, result.MediaPaths, tempDir);
-                        mediaToAdd.AddRange(media);
-                    }
-                                            continue;
+                    updated++;
                 }
-
-                // Created new workout
-                if (result.Workout != null && result.Route != null && result.Splits != null)
+                else
                 {
-                    workoutsToAdd.Add(result.Workout);
-                    routesToAdd.Add(result.Route);
-                    splitsToAdd.AddRange(result.Splits);
-                    if (result.TimeSeries != null && result.TimeSeries.Count > 0)
-                    {
-                        timeSeriesToAdd.AddRange(result.TimeSeries);
-                    }
                     successful++;
+                }
 
-                    // Process media files
-                    if (result.MediaPaths.Count > 0)
-                    {
-                        var media = await bulkImportService.ProcessMediaFilesAsync(result.Workout.Id, result.MediaPaths, tempDir);
-                        mediaToAdd.AddRange(media);
-                    }
+                if (result.Workout != null && result.MediaPaths.Count > 0)
+                {
+                    var media = await bulkImportService.ProcessMediaFilesAsync(result.Workout.Id, result.MediaPaths, tempDir);
+                    mediaToAdd.AddRange(media);
                 }
             }
 
-            // Assign default shoe to all new workouts if set
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            if (settings != null && settings.DefaultShoeId.HasValue)
-            {
-                // Verify the shoe still exists
-                var defaultShoe = await db.Shoes.FindAsync(settings.DefaultShoeId.Value);
-                if (defaultShoe != null && !defaultShoe.IsRetired)
-                {
-                    foreach (var workout in workoutsToAdd)
-                    {
-                        workout.ShoeId = settings.DefaultShoeId.Value;
-                    }
-                    logger.LogInformation("Assigned default shoe {ShoeId} to {Count} workouts", settings.DefaultShoeId.Value, workoutsToAdd.Count);
-                }
-            }
-
-            // Batch save workouts
-            await bulkImportService.BatchSaveWorkoutsAsync(workoutsToAdd, routesToAdd, splitsToAdd, timeSeriesToAdd);
-
-            // Calculate relative effort
-            await bulkImportService.CalculateAndSaveRelativeEffortAsync(workoutsToAdd);
-
-            // Update best efforts for all newly created workouts
-            foreach (var workout in workoutsToAdd)
-            {
-                try
-                {
-                    await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to update best efforts for workout {WorkoutId}", workout.Id);
-                    // Don't fail the bulk import if best effort update fails for individual workouts
-                }
-            }
-
-            // Save media records
             if (mediaToAdd.Count > 0)
             {
                 db.WorkoutMedia.AddRange(mediaToAdd);

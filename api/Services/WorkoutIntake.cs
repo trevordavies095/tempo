@@ -135,6 +135,7 @@ public class WorkoutIntake
                 overlay);
 
             PopulateWorkoutMetrics(workout, calculated, fitResult, rawFitDataJson);
+            PopulateMetricsFromStrava(workout, overlay?.RawStravaDataJson);
 
             var splitDistanceMeters = await GetSplitDistanceMetersAsync();
             var geometry = _trackGeometry.Derive(
@@ -501,6 +502,57 @@ public class WorkoutIntake
                 workout.Device = "Apple Watch";
             }
         }
+    }
+
+    private void PopulateMetricsFromStrava(Workout workout, string? rawStravaDataJson)
+    {
+        if (string.IsNullOrEmpty(rawStravaDataJson))
+        {
+            return;
+        }
+
+        Dictionary<string, object> stravaData;
+        try
+        {
+            var rawStrava = JsonSerializer.Deserialize<JsonElement>(rawStravaDataJson);
+            stravaData = new Dictionary<string, object>();
+            foreach (var prop in rawStrava.EnumerateObject())
+            {
+                stravaData[prop.Name] = prop.Value;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse RawStravaData JSON");
+            return;
+        }
+
+        if (stravaData.TryGetValue("movingTime", out var stravaMovingTime) && stravaMovingTime is JsonElement stravaMovingTimeElem && stravaMovingTimeElem.ValueKind == JsonValueKind.Number)
+            workout.MovingTimeS = (int)Math.Round(stravaMovingTimeElem.GetDouble());
+        if (stravaData.TryGetValue("maxHeartRate", out var stravaMaxHr) && stravaMaxHr is JsonElement stravaMaxHrElem && stravaMaxHrElem.ValueKind == JsonValueKind.Number)
+            workout.MaxHeartRateBpm = (byte)stravaMaxHrElem.GetInt32();
+        if (stravaData.TryGetValue("avgHeartRate", out var stravaAvgHr) && stravaAvgHr is JsonElement stravaAvgHrElem && stravaAvgHrElem.ValueKind == JsonValueKind.Number)
+            workout.AvgHeartRateBpm = (byte)stravaAvgHrElem.GetInt32();
+        if (stravaData.TryGetValue("maxCadence", out var stravaMaxCad) && stravaMaxCad is JsonElement stravaMaxCadElem && stravaMaxCadElem.ValueKind == JsonValueKind.Number)
+            workout.MaxCadenceRpm = (byte)stravaMaxCadElem.GetInt32();
+        if (stravaData.TryGetValue("avgCadence", out var stravaAvgCad) && stravaAvgCad is JsonElement stravaAvgCadElem && stravaAvgCadElem.ValueKind == JsonValueKind.Number)
+            workout.AvgCadenceRpm = (byte)stravaAvgCadElem.GetInt32();
+        if (stravaData.TryGetValue("maxWatts", out var stravaMaxWatts) && stravaMaxWatts is JsonElement stravaMaxWattsElem && stravaMaxWattsElem.ValueKind == JsonValueKind.Number)
+            workout.MaxPowerWatts = (ushort)stravaMaxWattsElem.GetInt32();
+        if (stravaData.TryGetValue("avgWatts", out var stravaAvgWatts) && stravaAvgWatts is JsonElement stravaAvgWattsElem && stravaAvgWattsElem.ValueKind == JsonValueKind.Number)
+            workout.AvgPowerWatts = (ushort)stravaAvgWattsElem.GetInt32();
+        if (stravaData.TryGetValue("calories", out var stravaCals) && stravaCals is JsonElement stravaCalsElem && stravaCalsElem.ValueKind == JsonValueKind.Number)
+            workout.Calories = (ushort)stravaCalsElem.GetInt32();
+        if (stravaData.TryGetValue("elevationLoss", out var stravaElevLoss) && stravaElevLoss is JsonElement stravaElevLossElem && stravaElevLossElem.ValueKind == JsonValueKind.Number)
+            workout.ElevLossM = stravaElevLossElem.GetDouble();
+        if (stravaData.TryGetValue("elevationLow", out var stravaMinElev) && stravaMinElev is JsonElement stravaMinElevElem && stravaMinElevElem.ValueKind == JsonValueKind.Number)
+            workout.MinElevM = stravaMinElevElem.GetDouble();
+        if (stravaData.TryGetValue("elevationHigh", out var stravaMaxElev) && stravaMaxElev is JsonElement stravaMaxElevElem && stravaMaxElevElem.ValueKind == JsonValueKind.Number)
+            workout.MaxElevM = stravaMaxElevElem.GetDouble();
+        if (stravaData.TryGetValue("maxSpeed", out var stravaMaxSpeed) && stravaMaxSpeed is JsonElement stravaMaxSpeedElem && stravaMaxSpeedElem.ValueKind == JsonValueKind.Number)
+            workout.MaxSpeedMps = stravaMaxSpeedElem.GetDouble();
+        if (stravaData.TryGetValue("avgSpeed", out var stravaAvgSpeed) && stravaAvgSpeed is JsonElement stravaAvgSpeedElem && stravaAvgSpeedElem.ValueKind == JsonValueKind.Number)
+            workout.AvgSpeedMps = stravaAvgSpeedElem.GetDouble();
     }
 
     private static void CalculateAggregateMetricsFromTimeSeries(Workout workout, List<WorkoutTimeSeries> timeSeries)
