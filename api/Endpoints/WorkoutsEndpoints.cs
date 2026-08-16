@@ -1429,7 +1429,7 @@ public static class WorkoutsEndpoints
     /// Bulk import Strava export
     /// </summary>
     /// <param name="request">HTTP request containing multipart/form-data with ZIP file</param>
-    /// <param name="bulkImportService">Bulk import service</param>
+    /// <param name="orchestrator">Strava bulk import orchestrator</param>
     /// <param name="db">Database context</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>Import results with counts of successful, skipped, updated, and error details</returns>
@@ -1440,7 +1440,7 @@ public static class WorkoutsEndpoints
     /// </remarks>
     private static async Task<IResult> BulkImportWorkouts(
         HttpRequest request,
-        BulkImportService bulkImportService,
+        StravaBulkImportOrchestrator orchestrator,
         TempoDbContext db,
         ILogger<Program> logger)
     {
@@ -1483,80 +1483,21 @@ public static class WorkoutsEndpoints
             unitPreference = "metric";
         }
 
-        // Save unit preference to UserSettings
         await SaveUnitPreferenceToSettingsAsync(db, unitPreference, logger);
-
-        string? tempDir = null;
-        var errors = new List<object>();
-        var successful = 0;
-        var skipped = 0;
-        var updated = 0;
-        var totalProcessed = 0;
 
         try
         {
-            // Extract ZIP file
-            using (var zipStream = file.OpenReadStream())
-            {
-                tempDir = bulkImportService.ExtractZipArchive(zipStream);
-            }
-
-            // Parse activities.csv
-            var allActivities = bulkImportService.ParseActivitiesCsv(tempDir);
-            var csvParser = bulkImportService.GetCsvParser();
-            var runActivities = csvParser.GetRunActivities(allActivities);
-            totalProcessed = runActivities.Count;
-
-            logger.LogInformation("Found {Total} run activities to process", totalProcessed);
-
-            // Process each activity file
-            var mediaToAdd = new List<WorkoutMedia>();
-
-            foreach (var activity in runActivities)
-            {
-                var result = await bulkImportService.ProcessActivityFileAsync(activity, tempDir);
-
-                if (!result.Success)
-                {
-                    errors.Add(new { filename = activity.Filename, error = result.ErrorMessage });
-                    continue;
-                }
-
-                if (result.Action == "skipped")
-                {
-                    skipped++;
-                }
-                else if (result.Action == "updated")
-                {
-                    updated++;
-                }
-                else
-                {
-                    successful++;
-                }
-
-                if (result.Workout != null && result.MediaPaths.Count > 0)
-                {
-                    var media = await bulkImportService.ProcessMediaFilesAsync(result.Workout.Id, result.MediaPaths, tempDir);
-                    mediaToAdd.AddRange(media);
-                }
-            }
-
-            if (mediaToAdd.Count > 0)
-            {
-                db.WorkoutMedia.AddRange(mediaToAdd);
-                await db.SaveChangesAsync();
-                logger.LogInformation("Added {MediaCount} media files to database", mediaToAdd.Count);
-            }
+            await using var zipStream = file.OpenReadStream();
+            var result = await orchestrator.ImportFromZipAsync(zipStream);
 
             return Results.Ok(new
             {
-                totalProcessed,
-                successful,
-                skipped,
-                updated,
-                errors = errors.Count,
-                errorDetails = errors
+                totalProcessed = result.TotalProcessed,
+                successful = result.Successful,
+                skipped = result.Skipped,
+                updated = result.Updated,
+                errors = result.Errors,
+                errorDetails = result.ErrorDetails
             });
         }
         catch (Exception ex)
@@ -1567,24 +1508,6 @@ public static class WorkoutsEndpoints
                 statusCode: 500,
                 title: "Error processing bulk import"
             );
-        }
-        finally
-        {
-            // Clean up temporary directory
-            if (tempDir != null)
-            {
-            try
-            {
-                if (Directory.Exists(tempDir))
-                {
-                    Directory.Delete(tempDir, true);
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to clean up temporary directory {TempDir}", tempDir);
-                }
-            }
         }
     }
 
