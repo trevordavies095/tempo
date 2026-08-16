@@ -12,6 +12,20 @@
 
 Tempo is a self-hostable running tracker that gives you complete control over your fitness data. Unlike cloud-based services, Tempo runs entirely on your own infrastructure, ensuring your workout data stays private and secure.
 
+## Screenshots
+
+![Dashboard](./assets/screenshots/dashboard.png)
+*Dashboard — weekly stats, relative effort, and recent workouts*
+
+![My Activities](./assets/screenshots/activities.png)
+*Activities list — search, filters, and sortable columns*
+
+![Workout overview](./assets/screenshots/workout-overview.png)
+*Workout overview — splits, route map, and time-series charts*
+
+![Settings](./assets/screenshots/settings.png)
+*Settings — appearance and unit preferences*
+
 ## Key Features
 
 - **Multi-Format Support** - Import GPX, FIT (.fit, .fit.gz), and Strava CSV files from Garmin, Apple Watch, and other devices

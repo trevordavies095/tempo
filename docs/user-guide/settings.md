@@ -4,6 +4,8 @@ Configure Tempo to match your preferences and needs.
 
 ## Overview
 
+![Settings](./screenshots/settings.png)
+
 Tempo settings allow you to customize:
 - Appearance (System, Dark, or Light) on this browser
 - Unit preferences (metric/imperial)

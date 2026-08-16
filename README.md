@@ -14,14 +14,14 @@
 
 ## Screenshots
 
-![Dashboard](https://i.imgur.com/pURdx2e.png)
-*Dashboard view*
+![Dashboard](./docs/assets/screenshots/dashboard.png)
+*Dashboard — weekly stats, relative effort, and recent workouts*
 
-![My Activities](https://i.imgur.com/nZEt9mN.png)
-*Activities list*
+![My Activities](./docs/assets/screenshots/activities.png)
+*Activities list — search, filters, and sortable columns*
 
-![Workout overview](https://i.imgur.com/aj671gl.png)
-*Workout overview*
+![Workout overview](./docs/assets/screenshots/workout-overview.png)
+*Workout overview — splits, route map, and time-series charts*
 
 ## Quick Start
 

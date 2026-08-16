@@ -4,6 +4,8 @@ Learn how to navigate and explore your workouts in Tempo.
 
 ## Dashboard Overview
 
+![Dashboard](./screenshots/dashboard.png)
+
 The dashboard provides an overview of your running activity:
 
 - **Weekly Statistics** - Distance, time, and relative effort for the current week
@@ -14,6 +16,8 @@ The dashboard provides an overview of your running activity:
 - **Charts and Graphs** - Additional visual representations of your progress
 
 ## Activities List
+
+![My Activities](./screenshots/activities.png)
 
 The activities list shows all your imported workouts with:
 
@@ -35,6 +39,8 @@ You can filter and sort activities by:
 - Search by name
 
 ## Workout Overview
+
+![Workout overview](./screenshots/workout-overview.png)
 
 Click any workout to open **Workout overview** — the command-center screen for one Workout (map, splits, time series, weather, media, comparison). Use the Overview and Route comparison tabs when similar routes exist.
 
