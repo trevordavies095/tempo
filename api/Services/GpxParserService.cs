@@ -10,48 +10,20 @@ namespace Tempo.Api.Services;
 public class GpxParserService
 {
     private readonly ElevationCalculationConfig _elevationConfig;
-    private readonly TrackGeometry _trackGeometry;
 
-    public GpxParserService(ElevationCalculationConfig elevationConfig, TrackGeometry trackGeometry)
+    public GpxParserService(ElevationCalculationConfig elevationConfig)
     {
         _elevationConfig = elevationConfig;
-        _trackGeometry = trackGeometry;
     }
+
     public class GpxParseResult
     {
         public DateTime StartTime { get; set; }
         public int DurationSeconds { get; set; }
         public double DistanceMeters { get; set; }
-        public double? ElevationGainMeters { get; set; }
-        public List<GpxPoint> TrackPoints { get; set; } = new();
-        public string? RawGpxDataJson { get; set; }  // JSON string for RawGpxData field
-    }
-
-    public class GpxPoint
-    {
-        public double Latitude { get; set; }
-        public double Longitude { get; set; }
-        public double? Elevation { get; set; }
-        public DateTime? Time { get; set; }
-        public byte? HeartRateBpm { get; set; }
-        public byte? CadenceRpm { get; set; }
-        public ushort? PowerWatts { get; set; }
-        public sbyte? TemperatureC { get; set; }
-
-        public TrackPoint ToTrackPoint()
-        {
-            return new TrackPoint
-            {
-                Latitude = Latitude,
-                Longitude = Longitude,
-                Elevation = Elevation,
-                Time = Time,
-                HeartRateBpm = HeartRateBpm,
-                CadenceRpm = CadenceRpm,
-                PowerWatts = PowerWatts,
-                TemperatureC = TemperatureC
-            };
-        }
+        public List<TrackPoint> TrackPoints { get; set; } = new();
+        public string? RawGpxDataJson { get; set; }
+        public string? Name { get; set; }
     }
 
     public GpxParseResult ParseGpx(Stream gpxStream)
@@ -108,7 +80,7 @@ public class GpxParserService
             }
         }
 
-        var trackPoints = new List<GpxPoint>();
+        var trackPoints = new List<TrackPoint>();
         var startTime = (DateTime?)null;
         var endTime = (DateTime?)null;
 
@@ -132,7 +104,7 @@ public class GpxParserService
                 !double.TryParse(lonAttr.Value, out var lon))
                 continue;
 
-            var point = new GpxPoint
+            var point = new TrackPoint
             {
                 Latitude = lat,
                 Longitude = lon
@@ -214,10 +186,10 @@ public class GpxParserService
         for (int i = 1; i < trackPoints.Count; i++)
         {
             totalDistance += GeoUtils.HaversineDistance(
-                trackPoints[i - 1].Latitude,
-                trackPoints[i - 1].Longitude,
-                trackPoints[i].Latitude,
-                trackPoints[i].Longitude
+                trackPoints[i - 1].Latitude!.Value,
+                trackPoints[i - 1].Longitude!.Value,
+                trackPoints[i].Latitude!.Value,
+                trackPoints[i].Longitude!.Value
             );
         }
 
@@ -262,14 +234,20 @@ public class GpxParserService
 
         var rawGpxDataJson = JsonSerializer.Serialize(rawGpxData, JsonUtils.DefaultOptions);
 
+        string? name = null;
+        if (metadata.TryGetValue("name", out var nameObj) && nameObj is string nameStr && !string.IsNullOrWhiteSpace(nameStr))
+        {
+            name = nameStr;
+        }
+
         return new GpxParseResult
         {
             StartTime = DateTime.SpecifyKind(startTime.Value, DateTimeKind.Utc),
             DurationSeconds = duration,
             DistanceMeters = totalDistance,
-            ElevationGainMeters = elevationGain,
             TrackPoints = trackPoints,
-            RawGpxDataJson = rawGpxDataJson
+            RawGpxDataJson = rawGpxDataJson,
+            Name = name
         };
     }
 
@@ -279,7 +257,7 @@ public class GpxParserService
     /// <param name="trackPoints">List of track points</param>
     /// <param name="calculateGain">If true, calculates elevation gain; if false, calculates elevation loss</param>
     /// <returns>Elevation change in meters. For gain: null if no gain; for loss: 0.0 if no loss</returns>
-    private double? CalculateElevationChange(List<GpxPoint> trackPoints, bool calculateGain)
+    private double? CalculateElevationChange(List<TrackPoint> trackPoints, bool calculateGain)
     {
         if (!trackPoints.Any(p => p.Elevation.HasValue))
         {
@@ -291,7 +269,7 @@ public class GpxParserService
         double accumulatedOpposite = 0.0; // The opposite direction
         double accumulatedDistance = 0.0;
         double? lastElevation = null;
-        GpxPoint? lastPoint = null;
+        TrackPoint? lastPoint = null;
 
         foreach (var point in trackPoints)
         {
@@ -301,10 +279,10 @@ public class GpxParserService
                 if (lastPoint != null)
                 {
                     accumulatedDistance += GeoUtils.HaversineDistance(
-                        lastPoint.Latitude,
-                        lastPoint.Longitude,
-                        point.Latitude,
-                        point.Longitude
+                        lastPoint.Latitude!.Value,
+                        lastPoint.Longitude!.Value,
+                        point.Latitude!.Value,
+                        point.Longitude!.Value
                     );
                 }
                 lastPoint = point;
@@ -317,10 +295,10 @@ public class GpxParserService
             {
                 // Calculate horizontal distance since last point
                 double segmentDistance = GeoUtils.HaversineDistance(
-                    lastPoint.Latitude,
-                    lastPoint.Longitude,
-                    point.Latitude,
-                    point.Longitude
+                    lastPoint.Latitude!.Value,
+                    lastPoint.Longitude!.Value,
+                    point.Latitude!.Value,
+                    point.Longitude!.Value
                 );
                 accumulatedDistance += segmentDistance;
 
@@ -422,7 +400,7 @@ public class GpxParserService
         }
     }
 
-    private Dictionary<string, object> CalculateAdditionalMetrics(List<GpxPoint> trackPoints, double totalDistance, int duration, double? elevationGain)
+    private Dictionary<string, object> CalculateAdditionalMetrics(List<TrackPoint> trackPoints, double totalDistance, int duration, double? elevationGain)
     {
         var calculated = new Dictionary<string, object>();
 
@@ -462,10 +440,10 @@ public class GpxParserService
                 if (timeDiff > 0)
                 {
                     var segmentDistance = GeoUtils.HaversineDistance(
-                        trackPoints[i - 1].Latitude,
-                        trackPoints[i - 1].Longitude,
-                        point.Latitude,
-                        point.Longitude
+                        trackPoints[i - 1].Latitude!.Value,
+                        trackPoints[i - 1].Longitude!.Value,
+                        point.Latitude!.Value,
+                        point.Longitude!.Value
                     );
                     var speed = segmentDistance / timeDiff;
                     if (speed > maxSpeedMps) maxSpeedMps = speed;
@@ -507,23 +485,6 @@ public class GpxParserService
         }
 
         return calculated;
-    }
-
-
-    public List<WorkoutSplit> CalculateSplits(List<GpxPoint> trackPoints, double distanceMeters, int durationSeconds, double splitDistanceMeters = 1000.0)
-    {
-        var startedAt = trackPoints.FirstOrDefault(p => p.Time.HasValue)?.Time
-            ?? DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc);
-
-        var derived = _trackGeometry.Derive(
-            trackPoints.Select(p => p.ToTrackPoint()).ToList(),
-            startedAt,
-            splitDistanceMeters,
-            Guid.Empty,
-            distanceMeters,
-            durationSeconds);
-
-        return derived.Splits.ToList();
     }
 }
 

@@ -239,8 +239,7 @@ public class BulkImportService
             DateTime startTime;
             int durationSeconds;
             double distanceMeters;
-            double? elevationGainMeters;
-            List<GpxParserService.GpxPoint> trackPoints;
+            List<TrackPoint> trackPoints;
             string? rawGpxDataJson = null;
             string? rawFitDataJson = null;
 
@@ -249,7 +248,6 @@ public class BulkImportService
                 startTime = parseResult.StartTime;
                 durationSeconds = parseResult.DurationSeconds;
                 distanceMeters = parseResult.DistanceMeters;
-                elevationGainMeters = parseResult.ElevationGainMeters;
                 trackPoints = parseResult.TrackPoints;
                 rawGpxDataJson = parseResult.RawGpxDataJson;
             }
@@ -258,7 +256,6 @@ public class BulkImportService
                 startTime = fitResult.StartTime;
                 durationSeconds = fitResult.DurationSeconds;
                 distanceMeters = fitResult.DistanceMeters;
-                elevationGainMeters = fitResult.ElevationGainMeters;
                 trackPoints = fitResult.TrackPoints;
                 rawFitDataJson = fitResult.RawFitDataJson;
             }
@@ -402,17 +399,19 @@ public class BulkImportService
 
             // Create new workout
             var workout = CreateWorkoutFromActivity(
-                activity, startedAtUtc, durationSeconds, distanceMeters, elevationGainMeters,
-                rawFileData, fileType, rawGpxDataJson, rawFitDataJson, parseResult, fitResult, trackPoints);
+                activity, startedAtUtc, durationSeconds, distanceMeters, null,
+                rawFileData, fileType, rawGpxDataJson, rawFitDataJson, parseResult, fitResult);
 
             var geometry = _trackGeometry.Derive(
-                trackPoints.Select(p => p.ToTrackPoint()).ToList(),
+                trackPoints,
                 startedAtUtc,
                 splitDistanceMeters,
                 workout.Id,
                 distanceMeters,
                 durationSeconds,
                 parseResult != null ? null : fitResult?.SeriesPoints);
+
+            workout.ElevGainM = geometry.ElevGainM;
 
             var route = geometry.Route;
             var splits = geometry.Splits.ToList();
@@ -467,8 +466,7 @@ public class BulkImportService
         string? rawGpxDataJson,
         string? rawFitDataJson,
         GpxParserService.GpxParseResult? parseResult,
-        FitParserService.FitParseResult? fitResult,
-        List<GpxParserService.GpxPoint> trackPoints)
+        FitParserService.FitParseResult? fitResult)
     {
         // Calculate average pace
         var avgPaceS = distanceMeters > 0 && durationSeconds > 0
@@ -506,7 +504,7 @@ public class BulkImportService
             RawFitData = fitResult?.RawFitDataJson,
             RawStravaData = activity.RawStravaDataJson,
             Source = "strava_import",
-            Name = !string.IsNullOrWhiteSpace(activity.ActivityName) ? activity.ActivityName : null,
+            Name = !string.IsNullOrWhiteSpace(activity.ActivityName) ? activity.ActivityName : parseResult?.Name,
             Notes = notes,
             RawFileData = rawFileData,
             RawFileName = Path.GetFileName(activity.Filename),
@@ -704,25 +702,24 @@ public class BulkImportService
     /// Calculates splits for a workout.
     /// </summary>
     private List<WorkoutSplit> CalculateSplits(
-        List<GpxParserService.GpxPoint> trackPoints,
+        List<TrackPoint> trackPoints,
         double distanceMeters,
         int durationSeconds,
         double splitDistanceMeters,
         Guid workoutId)
     {
-        var splits = _gpxParser.CalculateSplits(
+        var startedAt = trackPoints.FirstOrDefault(p => p.Time.HasValue)?.Time
+            ?? DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc);
+
+        var derived = _trackGeometry.Derive(
             trackPoints,
+            startedAt,
+            splitDistanceMeters,
+            workoutId,
             distanceMeters,
-            durationSeconds,
-            splitDistanceMeters
-        );
+            durationSeconds);
 
-        foreach (var split in splits)
-        {
-            split.WorkoutId = workoutId;
-        }
-
-        return splits;
+        return derived.Splits.ToList();
     }
 
     /// <summary>
@@ -788,17 +785,16 @@ public class BulkImportService
     /// </summary>
     private async Task FetchAndAttachWeatherAsync(
         Workout workout,
-        List<GpxParserService.GpxPoint> trackPoints,
+        List<TrackPoint> trackPoints,
         string? rawStravaDataJson,
         string? rawFitDataJson,
         DateTime startedAtUtc)
     {
-        if (trackPoints.Count == 0)
+        var firstPoint = trackPoints.FirstOrDefault(p => p.HasPosition);
+        if (firstPoint == null)
         {
             return;
         }
-
-        var firstPoint = trackPoints[0];
         try
         {
             var weatherJson = await _weatherService.GetWeatherForWorkoutAsync(

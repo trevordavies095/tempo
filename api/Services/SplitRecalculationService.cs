@@ -14,17 +14,20 @@ public class SplitRecalculationService
     private readonly TempoDbContext _db;
     private readonly GpxParserService _gpxParser;
     private readonly FitParserService _fitParser;
+    private readonly TrackGeometry _trackGeometry;
     private readonly ILogger<SplitRecalculationService> _logger;
 
     public SplitRecalculationService(
         TempoDbContext db,
         GpxParserService gpxParser,
         FitParserService fitParser,
+        TrackGeometry trackGeometry,
         ILogger<SplitRecalculationService> logger)
     {
         _db = db;
         _gpxParser = gpxParser;
         _fitParser = fitParser;
+        _trackGeometry = trackGeometry;
         _logger = logger;
     }
 
@@ -45,7 +48,7 @@ public class SplitRecalculationService
             : 1000.0;
 
         // Try to extract track points from raw data
-        List<GpxParserService.GpxPoint>? trackPoints = null;
+        List<TrackPoint>? trackPoints = null;
 
         // First, try to extract from RawGpxData (GPX files)
         if (!string.IsNullOrEmpty(workout.RawGpxData))
@@ -95,18 +98,15 @@ public class SplitRecalculationService
         }
 
         // Calculate new splits
-        var newSplits = _gpxParser.CalculateSplits(
+        var derived = _trackGeometry.Derive(
             trackPoints,
+            workout.StartedAt,
+            splitDistanceMeters,
+            workout.Id,
             workout.DistanceM,
-            workout.DurationS,
-            splitDistanceMeters
-        );
+            workout.DurationS);
 
-        // Set workout ID for each split
-        foreach (var split in newSplits)
-        {
-            split.WorkoutId = workout.Id;
-        }
+        var newSplits = derived.Splits.ToList();
 
         // Add new splits
         _db.WorkoutSplits.AddRange(newSplits);
@@ -183,7 +183,7 @@ public class SplitRecalculationService
     /// <summary>
     /// Extracts track points from RawGpxData JSON.
     /// </summary>
-    private List<GpxParserService.GpxPoint>? ExtractTrackPointsFromRawGpxData(string rawGpxDataJson)
+    private List<TrackPoint>? ExtractTrackPointsFromRawGpxData(string rawGpxDataJson)
     {
         return ExtractTrackPointsFromJsonData(rawGpxDataJson, "RawGpxData");
     }
@@ -191,7 +191,7 @@ public class SplitRecalculationService
     /// <summary>
     /// Extracts track points from RawFitData JSON.
     /// </summary>
-    private List<GpxParserService.GpxPoint>? ExtractTrackPointsFromRawFitData(string rawFitDataJson)
+    private List<TrackPoint>? ExtractTrackPointsFromRawFitData(string rawFitDataJson)
     {
         return ExtractTrackPointsFromJsonData(rawFitDataJson, "RawFitData");
     }
@@ -199,7 +199,7 @@ public class SplitRecalculationService
     /// <summary>
     /// Extracts track points from JSON data (shared implementation for both GPX and FIT).
     /// </summary>
-    private List<GpxParserService.GpxPoint>? ExtractTrackPointsFromJsonData(string jsonData, string dataType)
+    private List<TrackPoint>? ExtractTrackPointsFromJsonData(string jsonData, string dataType)
     {
         try
         {
@@ -210,7 +210,7 @@ public class SplitRecalculationService
                 return null;
             }
 
-            var trackPoints = new List<GpxParserService.GpxPoint>();
+            var trackPoints = new List<TrackPoint>();
             foreach (var pointElement in trackPointsElement.EnumerateArray())
             {
                 if (!pointElement.TryGetProperty("lat", out var latElement) ||
@@ -219,7 +219,7 @@ public class SplitRecalculationService
                     continue;
                 }
 
-                var point = new GpxParserService.GpxPoint
+                var point = new TrackPoint
                 {
                     Latitude = latElement.GetDouble(),
                     Longitude = lonElement.GetDouble()
@@ -278,7 +278,7 @@ public class SplitRecalculationService
     /// <summary>
     /// Re-parses track points from RawFileData if it's a GPX or FIT file.
     /// </summary>
-    private async Task<List<GpxParserService.GpxPoint>?> ReparseTrackPointsFromRawFileAsync(Workout workout)
+    private async Task<List<TrackPoint>?> ReparseTrackPointsFromRawFileAsync(Workout workout)
     {
         if (workout.RawFileData == null || workout.RawFileData.Length == 0)
         {
@@ -322,7 +322,7 @@ public class SplitRecalculationService
     /// <summary>
     /// Extracts track points from RouteGeoJson (coordinates only, no timestamps or elevation).
     /// </summary>
-    private List<GpxParserService.GpxPoint>? ExtractTrackPointsFromRouteGeoJson(string routeGeoJson)
+    private List<TrackPoint>? ExtractTrackPointsFromRouteGeoJson(string routeGeoJson)
     {
         try
         {
@@ -338,7 +338,7 @@ public class SplitRecalculationService
                 return null;
             }
 
-            var trackPoints = new List<GpxParserService.GpxPoint>();
+            var trackPoints = new List<TrackPoint>();
             foreach (var coordElement in coordinatesElement.EnumerateArray())
             {
                 if (coordElement.ValueKind != JsonValueKind.Array || coordElement.GetArrayLength() < 2)
@@ -352,7 +352,7 @@ public class SplitRecalculationService
                     continue;
                 }
 
-                var point = new GpxParserService.GpxPoint
+                var point = new TrackPoint
                 {
                     Longitude = coords[0].GetDouble(),
                     Latitude = coords[1].GetDouble()
@@ -380,8 +380,8 @@ public class SplitRecalculationService
     /// Reconstructs timestamps for track points based on cumulative distance along the route.
     /// This allows accurate split calculation for workouts without stored timestamps.
     /// </summary>
-    private List<GpxParserService.GpxPoint> ReconstructTimestampsFromDistance(
-        List<GpxParserService.GpxPoint> trackPoints,
+    private List<TrackPoint> ReconstructTimestampsFromDistance(
+        List<TrackPoint> trackPoints,
         DateTime workoutStartTime,
         int workoutDurationS,
         double workoutDistanceM)
@@ -402,15 +402,15 @@ public class SplitRecalculationService
             
             // Calculate distance using Haversine formula
             var distance = CalculateHaversineDistance(
-                prevPoint.Latitude, prevPoint.Longitude,
-                currPoint.Latitude, currPoint.Longitude);
+                prevPoint.Latitude!.Value, prevPoint.Longitude!.Value,
+                currPoint.Latitude!.Value, currPoint.Longitude!.Value);
             
             totalDistance += distance;
             cumulativeDistances.Add(totalDistance);
         }
 
         // Assign timestamps proportionally based on distance
-        var reconstructed = new List<GpxParserService.GpxPoint>();
+        var reconstructed = new List<TrackPoint>();
         for (int i = 0; i < trackPoints.Count; i++)
         {
             var point = trackPoints[i];

@@ -42,10 +42,11 @@ public class SplitRecalculationServiceTests : IDisposable
             NoiseThresholdMeters = 2.0,
             MinDistanceMeters = 10.0
         };
-        _gpxParser = new GpxParserService(elevationConfig, new TrackGeometry(elevationConfig));
-        _fitParser = new FitParserService(elevationConfig);
+        _gpxParser = new GpxParserService(elevationConfig);
+        _fitParser = new FitParserService();
+        var trackGeometry = new TrackGeometry(elevationConfig);
         _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<SplitRecalculationService>();
-        _service = new SplitRecalculationService(_db, _gpxParser, _fitParser, _logger);
+        _service = new SplitRecalculationService(_db, _gpxParser, _fitParser, trackGeometry, _logger);
     }
 
     public void Dispose()
@@ -298,10 +299,10 @@ public class SplitRecalculationServiceTests : IDisposable
 
     // Helper methods
 
-    private List<GpxParserService.GpxPoint> CreateTestTrackPoints(double totalDistanceMeters, int totalDurationSeconds)
+    private List<TrackPoint> CreateTestTrackPoints(double totalDistanceMeters, int totalDurationSeconds)
     {
         var numPoints = 100;
-        var points = new List<GpxParserService.GpxPoint>();
+        var points = new List<TrackPoint>();
         var startTime = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc);
         
         // Create points along a line
@@ -312,7 +313,7 @@ public class SplitRecalculationServiceTests : IDisposable
         for (int i = 0; i < numPoints; i++)
         {
             var elapsedSeconds = (int)((double)i / (numPoints - 1) * totalDurationSeconds);
-            points.Add(new GpxParserService.GpxPoint
+            points.Add(new TrackPoint
             {
                 Latitude = startLat + (i * degreeIncrement),
                 Longitude = startLon + (i * degreeIncrement),
@@ -324,7 +325,7 @@ public class SplitRecalculationServiceTests : IDisposable
         return points;
     }
 
-    private string CreateRawGpxDataJson(List<GpxParserService.GpxPoint> trackPoints)
+    private string CreateRawGpxDataJson(List<TrackPoint> trackPoints)
     {
         var rawGpxData = new
         {

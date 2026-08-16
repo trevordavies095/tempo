@@ -12,23 +12,15 @@ public class FitParserService
 {
     // Conversion factor: 180 degrees / 2^31 semicircles
     private const double SemicirclesToDegrees = 180.0 / 2147483648.0;
-    private readonly ElevationCalculationConfig _elevationConfig;
-
-    public FitParserService(ElevationCalculationConfig elevationConfig)
-    {
-        _elevationConfig = elevationConfig;
-    }
 
     public class FitParseResult
     {
         public System.DateTime StartTime { get; set; }
         public int DurationSeconds { get; set; }
         public double DistanceMeters { get; set; }
-        public double? ElevationGainMeters { get; set; }
-        public List<GpxParserService.GpxPoint> TrackPoints { get; set; } = new();
+        public List<TrackPoint> TrackPoints { get; set; } = new();
         public List<TrackPoint> SeriesPoints { get; set; } = new();
-        public string? RawFitDataJson { get; set; }  // JSON string for RawFitData field
-        public ReadOnlyCollection<Dynastream.Fit.RecordMesg> RecordMesgs { get; set; } = new ReadOnlyCollection<Dynastream.Fit.RecordMesg>(new List<Dynastream.Fit.RecordMesg>());
+        public string? RawFitDataJson { get; set; }
     }
 
     public FitParseResult ParseFit(Stream fitStream)
@@ -72,7 +64,7 @@ public class FitParserService
             }
 
             // Extract track points from RecordMesg
-            var trackPoints = new List<GpxParserService.GpxPoint>();
+            var trackPoints = new List<TrackPoint>();
             var seriesPoints = new List<TrackPoint>();
             System.DateTime? firstTimestamp = null;
             System.DateTime? lastTimestamp = null;
@@ -119,15 +111,12 @@ public class FitParserService
                 // Only add track points if we have valid position data
                 if (latitude.HasValue && longitude.HasValue)
                 {
-                    var point = new GpxParserService.GpxPoint
+                    var point = new TrackPoint
                     {
                         Latitude = latitude.Value,
                         Longitude = longitude.Value,
                         Time = timestamp.Value,
                         Elevation = altitude,
-                        // Extract sensor data from RecordMesg
-                        // All Get methods return nullable types and never throw exceptions,
-                        // ensuring backward compatibility with FIT files without sensor data
                         HeartRateBpm = record.GetHeartRate(),
                         CadenceRpm = record.GetCadence(),
                         PowerWatts = record.GetPower(),
@@ -180,10 +169,6 @@ public class FitParserService
                 throw new InvalidOperationException("FIT file contains no GPS data and no distance information");
             }
 
-            // Calculate elevation gain with noise filtering
-            double? elevationGain = CalculateElevationGain(trackPoints);
-
-            // Build RawFitData JSON
             var rawFitData = BuildRawFitData(session, deviceInfos, records.Count, weatherConditions, trackPoints);
 
             return new FitParseResult
@@ -191,11 +176,9 @@ public class FitParserService
                 StartTime = System.DateTime.SpecifyKind(startTime.Value, System.DateTimeKind.Utc),
                 DurationSeconds = durationSeconds,
                 DistanceMeters = totalDistance,
-                ElevationGainMeters = elevationGain,
                 TrackPoints = trackPoints,
                 SeriesPoints = seriesPoints,
-                RawFitDataJson = rawFitData,
-                RecordMesgs = records
+                RawFitDataJson = rawFitData
             };
         }
         catch (FitException ex)
@@ -297,106 +280,7 @@ public class FitParserService
         };
     }
 
-    private double? CalculateElevationGain(List<GpxParserService.GpxPoint> trackPoints)
-    {
-        if (!trackPoints.Any(p => p.Elevation.HasValue))
-        {
-            return null;
-        }
-
-        double totalElevationGain = 0.0;
-        double accumulatedElevationGain = 0.0;
-        double accumulatedElevationLoss = 0.0;
-        double accumulatedDistance = 0.0;
-        double? lastElevation = null;
-        GpxParserService.GpxPoint? lastPoint = null;
-
-        foreach (var point in trackPoints)
-        {
-            if (!point.Elevation.HasValue)
-            {
-                // Skip points without elevation, but continue tracking distance
-                if (lastPoint != null)
-                {
-                    accumulatedDistance += GeoUtils.HaversineDistance(
-                        lastPoint.Latitude,
-                        lastPoint.Longitude,
-                        point.Latitude,
-                        point.Longitude
-                    );
-                }
-                lastPoint = point;
-                continue;
-            }
-
-            double currentElevation = point.Elevation.Value;
-
-                if (lastElevation.HasValue && lastPoint != null)
-                {
-                    // Calculate horizontal distance since last point
-                    double segmentDistance = GeoUtils.HaversineDistance(
-                        lastPoint.Latitude,
-                        lastPoint.Longitude,
-                        point.Latitude,
-                        point.Longitude
-                    );
-                    accumulatedDistance += segmentDistance;
-
-                // Calculate elevation change
-                double elevationDiff = currentElevation - lastElevation.Value;
-
-                if (elevationDiff > 0)
-                {
-                    // Gaining elevation
-                    if (accumulatedElevationLoss > 0)
-                    {
-                        // Direction changed from loss to gain
-                        // Process accumulated loss (we don't count loss, but reset it)
-                        accumulatedElevationLoss = 0.0;
-                        accumulatedDistance = 0.0;
-                    }
-                    accumulatedElevationGain += elevationDiff;
-                }
-                else if (elevationDiff < 0)
-                {
-                    // Losing elevation
-                    if (accumulatedElevationGain > 0)
-                    {
-                        // Direction changed from gain to loss
-                        // Check if accumulated gain should be counted
-                        if (accumulatedElevationGain >= _elevationConfig.NoiseThresholdMeters &&
-                            accumulatedDistance >= _elevationConfig.MinDistanceMeters)
-                        {
-                            totalElevationGain += accumulatedElevationGain;
-                        }
-                        // Reset accumulators
-                        accumulatedElevationGain = 0.0;
-                        accumulatedDistance = 0.0;
-                    }
-                    accumulatedElevationLoss += Math.Abs(elevationDiff);
-                }
-                // If elevationDiff == 0, we continue accumulating distance but don't change elevation accumulators
-            }
-
-            lastElevation = currentElevation;
-            lastPoint = point;
-        }
-
-        // Process any remaining accumulated elevation gain at the end
-        if (accumulatedElevationGain > 0)
-        {
-            if (accumulatedElevationGain >= _elevationConfig.NoiseThresholdMeters &&
-                accumulatedDistance >= _elevationConfig.MinDistanceMeters)
-            {
-                totalElevationGain += accumulatedElevationGain;
-            }
-        }
-
-        return totalElevationGain > 0 ? totalElevationGain : null;
-    }
-
-
-    private string? BuildRawFitData(SessionMesg? session, ReadOnlyCollection<DeviceInfoMesg> deviceInfos, int recordCount, ReadOnlyCollection<WeatherConditionsMesg> weatherConditions, List<GpxParserService.GpxPoint> trackPoints)
+    private string? BuildRawFitData(SessionMesg? session, ReadOnlyCollection<DeviceInfoMesg> deviceInfos, int recordCount, ReadOnlyCollection<WeatherConditionsMesg> weatherConditions, List<TrackPoint> trackPoints)
     {
         // Extract session data if available (nullable to handle FIT files without session messages)
         var sessionData = session != null ? ExtractSessionData(session) : null;

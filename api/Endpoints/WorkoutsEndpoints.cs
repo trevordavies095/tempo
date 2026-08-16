@@ -2676,19 +2676,19 @@ public static class WorkoutsEndpoints
     /// <summary>
     /// Extracts common data from parse results.
     /// </summary>
-    private static (DateTime StartTime, int DurationSeconds, double DistanceMeters, double? ElevationGainMeters, 
-        List<GpxParserService.GpxPoint> TrackPoints, string? RawGpxDataJson, string? RawFitDataJson) 
+    private static (DateTime StartTime, int DurationSeconds, double DistanceMeters,
+        List<TrackPoint> TrackPoints, string? RawGpxDataJson, string? RawFitDataJson) 
         ExtractParseResultData(GpxParserService.GpxParseResult? parseResult, FitParserService.FitParseResult? fitResult)
     {
             if (parseResult != null)
             {
             return (parseResult.StartTime, parseResult.DurationSeconds, parseResult.DistanceMeters,
-                parseResult.ElevationGainMeters, parseResult.TrackPoints, parseResult.RawGpxDataJson, null);
+                parseResult.TrackPoints, parseResult.RawGpxDataJson, null);
             }
             else if (fitResult != null)
             {
             return (fitResult.StartTime, fitResult.DurationSeconds, fitResult.DistanceMeters,
-                fitResult.ElevationGainMeters, fitResult.TrackPoints, null, fitResult.RawFitDataJson);
+                fitResult.TrackPoints, null, fitResult.RawFitDataJson);
             }
             else
             {
@@ -2967,18 +2967,18 @@ public static class WorkoutsEndpoints
     /// </summary>
     private static async Task FetchAndAttachWeatherAsync(
         Workout workout,
-        List<GpxParserService.GpxPoint> trackPoints,
+        List<TrackPoint> trackPoints,
         string? rawFitDataJson,
         DateTime startedAtUtc,
         WeatherService weatherService,
         ILogger logger)
     {
-        if (trackPoints.Count == 0)
+        var firstPoint = trackPoints.FirstOrDefault(p => p.HasPosition);
+        if (firstPoint == null)
         {
             return;
         }
 
-                var firstPoint = trackPoints[0];
                 try
                 {
                     var weatherJson = await weatherService.GetWeatherForWorkoutAsync(
@@ -3066,7 +3066,7 @@ public static class WorkoutsEndpoints
                 file, fileType, isFitGz, gpxParser, fitParser, logger);
 
             // Extract data from parse result
-            var (startTime, durationSeconds, distanceMeters, elevationGainMeters, trackPoints, rawGpxDataJson, rawFitDataJson) =
+            var (startTime, durationSeconds, distanceMeters, trackPoints, rawGpxDataJson, rawFitDataJson) =
                 ExtractParseResultData(parseResult, fitResult);
 
             // Calculate average pace (seconds per km - stored in metric)
@@ -3096,31 +3096,12 @@ public static class WorkoutsEndpoints
 
             // Create workout (no duplicate found)
             var workout = CreateWorkoutEntity(
-                startedAtUtc, durationSeconds, distanceMeters, avgPaceS, elevationGainMeters,
+                startedAtUtc, durationSeconds, distanceMeters, avgPaceS, null,
                 rawFileData, file.FileName, fileType, rawGpxDataJson, rawFitDataJson, isGpx);
 
-            // Extract name from GPX metadata if available
-            if (parseResult != null && !string.IsNullOrEmpty(rawGpxDataJson))
+            if (!string.IsNullOrWhiteSpace(parseResult?.Name))
             {
-                try
-                {
-                    var rawData = JsonSerializer.Deserialize<JsonElement>(rawGpxDataJson);
-                    if (rawData.TryGetProperty("metadata", out var metadataElement) && metadataElement.ValueKind == JsonValueKind.Object)
-                    {
-                        if (metadataElement.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String)
-                        {
-                            var name = nameElement.GetString();
-                            if (!string.IsNullOrWhiteSpace(name))
-                            {
-                                workout.Name = name;
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to extract name from GPX metadata");
-                }
+                workout.Name = parseResult.Name;
             }
 
             // Populate metrics
@@ -3128,13 +3109,15 @@ public static class WorkoutsEndpoints
 
             // Create route, splits, and time series
             var geometry = trackGeometry.Derive(
-                trackPoints.Select(p => p.ToTrackPoint()).ToList(),
+                trackPoints,
                 startedAtUtc,
                 splitDistanceMeters,
                 workout.Id,
                 distanceMeters,
                 durationSeconds,
                 parseResult != null ? null : fitResult?.SeriesPoints);
+
+            workout.ElevGainM = geometry.ElevGainM;
 
             var route = geometry.Route;
             var splits = geometry.Splits.ToList();

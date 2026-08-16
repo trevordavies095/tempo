@@ -20,7 +20,7 @@ public class GpxParserServiceTests
             NoiseThresholdMeters = 2.0,
             MinDistanceMeters = 10.0
         };
-        _parser = new GpxParserService(_elevationConfig, new TrackGeometry(_elevationConfig));
+        _parser = new GpxParserService(_elevationConfig);
     }
 
     [Fact]
@@ -206,7 +206,6 @@ public class GpxParserServiceTests
         result.Should().NotBeNull();
         result.TrackPoints.Should().HaveCount(2);
         result.TrackPoints.All(p => !p.Elevation.HasValue).Should().BeTrue();
-        result.ElevationGainMeters.Should().BeNull();
     }
 
     [Fact]
@@ -235,6 +234,7 @@ public class GpxParserServiceTests
         // Assert
         result.Should().NotBeNull();
         result.RawGpxDataJson.Should().Contain("Morning Run");
+        result.Name.Should().Be("Morning Run");
         result.RawGpxDataJson.Should().Contain("Test workout");
         result.RawGpxDataJson.Should().Contain("Test Author");
         result.RawGpxDataJson.Should().Contain("running,test");
