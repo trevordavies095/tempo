@@ -145,7 +145,9 @@ builder.Services.AddScoped<FitParserService>();
 builder.Services.AddScoped<MediaService>();
 builder.Services.AddScoped<HeartRateZoneService>();
 builder.Services.AddScoped<RelativeEffortService>();
+builder.Services.AddScoped<IRelativeEffortService>(sp => sp.GetRequiredService<RelativeEffortService>());
 builder.Services.AddScoped<BestEffortService>();
+builder.Services.AddScoped<IBestEffortService>(sp => sp.GetRequiredService<BestEffortService>());
 builder.Services.AddScoped<BulkImportService>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
@@ -158,6 +160,8 @@ builder.Services.AddScoped<ImportService>();
 builder.Services.AddScoped<RouteMatchingService>();
 builder.Services.AddScoped<InsightsService>();
 builder.Services.AddHttpClient<WeatherService>();
+builder.Services.AddScoped<IWeatherService>(sp => sp.GetRequiredService<WeatherService>());
+builder.Services.AddScoped<WorkoutIntake>();
 
 // Configure media storage
 var mediaRootPath = builder.Configuration["MediaStorage:RootPath"] ?? "./media";

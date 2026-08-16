@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Shared **Highlight** across map, splits, and charts
 
 ### Changed
+- **Single-file import** now uses the same duplicate rule as Strava bulk: incomplete FIT/GPX JSON (or missing raw bytes) can update an existing Workout; complete duplicates are skipped. Distance, duration, and elevation are not rewritten on those updates.
 - **WebUI visual identity**
   - Dark-first command center: Geist, T mark, black + volt yellow tokens; hand-rolled kit (`PageShell`, `Card`, `Button`, `Dialog`, `EmptyState`, `Tabs`)
   - Control plane and Workout overview reskinned without IA changes

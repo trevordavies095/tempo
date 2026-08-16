@@ -5,7 +5,7 @@ using Tempo.Api.Models;
 
 namespace Tempo.Api.Services;
 
-public class RelativeEffortService
+public class RelativeEffortService : IRelativeEffortService
 {
     // Zone weights: Zone 1 = 1 point/min, Zone 2 = 2 points/min, etc.
     private static readonly int[] ZoneWeights = { 1, 2, 3, 4, 5 };
