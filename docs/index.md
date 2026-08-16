@@ -22,6 +22,7 @@ Tempo is a self-hostable running tracker that gives you complete control over yo
 - **Media Support** - Attach photos and videos to workouts
 - **Weather Data** - Automatic weather conditions for each workout
 - **Bulk Import** - Import a Strava export ZIP as a background job (onboarding or Settings → Migrate / restore; up to 500MB)
+- **First-run onboarding** - Guided setup after registration (optional Tempo restore, essentials, optional Strava)
 - **Data Export** - Export all your data in a portable ZIP format for backup and migration
 - **Data Import** - Restore a Tempo export as a background job under Settings → Migrate / restore with progress and cancel
 - **Heart Rate Zones** - Calculate zones using Age-based, Karvonen, or Custom methods

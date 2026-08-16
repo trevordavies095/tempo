@@ -141,6 +141,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 - Registration only available when no users exist (single-user deployment)
 - Password hashing using BCrypt
 - All workout and settings endpoints require authentication (except `/health` and `/version`)
+- **First-run onboarding**: `User.OnboardingCompleted` (new registrations `false`; migration backfills existing users `true`). `GET /auth/me` exposes `onboardingCompleted`; `POST /auth/onboarding/complete` sets it `true` only (idempotent). The command center hard-gates app routes to `/onboarding` until complete.
 
 ## Database Indexing
 
@@ -153,13 +154,15 @@ The `TempoDbContext` configures several important indexes:
 
 ## Key File Locations
 
-- **API Endpoints**: `api/Endpoints/*.cs`
-- **Models**: `api/Models/*.cs`
+- **API Endpoints**: `api/Endpoints/*.cs` — auth/onboarding in `api/Endpoints/AuthEndpoints.cs`
+- **Models**: `api/Models/*.cs` (`User.OnboardingCompleted`)
 - **Workout intake / geometry**: `api/Services/WorkoutIntake.cs`, `api/Services/TrackGeometry.cs`, `api/Services/TrackPointRehydration.cs`
 - **Import jobs**: `api/Services/ImportJobService.cs`, `api/Services/ImportJobWorker.cs`, `api/Services/StravaBulkImportOrchestrator.cs`, `api/Services/BulkImportService.cs`, `api/Services/ImportService.cs`
 - **Services**: `api/Services/*.cs`
 - **Database Context**: `api/Data/TempoDbContext.cs`
-- **Frontend API Client**: `frontend/lib/api.ts` (includes `getWorkoutTimeSeries`)
+- **Frontend API Client**: `frontend/lib/api.ts` (includes `getWorkoutTimeSeries`, `completeOnboarding`)
+- **Auth gate**: `frontend/components/AuthGuard.tsx`, `frontend/contexts/AuthContext.tsx`
+- **Onboarding**: `frontend/app/onboarding/page.tsx`, `frontend/components/onboarding/`
 - **Appearance**: `frontend/lib/appearance.ts`
 - **Highlight**: `frontend/lib/workoutHighlight.ts`
 - **Frontend Pages**: `frontend/app/*/page.tsx` — Workout overview composer is `frontend/app/dashboard/[id]/page.tsx`

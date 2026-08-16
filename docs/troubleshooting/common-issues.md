@@ -184,6 +184,7 @@ Detailed solutions for common Tempo problems.
 - Can't log in
 - Session expires immediately
 - Registration fails
+- Redirected to onboarding / cannot open Dashboard or Settings
 
 **Solutions:**
 1. Verify JWT secret key is configured (production)
@@ -191,6 +192,8 @@ Detailed solutions for common Tempo problems.
 3. Clear browser cookies
 4. Verify database has user table
 5. Check API logs for authentication errors
+6. If you are on first-run setup: complete [onboarding](../getting-started/onboarding.md) (or **Skip for now** after a failed Strava import). Existing upgraded accounts should already be marked complete and not see the wizard
+7. Late Strava or Tempo ZIP migrates live under Settings → Migrate / restore, not the Import page
 
 ### CORS Errors
 

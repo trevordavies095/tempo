@@ -8,9 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **First-run onboarding**
+  - Hard-gated wizard after registration: optional Tempo export restore, essential units/HR zones (optional default shoe), optional Strava archive
+  - `User.OnboardingCompleted` on `GET /auth/me`; `POST /auth/onboarding/complete` (idempotent); existing users backfilled completed on upgrade
 - **Import jobs** for Strava bulk and Tempo export restore
   - Command center uploads ZIPs in **512 KiB** chunks, then polls job progress; cancel and refresh resume are supported
-  - At most one active import job across Strava bulk (Import page) and Tempo restore (Settings)
+  - At most one active import job across Strava bulk and Tempo restore (onboarding or Settings → Migrate / restore)
   - Tempo export restore uses the same rails (`kind: tempo_export`) with nested statistics on the job document
 - **Command-center appearance**
   - System / Dark / Light in Settings (this browser only, `tempo-appearance` in `localStorage`; default System). Not UserSettings and not synced to iOS
@@ -19,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Shared **Highlight** across map, splits, and charts
 
 ### Changed
+- **Import page** is GPX/FIT (and `.fit.gz`) file upload only; Strava bulk and Tempo restore live under Settings → Data Management → **Migrate / restore** (also offered during onboarding)
 - **Breaking (API clients):** `POST /workouts/import/bulk` and `POST /workouts/import/export` return **202** with an import job document instead of a blocking **200** summary. Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`.
 - **Single-file import** now uses the same duplicate rule as Strava bulk: incomplete FIT/GPX JSON (or missing raw bytes) can update an existing Workout; complete duplicates are skipped. Distance, duration, and elevation are not rewritten on those updates.
 - **Strava bulk import** per-file persist uses the same Workout intake pipeline as single-file import (ZIP extract, `activities.csv`, non-run skip, and media copy unchanged).

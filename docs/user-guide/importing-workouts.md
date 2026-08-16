@@ -1,6 +1,6 @@
 # Importing Workouts
 
-Learn how to import individual workout files into Tempo. For a full Strava archive ZIP, see [Bulk Import](bulk-import.md) (Settings → Migrate / restore, or first-run onboarding).
+Learn how to import individual GPX and FIT workout files into Tempo. The Import page is **file-only** — it does not accept Strava or Tempo ZIP archives. For a full Strava archive ZIP, see [Bulk Import](bulk-import.md) (Settings → Migrate / restore, or [first-run onboarding](../getting-started/onboarding.md)).
 
 ## Supported File Formats
 
@@ -38,8 +38,8 @@ For your full Strava history as a ZIP, use [Bulk Import](bulk-import.md).
 
 ### Step 1: Access the Import Page
 
-1. Log in to Tempo
-2. Navigate to the Import page (usually accessible from the main navigation)
+1. Log in to Tempo (and finish [onboarding](../getting-started/onboarding.md) if prompted)
+2. Navigate to the Import page from the main navigation (GPX/FIT uploads only)
 
 ### Step 2: Upload Your File
 

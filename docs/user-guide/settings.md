@@ -10,7 +10,9 @@ Tempo settings allow you to customize:
 - Heart rate zones
 - Relative effort calculation
 - Shoe tracking and management
-- Data export and import
+- **Export** (prominent under Data Management) and collapsed **Migrate / restore** (Strava archive + Tempo export restore)
+
+On a fresh install, units, heart rate zones, and an optional default shoe are usually set during [first-run onboarding](../getting-started/onboarding.md). You can change them anytime here.
 
 ## Appearance
 

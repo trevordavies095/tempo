@@ -19,7 +19,7 @@ Tempo is a self-hosted running tracker that helps you track and analyze your wor
 
 If you're new to Tempo, start with:
 
-1. Complete first-run onboarding (restore a Tempo export, or set essentials and optionally import Strava)
+1. Complete [first-run onboarding](../getting-started/onboarding.md) (restore a Tempo export, or set essentials and optionally import Strava)
 2. [Importing your first workout](importing-workouts.md) (GPX/FIT on the Import page)
 3. [Exploring the dashboard](viewing-workouts.md)
 4. [Configuring your settings](settings.md)
@@ -36,7 +36,7 @@ If you're new to Tempo, start with:
 ### Bulk Import from Strava
 
 1. Request your Strava data export
-2. During onboarding, choose Strava import — or later open Settings → Migrate / restore → Import Strava archive
+2. During [onboarding](../getting-started/onboarding.md), choose Strava import — or later open Settings → Migrate / restore → Import Strava archive
 3. Upload the ZIP file
 4. Wait for processing to complete
 5. Review imported workouts

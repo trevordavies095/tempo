@@ -44,6 +44,7 @@ That's it! The database migrations run automatically on first startup. For detai
 
 ## Features
 
+- **First-run onboarding** - Guided setup after registration (optional Tempo restore, essentials, optional Strava)
 - **Multi-Format Support** - Import GPX, FIT (.fit, .fit.gz), and Strava CSV files from Garmin, Apple Watch, and other devices
 - **Workout Analytics** - Track distance, pace, elevation, splits, and time series data
 - **Workout Overview** - Map, splits, and HR/pace/elevation charts sharing one Highlight
@@ -51,7 +52,7 @@ That's it! The database migrations run automatically on first startup. For detai
 - **Interactive Maps** - Themed route maps (dark/light tiles) with tokenized polylines
 - **Media Support** - Attach photos and videos to workouts
 - **Weather Data** - Automatic weather conditions for each workout
-- **Bulk Import** - Import multiple workouts at once via ZIP file (up to 500MB)
+- **Bulk Import** - Import a Strava export ZIP as a background job (onboarding or Settings → Migrate / restore; up to 500MB)
 - **Heart Rate Zones** - Calculate zones using Age-based, Karvonen, or Custom methods
 - **Relative Effort** - Automatic calculation of workout intensity based on heart rate zones
 - **Best Efforts** - Track your fastest times for standard distances (400m to Marathon) from any segment within workouts

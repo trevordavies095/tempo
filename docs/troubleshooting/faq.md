@@ -51,8 +51,20 @@ Tempo supports:
 ### Can I import from Strava?
 
 Yes! You can:
-- Import individual GPX files from Strava on the Import page
-- Bulk import your entire Strava history using a Strava data export (first-run onboarding, or Settings → Migrate / restore)
+- Import individual GPX files from Strava on the Import page (file upload only)
+- Bulk import your entire Strava history using a Strava data export ([first-run onboarding](../getting-started/onboarding.md), or Settings → Migrate / restore)
+
+### What is first-run onboarding?
+
+After registration, Tempo guides you through optional Tempo restore, essential settings (units and heart rate zones), and an optional Strava archive. App routes stay gated until setup finishes. See [First-run onboarding](../getting-started/onboarding.md).
+
+### Will upgrading force me through onboarding again?
+
+No. Existing accounts are backfilled as already completed when onboarding ships. There is no “run setup again” entry in Settings.
+
+### I skipped Strava during onboarding. Can I import a Strava ZIP later?
+
+Yes. Open **Settings → Data Management → Migrate / restore → Import Strava archive**. Day-to-day GPX/FIT files stay on the Import page.
 
 ### Does Tempo sync with my devices?
 
@@ -121,6 +133,10 @@ See the [Contributing Guide](../developers/contributing.md) for details.
 ### Why can't I register?
 
 Registration is only available when no users exist. After the first user is created, registration is locked for security.
+
+### Why am I stuck on the setup / onboarding screen?
+
+Until onboarding completes, every app route redirects to the wizard. Finish restore or essentials (and answer the Strava question), or use **Skip for now** after a failed Strava job. Logout is available from the onboarding shell. See [First-run onboarding](../getting-started/onboarding.md).
 
 ### Why is my import slow?
 

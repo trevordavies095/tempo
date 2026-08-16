@@ -121,6 +121,29 @@
         ]
       }
     },
+    "/auth/onboarding/complete": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Mark first-run onboarding as complete (idempotent).",
+        "description": "Marks first-run onboarding as complete for the current user. Idempotent; cannot set the flag back to false.",
+        "operationId": "CompleteOnboarding",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/auth/logout": {
       "post": {
         "tags": [

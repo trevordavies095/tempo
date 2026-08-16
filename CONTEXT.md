@@ -62,6 +62,10 @@ A pair of running shoes with mileage and Workout assignments.
 Single-row preferences: units, heart-rate zones, default shoe. Appearance (dark/light) is a command-center preference, not UserSettings.
 _Avoid_: config, profile
 
+**Onboarding**:
+Hard-gated first-run wizard on the command center after registration (optional Tempo export restore, essentials, optional Strava bulk). Driven by `User.OnboardingCompleted` (account flag, not UserSettings). Day-to-day Import stays GPX/FIT; late ZIPs use Settings → Migrate / restore.
+_Avoid_: setup wizard as UserSettings, re-run setup from Settings
+
 **Run type**:
 Classification of a Workout (Easy, Workout, Long Run, Race, and the same set the product already uses).
 _Avoid_: tag, category (when meaning run type)

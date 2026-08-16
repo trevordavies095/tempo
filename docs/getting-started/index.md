@@ -12,6 +12,7 @@ Tempo is a self-hostable running tracker that runs entirely on your own infrastr
 - Quick start with Docker Compose (recommended for most users)
 - Alternative installation methods
 - Initial configuration and setup
+- First-run [onboarding](onboarding.md) (restore, essentials, optional Strava)
 - Verification steps to confirm successful installation
 
 ## Installation Methods
@@ -21,13 +22,14 @@ Tempo can be installed in several ways:
 1. **[Quick Start with Docker Compose](quick-start.md)** - The fastest way to get started (recommended)
 2. **[Manual Installation](installation.md)** - Step-by-step installation for different deployment scenarios
 3. **[Configuration Guide](configuration.md)** - Configure Tempo for your environment
+4. **[First-run onboarding](onboarding.md)** - Guided setup after registration
 
 ## Next Steps
 
 1. Choose your installation method
 2. Follow the installation guide
 3. Configure Tempo for your environment
-4. Start importing your workouts!
+4. Complete [onboarding](onboarding.md), then import workouts
 
 ## Need Help?
 

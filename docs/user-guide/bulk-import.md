@@ -51,6 +51,10 @@ If your Strava export doesn't match the required structure:
 
 ### Step 2: Access Bulk Import
 
+During **[first-run onboarding](../getting-started/onboarding.md)**, choose Strava import after essentials.
+
+After setup:
+
 1. Log in to Tempo
 2. Navigate to **Settings**
 3. Under **Data Management**, expand **Migrate / restore**

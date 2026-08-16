@@ -146,6 +146,8 @@ Tempo's import feature provides a user-friendly way to restore data from an expo
 
 #### Using the Import Feature
 
+On a **fresh install**, you can restore a Tempo export during [first-run onboarding](../getting-started/onboarding.md). After setup (or on an existing instance):
+
 1. Log into Tempo
 2. Navigate to Settings
 3. Under Data Management, expand **Migrate / restore**
