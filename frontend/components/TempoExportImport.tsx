@@ -109,89 +109,89 @@ export function TempoExportImport() {
         )}
 
         {mutation.isError && (
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-sm text-red-800 dark:text-red-200">
+          <div className="p-4 bg-canvas border border-danger rounded-tempo">
+            <p className="text-sm text-danger">
               Error: {mutation.error instanceof Error ? mutation.error.message : 'Unknown error'}
             </p>
           </div>
         )}
 
         {importResult && (
-          <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg space-y-3">
-            <h3 className="text-lg font-semibold text-green-900 dark:text-green-100">
+          <div className="p-4 bg-canvas border border-border rounded-tempo space-y-3">
+            <h3 className="text-lg font-semibold text-ink">
               {importResult.success ? 'Import Complete!' : 'Import Completed with Errors'}
             </h3>
-            <div className="text-sm text-green-800 dark:text-green-200 space-y-2">
+            <div className="text-sm text-ink space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <span className="font-medium">Settings:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.settings.imported} imported
                   </span>
                   {importResult.statistics.settings.skipped > 0 && (
-                    <span className="text-yellow-700 dark:text-yellow-300 ml-1">
+                    <span className="text-muted ml-1">
                       ({importResult.statistics.settings.skipped} skipped)
                     </span>
                   )}
                 </div>
                 <div>
                   <span className="font-medium">Shoes:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.shoes.imported} imported
                   </span>
                   {importResult.statistics.shoes.skipped > 0 && (
-                    <span className="text-yellow-700 dark:text-yellow-300 ml-1">
+                    <span className="text-muted ml-1">
                       ({importResult.statistics.shoes.skipped} skipped)
                     </span>
                   )}
                 </div>
                 <div>
                   <span className="font-medium">Workouts:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.workouts.imported} imported
                   </span>
                   {importResult.statistics.workouts.skipped > 0 && (
-                    <span className="text-yellow-700 dark:text-yellow-300 ml-1">
+                    <span className="text-muted ml-1">
                       ({importResult.statistics.workouts.skipped} skipped)
                     </span>
                   )}
                 </div>
                 <div>
                   <span className="font-medium">Routes:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.routes.imported} imported
                   </span>
                 </div>
                 <div>
                   <span className="font-medium">Splits:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.splits.imported} imported
                   </span>
                 </div>
                 <div>
                   <span className="font-medium">Time Series:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.timeSeries.imported} imported
                   </span>
                 </div>
                 <div>
                   <span className="font-medium">Media:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.media.imported} imported
                   </span>
                   {importResult.statistics.media.skipped > 0 && (
-                    <span className="text-yellow-700 dark:text-yellow-300 ml-1">
+                    <span className="text-muted ml-1">
                       ({importResult.statistics.media.skipped} skipped)
                     </span>
                   )}
                 </div>
                 <div>
                   <span className="font-medium">Best Efforts:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.bestEfforts.imported} imported
                   </span>
                   {importResult.statistics.bestEfforts.skipped > 0 && (
-                    <span className="text-yellow-700 dark:text-yellow-300 ml-1">
+                    <span className="text-muted ml-1">
                       ({importResult.statistics.bestEfforts.skipped} skipped)
                     </span>
                   )}
@@ -200,7 +200,7 @@ export function TempoExportImport() {
               
               {importResult.warnings && importResult.warnings.length > 0 && (
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-yellow-700 dark:text-yellow-300 hover:underline">
+                  <summary className="cursor-pointer text-muted hover:underline">
                     View warnings ({importResult.warnings.length})
                   </summary>
                   <ul className="mt-2 ml-4 list-disc space-y-1">
@@ -215,7 +215,7 @@ export function TempoExportImport() {
               
               {importResult.errors && importResult.errors.length > 0 && (
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-red-700 dark:text-red-300 hover:underline">
+                  <summary className="cursor-pointer text-danger hover:underline">
                     View errors ({importResult.errors.length})
                   </summary>
                   <ul className="mt-2 ml-4 list-disc space-y-1">

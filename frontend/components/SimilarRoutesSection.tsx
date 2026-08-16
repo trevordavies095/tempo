@@ -123,11 +123,11 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
   if (isLoading) {
     return (
       <div>
-        <h3 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
+        <h3 className="text-xs font-medium text-muted mb-2 uppercase tracking-wide">
           Previous Efforts
         </h3>
         <div className="flex items-center justify-center py-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Loading...</p>
+          <p className="text-sm text-muted">Loading...</p>
         </div>
       </div>
     );
@@ -137,11 +137,11 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
   if (isError) {
     return (
       <div>
-        <h3 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
+        <h3 className="text-xs font-medium text-muted mb-2 uppercase tracking-wide">
           Previous Efforts
         </h3>
-        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <p className="text-sm text-red-800 dark:text-red-200">
+        <div className="p-3 bg-canvas border border-danger rounded-tempo">
+          <p className="text-sm text-danger">
             Unable to load previous efforts. Please try again.
           </p>
         </div>
@@ -153,11 +153,11 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
   if (!data || data.length === 0) {
     return (
       <div>
-        <h3 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
+        <h3 className="text-xs font-medium text-muted mb-2 uppercase tracking-wide">
           Previous Efforts
         </h3>
-        <div className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+        <div className="p-3 bg-canvas rounded-lg border border-border">
+          <p className="text-sm text-muted">
             No previous efforts found on this route.
           </p>
         </div>
@@ -169,7 +169,7 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
   // then by date (most recent first), then by distance similarity
   return (
     <div>
-      <h3 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
+      <h3 className="text-xs font-medium text-muted mb-2 uppercase tracking-wide">
         Previous Efforts
       </h3>
       <div className="space-y-2">
@@ -177,29 +177,29 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
           <Link
             key={route.workoutId}
             href={`/dashboard/${route.workoutId}`}
-            className="block p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+            className="block p-3 bg-canvas rounded-lg border border-border hover:bg-canvas hover:border-ink transition-colors"
           >
             <div className="space-y-1.5">
               {/* Date */}
-              <div className="text-xs font-medium text-gray-900 dark:text-gray-100">
+              <div className="text-xs font-medium text-ink">
                 {formatDate(route.startedAt)}
               </div>
 
               {/* Duration with time difference */}
               <div className="flex items-center justify-between">
-                <div className="text-xs text-gray-500 dark:text-gray-400">Duration</div>
+                <div className="text-xs text-muted">Duration</div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <span className="text-sm font-semibold text-ink">
                     {formatDuration(route.durationS)}
                   </span>
                   {route.timeDifferenceS !== undefined && route.timeDifferenceS !== null && (
                     <span
                       className={`text-xs ${
                         route.timeDifferenceS < 0
-                          ? 'text-green-600 dark:text-green-400'
+                          ? 'text-ink'
                           : route.timeDifferenceS > 0
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-gray-500 dark:text-gray-400'
+                          ? 'text-danger'
+                          : 'text-muted'
                       }`}
                     >
                       {formatTimeDifference(route.timeDifferenceS)}
@@ -215,19 +215,19 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
 
               {/* Pace with pace difference */}
               <div className="flex items-center justify-between">
-                <div className="text-xs text-gray-500 dark:text-gray-400">Pace</div>
+                <div className="text-xs text-muted">Pace</div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <span className="text-sm font-semibold text-ink">
                     {formatPace(route.avgPaceS, unitPreference)}
                   </span>
                   {route.paceDifferenceS !== undefined && route.paceDifferenceS !== null && (
                     <span
                       className={`text-xs ${
                         route.paceDifferenceS < 0
-                          ? 'text-green-600 dark:text-green-400'
+                          ? 'text-ink'
                           : route.paceDifferenceS > 0
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-gray-500 dark:text-gray-400'
+                          ? 'text-danger'
+                          : 'text-muted'
                       }`}
                     >
                       {formatPaceDifference(route.paceDifferenceS, unitPreference)}
@@ -243,8 +243,8 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
 
               {/* Distance */}
               <div className="flex items-center justify-between">
-                <div className="text-xs text-gray-500 dark:text-gray-400">Distance</div>
-                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                <div className="text-xs text-muted">Distance</div>
+                <div className="text-sm font-semibold text-ink">
                   {formatDistance(route.distanceM, unitPreference)}
                 </div>
               </div>
@@ -252,9 +252,9 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
               {/* Relative Effort (if available) */}
               {route.relativeEffort !== null && route.relativeEffort !== undefined && (
                 <div className="flex items-center justify-between">
-                  <div className="text-xs text-gray-500 dark:text-gray-400">Relative Effort</div>
+                  <div className="text-xs text-muted">Relative Effort</div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    <span className="text-sm font-semibold text-ink">
                       {route.relativeEffort}
                     </span>
                     {currentWorkout.relativeEffort !== null &&
@@ -267,10 +267,10 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                             <span
                               className={`text-xs ${
                                 effortDiff < 0
-                                  ? 'text-green-600 dark:text-green-400'
+                                  ? 'text-ink'
                                   : effortDiff > 0
-                                  ? 'text-red-600 dark:text-red-400'
-                                  : 'text-gray-500 dark:text-gray-400'
+                                  ? 'text-danger'
+                                  : 'text-muted'
                               }`}
                             >
                               ({sign}{absDiff})
@@ -290,9 +290,9 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
               {/* Elevation Gain (if available) */}
               {route.elevGainM !== null && route.elevGainM !== undefined && (
                 <div className="flex items-center justify-between">
-                  <div className="text-xs text-gray-500 dark:text-gray-400">Elevation</div>
+                  <div className="text-xs text-muted">Elevation</div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    <span className="text-sm font-semibold text-ink">
                       {formatElevation(route.elevGainM, unitPreference)}
                     </span>
                     {currentWorkout.elevGainM !== null &&
@@ -317,7 +317,7 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                             : `${Math.round(absDiff)}m`;
                           
                           return (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                            <span className="text-xs text-muted">
                               ({diffFormatted} {moreLess})
                             </span>
                           );

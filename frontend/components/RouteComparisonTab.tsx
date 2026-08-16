@@ -184,24 +184,24 @@ function PaceComparisonTooltip({
 
   if (dataFromLabel) {
     return (
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3">
-        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
+      <div className="bg-canvas border border-border rounded-lg shadow-lg p-3">
+        <p className="text-sm font-medium text-ink mb-1">
           {dataFromLabel.dateISO ? formatDate(dataFromLabel.dateISO) : dataFromLabel.dateDisplay}
         </p>
-        <p className="text-xs text-gray-600 dark:text-gray-400">
+        <p className="text-xs text-muted">
           Pace: {dataFromLabel.paceDisplay}
         </p>
-        <p className="text-xs text-gray-600 dark:text-gray-400">
+        <p className="text-xs text-muted">
           Duration: {formatDuration(dataFromLabel.durationS)}
         </p>
         {dataFromLabel.timeDifferenceS !== undefined && dataFromLabel.timeDifferenceS !== null && (
           <p
             className={`text-xs ${
               dataFromLabel.timeDifferenceS < 0
-                ? 'text-green-600 dark:text-green-400'
+                ? 'text-ink'
                 : dataFromLabel.timeDifferenceS > 0
-                  ? 'text-red-600 dark:text-red-400'
-                  : 'text-gray-500 dark:text-gray-400'
+                  ? 'text-danger'
+                  : 'text-muted'
             }`}
           >
             {formatTimeDifference(dataFromLabel.timeDifferenceS)}
@@ -215,9 +215,9 @@ function PaceComparisonTooltip({
     ?.payload as TrendLinePoint | undefined;
   if (trendPayload) {
     return (
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3">
-        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Linear trend</p>
-        <p className="text-xs text-gray-600 dark:text-gray-400">
+      <div className="bg-canvas border border-border rounded-lg shadow-lg p-3">
+        <p className="text-sm font-medium text-ink mb-1">Linear trend</p>
+        <p className="text-xs text-muted">
           Pace: {formatPace(trendPayload.paceS, unitPreference)}
         </p>
       </div>
@@ -385,9 +385,9 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
   if (isLoading) {
     return (
       <div className="w-full space-y-3">
-        <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+        <div className="bg-raised p-6 rounded-lg border border-border">
           <div className="h-64 flex items-center justify-center">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Loading route comparison...</p>
+            <p className="text-sm text-muted">Loading route comparison...</p>
           </div>
         </div>
       </div>
@@ -398,9 +398,9 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
   if (isError) {
     return (
       <div className="w-full space-y-3">
-        <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-sm text-red-800 dark:text-red-200">
+        <div className="bg-raised p-6 rounded-lg border border-border">
+          <div className="p-4 bg-canvas border border-danger rounded-tempo">
+            <p className="text-sm text-danger">
               {error instanceof Error ? error.message : 'Unable to load route comparison. Please try again.'}
             </p>
           </div>
@@ -413,9 +413,9 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
   if (chartData.length === 0) {
     return (
       <div className="w-full space-y-3">
-        <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-          <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+        <div className="bg-raised p-6 rounded-lg border border-border">
+          <div className="p-4 bg-canvas rounded-lg border border-border">
+            <p className="text-sm text-muted">
               No previous efforts found on this route.
             </p>
           </div>
@@ -427,21 +427,20 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
   return (
     <div className="w-full space-y-3">
       {/* Chart Section */}
-      <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+      <div className="bg-raised p-6 rounded-lg border border-border">
+        <h2 className="text-lg font-semibold text-ink mb-4">
           Pace Over Time
         </h2>
         <div style={{ height: '300px' }}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" className="dark:stroke-gray-700" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
               <XAxis 
                 dataKey="date" 
                 type="number"
                 scale="time"
                 domain={['dataMin', 'dataMax']}
-                tick={{ fill: '#6b7280', fontSize: 12 }}
-                className="dark:text-gray-400"
+                tick={{ fill: 'var(--muted)', fontSize: 12 }}
                 angle={-45}
                 textAnchor="end"
                 height={80}
@@ -452,8 +451,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                 }}
               />
               <YAxis 
-                tick={{ fill: '#6b7280', fontSize: 12 }}
-                className="dark:text-gray-400"
+                tick={{ fill: 'var(--muted)', fontSize: 12 }}
                 tickFormatter={(value) => formatPace(value, unitPreference)}
                 domain={['auto', 'auto']}
                 width={80}
@@ -474,7 +472,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                 name="Efforts"
                 data={chartData}
                 dataKey="paceS"
-                fill="#8884d8"
+                fill="var(--muted)"
                 isAnimationActive={false}
                 shape={(props: unknown) => {
                   const { cx, cy, payload } = props as {
@@ -492,8 +490,8 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                       cx={cx}
                       cy={cy}
                       r={isCurrent ? 6 : 4}
-                      fill={isCurrent ? '#3b82f6' : '#8884d8'}
-                      stroke={isCurrent ? '#1e40af' : 'none'}
+                      fill={isCurrent ? 'var(--volt)' : 'var(--muted)'}
+                      stroke={isCurrent ? 'var(--ink)' : 'none'}
                       strokeWidth={isCurrent ? 2 : 0}
                       style={{ cursor: 'pointer' }}
                       onClick={(e) => {
@@ -520,8 +518,8 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                       cx={cx}
                       cy={cy}
                       r={8}
-                      fill="#8884d8"
-                      stroke="#fff"
+                      fill="var(--volt)"
+                      stroke="var(--ink)"
                       strokeWidth={2}
                       style={{ cursor: 'pointer' }}
                       onClick={(e) => {
@@ -539,8 +537,8 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                   type="linear"
                   data={trendLineData}
                   dataKey="paceS"
-                  stroke="#9ca3af"
-                  className="dark:stroke-gray-500 [&_path]:pointer-events-none"
+                  stroke="var(--muted)"
+                  className="[&_path]:pointer-events-none"
                   strokeWidth={2}
                   strokeDasharray="6 4"
                   dot={false}
@@ -556,24 +554,24 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
 
       {/* Quick Stats Section */}
       {quickStats && (
-        <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+        <div className="bg-raised p-6 rounded-lg border border-border">
+          <h2 className="text-lg font-semibold text-ink mb-4">
             Quick Stats
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Best Time */}
             {quickStats.bestTime && quickStats.bestTime.timeDifferenceS !== undefined && quickStats.bestTime.timeDifferenceS !== null && (
-              <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Best Time</div>
-                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
+              <div className="p-4 bg-canvas rounded-lg border border-border">
+                <div className="text-xs font-medium text-muted mb-1">Best Time</div>
+                <div className="text-sm font-semibold text-ink mb-1">
                   {formatDate(quickStats.bestTime.startedAt)}
                 </div>
                 <div className={`text-xs ${
                   quickStats.bestTime.timeDifferenceS < 0
-                    ? 'text-green-600 dark:text-green-400'
+                    ? 'text-ink'
                     : quickStats.bestTime.timeDifferenceS > 0
-                    ? 'text-red-600 dark:text-red-400'
-                    : 'text-gray-500 dark:text-gray-400'
+                    ? 'text-danger'
+                    : 'text-muted'
                 }`}>
                   {formatTimeDifference(quickStats.bestTime.timeDifferenceS)}
                 </div>
@@ -581,22 +579,22 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
             )}
 
             {/* Average Pace */}
-            <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Average Pace</div>
-              <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            <div className="p-4 bg-canvas rounded-lg border border-border">
+              <div className="text-xs font-medium text-muted mb-1">Average Pace</div>
+              <div className="text-sm font-semibold text-ink">
                 {formatPace(quickStats.avgPace, unitPreference)}
               </div>
             </div>
 
             {/* Improvement Trend */}
-            <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Trend</div>
+            <div className="p-4 bg-canvas rounded-lg border border-border">
+              <div className="text-xs font-medium text-muted mb-1">Trend</div>
               <div className={`text-sm font-semibold flex items-center gap-1 ${
                 quickStats.trend === 'improving'
-                  ? 'text-green-600 dark:text-green-400'
+                  ? 'text-ink'
                   : quickStats.trend === 'declining'
-                  ? 'text-red-600 dark:text-red-400'
-                  : 'text-gray-600 dark:text-gray-400'
+                  ? 'text-danger'
+                  : 'text-muted'
               }`}>
                 {quickStats.trend === 'improving' && '↑ Improving'}
                 {quickStats.trend === 'declining' && '↓ Declining'}
@@ -608,16 +606,16 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
       )}
 
       {/* Sortable List Section */}
-      <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+      <div className="bg-raised p-6 rounded-lg border border-border">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <h2 className="text-lg font-semibold text-ink">
             All Matches ({sortedRoutes.length})
           </h2>
           <div className="flex items-center gap-2">
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortBy)}
-              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-1.5 text-sm border border-border rounded-md bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
             >
               <option value="date">Date</option>
               <option value="pace">Pace</option>
@@ -625,7 +623,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
             </select>
             <button
               onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-1.5 text-sm border border-border rounded-md bg-canvas text-ink hover:bg-canvas focus:outline-none focus:ring-2 focus:ring-volt"
               aria-label={`Sort ${sortOrder === 'asc' ? 'descending' : 'ascending'}`}
             >
               {sortOrder === 'asc' ? '↑' : '↓'}
@@ -637,32 +635,32 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
             <Link
               key={route.workoutId}
               href={`/dashboard/${route.workoutId}`}
-              className="block p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+              className="block p-4 bg-canvas rounded-lg border border-border hover:bg-canvas hover:border-ink transition-colors"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 {/* Date */}
                 <div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Date</div>
-                  <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <div className="text-xs text-muted mb-1">Date</div>
+                  <div className="text-sm font-semibold text-ink">
                     {formatDate(route.startedAt)}
                   </div>
                 </div>
 
                 {/* Duration with time difference */}
                 <div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Duration</div>
+                  <div className="text-xs text-muted mb-1">Duration</div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    <span className="text-sm font-semibold text-ink">
                       {formatDuration(route.durationS)}
                     </span>
                     {route.timeDifferenceS !== undefined && route.timeDifferenceS !== null && (
                       <span
                         className={`text-xs ${
                           route.timeDifferenceS < 0
-                            ? 'text-green-600 dark:text-green-400'
+                            ? 'text-ink'
                             : route.timeDifferenceS > 0
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-gray-500 dark:text-gray-400'
+                            ? 'text-danger'
+                            : 'text-muted'
                         }`}
                       >
                         {formatTimeDifference(route.timeDifferenceS)}
@@ -673,19 +671,19 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
 
                 {/* Pace with pace difference */}
                 <div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Pace</div>
+                  <div className="text-xs text-muted mb-1">Pace</div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    <span className="text-sm font-semibold text-ink">
                       {formatPace(route.avgPaceS, unitPreference)}
                     </span>
                     {route.paceDifferenceS !== undefined && route.paceDifferenceS !== null && (
                       <span
                         className={`text-xs ${
                           route.paceDifferenceS < 0
-                            ? 'text-green-600 dark:text-green-400'
+                            ? 'text-ink'
                             : route.paceDifferenceS > 0
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-gray-500 dark:text-gray-400'
+                            ? 'text-danger'
+                            : 'text-muted'
                         }`}
                       >
                         {formatPaceDifference(route.paceDifferenceS, unitPreference)}
@@ -696,17 +694,17 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
 
                 {/* Distance and Additional Info */}
                 <div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Distance</div>
-                  <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                  <div className="text-xs text-muted mb-1">Distance</div>
+                  <div className="text-sm font-semibold text-ink mb-2">
                     {formatDistance(route.distanceM, unitPreference)}
                   </div>
                   {route.relativeEffort !== null && route.relativeEffort !== undefined && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                    <div className="text-xs text-muted">
                       Effort: {route.relativeEffort}
                     </div>
                   )}
                   {route.elevGainM !== null && route.elevGainM !== undefined && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                    <div className="text-xs text-muted">
                       Elev: {formatElevation(route.elevGainM, unitPreference)}
                     </div>
                   )}

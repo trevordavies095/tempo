@@ -57,3 +57,27 @@ body {
   background: var(--canvas);
   color: var(--ink);
 }
+
+input[type='radio'],
+input[type='checkbox'],
+input[type='range'] {
+  accent-color: var(--volt);
+}
+
+input[type='number'],
+input[type='text'],
+input[type='password'],
+input[type='email'],
+select,
+textarea {
+  color-scheme: light;
+}
+
+.dark input[type='number'],
+.dark input[type='text'],
+.dark input[type='password'],
+.dark input[type='email'],
+.dark select,
+.dark textarea {
+  color-scheme: dark;
+}

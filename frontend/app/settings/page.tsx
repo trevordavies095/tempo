@@ -34,6 +34,9 @@ import {
   getPasswordLengthAndBytesError,
 } from '@/lib/passwordPolicy';
 
+const fieldClass =
+  'w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt';
+
 function SettingsPageContent() {
   const queryClient = useQueryClient();
   const [hrZones, setHrZones] = useState<HeartRateZoneSettings | null>(null);
@@ -336,7 +339,7 @@ function SettingsPageContent() {
                 <>
                   {/* Calculation Method Selection */}
                   <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                    <label className="block text-sm font-medium text-ink mb-3">
                       Calculation Method
                     </label>
                     <div className="space-y-2">
@@ -347,9 +350,9 @@ function SettingsPageContent() {
                           value="AgeBased"
                           checked={calculationMethod === 'AgeBased'}
                           onChange={(e) => setCalculationMethod(e.target.value as HeartRateCalculationMethod)}
-                          className="mr-2"
+                          className="mr-2 h-4 w-4 accent-[var(--volt)]"
                         />
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                        <span className="text-sm text-ink">
                           220 - Age (Default)
                         </span>
                       </label>
@@ -360,9 +363,9 @@ function SettingsPageContent() {
                           value="Karvonen"
                           checked={calculationMethod === 'Karvonen'}
                           onChange={(e) => setCalculationMethod(e.target.value as HeartRateCalculationMethod)}
-                          className="mr-2"
+                          className="mr-2 h-4 w-4 accent-[var(--volt)]"
                         />
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                        <span className="text-sm text-ink">
                           Karvonen (Heart Rate Reserve)
                         </span>
                       </label>
@@ -373,9 +376,9 @@ function SettingsPageContent() {
                           value="Custom"
                           checked={calculationMethod === 'Custom'}
                           onChange={(e) => setCalculationMethod(e.target.value as HeartRateCalculationMethod)}
-                          className="mr-2"
+                          className="mr-2 h-4 w-4 accent-[var(--volt)]"
                         />
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                        <span className="text-sm text-ink">
                           Custom Zones
                         </span>
                       </label>
@@ -385,7 +388,7 @@ function SettingsPageContent() {
                   {/* Input Fields Based on Method */}
                   {calculationMethod === 'AgeBased' && (
                     <div className="mb-6">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <label className="block text-sm font-medium text-ink mb-2">
                         Age
                       </label>
                       <input
@@ -394,9 +397,9 @@ function SettingsPageContent() {
                         max="120"
                         value={age}
                         onChange={(e) => setAge(parseInt(e.target.value) || 30)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        className={fieldClass}
                       />
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      <p className="text-xs text-muted mt-1">
                         Max HR will be calculated as 220 - age = {220 - age} BPM
                       </p>
                     </div>
@@ -405,7 +408,7 @@ function SettingsPageContent() {
                   {calculationMethod === 'Karvonen' && (
                     <div className="mb-6 space-y-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <label className="block text-sm font-medium text-ink mb-2">
                           Resting Heart Rate (BPM)
                         </label>
                         <input
@@ -414,11 +417,11 @@ function SettingsPageContent() {
                           max="120"
                           value={restingHr}
                           onChange={(e) => setRestingHr(parseInt(e.target.value) || 60)}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <label className="block text-sm font-medium text-ink mb-2">
                           Maximum Heart Rate (BPM)
                         </label>
                         <input
@@ -427,9 +430,9 @@ function SettingsPageContent() {
                           max="250"
                           value={maxHr}
                           onChange={(e) => setMaxHr(parseInt(e.target.value) || 190)}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                          className={fieldClass}
                         />
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        <p className="text-xs text-muted mt-1">
                           Heart Rate Reserve = {maxHr} - {restingHr} = {maxHr - restingHr} BPM
                         </p>
                       </div>
@@ -438,13 +441,13 @@ function SettingsPageContent() {
 
                   {calculationMethod === 'Custom' && (
                     <div className="mb-6">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                      <label className="block text-sm font-medium text-ink mb-3">
                         Custom Zone Boundaries (BPM)
                       </label>
                       <div className="space-y-3">
                         {customZones.map((zone, index) => (
                           <div key={index} className="flex items-center gap-3">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 w-16">
+                            <span className="text-sm font-medium text-ink w-16">
                               Zone {index + 1}:
                             </span>
                             <input
@@ -453,17 +456,17 @@ function SettingsPageContent() {
                               max="250"
                               value={zone.min}
                               onChange={(e) => updateCustomZone(index, 'min', parseInt(e.target.value) || 0)}
-                              className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                              className={`w-24 ${fieldClass}`}
                               placeholder="Min"
                             />
-                            <span className="text-gray-500 dark:text-gray-400">-</span>
+                            <span className="text-muted">-</span>
                             <input
                               type="number"
                               min="30"
                               max="250"
                               value={zone.max}
                               onChange={(e) => updateCustomZone(index, 'max', parseInt(e.target.value) || 0)}
-                              className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                              className={`w-24 ${fieldClass}`}
                               placeholder="Max"
                             />
                           </div>
@@ -473,17 +476,17 @@ function SettingsPageContent() {
                   )}
 
                   {/* Zone Preview */}
-                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg mb-6">
-                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                  <div className="bg-canvas border border-border p-4 rounded-tempo mb-6">
+                    <h3 className="text-sm font-semibold text-ink mb-3">
                       Zone Preview
                     </h3>
                     <div className="space-y-2">
                       {displayZones.map((zone, index) => (
                         <div key={index} className="flex items-center justify-between text-sm">
-                          <span className="text-gray-700 dark:text-gray-300 font-medium">
+                          <span className="text-ink font-medium">
                             Zone {index + 1}
                           </span>
-                          <span className="text-gray-600 dark:text-gray-400">
+                          <span className="text-muted">
                             {zone.min} - {zone.max} BPM
                           </span>
                         </div>
@@ -501,12 +504,12 @@ function SettingsPageContent() {
                         {isSaving ? 'Saving...' : 'Save Heart Rate Zones'}
                       </Button>
                       {saveSuccess && (
-                        <span className="text-sm text-green-600 dark:text-green-400">
+                        <span className="text-sm text-ink">
                           Settings saved successfully!
                         </span>
                       )}
                       {saveError && (
-                        <span className="text-sm text-red-600 dark:text-red-400">
+                        <span className="text-sm text-danger">
                           {saveError}
                         </span>
                       )}
@@ -548,12 +551,12 @@ function SettingsPageContent() {
                   {isRecalculatingSplits ? 'Recalculating...' : 'Recalculate Splits'}
                 </Button>
                 {recalcSplitsSuccess && (
-                  <span className="text-sm text-green-600 dark:text-green-400">
+                  <span className="text-sm text-ink">
                     Successfully recalculated splits for {recalcSplitsWorkoutCount} workout{recalcSplitsWorkoutCount !== 1 ? 's' : ''}!
                   </span>
                 )}
                 {recalcSplitsError && (
-                  <span className="text-sm text-red-600 dark:text-red-400">
+                  <span className="text-sm text-danger">
                     {recalcSplitsError}
                   </span>
                 )}
@@ -579,12 +582,12 @@ function SettingsPageContent() {
                     {isRecalculating ? 'Recalculating...' : 'Recalculate Relative Effort'}
                   </Button>
                   {recalcSuccess && (
-                    <span className="text-sm text-green-600 dark:text-green-400">
+                    <span className="text-sm text-ink">
                       Successfully recalculated relative effort for {recalcWorkoutCount} workout{recalcWorkoutCount !== 1 ? 's' : ''}!
                     </span>
                   )}
                   {recalcError && (
-                    <span className="text-sm text-red-600 dark:text-red-400">
+                    <span className="text-sm text-danger">
                       {recalcError}
                     </span>
                   )}
@@ -617,7 +620,7 @@ function SettingsPageContent() {
                   </p>
                   <form onSubmit={handleChangePassword} className="flex flex-col gap-4 max-w-md">
                     <div>
-                      <label htmlFor="settings-current-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="settings-current-password" className="block text-sm font-medium text-ink mb-1">
                         Current password
                       </label>
                       <input
@@ -627,11 +630,11 @@ function SettingsPageContent() {
                         autoComplete="current-password"
                         value={currentPassword}
                         onChange={(e) => setCurrentPassword(e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                        className={fieldClass}
                       />
                     </div>
                     <div>
-                      <label htmlFor="settings-new-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="settings-new-password" className="block text-sm font-medium text-ink mb-1">
                         New password
                       </label>
                       <input
@@ -641,11 +644,11 @@ function SettingsPageContent() {
                         autoComplete="new-password"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                        className={fieldClass}
                       />
                     </div>
                     <div>
-                      <label htmlFor="settings-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="settings-confirm-password" className="block text-sm font-medium text-ink mb-1">
                         Confirm new password
                       </label>
                       <input
@@ -655,7 +658,7 @@ function SettingsPageContent() {
                         autoComplete="new-password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100"
+                        className={fieldClass}
                       />
                     </div>
                     <Button
@@ -666,10 +669,10 @@ function SettingsPageContent() {
                       {passwordChangeSaving ? 'Updating…' : 'Update password'}
                     </Button>
                     {passwordChangeSuccess && (
-                      <p className="text-sm text-green-600 dark:text-green-400">Password updated successfully.</p>
+                      <p className="text-sm text-ink">Password updated successfully.</p>
                     )}
                     {passwordChangeError && (
-                      <p className="text-sm text-red-600 dark:text-red-400">{passwordChangeError}</p>
+                      <p className="text-sm text-danger">{passwordChangeError}</p>
                     )}
                   </form>
                 </div>

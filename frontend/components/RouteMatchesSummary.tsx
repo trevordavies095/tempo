@@ -151,13 +151,13 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
   const matchText = matchCount === 1 ? 'run' : 'runs';
 
   return (
-    <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-      <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+    <div className="bg-raised p-3 rounded-lg border border-border overflow-hidden">
+      <h3 className="text-xs font-medium text-muted mb-2 uppercase tracking-wide">
         Previous Efforts
       </h3>
       <div className="space-y-3">
         {/* Match count */}
-        <div className="text-sm text-gray-900 dark:text-gray-100">
+        <div className="text-sm text-ink">
           {matchCount} {matchText} on similar route
         </div>
 
@@ -166,7 +166,7 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {highlights.map((highlight) => (
               <div key={`${highlight.type}-${highlight.route.workoutId}`} className="space-y-0.5 min-w-0">
-                <div className="text-xs font-medium text-gray-900 dark:text-gray-100 break-words">
+                <div className="text-xs font-medium text-ink break-words">
                   {highlight.label}: {formatDate(highlight.route.startedAt)}
                 </div>
                 {highlight.value && (
@@ -175,11 +175,11 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
                       highlight.route.timeDifferenceS !== undefined &&
                       highlight.route.timeDifferenceS !== null
                         ? highlight.route.timeDifferenceS < 0
-                          ? 'text-green-600 dark:text-green-400'
+                          ? 'text-ink'
                           : highlight.route.timeDifferenceS > 0
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-gray-500 dark:text-gray-400'
-                        : 'text-gray-500 dark:text-gray-400'
+                          ? 'text-danger'
+                          : 'text-muted'
+                        : 'text-muted'
                     }`}
                   >
                     {highlight.value}
@@ -193,7 +193,7 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
         {/* View All Matches button */}
         <button
           onClick={handleViewAll}
-          className="w-full mt-3 px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors flex items-center justify-center gap-1"
+          className="w-full mt-3 px-3 py-2 text-sm font-medium text-ink hover:bg-canvas rounded-tempo transition-colors flex items-center justify-center gap-1"
         >
           <span>View All Matches</span>
           <IconChevronRight className="w-4 h-4" />
