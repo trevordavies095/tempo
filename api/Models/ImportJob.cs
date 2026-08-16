@@ -9,10 +9,24 @@ public static class ImportJobKinds
 
 public static class ImportJobStatuses
 {
+    public const string Receiving = "receiving";
     public const string Queued = "queued";
     public const string Running = "running";
     public const string Completed = "completed";
     public const string Failed = "failed";
+}
+
+public static class ImportJobErrorMessages
+{
+    public const string Cancelled = "cancelled";
+    public const string Interrupted = "interrupted";
+}
+
+public static class ImportJobLimits
+{
+    public const int ChunkSizeBytes = 512 * 1024;
+    public const long MaxByteSize = 500_000_000;
+    public static readonly TimeSpan StaleReceivingAfter = TimeSpan.FromMinutes(15);
 }
 
 public class ImportJob
@@ -58,6 +72,10 @@ public class ImportJob
     public string? UnitPreference { get; set; }
 
     public string? ArchivePath { get; set; }
+
+    public bool CancelRequested { get; set; }
+
+    public DateTime? LastChunkAt { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

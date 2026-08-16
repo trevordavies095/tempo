@@ -49,7 +49,9 @@ public static class DatabaseMigrationHelper
         { ("Shoes", "IsRetired"), "20260429231609_AddShoeIsRetired" },
         { ("Users", "SessionVersion"), "20260510120000_AddUserSessionVersion" },
         // AddRpeToWorkout migration
-        { ("Workouts", "Rpe"), "20260511200212_AddRpeToWorkout" }
+        { ("Workouts", "Rpe"), "20260511200212_AddRpeToWorkout" },
+        { ("ImportJobs", "CancelRequested"), "20260816182633_AddImportJobCancelAndChunks" },
+        { ("ImportJobs", "LastChunkAt"), "20260816182633_AddImportJobCancelAndChunks" }
     };
 
     private const string ProductVersion = "10.0.0";

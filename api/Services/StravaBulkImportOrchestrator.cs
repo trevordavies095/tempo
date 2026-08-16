@@ -29,7 +29,8 @@ public class StravaBulkImportOrchestrator
     /// </summary>
     public async Task<StravaBulkImportResult> ImportFromZipAsync(
         Stream zipStream,
-        Func<StravaBulkImportResult, Task>? onProgress = null)
+        Func<StravaBulkImportResult, Task>? onProgress = null,
+        CancellationToken cancellationToken = default)
     {
         string? tempDir = null;
         var result = new StravaBulkImportResult();
@@ -50,6 +51,7 @@ public class StravaBulkImportOrchestrator
 
             foreach (var activity in runActivities)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var activityResult = await _bulkImportService.ProcessActivityFileAsync(activity, tempDir);
 
                 if (!activityResult.Success)

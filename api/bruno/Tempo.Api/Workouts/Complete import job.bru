@@ -1,0 +1,10 @@
+meta {
+  name: Complete import job
+  type: http
+  seq: 17
+}
+
+post {
+  url: {{baseUrl}}/workouts/import/jobs/{{jobId}}/complete
+  auth: inherit
+}

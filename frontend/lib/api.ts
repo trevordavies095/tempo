@@ -442,10 +442,13 @@ export interface BulkImportResponse {
   }>;
 }
 
+export const IMPORT_JOB_CHUNK_SIZE = 512 * 1024;
+export const IMPORT_JOB_HINT_KEY = 'tempo-import-job-id';
+
 export interface ImportJob {
   id: string;
   kind: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | string;
+  status: 'receiving' | 'queued' | 'running' | 'completed' | 'failed' | string;
   filename: string;
   byteSize: number;
   bytesReceived: number;
@@ -460,6 +463,16 @@ export interface ImportJob {
     error: string;
   }>;
   errorMessage: string | null;
+}
+
+export class ImportJobConflictError extends Error {
+  job: ImportJob;
+
+  constructor(job: ImportJob) {
+    super('An import is already in progress');
+    this.name = 'ImportJobConflictError';
+    this.job = job;
+  }
 }
 
 export function importJobToBulkResponse(job: ImportJob): BulkImportResponse {
@@ -523,25 +536,76 @@ export async function importTempoExport(zipFile: File): Promise<ExportImportResp
   return response.json();
 }
 
-export async function importBulkStravaExport(zipFile: File, unitPreference?: 'metric' | 'imperial'): Promise<ImportJob> {
-  const formData = new FormData();
-  formData.append('file', zipFile);
-  if (unitPreference) {
-    formData.append('unitPreference', unitPreference);
+async function readImportJobResponse(response: Response, fallback: string): Promise<ImportJob> {
+  const body = await response.json().catch(() => ({ error: fallback }));
+  if (response.status === 409 && body?.id) {
+    throw new ImportJobConflictError(body as ImportJob);
   }
+  if (!response.ok) {
+    throw new Error(body.error || fallback || `HTTP error! status: ${response.status}`);
+  }
+  return body as ImportJob;
+}
 
-  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/bulk`, {
+export async function createImportJob(
+  filename: string,
+  byteSize: number,
+  unitPreference?: 'metric' | 'imperial'
+): Promise<ImportJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/jobs`, {
     method: 'POST',
-    body: formData,
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ filename, byteSize, unitPreference }),
+  });
+  return readImportJobResponse(response, 'Failed to create import job');
+}
+
+export async function putImportJobChunk(
+  jobId: string,
+  index: number,
+  total: number,
+  chunk: Blob
+): Promise<ImportJob> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/workouts/import/jobs/${jobId}/chunks/${index}?total=${total}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      credentials: 'include',
+      body: chunk,
+    }
+  );
+  return readImportJobResponse(response, 'Failed to upload import chunk');
+}
+
+export async function completeImportJob(jobId: string): Promise<ImportJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/jobs/${jobId}/complete`, {
+    method: 'POST',
     credentials: 'include',
   });
+  return readImportJobResponse(response, 'Failed to complete import upload');
+}
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to import Strava export' }));
-    throw new Error(error.error || `HTTP error! status: ${response.status}`);
+export async function importStravaExportChunked(
+  zipFile: File,
+  unitPreference: 'metric' | 'imperial' | undefined,
+  onProgress: (bytesReceived: number, byteSize: number) => void,
+  onJob?: (job: ImportJob) => void
+): Promise<ImportJob> {
+  const created = await createImportJob(zipFile.name, zipFile.size, unitPreference);
+  onJob?.(created);
+  const total = Math.max(1, Math.ceil(zipFile.size / IMPORT_JOB_CHUNK_SIZE));
+  onProgress(0, zipFile.size);
+
+  for (let index = 0; index < total; index++) {
+    const start = index * IMPORT_JOB_CHUNK_SIZE;
+    const end = Math.min(start + IMPORT_JOB_CHUNK_SIZE, zipFile.size);
+    const updated = await putImportJobChunk(created.id, index, total, zipFile.slice(start, end));
+    onProgress(updated.bytesReceived, zipFile.size);
   }
 
-  return response.json();
+  return completeImportJob(created.id);
 }
 
 export async function getImportJob(jobId: string): Promise<ImportJob> {
@@ -556,6 +620,32 @@ export async function getImportJob(jobId: string): Promise<ImportJob> {
   }
 
   return response.json();
+}
+
+export async function getCurrentImportJob(): Promise<ImportJob | null> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/jobs/current`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to fetch current import job' }));
+    throw new Error(error.error || `HTTP error! status: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function cancelImportJob(jobId: string): Promise<ImportJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/jobs/${jobId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return readImportJobResponse(response, 'Failed to cancel import job');
 }
 
 export async function getWorkoutMedia(workoutId: string): Promise<WorkoutMedia[]> {

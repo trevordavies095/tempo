@@ -23,6 +23,17 @@ public class ImportJobWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var importJobs = scope.ServiceProvider.GetRequiredService<ImportJobService>();
+            await importJobs.InterruptIncompleteJobsAsync(stoppingToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to mark interrupted import jobs on startup");
+        }
+
         await foreach (var jobId in _queue.ReadAllAsync(stoppingToken))
         {
             try
@@ -43,53 +54,122 @@ public class ImportJobWorker : BackgroundService
         var orchestrator = scope.ServiceProvider.GetRequiredService<StravaBulkImportOrchestrator>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<ImportJobWorker>>();
 
-        var job = await db.ImportJobs.FindAsync([jobId], stoppingToken);
+        var job = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
         if (job == null)
         {
             logger.LogWarning("Import job {JobId} was dequeued but not found", jobId);
             return;
         }
 
+        if (job.Status != ImportJobStatuses.Queued)
+        {
+            DeleteArchiveDirectory(job.ArchivePath, job.Id, logger);
+            if (job.ArchivePath != null)
+            {
+                job.ArchivePath = null;
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+            return;
+        }
+
+        if (job.CancelRequested)
+        {
+            await FailJobAsync(db, job, ImportJobErrorMessages.Cancelled, logger);
+            return;
+        }
+
         job.Status = ImportJobStatuses.Running;
         job.StartedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(stoppingToken);
+        await db.SaveChangesAsync(CancellationToken.None);
+        var unitPreference = job.UnitPreference;
+        var archivePath = job.ArchivePath;
+        db.Entry(job).State = EntityState.Detached;
 
-        await ApplyUnitPreferenceAsync(db, job.UnitPreference, logger);
+        await ApplyUnitPreferenceAsync(db, unitPreference, logger);
+
+        using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
 
         try
         {
-            if (string.IsNullOrWhiteSpace(job.ArchivePath) || !File.Exists(job.ArchivePath))
+            if (string.IsNullOrWhiteSpace(archivePath) || !File.Exists(archivePath))
             {
                 throw new InvalidOperationException("Import archive is missing");
             }
 
-            await using var zipStream = File.OpenRead(job.ArchivePath);
+            await using var zipStream = File.OpenRead(archivePath);
             var result = await orchestrator.ImportFromZipAsync(zipStream, async progress =>
             {
-                ApplyProgress(job, progress);
-                await db.SaveChangesAsync(stoppingToken);
-            });
+                var row = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
+                if (row == null)
+                {
+                    throw new InvalidOperationException("Import job was deleted");
+                }
 
-            ApplyProgress(job, result);
-            job.Status = ImportJobStatuses.Completed;
-            job.FinishedAt = DateTime.UtcNow;
-            job.ErrorMessage = null;
-            await db.SaveChangesAsync(stoppingToken);
+                ApplyProgress(row, progress);
+                await db.SaveChangesAsync(CancellationToken.None);
+                if (row.CancelRequested)
+                {
+                    await jobCts.CancelAsync();
+                    throw new OperationCanceledException(jobCts.Token);
+                }
+
+                db.Entry(row).State = EntityState.Detached;
+            }, jobCts.Token);
+
+            var completed = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
+            if (completed == null)
+            {
+                return;
+            }
+
+            ApplyProgress(completed, result);
+            if (completed.CancelRequested)
+            {
+                await FailJobAsync(db, completed, ImportJobErrorMessages.Cancelled, logger);
+                return;
+            }
+
+            completed.Status = ImportJobStatuses.Completed;
+            completed.FinishedAt = DateTime.UtcNow;
+            completed.ErrorMessage = null;
+            DeleteArchiveDirectory(completed.ArchivePath, completed.Id, logger);
+            completed.ArchivePath = null;
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            var cancelled = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
+            if (cancelled == null)
+            {
+                return;
+            }
+
+            var message = cancelled.CancelRequested
+                ? ImportJobErrorMessages.Cancelled
+                : ImportJobErrorMessages.Interrupted;
+            await FailJobAsync(db, cancelled, message, logger);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Import job {JobId} failed", jobId);
-            job.Status = ImportJobStatuses.Failed;
-            job.ErrorMessage = ex.Message;
-            job.FinishedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(CancellationToken.None);
+            var failed = await db.ImportJobs.FindAsync([jobId], CancellationToken.None);
+            if (failed == null)
+            {
+                return;
+            }
+
+            await FailJobAsync(db, failed, ex.Message, logger);
         }
-        finally
-        {
-            DeleteArchiveDirectory(job.ArchivePath, logger);
-            job.ArchivePath = null;
-            await db.SaveChangesAsync(CancellationToken.None);
-        }
+    }
+
+    private static async Task FailJobAsync(TempoDbContext db, ImportJob job, string message, ILogger logger)
+    {
+        job.Status = ImportJobStatuses.Failed;
+        job.ErrorMessage = message;
+        job.FinishedAt = DateTime.UtcNow;
+        DeleteArchiveDirectory(job.ArchivePath, job.Id, logger);
+        job.ArchivePath = null;
+        await db.SaveChangesAsync(CancellationToken.None);
     }
 
     private static void ApplyProgress(ImportJob job, StravaBulkImportResult progress)
@@ -140,24 +220,26 @@ public class ImportJobWorker : BackgroundService
         }
     }
 
-    private static void DeleteArchiveDirectory(string? archivePath, ILogger logger)
+    private static void DeleteArchiveDirectory(string? archivePath, Guid jobId, ILogger logger)
     {
-        if (string.IsNullOrWhiteSpace(archivePath))
-        {
-            return;
-        }
-
         try
         {
-            var dir = Path.GetDirectoryName(archivePath);
-            if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+            string? dir = null;
+            if (!string.IsNullOrWhiteSpace(archivePath))
             {
-                Directory.Delete(dir, recursive: true);
+                dir = Path.GetDirectoryName(archivePath);
             }
+
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+            {
+                return;
+            }
+
+            Directory.Delete(dir, recursive: true);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to delete import archive at {ArchivePath}", archivePath);
+            logger.LogWarning(ex, "Failed to delete import archive for job {JobId}", jobId);
         }
     }
 }

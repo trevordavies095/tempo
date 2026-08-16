@@ -147,7 +147,29 @@ Outcomes per file: `created`, `updated`, or `skipped` (plus error). Incomplete F
 
 ### Bulk Import
 
-Import multiple workouts from a Strava export ZIP:
+Command-center Import uploads a Strava ZIP in **512 KiB** chunks, then polls the job. Bruno/curl can still POST the whole ZIP.
+
+```http
+POST /workouts/import/jobs
+Content-Type: application/json
+
+{ "filename": "export.zip", "byteSize": 12345, "unitPreference": "metric" }
+```
+
+Returns **201** (`receiving`). Then sequential:
+
+```http
+PUT /workouts/import/jobs/{id}/chunks/{index}?total={n}
+Content-Type: application/octet-stream
+```
+
+```http
+POST /workouts/import/jobs/{id}/complete
+```
+
+Complete returns **202** when every chunk index is present and the assembled length equals `byteSize`. A size mismatch does not enqueue or run intake.
+
+Whole-file adapter (Bruno/curl):
 
 ```http
 POST /workouts/import/bulk
@@ -156,9 +178,9 @@ Content-Type: multipart/form-data
 file: [ZIP file]
 ```
 
-Returns **202** with an import job document. Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Supports files up to 500MB.
+Returns **202** with the same job document. Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. `GET /workouts/import/jobs/current` is **200** plus that document or **204**. A second start while a job is `receiving`/`queued`/`running` is **409** with the active `id`. `DELETE /workouts/import/jobs/{id}` cancels; already imported Workouts stay.
 
-Per activity file uses the same intake outcomes (`created` / `updated` / `skipped`). ZIP extract, `activities.csv`, non-run skip, and Strava media copy stay in bulk, not in intake.
+Supports files up to 500MB. Per activity file uses the same intake outcomes (`created` / `updated` / `skipped`). ZIP extract, `activities.csv`, non-run skip, and Strava media copy stay in bulk, not in intake.
 
 ### Export All Data
 

@@ -117,10 +117,10 @@ This ensures migrations can be safely applied even when database state doesn't m
 
 ### Bulk Import Flow
 
-1. ZIP uploaded to `POST /workouts/import/bulk`
-2. `BulkImportService` validates ZIP, parses `activities.csv`, skips non-run activities, copies Strava media
-3. Each activity file is `WorkoutIntake` with overlay (name, Strava JSON)
-4. Intake outcomes map to bulk `created` / `updated` / `skipped` / error counters (same duplicate rule as single-file)
+1. Command center creates a receiving job and PUTs 512 KiB ZIP chunks (or Bruno/curl POSTs the whole ZIP to `/workouts/import/bulk`)
+2. Complete (or adapter accept) queues the job; `ImportJobWorker` runs `StravaBulkImportOrchestrator`
+3. Orchestrator uses `BulkImportService` for ZIP safety, `activities.csv`, non-run skip, per-file Workout intake, and Strava media
+4. Intake outcomes map to job counters (`created` / `updated` / `skipped` / error). Poll GET until `completed` or `failed`
 
 ## Authentication
 

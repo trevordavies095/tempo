@@ -3,10 +3,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  cancelImportJob,
+  getCurrentImportJob,
   getImportJob,
-  importBulkStravaExport,
+  IMPORT_JOB_HINT_KEY,
   importJobToBulkResponse,
+  importStravaExportChunked,
+  ImportJobConflictError,
   type BulkImportResponse,
+  type ImportJob,
 } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
@@ -14,13 +19,32 @@ import { useFileDrop } from '@/hooks/useFileDrop';
 import { IconUpload } from '@tabler/icons-react';
 import { Button } from '@/components/ui/Button';
 
+function persistJobHint(id: string | null) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (id) {
+    sessionStorage.setItem(IMPORT_JOB_HINT_KEY, id);
+  } else {
+    sessionStorage.removeItem(IMPORT_JOB_HINT_KEY);
+  }
+}
+
 export function BulkImport() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<BulkImportResponse | null>(null);
   const [jobError, setJobError] = useState<string | null>(null);
+  const [uploadBytes, setUploadBytes] = useState<{ received: number; size: number } | null>(null);
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
+
+  const attachJob = useCallback((id: string) => {
+    persistJobHint(id);
+    setJobId(id);
+    setImportResult(null);
+    setJobError(null);
+  }, []);
 
   const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
     onFilesSelected: (files) => {
@@ -33,6 +57,45 @@ export function BulkImport() {
     acceptExtensions: ['.zip'],
     maxFiles: 1,
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const current = await getCurrentImportJob();
+        if (cancelled) {
+          return;
+        }
+        if (current) {
+          attachJob(current.id);
+          return;
+        }
+
+        const hint = sessionStorage.getItem(IMPORT_JOB_HINT_KEY);
+        if (!hint) {
+          return;
+        }
+        const hinted = await getImportJob(hint);
+        if (cancelled) {
+          return;
+        }
+        if (hinted.status === 'completed') {
+          setImportResult(importJobToBulkResponse(hinted));
+          persistJobHint(null);
+        } else if (hinted.status === 'failed') {
+          setJobError(hinted.errorMessage || 'Import failed');
+          persistJobHint(null);
+        } else {
+          attachJob(hinted.id);
+        }
+      } catch {
+        persistJobHint(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [attachJob]);
 
   const { data: job } = useQuery({
     queryKey: ['import-job', jobId],
@@ -58,18 +121,48 @@ export function BulkImport() {
       setSelectedFile(null);
       setJobId(null);
       setJobError(null);
+      setUploadBytes(null);
+      persistJobHint(null);
     } else if (job.status === 'failed') {
       setJobError(job.errorMessage || 'Import failed');
       setJobId(null);
+      setUploadBytes(null);
+      persistJobHint(null);
     }
   }, [job, queryClient]);
 
   const mutation = useMutation({
-    mutationFn: (file: File) => importBulkStravaExport(file, unitPreference),
+    mutationFn: (file: File) =>
+      importStravaExportChunked(
+        file,
+        unitPreference,
+        (received, size) => {
+          setUploadBytes({ received, size });
+        },
+        (created) => {
+          attachJob(created.id);
+        }
+      ),
     onSuccess: (started) => {
-      setImportResult(null);
-      setJobError(null);
-      setJobId(started.id);
+      setUploadBytes(null);
+      attachJob(started.id);
+    },
+    onError: (error: Error) => {
+      if (error instanceof ImportJobConflictError) {
+        attachJob(error.job.id);
+        return;
+      }
+      setJobError(error.message);
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (id: string) => cancelImportJob(id),
+    onSuccess: (cancelled: ImportJob) => {
+      setJobError(cancelled.errorMessage || 'cancelled');
+      setJobId(null);
+      setUploadBytes(null);
+      persistJobHint(null);
     },
     onError: (error: Error) => {
       setJobError(error.message);
@@ -89,8 +182,16 @@ export function BulkImport() {
   );
 
   const progressLabel = (() => {
+    if (mutation.isPending && uploadBytes && uploadBytes.size > 0) {
+      const pct = Math.min(100, Math.round((uploadBytes.received / uploadBytes.size) * 100));
+      return `Uploading ${pct}%...`;
+    }
     if (mutation.isPending) {
       return 'Uploading...';
+    }
+    if (job?.status === 'receiving' && job.byteSize > 0) {
+      const pct = Math.min(100, Math.round((job.bytesReceived / job.byteSize) * 100));
+      return `Uploading ${pct}%...`;
     }
     if (job && job.total > 0) {
       return `Importing ${job.processed}/${job.total}...`;
@@ -149,7 +250,23 @@ export function BulkImport() {
           </Button>
         )}
 
-        {(mutation.isError || jobError) && (
+        {isWorking && !selectedFile && (
+          <p className="text-sm text-ink">{progressLabel}</p>
+        )}
+
+        {isWorking && jobId && (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={cancelMutation.isPending}
+            className="w-full"
+            onClick={() => cancelMutation.mutate(jobId)}
+          >
+            Cancel import
+          </Button>
+        )}
+
+        {(mutation.isError || jobError) && !(mutation.error instanceof ImportJobConflictError) && (
           <div className="p-4 bg-canvas border border-danger/40 rounded-tempo">
             <p className="text-sm text-danger">
               Error: {jobError || (mutation.error instanceof Error ? mutation.error.message : 'Unknown error')}

@@ -1615,11 +1615,218 @@
               }
             }
           },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Bad Request"
           },
           "500": {
             "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/jobs": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Create a receiving Strava bulk import job for chunked upload",
+        "description": "Creates a receiving Strava bulk import job (filename, byteSize, optional unitPreference). Upload 512 KiB chunks then POST complete.",
+        "operationId": "CreateImportJob",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateImportJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/jobs/{id}/chunks/{index}": {
+      "put": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Upload one 512 KiB (or final remainder) chunk of a Strava export ZIP",
+        "description": "Puts one sequential 512 KiB (or final remainder) chunk. Query total is the expected chunk count. Body is application/octet-stream.",
+        "operationId": "PutImportJobChunk",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "total",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "byte"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/jobs/{id}/complete": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Assemble chunks and queue the import job",
+        "description": "Assembles chunks when every index is present and the length equals byteSize, then queues the job. Mismatch does not start intake.",
+        "operationId": "CompleteImportJob",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/jobs/current": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Get the active import job, if any",
+        "description": "Returns the active receiving, queued, or running import job, or 204 if none.",
+        "operationId": "GetCurrentImportJob",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
           }
         },
         "security": [
@@ -1658,6 +1865,48 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Cancel a receiving, queued, or running import job",
+        "description": "Cancels a receiving, queued, or running job. Already imported Workouts are kept. The job ends as failed/cancelled and the archive is deleted.",
+        "operationId": "CancelImportJob",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
           },
           "404": {
             "description": "Not Found"
@@ -1838,6 +2087,24 @@
         "type": "object",
         "properties": {
           "label": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateImportJobRequest": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "nullable": true
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unitPreference": {
             "type": "string",
             "nullable": true
           }
