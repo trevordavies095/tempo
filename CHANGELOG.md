@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Single-file import** now uses the same duplicate rule as Strava bulk: incomplete FIT/GPX JSON (or missing raw bytes) can update an existing Workout; complete duplicates are skipped. Distance, duration, and elevation are not rewritten on those updates.
 - **Strava bulk import** per-file persist uses the same Workout intake pipeline as single-file import (ZIP extract, `activities.csv`, non-run skip, and media copy unchanged).
+- **Track geometry** + **Workout intake**: elevation, route, splits, and time series derive from `TrackPoint`s; `POST /workouts/import` and Strava bulk share one persist pipeline (HTTP JSON unchanged)
 - **Crop** rebuilds route, splits, time series, and elevation from remaining TrackPoints through track geometry (not device session distance).
 - **WebUI visual identity**
   - Dark-first command center: Geist, T mark, black + volt yellow tokens; hand-rolled kit (`PageShell`, `Card`, `Button`, `Dialog`, `EmptyState`, `Tabs`)

@@ -97,6 +97,13 @@ For each workout, Tempo imports:
 - GPX files: Extracts heart rate, cadence, power, and temperature from TrackPointExtension elements (Garmin format)
 - Backward compatible: Files without sensor data are imported successfully with available metrics
 
+## Duplicates
+
+Single-file import uses the same duplicate rule as Strava bulk. Tempo matches on start time, distance, and duration.
+
+- **Updated** if the existing Workout is missing raw file bytes or its FIT/GPX JSON is incomplete (backfill bytes/JSON; rebuild splits; fill empty route or time series). Distance, duration, and elevation are not rewritten when raw data is already complete.
+- **Skipped** when raw bytes and JSON are already complete.
+
 ## Troubleshooting
 
 ### File Not Supported

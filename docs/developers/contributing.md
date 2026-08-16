@@ -116,7 +116,7 @@ Include:
 
 ### Features
 
-- New workout import formats
+- New workout import formats (decode adapter → `WorkoutIntake`; do not add a second persist pipeline in HTTP or bulk)
 - Additional analytics and statistics
 - Integration with other services
 

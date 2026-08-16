@@ -28,6 +28,14 @@ _Avoid_: activity (except the existing Activities list name), session
 An in-memory sample on a Workout path. Latitude and longitude are optional (indoor samples). Optional elevation, time, sensors (HR, cadence, power, temperature), and motion (speed, distance, grade, vertical speed). Not a table.
 _Avoid_: GpxPoint, GPS track, polyline (as this type)
 
+**Track geometry**:
+In-process derive of elevation gain, `WorkoutRoute`, `WorkoutSplit`s, and `WorkoutTimeSeries` from `TrackPoint`s. Crop and split recalc call it too. Not a table.
+_Avoid_: GpxParser splits, GPS smoothing (as the module name)
+
+**Workout intake**:
+The persist pipeline behind `POST /workouts/import` and Strava bulk per-file processing: parse, geometry, duplicate policy, weather, relative effort, best efforts. Not the HTTP module and not Settings ZIP restore.
+_Avoid_: import endpoint (when meaning this module), bulk persist
+
 **WorkoutRoute**:
 GeoJSON LineString for one Workout.
 _Avoid_: GPS track, polyline (as the domain name)

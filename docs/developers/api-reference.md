@@ -143,6 +143,8 @@ Content-Type: multipart/form-data
 file: [workout file]
 ```
 
+Outcomes per file: `created`, `updated`, or `skipped` (plus error). Incomplete FIT/GPX JSON or missing raw bytes on a duplicate can `updated`; complete duplicates are `skipped`. HTTP JSON is unchanged from before intake.
+
 ### Bulk Import
 
 Import multiple workouts from a Strava export ZIP:
@@ -155,6 +157,8 @@ file: [ZIP file]
 ```
 
 Supports files up to 500MB.
+
+Per activity file uses the same intake outcomes (`created` / `updated` / `skipped`). ZIP extract, `activities.csv`, non-run skip, and Strava media copy stay in bulk, not in intake.
 
 ### Export All Data
 
