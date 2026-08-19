@@ -33,7 +33,6 @@ Merges **`develop` → `main`** for **Tempo 2.7.0**: first-run **onboarding**, b
 
 ### Post-merge checklist
 
-- [ ] Update changelog date on **[2.7.0]** if the merge/tag day differs from the bump date.
 - [ ] Tag **`v2.7.0`** and publish the GitHub Release (notes from changelog).
 - [ ] Confirm container images for **`v2.7.0`** exist for production pulls.
 - [ ] Self-hosted upgrades: DB migrations for shoe retirement, import jobs, and `OnboardingCompleted` (automatic on API startup; existing users backfilled onboarding-complete).
