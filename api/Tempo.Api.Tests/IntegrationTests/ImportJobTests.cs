@@ -643,7 +643,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             await TestDataSeeder.SeedUserSettingsAsync(db);
             var shoe = await TestDataSeeder.SeedShoeAsync(db, "Nike", "Pegasus");
-            for (var i = 0; i < 6; i++)
+            for (var i = 0; i < 40; i++)
             {
                 await TestDataSeeder.SeedWorkoutCompleteAsync(db, shoeId: shoe.Id, distanceM: 5000 + i, durationS: 1800 + i);
             }
@@ -668,7 +668,7 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
         {
             var poll = await client.GetAsync($"/workouts/import/jobs/{started!.Id}");
             snapshot = await poll.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
-            if (snapshot!.Processed >= 1 && snapshot.Status == ImportJobStatuses.Running)
+            if (snapshot!.Processed >= 3 && snapshot.Status == ImportJobStatuses.Running)
             {
                 break;
             }

@@ -211,12 +211,30 @@ public class ImportJobWorker : BackgroundService
 
     private static async Task CompleteJobAsync(TempoDbContext db, ImportJob job, ILogger logger)
     {
-        job.Status = ImportJobStatuses.Completed;
-        job.FinishedAt = DateTime.UtcNow;
-        job.ErrorMessage = null;
-        DeleteArchiveDirectory(job.ArchivePath, job.Id, logger);
-        job.ArchivePath = null;
+        var archivePath = job.ArchivePath;
+
+        // Persist final counters/results first, then only mark the job completed if no
+        // concurrent cancel request has landed. This avoids a race where a late cancel
+        // can be overwritten by the final completed write.
         await db.SaveChangesAsync(CancellationToken.None);
+
+        var finishedAt = DateTime.UtcNow;
+        var updated = await db.ImportJobs
+            .Where(row => row.Id == job.Id && !row.CancelRequested)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(row => row.Status, ImportJobStatuses.Completed)
+                .SetProperty(row => row.FinishedAt, finishedAt)
+                .SetProperty(row => row.ErrorMessage, (string?)null)
+                .SetProperty(row => row.ArchivePath, (string?)null), CancellationToken.None);
+
+        if (updated == 0)
+        {
+            await db.Entry(job).ReloadAsync(CancellationToken.None);
+            await FailJobAsync(db, job, ImportJobErrorMessages.Cancelled, logger);
+            return;
+        }
+
+        DeleteArchiveDirectory(archivePath, job.Id, logger);
     }
 
     private static async Task FailJobAsync(TempoDbContext db, ImportJob job, string message, ILogger logger)
