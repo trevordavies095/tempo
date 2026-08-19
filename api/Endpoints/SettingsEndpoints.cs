@@ -619,6 +619,11 @@ public static class SettingsEndpoints
                     return Results.NotFound(new { error = "Shoe not found" });
                 }
 
+                if (shoe.IsRetired)
+                {
+                    return Results.BadRequest(new { error = "Cannot set a retired shoe as the default shoe" });
+                }
+
                 settings.DefaultShoeId = request.DefaultShoeId.Value;
             }
             else

@@ -116,7 +116,7 @@ export function MediaModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       onClick={handleBackdropClick}
     >
       <div className="relative max-w-7xl max-h-[90vh] w-full h-full flex items-center justify-center">
@@ -133,7 +133,7 @@ export function MediaModal({
         <button
           onClick={handleDelete}
           disabled={deleteMutation.isPending}
-          className="absolute top-4 right-20 z-10 p-2 bg-red-600 hover:bg-red-700 disabled:bg-red-800 disabled:opacity-50 rounded-full text-white transition-colors"
+          className="absolute top-4 right-20 z-10 p-2 bg-danger text-on-danger hover:opacity-90 disabled:opacity-50 rounded-full transition-opacity"
           aria-label="Delete media"
           title="Delete media (Delete key)"
         >
@@ -188,7 +188,7 @@ export function MediaModal({
               onError={() => setIsLoading(false)}
             />
           ) : (
-            <div className="bg-gray-800 p-8 rounded-lg text-white">
+            <div className="bg-raised p-8 rounded-tempo text-ink">
               <p>Unsupported media type: {currentMedia.mimeType}</p>
             </div>
           )}

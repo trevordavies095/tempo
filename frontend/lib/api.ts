@@ -88,6 +88,7 @@ export interface UserInfo {
   username: string;
   createdAt: string;
   lastLoginAt: string | null;
+  onboardingCompleted: boolean;
 }
 
 export interface RegistrationAvailableResponse {
@@ -344,6 +345,92 @@ export async function getWorkout(id: string): Promise<WorkoutDetail> {
   return response.json();
 }
 
+export interface WorkoutTimeSeriesSample {
+  elapsedSeconds: number;
+  distanceM: number | null;
+  heartRateBpm: number | null;
+  cadenceRpm: number | null;
+  powerWatts: number | null;
+  speedMps: number | null;
+  gradePercent: number | null;
+  elevationM: number | null;
+  temperatureC: number | null;
+  verticalSpeedMps: number | null;
+}
+
+export interface WorkoutTimeSeriesPage {
+  items: WorkoutTimeSeriesSample[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+/** API default pageSize for GET /workouts/{id}/time-series. */
+export const WORKOUT_TIME_SERIES_DEFAULT_PAGE_SIZE = 1000;
+/** API maximum pageSize. */
+export const WORKOUT_TIME_SERIES_MAX_PAGE_SIZE = 5000;
+/**
+ * Client fetch cap for overview charts: 4 pages at max page size (20_000 samples).
+ * Longer series is truncated; charts still render the samples loaded.
+ */
+export const WORKOUT_TIME_SERIES_FETCH_CAP = 20_000;
+
+export async function getWorkoutTimeSeriesPage(
+  workoutId: string,
+  page = 1,
+  pageSize = WORKOUT_TIME_SERIES_MAX_PAGE_SIZE
+): Promise<WorkoutTimeSeriesPage> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('page', String(page));
+  searchParams.set('pageSize', String(pageSize));
+
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/workouts/${workoutId}/time-series?${searchParams.toString()}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (response.status === 404) {
+    throw new Error('Workout not found');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch time series: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Loads WorkoutTimeSeries for a Workout, following pages until complete
+ * or WORKOUT_TIME_SERIES_FETCH_CAP samples.
+ */
+export async function getWorkoutTimeSeries(
+  workoutId: string
+): Promise<WorkoutTimeSeriesSample[]> {
+  const items: WorkoutTimeSeriesSample[] = [];
+  let page = 1;
+  let totalPages = 1;
+
+  while (page <= totalPages && items.length < WORKOUT_TIME_SERIES_FETCH_CAP) {
+    const remaining = WORKOUT_TIME_SERIES_FETCH_CAP - items.length;
+    const pageSize = Math.min(WORKOUT_TIME_SERIES_MAX_PAGE_SIZE, remaining);
+    const result = await getWorkoutTimeSeriesPage(workoutId, page, pageSize);
+    items.push(...result.items);
+    totalPages = result.totalPages;
+    if (result.items.length === 0) {
+      break;
+    }
+    page += 1;
+  }
+
+  return items;
+}
+
 export interface BulkImportResponse {
   totalProcessed: number;
   successful: number;
@@ -354,6 +441,93 @@ export interface BulkImportResponse {
     filename: string;
     error: string;
   }>;
+}
+
+export const IMPORT_JOB_CHUNK_SIZE = 512 * 1024;
+export const IMPORT_JOB_HINT_KEY = 'tempo-import-job-id';
+
+export interface ImportJobStatistics {
+  settings: { imported: number; skipped: number; errors: number };
+  shoes: { imported: number; skipped: number; errors: number };
+  workouts: { imported: number; skipped: number; errors: number };
+  routes: { imported: number; skipped: number; errors: number };
+  splits: { imported: number; skipped: number; errors: number };
+  timeSeries: { imported: number; skipped: number; errors: number };
+  media: { imported: number; skipped: number; errors: number };
+  bestEfforts: { imported: number; skipped: number; errors: number };
+  rawFiles: { imported: number; skipped: number; errors: number };
+}
+
+export interface ImportJob {
+  id: string;
+  kind: string;
+  status: 'receiving' | 'queued' | 'running' | 'completed' | 'failed' | string;
+  filename: string;
+  byteSize: number;
+  bytesReceived: number;
+  processed: number;
+  total: number;
+  successful: number;
+  skipped: number;
+  updated: number;
+  errors: number;
+  errorDetails: Array<{
+    filename: string;
+    error: string;
+  }>;
+  errorMessage: string | null;
+  statistics?: ImportJobStatistics | null;
+  warnings?: string[] | null;
+  errorMessages?: string[] | null;
+}
+
+export class ImportJobConflictError extends Error {
+  job: ImportJob;
+
+  constructor(job: ImportJob) {
+    super('An import is already in progress');
+    this.name = 'ImportJobConflictError';
+    this.job = job;
+  }
+}
+
+export function importJobToBulkResponse(job: ImportJob): BulkImportResponse {
+  return {
+    totalProcessed: job.total,
+    successful: job.successful,
+    updated: job.updated,
+    skipped: job.skipped,
+    errors: job.errors,
+    errorDetails: job.errorDetails ?? [],
+  };
+}
+
+const emptyItemStats = () => ({ imported: 0, skipped: 0, errors: 0 });
+
+export function importJobToExportImportResponse(job: ImportJob): ExportImportResponse {
+  const stats = job.statistics;
+  return {
+    success: (job.errorMessages?.length ?? 0) === 0,
+    importedAt: new Date().toISOString(),
+    statistics: {
+      settings: stats?.settings ?? emptyItemStats(),
+      shoes: stats?.shoes ?? emptyItemStats(),
+      workouts: stats?.workouts ?? emptyItemStats(),
+      routes: stats?.routes ?? emptyItemStats(),
+      splits: stats?.splits ?? emptyItemStats(),
+      timeSeries: stats?.timeSeries ?? emptyItemStats(),
+      media: stats?.media ?? emptyItemStats(),
+      bestEfforts: stats?.bestEfforts ?? emptyItemStats(),
+      rawFiles: stats?.rawFiles ?? emptyItemStats(),
+    },
+    warnings: job.warnings ?? [],
+    errors: job.errorMessages ?? [],
+  };
+}
+
+/** True when a tempo_export job imported UserSettings (units / HR zones). */
+export function importJobHasSettings(job: ImportJob): boolean {
+  return (job.statistics?.settings?.imported ?? 0) > 0;
 }
 
 export async function exportAllData(): Promise<Blob> {
@@ -388,43 +562,137 @@ export interface ExportImportResponse {
   errors: string[];
 }
 
-export async function importTempoExport(zipFile: File): Promise<ExportImportResponse> {
-  const formData = new FormData();
-  formData.append('file', zipFile);
+export type ImportJobKind = 'strava_bulk' | 'tempo_export';
 
-  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/export`, {
+async function readImportJobResponse(response: Response, fallback: string): Promise<ImportJob> {
+  const body = await response.json().catch(() => ({ error: fallback }));
+  if (response.status === 409 && body?.id) {
+    throw new ImportJobConflictError(body as ImportJob);
+  }
+  if (!response.ok) {
+    throw new Error(body.error || fallback || `HTTP error! status: ${response.status}`);
+  }
+  return body as ImportJob;
+}
+
+export async function createImportJob(
+  kind: ImportJobKind,
+  filename: string,
+  byteSize: number,
+  unitPreference?: 'metric' | 'imperial'
+): Promise<ImportJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/jobs`, {
     method: 'POST',
-    body: formData,
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ kind, filename, byteSize, unitPreference }),
+  });
+  return readImportJobResponse(response, 'Failed to create import job');
+}
+
+export async function putImportJobChunk(
+  jobId: string,
+  index: number,
+  total: number,
+  chunk: Blob
+): Promise<ImportJob> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/workouts/import/jobs/${jobId}/chunks/${index}?total=${total}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      credentials: 'include',
+      body: chunk,
+    }
+  );
+  return readImportJobResponse(response, 'Failed to upload import chunk');
+}
+
+export async function completeImportJob(jobId: string): Promise<ImportJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/jobs/${jobId}/complete`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  return readImportJobResponse(response, 'Failed to complete import upload');
+}
+
+export async function uploadImportJobChunks(
+  kind: ImportJobKind,
+  zipFile: File,
+  unitPreference: 'metric' | 'imperial' | undefined,
+  onProgress: (bytesReceived: number, byteSize: number) => void,
+  onJob?: (job: ImportJob) => void
+): Promise<ImportJob> {
+  const created = await createImportJob(kind, zipFile.name, zipFile.size, unitPreference);
+  onJob?.(created);
+  const total = Math.max(1, Math.ceil(zipFile.size / IMPORT_JOB_CHUNK_SIZE));
+  onProgress(0, zipFile.size);
+
+  for (let index = 0; index < total; index++) {
+    const start = index * IMPORT_JOB_CHUNK_SIZE;
+    const end = Math.min(start + IMPORT_JOB_CHUNK_SIZE, zipFile.size);
+    const updated = await putImportJobChunk(created.id, index, total, zipFile.slice(start, end));
+    onProgress(updated.bytesReceived, zipFile.size);
+  }
+
+  return completeImportJob(created.id);
+}
+
+export async function importStravaExportChunked(
+  zipFile: File,
+  unitPreference: 'metric' | 'imperial' | undefined,
+  onProgress: (bytesReceived: number, byteSize: number) => void,
+  onJob?: (job: ImportJob) => void
+): Promise<ImportJob> {
+  return uploadImportJobChunks('strava_bulk', zipFile, unitPreference, onProgress, onJob);
+}
+
+export async function importTempoExportChunked(
+  zipFile: File,
+  onProgress: (bytesReceived: number, byteSize: number) => void,
+  onJob?: (job: ImportJob) => void
+): Promise<ImportJob> {
+  return uploadImportJobChunks('tempo_export', zipFile, undefined, onProgress, onJob);
+}
+
+export async function getImportJob(jobId: string): Promise<ImportJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/jobs/${jobId}`, {
+    method: 'GET',
     credentials: 'include',
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to import Tempo export' }));
+    const error = await response.json().catch(() => ({ error: 'Failed to fetch import job' }));
     throw new Error(error.error || `HTTP error! status: ${response.status}`);
   }
 
   return response.json();
 }
 
-export async function importBulkStravaExport(zipFile: File, unitPreference?: 'metric' | 'imperial'): Promise<BulkImportResponse> {
-  const formData = new FormData();
-  formData.append('file', zipFile);
-  if (unitPreference) {
-    formData.append('unitPreference', unitPreference);
-  }
-
-  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/bulk`, {
-    method: 'POST',
-    body: formData,
+export async function getCurrentImportJob(): Promise<ImportJob | null> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/jobs/current`, {
+    method: 'GET',
     credentials: 'include',
   });
 
+  if (response.status === 204) {
+    return null;
+  }
+
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to import Strava export' }));
+    const error = await response.json().catch(() => ({ error: 'Failed to fetch current import job' }));
     throw new Error(error.error || `HTTP error! status: ${response.status}`);
   }
 
   return response.json();
+}
+
+export async function cancelImportJob(jobId: string): Promise<ImportJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/workouts/import/jobs/${jobId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return readImportJobResponse(response, 'Failed to cancel import job');
 }
 
 export async function getWorkoutMedia(workoutId: string): Promise<WorkoutMedia[]> {
@@ -1160,6 +1428,24 @@ export async function getCurrentUser(): Promise<UserInfo> {
   return response.json();
 }
 
+export async function completeOnboarding(): Promise<UserInfo> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/onboarding/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (response.status === 401) {
+    throw new Error('Not authenticated');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to complete onboarding: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function logout(): Promise<void> {
   const response = await fetchWithAuth(`${API_BASE_URL}/auth/logout`, {
     method: 'POST',
@@ -1213,6 +1499,7 @@ export interface Shoe {
   brand: string;
   model: string;
   initialMileageM: number | null;
+  isRetired: boolean;
   totalMileage: number;
   unit: 'km' | 'miles';
   createdAt: string;
@@ -1231,12 +1518,14 @@ export interface CreateShoeRequest {
   brand: string;
   model: string;
   initialMileageM?: number | null;
+  isRetired?: boolean;
 }
 
 export interface UpdateShoeRequest {
   brand?: string;
   model?: string;
   initialMileageM?: number | null;
+  isRetired?: boolean;
 }
 
 export interface ShoeMileageResponse {
@@ -1251,16 +1540,22 @@ export interface DefaultShoeResponse {
   model?: string;
 }
 
+export type ShoesListStatus = 'active' | 'retired' | 'all';
+
 // Shoe API functions
-export async function getShoes(): Promise<Shoe[]> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/shoes`, {
+export async function getShoes(params?: { status?: ShoesListStatus }): Promise<Shoe[]> {
+  const status = params?.status ?? 'active';
+  const qs = new URLSearchParams({ status });
+  const response = await fetchWithAuth(`${API_BASE_URL}/shoes?${qs.toString()}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch shoes: ${response.status}`);
+    const err = await response.json().catch(() => null);
+    const msg = err && typeof err === 'object' && 'error' in err ? String((err as { error: string }).error) : `Failed to fetch shoes: ${response.status}`;
+    throw new Error(msg);
   }
 
   return response.json();

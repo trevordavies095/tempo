@@ -34,8 +34,20 @@ public class WorkoutCropServiceTests : IDisposable
         _db = new TempoDbContext(options);
         _db.Database.EnsureCreated();
 
+        var elevationConfig = new ElevationCalculationConfig
+        {
+            NoiseThresholdMeters = 2.0,
+            MinDistanceMeters = 10.0
+        };
+        var gpxParser = new GpxParserService(elevationConfig);
+        var fitParser = new FitParserService();
+        var trackGeometry = new TrackGeometry(elevationConfig);
+        var rehydration = new TrackPointRehydration(
+            gpxParser,
+            fitParser,
+            LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<TrackPointRehydration>());
         _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<WorkoutCropService>();
-        _service = new WorkoutCropService(_db, _logger);
+        _service = new WorkoutCropService(_db, rehydration, trackGeometry, _logger);
     }
 
     public void Dispose()

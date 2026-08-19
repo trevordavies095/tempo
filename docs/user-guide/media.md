@@ -26,18 +26,18 @@ Tempo allows you to attach photos and videos to your workouts. This is useful fo
 
 1. Go to the activities list
 2. Click on the workout you want to add media to
-3. This opens the workout details page
+3. This opens Workout overview
 
 ### Step 2: Upload Media
 
-1. Find the "Media" section on the workout details page
+1. Find the "Media" section on Workout overview
 2. Click "Add Media" or drag and drop files
 3. Select one or more files from your computer
 4. Wait for upload to complete
 
 ### Step 3: View Media
 
-Once uploaded, media files appear in the workout details:
+Once uploaded, media files appear on Workout overview:
 - Thumbnails for images
 - Video players for video files
 - Click to view full size or play videos
@@ -53,7 +53,7 @@ Once uploaded, media files appear in the workout details:
 ### Delete Media
 
 To remove media from a workout:
-1. Go to the workout details page
+1. Open Workout overview
 2. Find the media you want to delete
 3. Click the delete button
 4. Confirm deletion

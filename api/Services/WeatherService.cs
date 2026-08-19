@@ -5,7 +5,7 @@ using Tempo.Api.Utils;
 
 namespace Tempo.Api.Services;
 
-public class WeatherService
+public class WeatherService : IWeatherService
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<WeatherService> _logger;

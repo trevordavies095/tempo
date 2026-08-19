@@ -60,6 +60,7 @@ nav:
   - Getting Started:
     - getting-started/index.md
     - getting-started/quick-start.md
+    - getting-started/onboarding.md
     - getting-started/installation.md
     - getting-started/configuration.md
   - User Guide:

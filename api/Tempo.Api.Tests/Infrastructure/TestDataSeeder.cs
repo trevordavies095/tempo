@@ -44,18 +44,21 @@ public static class TestDataSeeder
     /// <param name="brand">Shoe brand (default: "Nike")</param>
     /// <param name="model">Shoe model (default: "Pegasus")</param>
     /// <param name="initialMileage">Initial mileage in meters (optional)</param>
+    /// <param name="isRetired">Whether the shoe is retired (default: false)</param>
     /// <returns>Created Shoe entity</returns>
     public static async Task<Shoe> SeedShoeAsync(
         TempoDbContext db,
         string brand = "Nike",
         string model = "Pegasus",
-        double? initialMileage = null)
+        double? initialMileage = null,
+        bool isRetired = false)
     {
         var shoe = new Shoe
         {
             Brand = brand,
             Model = model,
             InitialMileageM = initialMileage,
+            IsRetired = isRetired,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -459,6 +462,7 @@ public static class TestDataSeeder
             await SafeDeleteFromTableAsync(db, "BestEfforts");
             await SafeDeleteFromTableAsync(db, "WorkoutRoutes");
             await SafeDeleteFromTableAsync(db, "Workouts");
+            await SafeDeleteFromTableAsync(db, "ImportJobs");
             await SafeDeleteFromTableAsync(db, "UserSettings");
             await SafeDeleteFromTableAsync(db, "Shoes");
             

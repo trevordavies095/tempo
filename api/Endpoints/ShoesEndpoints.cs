@@ -11,20 +11,36 @@ namespace Tempo.Api.Endpoints;
 public static class ShoesEndpoints
 {
     /// <summary>
-    /// List all shoes with calculated mileage
+    /// List shoes with calculated mileage (active by default).
     /// </summary>
+    /// <param name="status">Filter: active (default), retired, or all</param>
     /// <param name="db">Database context</param>
     /// <param name="mileageService">Shoe mileage service</param>
     /// <param name="logger">Logger instance</param>
-    /// <returns>List of all shoes with total mileage</returns>
+    /// <returns>List of shoes with total mileage</returns>
     private static async Task<IResult> GetShoes(
+        string? status,
         TempoDbContext db,
         ShoeMileageService mileageService,
         ILogger<Program> logger)
     {
         try
         {
-            var shoes = await db.Shoes
+            var filter = (status ?? "active").Trim().ToLowerInvariant();
+            if (filter is not ("active" or "retired" or "all"))
+            {
+                return Results.BadRequest(new { error = "status must be active, retired, or all" });
+            }
+
+            var query = db.Shoes.AsQueryable();
+            query = filter switch
+            {
+                "active" => query.Where(s => !s.IsRetired),
+                "retired" => query.Where(s => s.IsRetired),
+                _ => query
+            };
+
+            var shoes = await query
                 .OrderBy(s => s.Brand)
                 .ThenBy(s => s.Model)
                 .ToListAsync();
@@ -43,6 +59,7 @@ public static class ShoesEndpoints
                     brand = shoe.Brand,
                     model = shoe.Model,
                     initialMileageM = shoe.InitialMileageM,
+                    isRetired = shoe.IsRetired,
                     totalMileage = totalMileage,
                     unit = unitPreference == "imperial" ? "miles" : "km",
                     createdAt = shoe.CreatedAt,
@@ -103,6 +120,7 @@ public static class ShoesEndpoints
                 Brand = request.Brand.Trim(),
                 Model = request.Model.Trim(),
                 InitialMileageM = request.InitialMileageM,
+                IsRetired = request.IsRetired ?? false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -118,6 +136,7 @@ public static class ShoesEndpoints
                 brand = shoe.Brand,
                 model = shoe.Model,
                 initialMileageM = shoe.InitialMileageM,
+                isRetired = shoe.IsRetired,
                 createdAt = shoe.CreatedAt,
                 updatedAt = shoe.UpdatedAt
             });
@@ -259,6 +278,28 @@ public static class ShoesEndpoints
                 shoe.InitialMileageM = initialMileageValue;
             }
 
+            // Update IsRetired if provided
+            if (root.TryGetProperty("isRetired", out var isRetiredElement))
+            {
+                if (isRetiredElement.ValueKind != JsonValueKind.True && isRetiredElement.ValueKind != JsonValueKind.False)
+                {
+                    return Results.BadRequest(new { error = "isRetired must be a boolean" });
+                }
+
+                var newRetired = isRetiredElement.GetBoolean();
+                if (newRetired && !shoe.IsRetired)
+                {
+                    var settingsForRetire = await db.UserSettings.FirstOrDefaultAsync();
+                    if (settingsForRetire != null && settingsForRetire.DefaultShoeId == id)
+                    {
+                        settingsForRetire.DefaultShoeId = null;
+                        settingsForRetire.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+
+                shoe.IsRetired = newRetired;
+            }
+
             shoe.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
 
@@ -270,6 +311,7 @@ public static class ShoesEndpoints
                 brand = shoe.Brand,
                 model = shoe.Model,
                 initialMileageM = shoe.InitialMileageM,
+                isRetired = shoe.IsRetired,
                 createdAt = shoe.CreatedAt,
                 updatedAt = shoe.UpdatedAt
             });
@@ -378,9 +420,10 @@ public static class ShoesEndpoints
         group.MapGet("", GetShoes)
             .WithName("GetShoes")
             .Produces(200)
+            .Produces(400)
             .Produces(500)
-            .WithSummary("List all shoes")
-            .WithDescription("Returns all shoes with calculated total mileage based on assigned workouts");
+            .WithSummary("List shoes")
+            .WithDescription("Returns shoes with calculated total mileage. Query status=active (default), retired, or all.");
 
         group.MapPost("", CreateShoe)
             .WithName("CreateShoe")
@@ -388,7 +431,7 @@ public static class ShoesEndpoints
             .Produces(400)
             .Produces(500)
             .WithSummary("Create a new shoe")
-            .WithDescription("Creates a new shoe with brand, model, and optional initial mileage");
+            .WithDescription("Creates a new shoe with brand, model, optional initial mileage, and optional isRetired (defaults to false)");
 
         group.MapPatch("/{id:guid}", UpdateShoe)
             .WithName("UpdateShoe")
@@ -397,7 +440,7 @@ public static class ShoesEndpoints
             .Produces(404)
             .Produces(500)
             .WithSummary("Update a shoe")
-            .WithDescription("Updates shoe brand, model, and/or initial mileage");
+            .WithDescription("Updates shoe brand, model, initial mileage, and/or isRetired");
 
         group.MapDelete("/{id:guid}", DeleteShoe)
             .WithName("DeleteShoe")
@@ -435,6 +478,11 @@ public static class ShoesEndpoints
         /// Initial mileage in meters (optional)
         /// </summary>
         public double? InitialMileageM { get; set; }
+
+        /// <summary>
+        /// Whether the shoe is retired (optional, defaults to false)
+        /// </summary>
+        public bool? IsRetired { get; set; }
     }
 
     /// <summary>

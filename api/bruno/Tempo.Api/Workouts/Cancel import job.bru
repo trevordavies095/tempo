@@ -1,0 +1,10 @@
+meta {
+  name: Cancel import job
+  type: http
+  seq: 19
+}
+
+delete {
+  url: {{baseUrl}}/workouts/import/jobs/{{jobId}}
+  auth: inherit
+}

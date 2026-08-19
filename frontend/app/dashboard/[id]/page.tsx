@@ -1,161 +1,66 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import dynamic from 'next/dynamic';
-import Image from 'next/image';
-import { getWorkout, getWorkoutMedia, getSimilarRoutes, type WorkoutMedia } from '@/lib/api';
-import { formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
-import { useSettings } from '@/lib/settings';
+import { getWorkout, getSimilarRoutes } from '@/lib/api';
 import WorkoutDetailHeader from '@/components/WorkoutDetailHeader';
-import WorkoutDetailSplits from '@/components/WorkoutDetailSplits';
-import { useWorkoutMutations } from '@/hooks/useWorkoutMutations';
-import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
-import { ShoeSelector } from '@/components/ShoeSelector';
-import { MediaModal } from '@/components/MediaModal';
-import { MediaUpload } from '@/components/MediaUpload';
-import { AuthGuard } from '@/components/AuthGuard';
-import { RouteMatchesSummary } from '@/components/RouteMatchesSummary';
 import { ActivityDetailTabs } from '@/components/ActivityDetailTabs';
 import { RouteComparisonTab } from '@/components/RouteComparisonTab';
-import {
-  getWeatherSymbol,
-  formatTemperature,
-  formatWindSpeed,
-  formatWindDirection,
-  getFeelsLikeTemperature,
-  getHumidity,
-  isNightTime,
-} from '@/lib/weather';
+import { WorkoutOverviewPanel } from '@/components/WorkoutOverviewPanel';
+import { AuthGuard } from '@/components/AuthGuard';
+import { PageShell } from '@/components/ui/PageShell';
+import { EmptyState } from '@/components/ui/EmptyState';
 
-// Dynamically import WorkoutMap to avoid SSR issues with Leaflet
-const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center h-64 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-      <p className="text-gray-500 dark:text-gray-400">Loading map...</p>
-    </div>
-  ),
-});
-
-function WorkoutDetailPageContent() {
+function WorkoutOverviewPageContent() {
   const params = useParams();
   const id = params.id as string;
-  const [selectedMediaIndex, setSelectedMediaIndex] = useState<number | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isEditingRunType, setIsEditingRunType] = useState(false);
-  const [isEditingRpe, setIsEditingRpe] = useState(false);
-  const [isEditingNotes, setIsEditingNotes] = useState(false);
-  const [isEditingShoe, setIsEditingShoe] = useState(false);
-  const [notesValue, setNotesValue] = useState<string>('');
-  const [hoveredSplitIdx, setHoveredSplitIdx] = useState<number | null>(null);
-  const { unitPreference } = useSettings();
-  const queryClient = useQueryClient();
-  const { updateWorkoutMutation } = useWorkoutMutations(id);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['workout', id],
     queryFn: () => getWorkout(id),
   });
 
-  const { data: media, isLoading: isLoadingMedia, isError: isMediaError } = useQuery({
-    queryKey: ['workout-media', id],
-    queryFn: () => getWorkoutMedia(id),
-    enabled: !!id, // Fetch media as soon as we have the workout ID
-    retry: false, // Don't retry on error - treat as no media
-  });
-
-  // Check if there are matched runs to conditionally show comparison tab
   const { data: similarRoutes, isLoading: isLoadingSimilarRoutes } = useQuery({
     queryKey: ['similar-routes', id],
     queryFn: () => getSimilarRoutes(id),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
     retry: 1,
     refetchOnWindowFocus: false,
     enabled: !!id && !!data?.route,
   });
 
   const hasMatchedRuns = !!(similarRoutes && similarRoutes.length > 0);
-
-  // Sync notesValue with data.notes when entering edit mode or data changes
-  useEffect(() => {
-    if (data && isEditingNotes) {
-      setNotesValue(data.notes || '');
-    }
-  }, [data, isEditingNotes]);
-
-
-
-  const handleMediaClick = (media: WorkoutMedia, index: number) => {
-    setSelectedMediaIndex(index);
-    setIsModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setSelectedMediaIndex(null);
-  };
-
-  const handleSaveNotes = () => {
-    const trimmedNotes = notesValue.trim() || null;
-    updateWorkoutMutation.mutate(
-      { notes: trimmedNotes },
-      {
-        onSuccess: () => {
-          setIsEditingNotes(false);
-        },
-      }
-    );
-  };
-
-  const handleCancelNotes = () => {
-    setIsEditingNotes(false);
-    setNotesValue(data?.notes || '');
-  };
+  const backLink = (
+    <Link href="/dashboard" className="text-sm text-muted hover:text-ink">
+      ← Back to Dashboard
+    </Link>
+  );
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
-          <div className="w-full">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Workout Details
-            </h1>
-            <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
-              Loading workout...
-            </p>
-          </div>
-        </main>
-      </div>
+      <PageShell density="overview" title="Workout overview" subtitle="Loading workout…">
+        <p className="text-muted">Loading workout…</p>
+      </PageShell>
     );
   }
 
   if (isError) {
     const isNotFound = error instanceof Error && error.message === 'Workout not found';
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
-          <div className="w-full">
-            <Link
-              href="/dashboard"
-              className="text-blue-600 dark:text-blue-400 hover:underline mb-4 inline-block"
-            >
-              ← Back to Dashboard
-            </Link>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Workout Details
-            </h1>
-            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-              <p className="text-sm text-red-800 dark:text-red-200">
-                {isNotFound ? 'Workout not found' : `Error: ${error instanceof Error ? error.message : 'Failed to load workout'}`}
-              </p>
-            </div>
-          </div>
-        </main>
-      </div>
+      <PageShell density="overview" title="Workout overview" leading={backLink}>
+        <EmptyState
+          title={isNotFound ? 'Workout not found' : 'Could not load workout'}
+          description={
+            isNotFound
+              ? 'This Workout may have been deleted.'
+              : error instanceof Error
+                ? error.message
+                : 'Failed to load workout'
+          }
+        />
+      </PageShell>
     );
   }
 
@@ -164,660 +69,23 @@ function WorkoutDetailPageContent() {
   }
 
   return (
-    <div className="flex min-h-screen items-start justify-center bg-zinc-50 dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-6xl flex-col items-start py-8 px-6">
-        <WorkoutDetailHeader workout={data} />
+    <PageShell density="overview" title="Workout overview" leading={backLink}>
+      <WorkoutDetailHeader workout={data} />
 
-        <ActivityDetailTabs 
-          workoutId={id} 
-          currentWorkout={data}
-          showComparisonTab={hasMatchedRuns}
-          isLoadingSimilarRoutes={isLoadingSimilarRoutes}
-          overviewContent={
-            <div className="w-full space-y-3">
-              {/* Main Content Area - Two Columns */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* Left Column - Activity Details */}
-                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
-                  {/* Notes/Description */}
-                  <div>
-                <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Description</dt>
-                <dd>
-                  {isEditingNotes ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={notesValue}
-                        onChange={(e) => setNotesValue(e.target.value)}
-                        disabled={updateWorkoutMutation.isPending}
-                        placeholder="Add a description..."
-                        rows={3}
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed resize-y"
-                        autoFocus
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={handleSaveNotes}
-                          disabled={updateWorkoutMutation.isPending}
-                          className="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={handleCancelNotes}
-                          disabled={updateWorkoutMutation.isPending}
-                          className="px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        {updateWorkoutMutation.isPending && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">Saving...</span>
-                        )}
-                        {updateWorkoutMutation.isError && (
-                          <span className="text-xs text-red-600 dark:text-red-400">
-                            Error: {updateWorkoutMutation.error instanceof Error ? updateWorkoutMutation.error.message : 'Failed to update'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setNotesValue(data.notes || '');
-                        setIsEditingNotes(true);
-                      }}
-                      className="flex items-start gap-2 w-full text-left hover:text-blue-600 dark:hover:text-blue-400 transition-colors group"
-                      type="button"
-                    >
-                      <div className="flex-1 min-w-0">
-                        {data.notes ? (
-                          <p className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
-                            {data.notes}
-                          </p>
-                        ) : (
-                          <p className="text-sm text-gray-400 dark:text-gray-500 italic">
-                            Add a description...
-                          </p>
-                        )}
-                      </div>
-                      <svg
-                        className="w-4 h-4 opacity-0 group-hover:opacity-50 mt-0.5 flex-shrink-0"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                    </button>
-                  )}
-                </dd>
-                  </div>
-
-                  {/* Run Type */}
-                  <div>
-                <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Run Type</dt>
-                <dd className="text-sm text-gray-900 dark:text-gray-100">
-                  {isEditingRunType ? (
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={data.runType || ''}
-                        onChange={(e) => {
-                          const newValue = e.target.value === '' ? null : e.target.value;
-                          updateWorkoutMutation.mutate(
-                            { runType: newValue },
-                            {
-                              onSuccess: () => {
-                                setIsEditingRunType(false);
-                              },
-                            }
-                          );
-                        }}
-                        disabled={updateWorkoutMutation.isPending}
-                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        autoFocus
-                      >
-                        <option value="">None</option>
-                        <option value="Easy Run">Easy Run</option>
-                        <option value="Race">Race</option>
-                        <option value="Workout">Workout</option>
-                        <option value="Long Run">Long Run</option>
-                      </select>
-                      <button
-                        onClick={() => setIsEditingRunType(false)}
-                        className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                        type="button"
-                        disabled={updateWorkoutMutation.isPending}
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setIsEditingRunType(true)}
-                      className="flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                      type="button"
-                    >
-                      <span>{data.runType || 'None'}</span>
-                      <svg
-                        className="w-4 h-4 opacity-50"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                    </button>
-                  )}
-                  {updateWorkoutMutation.isPending && (
-                    <span className="ml-2 text-xs text-gray-500">Saving...</span>
-                  )}
-                  {updateWorkoutMutation.isError && (
-                    <span className="ml-2 text-xs text-red-600 dark:text-red-400">
-                      Error: {updateWorkoutMutation.error instanceof Error ? updateWorkoutMutation.error.message : 'Failed to update'}
-                    </span>
-                  )}
-                </dd>
-                  </div>
-
-                  {/* RPE (1–10) */}
-                  <div>
-                <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">RPE (1–10)</dt>
-                <dd className="text-sm text-gray-900 dark:text-gray-100">
-                  {isEditingRpe ? (
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={data.rpe != null ? String(data.rpe) : ''}
-                        onChange={(e) => {
-                          const newValue = e.target.value === '' ? null : Number(e.target.value);
-                          updateWorkoutMutation.mutate(
-                            { rpe: newValue },
-                            {
-                              onSuccess: () => {
-                                setIsEditingRpe(false);
-                              },
-                            }
-                          );
-                        }}
-                        disabled={updateWorkoutMutation.isPending}
-                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        autoFocus
-                      >
-                        <option value="">None</option>
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => setIsEditingRpe(false)}
-                        className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                        type="button"
-                        disabled={updateWorkoutMutation.isPending}
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setIsEditingRpe(true)}
-                      className="flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                      type="button"
-                    >
-                      <span>{data.rpe != null ? String(data.rpe) : 'None'}</span>
-                      <svg
-                        className="w-4 h-4 opacity-50"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                    </button>
-                  )}
-                </dd>
-                  </div>
-
-                  {/* Shoe */}
-                  <div>
-                <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Shoe</dt>
-                <dd className="text-sm text-gray-900 dark:text-gray-100">
-                  {isEditingShoe ? (
-                    <div className="flex items-center gap-2">
-                      <ShoeSelector
-                        value={data.shoeId}
-                        onChange={(shoeId) => {
-                          updateWorkoutMutation.mutate(
-                            { shoeId },
-                            {
-                              onSuccess: () => {
-                                setIsEditingShoe(false);
-                              },
-                            }
-                          );
-                        }}
-                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                      <button
-                        onClick={() => setIsEditingShoe(false)}
-                        className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                        type="button"
-                        disabled={updateWorkoutMutation.isPending}
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setIsEditingShoe(true)}
-                      className="flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                      type="button"
-                    >
-                      <span>
-                        {data.shoe
-                          ? `${data.shoe.brand} ${data.shoe.model}`
-                          : 'None'}
-                      </span>
-                      <svg
-                        className="w-4 h-4 opacity-50"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                    </button>
-                  )}
-                  {updateWorkoutMutation.isPending && (
-                    <span className="ml-2 text-xs text-gray-500">Saving...</span>
-                  )}
-                  {updateWorkoutMutation.isError && (
-                    <span className="ml-2 text-xs text-red-600 dark:text-red-400">
-                      Error: {updateWorkoutMutation.error instanceof Error ? updateWorkoutMutation.error.message : 'Failed to update'}
-                    </span>
-                  )}
-                </dd>
-                  </div>
-
-                  {/* Device */}
-                  {data.device && (
-                    <div>
-                      <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Device</dt>
-                      <dd className="text-sm text-gray-900 dark:text-gray-100">
-                        {data.device}
-                      </dd>
-                    </div>
-                  )}
-
-                  {/* Source */}
-                  {data.source && (
-                    <div>
-                      <dt className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Source</dt>
-                      <dd className="text-sm text-gray-900 dark:text-gray-100">
-                        {data.source}
-                      </dd>
-                    </div>
-                  )}
-
-                  {/* Media Upload and Gallery */}
-                  <div>
-                    <MediaUpload
-                      workoutId={id}
-                      onUploadSuccess={() => {
-                        queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
-                      }}
-                    />
-                    <div className="mt-2">
-                      <WorkoutMediaGallery
-                        workoutId={id}
-                        media={isMediaError ? [] : media}
-                        isLoading={isLoadingMedia}
-                        onMediaClick={handleMediaClick}
-                        onDeleteSuccess={() => {
-                          queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Column - Stats and Weather */}
-                <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800 space-y-2.5">
-                  {/* Key Metrics */}
-                  <div>
-                <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Key Metrics</h3>
-                <div className={`grid gap-3 ${data.relativeEffort !== null ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                  <div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Distance</div>
-                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      {formatDistance(data.distanceM, unitPreference)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      {data.movingTimeS !== null && data.movingTimeS !== data.durationS ? 'Moving Time' : 'Duration'}
-                    </div>
-                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      {data.movingTimeS !== null && data.movingTimeS !== data.durationS 
-                        ? formatDuration(data.movingTimeS)
-                        : formatDuration(data.durationS)}
-                    </div>
-                    {data.movingTimeS !== null && data.movingTimeS !== data.durationS && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Elapsed: {formatDuration(data.durationS)}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Pace</div>
-                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      {formatPace(data.avgPaceS, unitPreference)}
-                    </div>
-                  </div>
-                  {data.relativeEffort !== null && (
-                    <div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Relative Effort</div>
-                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                        {data.relativeEffort}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Additional Details and Weather - Side by Side */}
-              {(() => {
-                const hasAdditionalDetails = data.elevGainM !== null || data.calories !== null || 
-                  data.relativeEffort !== null ||
-                  data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null ||
-                  data.maxCadenceRpm !== null || data.avgCadenceRpm !== null ||
-                  data.maxPowerWatts !== null || data.avgPowerWatts !== null;
-                const hasWeather = !!data.weather;
-                const bothExist = hasAdditionalDetails && hasWeather;
-
-                return (hasAdditionalDetails || hasWeather) ? (
-                  <div className={bothExist ? "grid grid-cols-1 md:grid-cols-2 gap-3" : ""}>
-                    {/* Additional Details */}
-                    {hasAdditionalDetails && (
-                      <div>
-                        <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Additional Details</h3>
-                        <div className="space-y-1.5">
-                          {data.elevGainM !== null && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Elevation</span>
-                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                {formatElevation(data.elevGainM, unitPreference)}
-                              </span>
-                            </div>
-                          )}
-                          {data.movingTimeS !== null && data.movingTimeS !== data.durationS && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Elapsed Time</span>
-                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                {formatDuration(data.durationS)}
-                              </span>
-                            </div>
-                          )}
-                          {data.calories !== null && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Calories</span>
-                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                {data.calories}
-                              </span>
-                            </div>
-                          )}
-                          {data.relativeEffort !== null && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Relative Effort</span>
-                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                {data.relativeEffort}
-                              </span>
-                            </div>
-                          )}
-                          {(data.maxHeartRateBpm !== null || data.avgHeartRateBpm !== null) && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Heart Rate</span>
-                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                {data.maxHeartRateBpm !== null && data.avgHeartRateBpm !== null
-                                  ? `${data.maxHeartRateBpm} / ${data.avgHeartRateBpm} bpm`
-                                  : data.maxHeartRateBpm !== null
-                                  ? `${data.maxHeartRateBpm} bpm`
-                                  : `${data.avgHeartRateBpm} bpm`}
-                              </span>
-                            </div>
-                          )}
-                          {(data.maxCadenceRpm !== null || data.avgCadenceRpm !== null) && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Cadence</span>
-                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                {data.maxCadenceRpm !== null && data.avgCadenceRpm !== null
-                                  ? `${data.maxCadenceRpm} / ${data.avgCadenceRpm} rpm`
-                                  : data.maxCadenceRpm !== null
-                                  ? `${data.maxCadenceRpm} rpm`
-                                  : `${data.avgCadenceRpm} rpm`}
-                              </span>
-                            </div>
-                          )}
-                          {(data.maxPowerWatts !== null || data.avgPowerWatts !== null) && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Power</span>
-                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                {data.maxPowerWatts !== null && data.avgPowerWatts !== null
-                                  ? `${data.maxPowerWatts} / ${data.avgPowerWatts} W`
-                                  : data.maxPowerWatts !== null
-                                  ? `${data.maxPowerWatts} W`
-                                  : `${data.avgPowerWatts} W`}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Weather Information */}
-                    {hasWeather && (() => {
-                      const isNight = isNightTime(data.startedAt);
-                      const symbolFilename = getWeatherSymbol(data.weather.weatherCode, isNight);
-                      const symbolPath = `/weather-symbols/${symbolFilename}`;
-                      const conditionText = data.weather.condition || 'Unknown';
-                      const feelsLike = getFeelsLikeTemperature(data.weather);
-                      const humidity = getHumidity(data.weather);
-
-                      return (
-                        <div>
-                          <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Weather</h3>
-                          <div className="space-y-1.5">
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-                                <div className="relative w-4 h-4 flex-shrink-0">
-                                  <Image
-                                    src={symbolPath}
-                                    alt={conditionText}
-                                    fill
-                                    className="object-contain"
-                                    unoptimized
-                                  />
-                                </div>
-                                Condition
-                              </span>
-                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                {conditionText}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Temperature</span>
-                              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                {formatTemperature(data.weather.temperature, unitPreference)}
-                              </span>
-                            </div>
-                            {humidity !== undefined && humidity !== null && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs text-gray-500 dark:text-gray-400">Humidity</span>
-                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                  {Math.round(humidity)}%
-                                </span>
-                              </div>
-                            )}
-                            {feelsLike !== undefined && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs text-gray-500 dark:text-gray-400">Feels like</span>
-                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                  {formatTemperature(feelsLike, unitPreference)}
-                                </span>
-                              </div>
-                            )}
-                            {data.weather.windSpeed !== undefined && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs text-gray-500 dark:text-gray-400">Wind Speed</span>
-                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                  {formatWindSpeed(data.weather.windSpeed, unitPreference)}
-                                </span>
-                              </div>
-                            )}
-                            {data.weather.windDirection !== undefined && data.weather.windDirection !== null && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs text-gray-500 dark:text-gray-400">Wind Direction</span>
-                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                  {formatWindDirection(data.weather.windDirection)} ({Math.round(data.weather.windDirection)}°)
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                ) : null;
-              })()}
-                </div>
-              </div>
-
-              {/* Previous Efforts Section */}
-              {data.route && (
-                <RouteMatchesSummary workoutId={id} currentWorkout={data} />
-              )}
-
-              {/* Lower Section - Splits and Map */}
-              {(data.splits && data.splits.length > 0) || data.route ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <WorkoutDetailSplits
-                    splits={data.splits}
-                    unitPreference={unitPreference}
-                    hoveredSplitIdx={hoveredSplitIdx}
-                    onSplitHover={setHoveredSplitIdx}
-                  />
-
-                  {/* Route Map */}
-                  {data.route && (
-                    <div className="bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
-                      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                        Route Map
-                      </h2>
-                      <WorkoutMap 
-                        key={data.id} 
-                        route={data.route} 
-                        workoutId={data.id}
-                        splits={data.splits}
-                        hoveredSplitIdx={hoveredSplitIdx}
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          }
-          comparisonContent={
-            <RouteComparisonTab workoutId={id} currentWorkout={data} />
-          }
-        />
-
-        {/* Media Modal */}
-        {media && media.length > 0 && selectedMediaIndex !== null && (
-          <MediaModal
-            media={media}
-            initialIndex={selectedMediaIndex}
-            workoutId={id}
-            isOpen={isModalOpen}
-            onClose={handleCloseModal}
-            onDeleteSuccess={() => {
-              queryClient.invalidateQueries({ queryKey: ['workout-media', id] });
-              // If modal closes after deleting last item, reset state
-              if (media && media.length <= 1) {
-                setIsModalOpen(false);
-                setSelectedMediaIndex(null);
-              }
-            }}
-          />
-        )}
-      </main>
-    </div>
+      <ActivityDetailTabs
+        showComparisonTab={hasMatchedRuns}
+        isLoadingSimilarRoutes={isLoadingSimilarRoutes}
+        overviewContent={<WorkoutOverviewPanel workout={data} />}
+        comparisonContent={<RouteComparisonTab workoutId={id} currentWorkout={data} />}
+      />
+    </PageShell>
   );
 }
 
-export default function WorkoutDetailPage() {
+export default function WorkoutOverviewPage() {
   return (
     <AuthGuard>
-      <WorkoutDetailPageContent />
+      <WorkoutOverviewPageContent />
     </AuthGuard>
   );
 }
-

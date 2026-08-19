@@ -76,7 +76,6 @@ jobs:
             APP_VERSION=${{ steps.version.outputs.version }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
             GIT_COMMIT=${{ steps.meta.outputs.git_commit }}
-            NEXT_PUBLIC_API_URL=http://api:5001
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

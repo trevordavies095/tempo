@@ -1,23 +1,37 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push('/login');
+    if (isLoading) {
+      return;
     }
-  }, [isAuthenticated, isLoading, router]);
+
+    if (!isAuthenticated) {
+      router.replace('/login');
+      return;
+    }
+
+    if (
+      user &&
+      !user.onboardingCompleted &&
+      pathname !== '/onboarding'
+    ) {
+      router.replace('/onboarding');
+    }
+  }, [isAuthenticated, isLoading, user, pathname, router]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
+        <div className="text-muted">Loading...</div>
       </div>
     );
   }
@@ -26,6 +40,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return null;
   }
 
+  if (user && !user.onboardingCompleted && pathname !== '/onboarding') {
+    return null;
+  }
+
   return <>{children}</>;
 }
-

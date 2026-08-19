@@ -7,7 +7,9 @@ Import your entire Strava history at once using a Strava data export ZIP file.
 The bulk import feature allows you to import multiple workouts from a Strava data export. This is useful when:
 - Migrating from Strava to Tempo
 - Importing your complete workout history
-- Backing up and restoring workouts
+- Catching up after you skipped Strava during first-run onboarding
+
+First-run Strava import is also offered during **onboarding**. After setup, use **Settings → Migrate / restore**. Day-to-day GPX/FIT files stay on the [Import](importing-workouts.md) page.
 
 ## Requesting Your Strava Data Export
 
@@ -49,9 +51,14 @@ If your Strava export doesn't match the required structure:
 
 ### Step 2: Access Bulk Import
 
+During **[first-run onboarding](../getting-started/onboarding.md)**, choose Strava import after essentials.
+
+After setup:
+
 1. Log in to Tempo
-2. Navigate to the Import page
-3. Find the "Bulk Import Strava Export" section
+2. Navigate to **Settings**
+3. Under **Data Management**, expand **Migrate / restore**
+4. Find **Import Strava archive**
 
 ### Step 3: Upload ZIP File
 
@@ -66,9 +73,13 @@ Bulk import processing may take several minutes depending on:
 - File sizes
 - Server performance
 
-You'll see progress updates during processing.
+You'll see upload progress, then import progress (`processed` / `total`). You can cancel while the job is active; workouts already imported stay. Refreshing Settings resumes an in-progress Strava job under Migrate / restore.
 
-**Note**: If you've set a default shoe in Settings, all imported workouts will automatically be assigned to that shoe. You can change or remove shoe assignments later from individual workout details pages.
+**Note**: If you've set a default shoe in Settings, all imported workouts will automatically be assigned to that shoe. You can change or remove shoe assignments later from each Workout's overview.
+
+### One import at a time
+
+Tempo runs at most one import job at a time across Strava bulk import and [Tempo export restore](settings.md#migrate--restore). If a Tempo restore is already running, Migrate / restore shows a message and will not start a Strava import until that job finishes or is cancelled. Tempo backups use Settings export — not this Strava bulk flow.
 
 ### Step 5: Review Import Summary
 
@@ -79,12 +90,16 @@ After processing completes, you'll see a summary showing:
 
 ## Duplicate Detection
 
-Tempo automatically detects and skips duplicate workouts based on:
+Tempo matches workouts on:
 - Start time (`StartedAt`)
 - Distance (`DistanceM`)
 - Duration (`DurationS`)
 
-If a workout with the same values already exists, it will be skipped.
+If a match already exists:
+- **Updated** when the stored Workout is missing raw file bytes or its FIT/GPX JSON is incomplete. Tempo backfills bytes/JSON, rebuilds splits, and fills an empty route or time series. Distance, duration, and elevation on a Workout that already has complete raw data are not rewritten.
+- **Skipped** when raw bytes and JSON are already complete.
+
+Strava name and media from the export can still attach after created, updated, or skipped.
 
 ## Supported Activity Types
 
@@ -122,9 +137,18 @@ If processing seems stuck:
 - Verify server has sufficient resources
 - Consider splitting very large exports into smaller ZIP files
 
+### Cannot Start / Message About Tempo Restore
+
+- Finish or cancel the Tempo export restore in [Settings → Migrate / restore](settings.md#migrate--restore) first
+- Only one import job can run at a time (Strava bulk or Tempo restore)
+
+### Partial Import After Cancel
+
+- Already imported workouts remain
+- Re-upload the same ZIP; duplicates skip and incomplete workouts can update
+
 ## Next Steps
 
 - [View your imported workouts](viewing-workouts.md)
-- [Configure settings](settings.md) for your preferences
+- [Configure settings](settings.md) for your preferences (including Tempo backup restore)
 - [Add media](media.md) to enhance your workouts
-

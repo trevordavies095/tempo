@@ -1,65 +1,106 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
-import { importBulkStravaExport, type BulkImportResponse } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  importJobToBulkResponse,
+  type BulkImportResponse,
+  type ImportJob,
+} from '@/lib/api';
 import { useSettings } from '@/lib/settings';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { useFileDrop } from '@/hooks/useFileDrop';
+import { useImportJobSession } from '@/hooks/useImportJobSession';
 import { IconUpload } from '@tabler/icons-react';
+import { Button } from '@/components/ui/Button';
 
-export function BulkImport() {
+export type BulkImportProps = {
+  onJobCompleted?: (job: ImportJob) => void | Promise<void>;
+  onJobFailedOrCancelled?: (message: string) => void;
+};
+
+export function BulkImport(props: BulkImportProps = {}) {
+  const { onJobCompleted, onJobFailedOrCancelled } = props;
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<BulkImportResponse | null>(null);
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
+
+  const onCompleted = useCallback(
+    async (job: ImportJob) => {
+      invalidateWorkoutQueries(queryClient);
+      setImportResult(importJobToBulkResponse(job));
+      setSelectedFile(null);
+      await onJobCompleted?.(job);
+    },
+    [queryClient, onJobCompleted]
+  );
+
+  const onFailed = useCallback(
+    (message: string) => {
+      onJobFailedOrCancelled?.(message);
+    },
+    [onJobFailedOrCancelled]
+  );
+
+  const session = useImportJobSession({
+    kind: 'strava_bulk',
+    unitPreference,
+    onCompleted,
+    onFailed,
+  });
+
+  const {
+    canStart,
+    isWorking,
+    jobId,
+    jobError,
+    otherKindMessage,
+    uploadError,
+    cancelPending,
+    progressLabel: getProgressLabel,
+    startUpload,
+    cancel,
+    clearError,
+  } = session;
 
   const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
     onFilesSelected: (files) => {
       if (files.length > 0) {
         setSelectedFile(files[0]);
         setImportResult(null);
+        clearError();
       }
     },
     acceptExtensions: ['.zip'],
     maxFiles: 1,
   });
 
-  const mutation = useMutation({
-    mutationFn: (file: File) => importBulkStravaExport(file, unitPreference),
-    onSuccess: (data) => {
-      invalidateWorkoutQueries(queryClient);
-      setImportResult(data);
-      setSelectedFile(null);
-    },
-    onError: (error: Error) => {
-      alert(`Error importing Strava export: ${error.message}`);
-    },
-  });
-
-
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      if (selectedFile) {
-        mutation.mutate(selectedFile);
+      if (selectedFile && canStart) {
+        startUpload(selectedFile);
       }
     },
-    [selectedFile, mutation, unitPreference]
+    [selectedFile, canStart, startUpload]
   );
 
+  const progressLabel = getProgressLabel('Import Strava Export');
+  const showError = !!jobError || !!uploadError;
+
   return (
-    <div className="w-full max-w-2xl">
+    <div className="w-full">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
           onDragOver={handleDrag}
           onDrop={handleDrop}
-          className={`relative border-2 border-dashed rounded-lg p-8 transition-colors ${
+          className={`relative border-2 border-dashed rounded-tempo p-8 transition-colors ${
             dragActive
-              ? 'border-green-500 bg-green-50 dark:bg-green-950'
-              : 'border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900'
+              ? 'border-volt bg-canvas'
+              : 'border-border bg-canvas'
           }`}
         >
           <input
@@ -67,76 +108,103 @@ export function BulkImport() {
             id="bulk-upload"
             accept=".zip"
             onChange={handleFileInput}
+            disabled={isWorking}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div className="text-center">
-            <IconUpload className="mx-auto h-12 w-12 text-gray-400" />
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              <span className="font-semibold">Click to upload</span> or drag and drop
+            <IconUpload className="mx-auto h-12 w-12 text-muted" />
+            <p className="mt-2 text-sm text-muted">
+              <span className="font-semibold text-ink">Click to upload</span> or drag and drop
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-500">
+            <p className="text-xs text-muted">
               Strava export ZIP file (must contain activities.csv and activities/ folder)
             </p>
             {selectedFile && (
-              <p className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+              <p className="mt-2 text-sm font-medium text-ink">
                 Selected: {selectedFile.name}
               </p>
             )}
           </div>
         </div>
 
-        {selectedFile && (
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {mutation.isPending ? 'Importing...' : 'Import Strava Export'}
-          </button>
+        {otherKindMessage && (
+          <div className="p-4 bg-raised border border-border rounded-tempo">
+            <p className="text-sm text-ink">{otherKindMessage}</p>
+          </div>
         )}
 
-        {mutation.isError && (
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-sm text-red-800 dark:text-red-200">
-              Error: {mutation.error instanceof Error ? mutation.error.message : 'Unknown error'}
+        {selectedFile && (
+          <Button
+            type="submit"
+            disabled={!canStart}
+            className="w-full"
+          >
+            {progressLabel}
+          </Button>
+        )}
+
+        {isWorking && !selectedFile && (
+          <p className="text-sm text-ink">{progressLabel}</p>
+        )}
+
+        {isWorking && jobId && (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={cancelPending}
+            className="w-full"
+            onClick={() => cancel()}
+          >
+            Cancel import
+          </Button>
+        )}
+
+        {showError && (
+          <div className="p-4 bg-canvas border border-danger/40 rounded-tempo">
+            <p className="text-sm text-danger">
+              Error:{' '}
+              {jobError ||
+                (uploadError instanceof Error
+                  ? uploadError.message
+                  : 'Unknown error')}
             </p>
           </div>
         )}
 
         {importResult && (
-          <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg space-y-2">
-            <h3 className="text-lg font-semibold text-green-900 dark:text-green-100">
+          <div className="p-4 bg-raised border border-border rounded-tempo space-y-2">
+            <h3 className="text-lg font-semibold text-ink">
               Import Complete!
             </h3>
-            <div className="text-sm text-green-800 dark:text-green-200 space-y-1">
+            <div className="text-sm text-ink space-y-1">
               <p>
                 <span className="font-medium">Total processed:</span> {importResult.totalProcessed}
               </p>
               <p>
                 <span className="font-medium">Successfully imported:</span>{' '}
-                <span className="text-green-700 dark:text-green-300">{importResult.successful}</span>
+                {importResult.successful}
               </p>
               {importResult.updated > 0 && (
                 <p>
                   <span className="font-medium">Updated with new data:</span>{' '}
-                  <span className="text-blue-700 dark:text-blue-300">{importResult.updated}</span>
+                  {importResult.updated}
                 </p>
               )}
               {importResult.skipped > 0 && (
                 <p>
                   <span className="font-medium">Skipped (already complete):</span>{' '}
-                  <span className="text-yellow-700 dark:text-yellow-300">{importResult.skipped}</span>
+                  <span className="text-muted">{importResult.skipped}</span>
                 </p>
               )}
               {importResult.errors > 0 && (
                 <div>
                   <p>
                     <span className="font-medium">Errors:</span>{' '}
-                    <span className="text-red-700 dark:text-red-300">{importResult.errors}</span>
+                    <span className="text-danger">{importResult.errors}</span>
                   </p>
                   {importResult.errorDetails.length > 0 && (
                     <details className="mt-2">
-                      <summary className="cursor-pointer text-green-700 dark:text-green-300 hover:underline">
+                      <summary className="cursor-pointer text-muted hover:text-ink hover:underline">
                         View error details
                       </summary>
                       <ul className="mt-2 ml-4 list-disc space-y-1">
@@ -157,4 +225,3 @@ export function BulkImport() {
     </div>
   );
 }
-

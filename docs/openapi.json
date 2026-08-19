@@ -3,7 +3,7 @@
   "info": {
     "title": "Tempo API",
     "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
-    "version": "2.6.0"
+    "version": "2.7.0"
   },
   "paths": {
     "/auth/register": {
@@ -106,6 +106,29 @@
         "summary": "Get current user info (JWT session or API key).",
         "description": "Returns information about the currently authenticated user. Accepts JWT (cookie or Bearer) or API key (Bearer, prefix tmp_).",
         "operationId": "GetCurrentUser",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/auth/onboarding/complete": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Mark first-run onboarding as complete (idempotent).",
+        "description": "Marks first-run onboarding as complete for the current user. Idempotent; cannot set the flag back to false.",
+        "operationId": "CompleteOnboarding",
         "responses": {
           "200": {
             "description": "OK"
@@ -461,12 +484,25 @@
         "tags": [
           "Shoes"
         ],
-        "summary": "List all shoes with calculated mileage",
-        "description": "Returns all shoes with calculated total mileage based on assigned workouts",
+        "summary": "List shoes with calculated mileage (active by default).",
+        "description": "Returns shoes with calculated total mileage. Query status=active (default), retired, or all.",
         "operationId": "GetShoes",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter: active (default), retired, or all",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
           },
           "500": {
             "description": "Internal Server Error"
@@ -483,7 +519,7 @@
           "Shoes"
         ],
         "summary": "Create a new shoe",
-        "description": "Creates a new shoe with brand, model, and optional initial mileage",
+        "description": "Creates a new shoe with brand, model, optional initial mileage, and optional isRetired (defaults to false)",
         "operationId": "CreateShoe",
         "requestBody": {
           "description": "Create shoe request",
@@ -520,7 +556,7 @@
           "Shoes"
         ],
         "summary": "Update a shoe",
-        "description": "Updates shoe brand, model, and/or initial mileage",
+        "description": "Updates shoe brand, model, initial mileage, and/or isRetired",
         "operationId": "UpdateShoe",
         "parameters": [
           {
@@ -1422,8 +1458,8 @@
         "tags": [
           "Workouts"
         ],
-        "summary": "Paginated heart-rate samples for a workout (from stored time series).",
-        "description": "Returns paginated heart-rate samples from stored workout time series. Each item has elapsedSeconds (integer seconds from workout start) and heartRateBpm (integer). Samples are sparse: only timestamps where heart rate was recorded are included (not a dense sample for every second). GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. The server does not interpolate missing seconds; clients may interpolate if needed. Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. Default pageSize is 1000 with a maximum of 5000; use multiple requests for long activities.",
+        "summary": "Paginated WorkoutTimeSeries samples for a workout.",
+        "description": "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm, powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. Null fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second is present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. The server does not interpolate missing seconds; clients may interpolate if needed. Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. Default pageSize is 1000 with a maximum of 5000; use multiple requests for long activities.",
         "operationId": "GetWorkoutTimeSeries",
         "parameters": [
           {
@@ -1579,7 +1615,7 @@
           "Workouts"
         ],
         "summary": "Bulk import Strava export",
-        "description": "Uploads and processes a ZIP file containing Strava export (activities.csv + activity files),\nimporting all run activities with duplicate detection. Supports optional unitPreference form field.\nOnly \"Run\" activities are imported; others are skipped.",
+        "description": "Accepts a Strava export ZIP and returns 202 with a job document. Poll GET /workouts/import/jobs/{id}\nuntil completed or failed. Supports optional unitPreference form field. Only \"Run\" activities are imported.",
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -1592,14 +1628,311 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request"
           },
           "500": {
             "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/jobs": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Create a receiving import job for chunked upload (strava_bulk or tempo_export)",
+        "description": "Creates a receiving import job. Body requires kind (strava_bulk | tempo_export), filename, byteSize. unitPreference is optional for strava_bulk and rejected for tempo_export. Upload 512 KiB chunks then POST complete.",
+        "operationId": "CreateImportJob",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateImportJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/jobs/{id}/chunks/{index}": {
+      "put": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Upload one 512 KiB (or final remainder) chunk of an import ZIP",
+        "description": "Puts one sequential 512 KiB (or final remainder) chunk. Query total is the expected chunk count. Body is application/octet-stream.",
+        "operationId": "PutImportJobChunk",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "total",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "byte"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/jobs/{id}/complete": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Assemble chunks and queue the import job",
+        "description": "Assembles chunks when every index is present and the length equals byteSize, then queues the job. Mismatch does not start intake.",
+        "operationId": "CompleteImportJob",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/jobs/current": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Get the active import job, if any",
+        "description": "Returns the active receiving, queued, or running import job, or 204 if none.",
+        "operationId": "GetCurrentImportJob",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/import/jobs/{id}": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Get Strava bulk import job status",
+        "description": "Returns the import job document: status, byte and activity progress, counters, and error details.",
+        "operationId": "GetImportJob",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Cancel a receiving, queued, or running import job",
+        "description": "Cancels a receiving, queued, or running job. Already imported Workouts are kept. The job ends as failed/cancelled and the archive is deleted.",
+        "operationId": "CancelImportJob",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
           }
         },
         "security": [
@@ -1638,7 +1971,7 @@
           "Workouts"
         ],
         "summary": "Import Tempo export ZIP file",
-        "description": "Uploads and processes a ZIP file containing a complete Tempo export, restoring all user data\nincluding workouts, media files, settings, shoes, routes, splits, time series, and best efforts.\nDuplicates are skipped by default. GUIDs and timestamps from the export are preserved.",
+        "description": "Accepts a Tempo export ZIP and returns 202 with a job document. Poll GET /workouts/import/jobs/{id}\nuntil completed or failed. Restores workouts, media, settings, shoes, and related entities.",
         "operationId": "ImportExport",
         "requestBody": {
           "content": {
@@ -1652,8 +1985,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDocument"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request"
@@ -1783,6 +2133,28 @@
         },
         "additionalProperties": false
       },
+      "CreateImportJobRequest": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "nullable": true
+          },
+          "filename": {
+            "type": "string",
+            "nullable": true
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unitPreference": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateShoeRequest": {
         "type": "object",
         "properties": {
@@ -1801,6 +2173,11 @@
             "description": "Initial mileage in meters (optional)",
             "format": "double",
             "nullable": true
+          },
+          "isRetired": {
+            "type": "boolean",
+            "description": "Whether the shoe is retired (optional, defaults to false)",
+            "nullable": true
           }
         },
         "additionalProperties": false,
@@ -1816,6 +2193,140 @@
           "maxBpm": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportJobDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "filename": {
+            "type": "string",
+            "nullable": true
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bytesReceived": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "processed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "successful": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "skipped": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updated": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errors": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errorDetails": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StravaBulkImportError"
+            },
+            "nullable": true
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "statistics": {
+            "$ref": "#/components/schemas/ImportJobStatistics"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "errorMessages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tempo export string errors from ResultJson (avoids clashing with flat int Tempo.Api.Models.ImportJobDocument.Errors).",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportJobItemStatistics": {
+        "type": "object",
+        "properties": {
+          "imported": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "skipped": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errors": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportJobStatistics": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "shoes": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "workouts": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "routes": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "splits": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "timeSeries": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "media": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "bestEfforts": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
+          },
+          "rawFiles": {
+            "$ref": "#/components/schemas/ImportJobItemStatistics"
           }
         },
         "additionalProperties": false
@@ -1866,6 +2377,20 @@
         },
         "additionalProperties": false,
         "description": "Request model for setting default shoe"
+      },
+      "StravaBulkImportError": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "UpdateHeartRateZonesRequest": {
         "type": "object",

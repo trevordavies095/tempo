@@ -1,0 +1,10 @@
+meta {
+  name: Get current import job
+  type: http
+  seq: 18
+}
+
+get {
+  url: {{baseUrl}}/workouts/import/jobs/current
+  auth: inherit
+}

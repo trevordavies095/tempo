@@ -104,7 +104,8 @@ Detailed solutions for common Tempo problems.
 **Symptoms:**
 - ZIP file rejected
 - Some workouts not imported
-- Import takes too long
+- Import takes too long / progress looks stuck
+- Cannot start because another import is active
 
 **Solutions:**
 1. Verify ZIP structure matches requirements:
@@ -114,21 +115,25 @@ Detailed solutions for common Tempo problems.
 3. Verify CSV references correct file paths
 4. Only "Run" activities are imported
 5. Duplicates are automatically skipped
+6. Watch upload progress, then `processed` / `total`; refresh Settings → Migrate / restore to resume an in-progress Strava job
+7. Cancel keeps workouts already imported; re-upload the same ZIP to continue (duplicates skip)
+8. If a Tempo restore is running, finish or cancel that job first (only one import job at a time)
 
 ## Performance Issues
 
 ### Slow Imports
 
 **Symptoms:**
-- Import takes very long
-- Timeout errors
+- Import or restore takes many minutes
+- Progress counters update slowly
 
 **Solutions:**
-1. Large files take longer to process
-2. Check server resources: `docker stats`
-3. Verify sufficient disk space
-4. Check database performance
-5. Consider splitting very large imports
+1. Large archives process activity-by-activity (or item-by-item) in a background job — long runtimes are normal
+2. Confirm progress is still moving (`processed` / `total`); refresh the page to reattach
+3. Check server resources: `docker stats`
+4. Verify sufficient disk space
+5. Check database performance
+6. For Bruno/curl whole-ZIP posts, ensure proxy body size/timeouts allow the full upload; the command center uses 512 KiB chunks instead
 
 ### Slow Page Loads
 
@@ -179,6 +184,7 @@ Detailed solutions for common Tempo problems.
 - Can't log in
 - Session expires immediately
 - Registration fails
+- Redirected to onboarding / cannot open Dashboard or Settings
 
 **Solutions:**
 1. Verify JWT secret key is configured (production)
@@ -186,6 +192,8 @@ Detailed solutions for common Tempo problems.
 3. Clear browser cookies
 4. Verify database has user table
 5. Check API logs for authentication errors
+6. If you are on first-run setup: complete [onboarding](../getting-started/onboarding.md) (or **Skip for now** after a failed Strava import). Existing upgraded accounts should already be marked complete and not see the wizard
+7. Late Strava or Tempo ZIP migrates live under Settings → Migrate / restore, not the Import page
 
 ### CORS Errors
 

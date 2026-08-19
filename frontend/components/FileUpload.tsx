@@ -9,6 +9,7 @@ import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { useFileDrop } from '@/hooks/useFileDrop';
 import { formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
 import { IconUpload, IconX } from '@tabler/icons-react';
+import { Button } from '@/components/ui/Button';
 
 export function FileUpload() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -62,17 +63,17 @@ export function FileUpload() {
   );
 
   return (
-    <div className="w-full max-w-2xl">
+    <div className="w-full">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
           onDragOver={handleDrag}
           onDrop={handleDrop}
-          className={`relative border-2 border-dashed rounded-lg p-8 transition-colors ${
+          className={`relative border-2 border-dashed rounded-tempo p-8 transition-colors ${
             dragActive
-              ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
-              : 'border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900'
+              ? 'border-volt bg-canvas'
+              : 'border-border bg-canvas'
           }`}
         >
           <input
@@ -84,11 +85,11 @@ export function FileUpload() {
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div className="text-center">
-            <IconUpload className="mx-auto h-12 w-12 text-gray-400" />
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              <span className="font-semibold">Click to upload</span> or drag and drop
+            <IconUpload className="mx-auto h-12 w-12 text-muted" />
+            <p className="mt-2 text-sm text-muted">
+              <span className="font-semibold text-ink">Click to upload</span> or drag and drop
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-500">GPX or FIT files (multiple files supported)</p>
+            <p className="text-xs text-muted">GPX or FIT files (multiple files supported)</p>
           </div>
         </div>
 
@@ -98,81 +99,81 @@ export function FileUpload() {
               {selectedFiles.map((file, index) => (
                 <div
                   key={`${file.name}-${index}`}
-                  className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700"
+                  className="flex items-center justify-between p-2 bg-raised rounded-tempo border border-border"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-900 dark:text-gray-100 truncate">
+                    <p className="text-sm text-ink truncate">
                       {file.name}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="text-xs text-muted">
                       {formatFileSize(file.size)}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleRemoveFile(index)}
-                    className="ml-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                    className="ml-2 text-muted hover:text-danger transition-colors"
                   >
                     <IconX className="w-5 h-5" />
                   </button>
                 </div>
               ))}
             </div>
-            <button
+            <Button
               type="submit"
               disabled={mutation.isPending}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full"
             >
               {mutation.isPending ? 'Uploading...' : `Import ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}`}
-            </button>
+            </Button>
           </div>
         )}
 
         {mutation.isError && (
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-sm text-red-800 dark:text-red-200">
+          <div className="p-4 bg-canvas border border-danger/40 rounded-tempo">
+            <p className="text-sm text-danger">
               Error: {mutation.error instanceof Error ? mutation.error.message : 'Unknown error'}
             </p>
           </div>
         )}
 
         {importResult && (
-          <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg space-y-2">
+          <div className="p-4 bg-raised border border-border rounded-tempo space-y-2">
             {('totalProcessed' in importResult) ? (
               // Multiple file response
               <>
-                <h3 className="text-lg font-semibold text-green-900 dark:text-green-100">
+                <h3 className="text-lg font-semibold text-ink">
                   Import Complete!
                 </h3>
-                <div className="text-sm text-green-800 dark:text-green-200 space-y-1">
+                <div className="text-sm text-ink space-y-1">
                   <p>
                     <span className="font-medium">Total processed:</span> {importResult.totalProcessed}
                   </p>
                   <p>
                     <span className="font-medium">Successfully imported:</span>{' '}
-                    <span className="text-green-700 dark:text-green-300">{importResult.successful}</span>
+                    {importResult.successful}
                   </p>
                   {importResult.updated > 0 && (
                     <p>
                       <span className="font-medium">Updated:</span>{' '}
-                      <span className="text-blue-700 dark:text-blue-300">{importResult.updated}</span>
+                      {importResult.updated}
                     </p>
                   )}
                   {importResult.skipped > 0 && (
                     <p>
                       <span className="font-medium">Skipped (duplicates):</span>{' '}
-                      <span className="text-yellow-700 dark:text-yellow-300">{importResult.skipped}</span>
+                      <span className="text-muted">{importResult.skipped}</span>
                     </p>
                   )}
                   {importResult.errors > 0 && (
                     <div>
                       <p>
                         <span className="font-medium">Errors:</span>{' '}
-                        <span className="text-red-700 dark:text-red-300">{importResult.errors}</span>
+                        <span className="text-danger">{importResult.errors}</span>
                       </p>
                       {importResult.errorDetails.length > 0 && (
                         <details className="mt-2">
-                          <summary className="cursor-pointer text-green-700 dark:text-green-300 hover:underline">
+                          <summary className="cursor-pointer text-muted hover:text-ink hover:underline">
                             View error details
                           </summary>
                           <ul className="mt-2 ml-4 list-disc space-y-1">
@@ -191,10 +192,10 @@ export function FileUpload() {
             ) : (
               // Single file response
               <>
-                <h3 className="text-lg font-semibold text-green-900 dark:text-green-100">
+                <h3 className="text-lg font-semibold text-ink">
                   Workout Imported Successfully!
                 </h3>
-                <div className="text-sm text-green-800 dark:text-green-200 space-y-1">
+                <div className="text-sm text-ink space-y-1">
                   <p>
                     <span className="font-medium">Distance:</span> {formatDistance(importResult.distanceM, unitPreference)}
                   </p>
@@ -212,7 +213,7 @@ export function FileUpload() {
                   <div className="pt-2">
                     <Link
                       href={`/dashboard/${importResult.id}`}
-                      className="inline-flex items-center text-sm font-medium text-green-700 dark:text-green-300 hover:text-green-800 dark:hover:text-green-200 hover:underline"
+                      className="inline-flex items-center text-sm font-medium text-ink underline decoration-border hover:decoration-ink"
                     >
                       View workout details →
                     </Link>
@@ -226,4 +227,3 @@ export function FileUpload() {
     </div>
   );
 }
-

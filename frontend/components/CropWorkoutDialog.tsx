@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { formatDuration, formatDistance } from '@/lib/format';
 import type { WorkoutDetail } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
+import { Button } from '@/components/ui/Button';
 
 interface CropWorkoutDialogProps {
   open: boolean;
@@ -153,42 +154,42 @@ export function CropWorkoutDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-2xl w-full p-6 border border-gray-200 dark:border-gray-800">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+      <div className="bg-raised rounded-lg shadow-xl max-w-2xl w-full p-6 border border-border">
+        <h2 className="text-xl font-semibold text-ink mb-4">
           Crop Workout
         </h2>
 
         <div className="mb-6 space-y-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-sm text-muted">
             Trim time from the beginning or end of your workout. The original data will be preserved for audit trail.
           </p>
 
           {/* Timeline Visualization */}
           <div className="relative">
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+            <div className="text-xs text-muted mb-2">
               Timeline (drag handles to adjust)
             </div>
-            <div className="relative h-12 bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden">
+            <div className="relative h-12 bg-canvas rounded-lg overflow-hidden">
               {/* Trimmed start section */}
               {startTrimSeconds > 0 && (
                 <div
-                  className="absolute left-0 top-0 h-full bg-red-300 dark:bg-red-900/50"
+                  className="absolute left-0 top-0 h-full bg-danger/40"
                   style={{ width: `${(startTrimSeconds / originalDurationS) * 100}%` }}
                 />
               )}
               {/* Trimmed end section */}
               {endTrimSeconds > 0 && (
                 <div
-                  className="absolute right-0 top-0 h-full bg-red-300 dark:bg-red-900/50"
+                  className="absolute right-0 top-0 h-full bg-danger/40"
                   style={{ width: `${(endTrimSeconds / originalDurationS) * 100}%` }}
                 />
               )}
               {/* Remaining section */}
               <div
-                className="absolute left-0 top-0 h-full bg-green-300 dark:bg-green-900/50"
+                className="absolute left-0 top-0 h-full bg-ink/20 dark:bg-volt/30"
                 style={{
                   left: `${(startTrimSeconds / originalDurationS) * 100}%`,
                   width: `${(newDurationS / originalDurationS) * 100}%`,
@@ -215,7 +216,7 @@ export function CropWorkoutDialog({
                 style={{ pointerEvents: 'auto' }}
               />
             </div>
-            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+            <div className="flex justify-between text-xs text-muted mt-1">
               <span>Start</span>
               <span>End</span>
             </div>
@@ -226,7 +227,7 @@ export function CropWorkoutDialog({
                 <button
                   onClick={handleStartBack}
                   disabled={startTrimSeconds === 0}
-                  className="px-3 py-1.5 text-sm font-medium rounded-md transition-colors bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-100 dark:disabled:hover:bg-gray-800"
+                  className="px-3 py-1.5 text-sm font-medium rounded-tempo transition-colors bg-canvas text-ink hover:bg-raised disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Move start point later (trim less from start)"
                 >
                   ← Back
@@ -234,7 +235,7 @@ export function CropWorkoutDialog({
                 <button
                   onClick={handleStartForward}
                   disabled={startTrimSeconds >= maxStartTrim}
-                  className="px-3 py-1.5 text-sm font-medium rounded-md transition-colors bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-100 dark:disabled:hover:bg-gray-800"
+                  className="px-3 py-1.5 text-sm font-medium rounded-tempo transition-colors bg-canvas text-ink hover:bg-raised disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Move start point earlier (trim more from start)"
                 >
                   Forward →
@@ -245,7 +246,7 @@ export function CropWorkoutDialog({
                 <button
                   onClick={handleEndBack}
                   disabled={endTrimSeconds >= maxEndTrim}
-                  className="px-3 py-1.5 text-sm font-medium rounded-md transition-colors bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-100 dark:disabled:hover:bg-gray-800"
+                  className="px-3 py-1.5 text-sm font-medium rounded-tempo transition-colors bg-canvas text-ink hover:bg-raised disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Move end point earlier (trim more from end)"
                 >
                   ← Back
@@ -253,7 +254,7 @@ export function CropWorkoutDialog({
                 <button
                   onClick={handleEndForward}
                   disabled={endTrimSeconds === 0}
-                  className="px-3 py-1.5 text-sm font-medium rounded-md transition-colors bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-100 dark:disabled:hover:bg-gray-800"
+                  className="px-3 py-1.5 text-sm font-medium rounded-tempo transition-colors bg-canvas text-ink hover:bg-raised disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Move end point later (trim less from end)"
                 >
                   Forward →
@@ -265,7 +266,7 @@ export function CropWorkoutDialog({
           {/* Trim Inputs */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-ink mb-1">
                 Trim from Start
               </label>
               <div className="flex gap-2">
@@ -274,15 +275,15 @@ export function CropWorkoutDialog({
                   value={startTrimInput}
                   onChange={(e) => handleStartTrimInputChange(e.target.value)}
                   placeholder="M:SS"
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 border border-border rounded-md bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                 />
-                <div className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">
+                <div className="px-3 py-2 text-sm text-muted">
                   {formatDuration(startTrimSeconds)}
                 </div>
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-ink mb-1">
                 Trim from End
               </label>
               <div className="flex gap-2">
@@ -291,9 +292,9 @@ export function CropWorkoutDialog({
                   value={endTrimInput}
                   onChange={(e) => handleEndTrimInputChange(e.target.value)}
                   placeholder="M:SS"
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 border border-border rounded-md bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                 />
-                <div className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">
+                <div className="px-3 py-2 text-sm text-muted">
                   {formatDuration(endTrimSeconds)}
                 </div>
               </div>
@@ -301,49 +302,48 @@ export function CropWorkoutDialog({
           </div>
 
           {/* Preview */}
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Preview</div>
+          <div className="bg-canvas rounded-lg p-4 border border-border">
+            <div className="text-sm font-medium text-ink mb-2">Preview</div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <div className="text-gray-500 dark:text-gray-400">Original</div>
-                <div className="font-semibold text-gray-900 dark:text-gray-100">
+                <div className="text-muted">Original</div>
+                <div className="font-semibold text-ink">
                   {formatDuration(originalDurationS)} • {formatDistance(originalDistanceM, unitPreference)}
                 </div>
               </div>
               <div>
-                <div className="text-gray-500 dark:text-gray-400">After Crop</div>
-                <div className="font-semibold text-gray-900 dark:text-gray-100">
+                <div className="text-muted">After Crop</div>
+                <div className="font-semibold text-ink">
                   {formatDuration(newDurationS)} • {formatDistance(newDistanceM, unitPreference)}
                 </div>
               </div>
             </div>
             {!isValid && newDurationS < MINIMUM_REMAINING_DURATION_SECONDS && (
-              <div className="mt-2 text-xs text-red-600 dark:text-red-400">
+              <div className="mt-2 text-xs text-danger">
                 Minimum remaining duration is {formatDuration(MINIMUM_REMAINING_DURATION_SECONDS)}
               </div>
             )}
           </div>
 
-          <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+          <p className="text-xs text-danger font-medium">
             This action cannot be undone. Original data will be preserved for audit trail.
           </p>
         </div>
 
         <div className="flex gap-3 justify-end">
-          <button
+          <Button
+            variant="secondary"
             onClick={onClose}
             disabled={isLoading}
-            className="px-4 py-2 rounded-lg font-medium transition-colors bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleConfirm}
             disabled={!isValid || isLoading}
-            className="px-4 py-2 rounded-lg font-medium transition-colors bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? 'Cropping...' : 'Crop Workout'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

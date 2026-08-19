@@ -143,13 +143,13 @@ Key configuration options:
 - `ElevationCalculation:NoiseThresholdMeters` - Elevation smoothing threshold
 - `CORS:AllowedOrigins` - Comma-separated list of allowed origins
 
-**Note**: Large file uploads (bulk import) are configured in `Program.cs` with 500MB limits.
+**Note**: Command-center Strava/Tempo ZIP uploads use **512 KiB** chunks. Whole-ZIP adapters (`POST /workouts/import/bulk`, `POST /workouts/import/export`) allow up to 500MB (configured in `Program.cs`).
 
 ### Frontend Configuration (`next.config.ts`)
 
 - API rewrites: `/api/*` → `http://localhost:5001/*` (dev) or `http://api:5001/*` (Docker)
-- `NEXT_PUBLIC_API_URL`: Used for direct API calls (bypasses Next.js for large uploads)
 - `API_SERVICE_URL`: Environment variable to override API URL for rewrites
+- Command-center clients always call same-origin `/api` (including chunked import jobs); do not post to `:5001` from the browser
 
 ## Testing
 

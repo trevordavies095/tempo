@@ -1,0 +1,33 @@
+meta {
+  name: Import Tempo export
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/workouts/import/export
+  body: multipartForm
+  auth: inherit
+}
+
+body:multipart-form {
+  file: @file()
+}
+
+example {
+  name: 202 Response
+  description: Accepted — poll GET /workouts/import/jobs/{id}
+  
+  request {
+    url: {{baseUrl}}/workouts/import/export
+    method: POST
+    mode: multipartForm
+  }
+  
+  response {
+    status {
+      code: 202
+      text: Accepted
+    }
+  }
+}

@@ -8,20 +8,21 @@ Tempo is a self-hosted running tracker that helps you track and analyze your wor
 
 ## Topics Covered
 
-- **[Importing Workouts](importing-workouts.md)** - Learn how to import single workout files (GPX, FIT, CSV)
-- **[Bulk Import](bulk-import.md)** - Import your entire Strava history at once
-- **[Viewing Workouts](viewing-workouts.md)** - Explore the dashboard, activity list, and detailed workout views
+- **[Importing Workouts](importing-workouts.md)** - Import single GPX/FIT workout files
+- **[Bulk Import](bulk-import.md)** - Import your entire Strava history (Settings → Migrate / restore, or onboarding)
+- **[Viewing Workouts](viewing-workouts.md)** - Explore the dashboard, activities list, and Workout overview
 - **[Media](media.md)** - Add photos and videos to your workouts
 - **[Analytics](analytics.md)** - Understand metrics, statistics, and performance data
-- **[Settings](settings.md)** - Configure preferences, heart rate zones, unit preferences, shoe tracking, and export/import data (including backup restoration)
+- **[Settings](settings.md)** - Configure preferences, heart rate zones, unit preferences, shoe tracking, export, and migrate/restore
 
 ## Getting Started
 
 If you're new to Tempo, start with:
 
-1. [Importing your first workout](importing-workouts.md)
-2. [Exploring the dashboard](viewing-workouts.md)
-3. [Configuring your settings](settings.md)
+1. Complete [first-run onboarding](../getting-started/onboarding.md) (restore a Tempo export, or set essentials and optionally import Strava)
+2. [Importing your first workout](importing-workouts.md) (GPX/FIT on the Import page)
+3. [Exploring the dashboard](viewing-workouts.md)
+4. [Configuring your settings](settings.md)
 
 ## Common Workflows
 
@@ -35,17 +36,18 @@ If you're new to Tempo, start with:
 ### Bulk Import from Strava
 
 1. Request your Strava data export
-2. Upload the ZIP file via the Bulk Import feature
-3. Wait for processing to complete
-4. Review imported workouts
+2. During [onboarding](../getting-started/onboarding.md), choose Strava import — or later open Settings → Migrate / restore → Import Strava archive
+3. Upload the ZIP file
+4. Wait for processing to complete
+5. Review imported workouts
 
 ### Backup and Restore
 
-1. Navigate to Settings → Export / Import
+1. Navigate to Settings → Export
 2. Click "Export All Data" to create a backup
 3. Store the ZIP file safely
-4. To restore, use "Import Data" and upload the export file
-5. Review import statistics to verify restoration
+4. To restore, expand Migrate / restore → Restore Tempo export and upload the export file — watch upload then restore progress (you can cancel; already restored data stays)
+5. Only one import runs at a time (Tempo restore or Strava bulk); then review the import summary
 
 ### Analyzing Performance
 

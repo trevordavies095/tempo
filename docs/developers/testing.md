@@ -7,7 +7,11 @@ This guide covers how to run tests, generate coverage reports, and add new tests
 The Tempo API uses **xUnit** for testing with **coverlet** for code coverage collection. Tests are organized into:
 
 - **Unit Tests**: Test individual services in isolation (located in `api/Tempo.Api.Tests/Services/`)
+  - Parser tests (`GpxParserServiceTests`, `FitParserServiceTests`) assert decode: fixture file → `TrackPoint`s and optional device summary, not split counts or elevation-gain algorithm details
+  - `TrackGeometryTests` assert elevation, split boundaries, GeoJSON, and series elapsed-seconds from fixture `TrackPoint` lists (no `DbContext`)
+  - `WorkoutIntakeTests` cover `created` / `updated` / `skipped` / `error` with faked weather, relative effort, and best efforts; persist and duplicate stay real
 - **Integration Tests**: Test endpoints and full request/response cycles (located in `api/Tempo.Api.Tests/IntegrationTests/`)
+  - Import-job and Tempo export-import tests (`ImportJobTests`, `ImportExportTests`) poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Do not expect a blocking **200** summary from `POST /workouts/import/bulk` or `POST /workouts/import/export` (those adapters return **202**).
 
 ## Running Tests
 

@@ -1,6 +1,6 @@
 # Importing Workouts
 
-Learn how to import individual workout files into Tempo.
+Learn how to import individual GPX and FIT workout files into Tempo. The Import page is **file-only** — it does not accept Strava or Tempo ZIP archives. For a full Strava archive ZIP, see [Bulk Import](bulk-import.md) (Settings → Migrate / restore, or [first-run onboarding](../getting-started/onboarding.md)).
 
 ## Supported File Formats
 
@@ -8,7 +8,6 @@ Tempo supports the following workout file formats:
 
 - **GPX** (`.gpx`) - GPS Exchange Format, commonly used by Garmin, Strava, and other services
 - **FIT** (`.fit`, `.fit.gz`) - Garmin's native format, supports compressed files
-- **CSV** (`.csv`) - Strava export format with activity metadata
 
 ## How to Export from Different Devices
 
@@ -33,12 +32,14 @@ Tempo supports the following workout file formats:
 3. Select "Export GPX"
 4. Download the GPX file
 
+For your full Strava history as a ZIP, use [Bulk Import](bulk-import.md).
+
 ## Import Process
 
 ### Step 1: Access the Import Page
 
-1. Log in to Tempo
-2. Navigate to the Import page (usually accessible from the main navigation)
+1. Log in to Tempo (and finish [onboarding](../getting-started/onboarding.md) if prompted)
+2. Navigate to the Import page from the main navigation (GPX/FIT uploads only)
 
 ### Step 2: Upload Your File
 
@@ -62,11 +63,11 @@ Tempo will:
 - Generate splits and time-series data
 - Assign your default shoe (if you have one set in Settings)
 
-**Note**: If you've set a default shoe in Settings, new workouts will automatically be assigned to that shoe. You can change or remove the shoe assignment later from the workout details page.
+**Note**: If you've set a default shoe in Settings, new workouts will automatically be assigned to that shoe. You can change or remove the shoe assignment later from Workout overview.
 
 ### Step 4: View Your Workout
 
-Once processing is complete, you'll be redirected to the workout details page where you can:
+Once processing is complete, you'll be redirected to Workout overview where you can:
 - View the route on an interactive map
 - See detailed statistics
 - Review splits
@@ -96,6 +97,13 @@ For each workout, Tempo imports:
 - FIT files: Extracts heart rate, cadence, power, temperature, speed, grade, and vertical speed from RecordMesg messages
 - GPX files: Extracts heart rate, cadence, power, and temperature from TrackPointExtension elements (Garmin format)
 - Backward compatible: Files without sensor data are imported successfully with available metrics
+
+## Duplicates
+
+Single-file import uses the same duplicate rule as Strava bulk. Tempo matches on start time, distance, and duration.
+
+- **Updated** if the existing Workout is missing raw file bytes or its FIT/GPX JSON is incomplete (backfill bytes/JSON; rebuild splits; fill empty route or time series). Distance, duration, and elevation are not rewritten when raw data is already complete.
+- **Skipped** when raw bytes and JSON are already complete.
 
 ## Troubleshooting
 

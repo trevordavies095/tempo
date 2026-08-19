@@ -3,25 +3,25 @@
 > A privacy-first, self-hosted Strava alternative. Import GPX, FIT, and CSV files from Garmin, Apple Watch, Strava, and more. Keep all your data local—no subscriptions, no cloud required.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-2.6.0-green.svg)
+![Version](https://img.shields.io/badge/version-2.7.0-green.svg)
 ![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
 
 **[View Full Documentation](https://trevordavies095.github.io/tempo/)** - Complete guides for installation, configuration, usage, deployment, and more.
 
-**[Tempo on the App Store](https://apps.apple.com/us/app/tempo-self-hosted-running/id6763753229)** - Companion iOS app for your self-hosted server.
+**[Tempo on the App Store](https://apps.apple.com/us/app/tempo-self-hosted-running/id6763753229)** - Daily-driver iOS app for your self-hosted server. The WebUI is the command center (import, settings, shoes, Workout overview).
 
 ## Screenshots
 
-![Dashboard](https://i.imgur.com/pURdx2e.png)
-*Dashboard view*
+![Dashboard](./docs/assets/screenshots/dashboard.png)
+*Dashboard — weekly stats, relative effort, and recent workouts*
 
-![My Activities](https://i.imgur.com/nZEt9mN.png)
-*Activities list*
+![My Activities](./docs/assets/screenshots/activities.png)
+*Activities list — search, filters, and sortable columns*
 
-![Activity Details](https://i.imgur.com/aj671gl.png)
-*Activity details view*
+![Workout overview](./docs/assets/screenshots/workout-overview.png)
+*Workout overview — splits, route map, and time-series charts*
 
 ## Quick Start
 
@@ -44,12 +44,15 @@ That's it! The database migrations run automatically on first startup. For detai
 
 ## Features
 
+- **First-run onboarding** - Guided setup after registration (optional Tempo restore, essentials, optional Strava)
 - **Multi-Format Support** - Import GPX, FIT (.fit, .fit.gz), and Strava CSV files from Garmin, Apple Watch, and other devices
 - **Workout Analytics** - Track distance, pace, elevation, splits, and time series data
-- **Interactive Maps** - Visualize routes with elevation profiles
+- **Workout Overview** - Map, splits, and HR/pace/elevation charts sharing one Highlight
+- **Appearance** - System, Dark, or Light on the command center (this browser only)
+- **Interactive Maps** - Themed route maps (dark/light tiles) with tokenized polylines
 - **Media Support** - Attach photos and videos to workouts
 - **Weather Data** - Automatic weather conditions for each workout
-- **Bulk Import** - Import multiple workouts at once via ZIP file (up to 500MB)
+- **Bulk Import** - Import a Strava export ZIP as a background job (onboarding or Settings → Migrate / restore; up to 500MB)
 - **Heart Rate Zones** - Calculate zones using Age-based, Karvonen, or Custom methods
 - **Relative Effort** - Automatic calculation of workout intensity based on heart rate zones
 - **Best Efforts** - Track your fastest times for standard distances (400m to Marathon) from any segment within workouts

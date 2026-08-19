@@ -23,6 +23,8 @@ public class Shoe
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    public bool IsRetired { get; set; }
+
     // Navigation properties
     public ICollection<Workout> Workouts { get; set; } = new List<Workout>();
 }

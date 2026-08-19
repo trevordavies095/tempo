@@ -12,6 +12,14 @@ namespace Tempo.Api.Services;
 /// <summary>
 /// Service for importing complete Tempo export ZIP files.
 /// </summary>
+
+public class TempoExportProgress
+{
+    public int Processed { get; set; }
+    public int Total { get; set; }
+    public ImportService.ImportResult Snapshot { get; set; } = new();
+}
+
 public class ImportService
 {
     private readonly TempoDbContext _db;
@@ -24,6 +32,9 @@ public class ImportService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true
     };
+
+    /// <summary>Batch size for splits/time-series SaveChanges during Tempo export restore.</summary>
+    private const int EntityImportBatchSize = 1000;
 
     public ImportService(
         TempoDbContext db,
@@ -85,7 +96,10 @@ public class ImportService
     /// <summary>
     /// Imports a complete Tempo export ZIP file.
     /// </summary>
-    public async Task<ImportResult> ImportExportAsync(Stream zipStream)
+    public async Task<ImportResult> ImportExportAsync(
+        Stream zipStream,
+        Func<TempoExportProgress, Task>? onProgress = null,
+        CancellationToken cancellationToken = default)
     {
         var result = new ImportResult
         {
@@ -116,17 +130,32 @@ public class ImportService
             // Validate ZIP structure
             ValidateZipStructure(tempDir, manifest);
 
+            var progress = new ProgressGate(onProgress, cancellationToken)
+            {
+                Total = ComputeImportTotal(manifest, tempDir)
+            };
+            await progress.ReportAsync(result);
+
             // Import data in correct order
             // Import shoes first so that settings can reference them via DefaultShoeId
-            await ImportShoesAsync(tempDir, manifest, result);
-            await ImportUserSettingsAsync(tempDir, manifest, result);
-            var importedWorkoutIds = await ImportWorkoutsAsync(tempDir, manifest, result);
-            await ImportRoutesAsync(tempDir, manifest, result);
-            await ImportSplitsAsync(tempDir, manifest, result);
-            await ImportTimeSeriesAsync(tempDir, manifest, result);
-            await ImportBestEffortsAsync(tempDir, manifest, result);
-            await ImportMediaFilesAsync(tempDir, manifest, result);
-            await ImportRawFilesAsync(tempDir, manifest, result, importedWorkoutIds);
+            cancellationToken.ThrowIfCancellationRequested();
+            await ImportShoesAsync(tempDir, manifest, result, progress);
+            cancellationToken.ThrowIfCancellationRequested();
+            await ImportUserSettingsAsync(tempDir, manifest, result, progress);
+            cancellationToken.ThrowIfCancellationRequested();
+            var importedWorkoutIds = await ImportWorkoutsAsync(tempDir, manifest, result, progress);
+            cancellationToken.ThrowIfCancellationRequested();
+            await ImportRoutesAsync(tempDir, manifest, result, progress);
+            cancellationToken.ThrowIfCancellationRequested();
+            await ImportSplitsAsync(tempDir, manifest, result, progress);
+            cancellationToken.ThrowIfCancellationRequested();
+            await ImportTimeSeriesAsync(tempDir, manifest, result, progress);
+            cancellationToken.ThrowIfCancellationRequested();
+            await ImportBestEffortsAsync(tempDir, manifest, result, progress);
+            cancellationToken.ThrowIfCancellationRequested();
+            await ImportMediaFilesAsync(tempDir, manifest, result, progress);
+            cancellationToken.ThrowIfCancellationRequested();
+            await ImportRawFilesAsync(tempDir, manifest, result, importedWorkoutIds, progress);
 
             // Set success based on whether any errors were accumulated
             result.Success = result.Errors.Count == 0;
@@ -141,6 +170,10 @@ public class ImportService
                 _logger.LogWarning("Import completed with {ErrorCount} errors. Imported: {Workouts} workouts, {Shoes} shoes, {Media} media files",
                     result.Errors.Count, result.Statistics.Workouts.Imported, result.Statistics.Shoes.Imported, result.Statistics.Media.Imported);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -284,7 +317,7 @@ public class ImportService
         // ImportRawFilesAsync and ImportMediaAsync handle the missing directory gracefully.
     }
 
-    private async Task ImportUserSettingsAsync(string tempDir, ExportManifest manifest, ImportResult result)
+    private async Task ImportUserSettingsAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
         if (string.IsNullOrEmpty(manifest.DataFormat.Settings))
         {
@@ -343,13 +376,22 @@ public class ImportService
                 existing.Zone5MaxBpm = settings.Zone5MaxBpm;
                 existing.UnitPreference = settings.UnitPreference;
                 
-                // Validate shoe reference if present
+                // Validate shoe reference if present (must exist and not be retired)
                 if (settings.DefaultShoeId.HasValue)
                 {
-                    var shoeExists = await _db.Shoes.AnyAsync(s => s.Id == settings.DefaultShoeId.Value);
-                    if (!shoeExists)
+                    var id = settings.DefaultShoeId.Value;
+                    var validDefault = await _db.Shoes.AnyAsync(s => s.Id == id && !s.IsRetired);
+                    if (!validDefault)
                     {
-                        result.Warnings.Add($"Settings references non-existent shoe {settings.DefaultShoeId}, clearing reference");
+                        if (await _db.Shoes.AnyAsync(s => s.Id == id && s.IsRetired))
+                        {
+                            result.Warnings.Add($"Settings references retired shoe {settings.DefaultShoeId}, clearing reference");
+                        }
+                        else
+                        {
+                            result.Warnings.Add($"Settings references non-existent shoe {settings.DefaultShoeId}, clearing reference");
+                        }
+
                         existing.DefaultShoeId = null;
                     }
                     else
@@ -369,6 +411,7 @@ public class ImportService
                 {
                     await _db.SaveChangesAsync();
                     result.Statistics.Settings.Imported++;
+                    await progress.ReportAsync(result);
                     _logger.LogInformation("Updated existing user settings");
                 }
                 catch (Exception saveEx)
@@ -380,13 +423,22 @@ public class ImportService
             }
             else
             {
-                // Validate shoe reference if present
+                // Validate shoe reference if present (must exist and not be retired)
                 if (settings.DefaultShoeId.HasValue)
                 {
-                    var shoeExists = await _db.Shoes.AnyAsync(s => s.Id == settings.DefaultShoeId.Value);
-                    if (!shoeExists)
+                    var id = settings.DefaultShoeId.Value;
+                    var validDefault = await _db.Shoes.AnyAsync(s => s.Id == id && !s.IsRetired);
+                    if (!validDefault)
                     {
-                        result.Warnings.Add($"Settings references non-existent shoe {settings.DefaultShoeId}, clearing reference");
+                        if (await _db.Shoes.AnyAsync(s => s.Id == id && s.IsRetired))
+                        {
+                            result.Warnings.Add($"Settings references retired shoe {settings.DefaultShoeId}, clearing reference");
+                        }
+                        else
+                        {
+                            result.Warnings.Add($"Settings references non-existent shoe {settings.DefaultShoeId}, clearing reference");
+                        }
+
                         settings.DefaultShoeId = null;
                     }
                 }
@@ -397,6 +449,7 @@ public class ImportService
                 {
                     await _db.SaveChangesAsync();
                     result.Statistics.Settings.Imported++;
+                    await progress.ReportAsync(result);
                     _logger.LogInformation("Imported user settings");
                 }
                 catch (Exception saveEx)
@@ -415,7 +468,7 @@ public class ImportService
         }
     }
 
-    private async Task ImportShoesAsync(string tempDir, ExportManifest manifest, ImportResult result)
+    private async Task ImportShoesAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
         if (string.IsNullOrEmpty(manifest.DataFormat.Shoes))
         {
@@ -443,6 +496,9 @@ public class ImportService
 
             foreach (var shoe in shoes)
             {
+                progress.CancellationToken.ThrowIfCancellationRequested();
+                try
+                {
                 // Skip null elements (can occur when deserializing JSON arrays)
                 if (shoe == null)
                 {
@@ -520,6 +576,12 @@ public class ImportService
                     result.Errors.Add($"Error importing shoe {shoeInfo}: {ex.Message}");
                     _logger.LogError(ex, "Error importing shoe {ShoeId}", shoe?.Id);
                 }
+            
+                }
+                finally
+                {
+                    await progress.ReportAsync(result);
+                }
             }
 
             try
@@ -527,6 +589,7 @@ public class ImportService
                 await _db.SaveChangesAsync();
                 // Only update statistics after successful save
                 result.Statistics.Shoes.Imported += shoesImportedCount;
+                await progress.ReportAsync(result);
                 _logger.LogInformation("Imported {Count} shoes", shoesImportedCount);
             }
             catch (Exception saveEx)
@@ -551,7 +614,7 @@ public class ImportService
         }
     }
 
-    private async Task<HashSet<Guid>> ImportWorkoutsAsync(string tempDir, ExportManifest manifest, ImportResult result)
+    private async Task<HashSet<Guid>> ImportWorkoutsAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
         var importedWorkoutIds = new HashSet<Guid>();
 
@@ -582,6 +645,9 @@ public class ImportService
 
             foreach (var workout in workouts)
             {
+                progress.CancellationToken.ThrowIfCancellationRequested();
+                try
+                {
                 // Skip null elements (can occur when deserializing JSON arrays)
                 if (workout == null)
                 {
@@ -674,6 +740,12 @@ public class ImportService
                     result.Errors.Add($"Error importing workout {workoutInfo}: {ex.Message}");
                     _logger.LogError(ex, "Error importing workout {WorkoutId}", workout?.Id);
                 }
+            
+                }
+                finally
+                {
+                    await progress.ReportAsync(result);
+                }
             }
 
             try
@@ -685,6 +757,7 @@ public class ImportService
                     importedWorkoutIds.Add(workoutId);
                 }
                 result.Statistics.Workouts.Imported += workoutsImportedCount;
+                await progress.ReportAsync(result);
                 _logger.LogInformation("Imported {Count} workouts", workoutsImportedCount);
             }
             catch (Exception saveEx)
@@ -712,7 +785,7 @@ public class ImportService
         return importedWorkoutIds;
     }
 
-    private async Task ImportRoutesAsync(string tempDir, ExportManifest manifest, ImportResult result)
+    private async Task ImportRoutesAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
         if (string.IsNullOrEmpty(manifest.DataFormat.Routes))
         {
@@ -741,6 +814,9 @@ public class ImportService
 
             foreach (var routeData in routesData)
             {
+                progress.CancellationToken.ThrowIfCancellationRequested();
+                try
+                {
                 // Skip null elements (can occur when deserializing JSON arrays)
                 if (routeData == null)
                 {
@@ -831,6 +907,12 @@ public class ImportService
                     result.Errors.Add($"Error importing route {routeInfo}: {ex.Message}");
                     _logger.LogError(ex, "Error importing route {RouteId}", routeData?.Id);
                 }
+            
+                }
+                finally
+                {
+                    await progress.ReportAsync(result);
+                }
             }
 
             try
@@ -838,6 +920,7 @@ public class ImportService
                 await _db.SaveChangesAsync();
                 // Only update statistics after successful save
                 result.Statistics.Routes.Imported += routesImportedCount;
+                await progress.ReportAsync(result);
                 _logger.LogInformation("Imported {Count} routes", routesImportedCount);
             }
             catch (Exception saveEx)
@@ -862,7 +945,7 @@ public class ImportService
         }
     }
 
-    private async Task ImportSplitsAsync(string tempDir, ExportManifest manifest, ImportResult result)
+    private async Task ImportSplitsAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
         if (string.IsNullOrEmpty(manifest.DataFormat.Splits))
         {
@@ -882,22 +965,39 @@ public class ImportService
             var json = await File.ReadAllTextAsync(splitsPath);
             var splits = JsonSerializer.Deserialize<List<WorkoutSplit>>(json, JsonOptions) ?? new List<WorkoutSplit>();
 
-            // Track splits added in this batch - only update statistics after successful save
-            var splitsImportedCount = 0;
+            var workoutIds = await _db.Workouts.AsNoTracking().Select(w => w.Id).ToHashSetAsync(progress.CancellationToken);
+            var existingSplitIds = await _db.WorkoutSplits.AsNoTracking().Select(s => s.Id).ToHashSetAsync(progress.CancellationToken);
+            var pending = 0;
+            var sinceReport = 0;
+
+            async Task FlushSplitsAsync()
+            {
+                if (pending == 0)
+                {
+                    return;
+                }
+
+                var toCommit = pending;
+                await _db.SaveChangesAsync(progress.CancellationToken);
+                result.Statistics.Splits.Imported += toCommit;
+                pending = 0;
+                _db.ChangeTracker.Clear();
+                await progress.ReportAsync(result);
+                sinceReport = 0;
+            }
 
             foreach (var split in splits)
             {
-                // Skip null elements (can occur when deserializing JSON arrays)
-                if (split == null)
-                {
-                    result.Statistics.Splits.Errors++;
-                    result.Errors.Add("Null split element found in export, skipping");
-                    continue;
-                }
-
+                progress.CancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    // Validate GUID
+                    if (split == null)
+                    {
+                        result.Statistics.Splits.Errors++;
+                        result.Errors.Add("Null split element found in export, skipping");
+                        continue;
+                    }
+
                     if (split.Id == Guid.Empty)
                     {
                         result.Statistics.Splits.Errors++;
@@ -905,61 +1005,62 @@ public class ImportService
                         continue;
                     }
 
-                    // Validate workout exists
-                    var workoutExists = await _db.Workouts.AnyAsync(w => w.Id == split.WorkoutId);
-                    if (!workoutExists)
+                    if (!workoutIds.Contains(split.WorkoutId))
                     {
                         result.Statistics.Splits.Skipped++;
                         result.Warnings.Add($"Split references non-existent workout {split.WorkoutId}, skipping");
                         continue;
                     }
 
-                    // Check if split already exists
-                    var existing = await _db.WorkoutSplits.FindAsync(split.Id);
-                    if (existing != null)
+                    if (!existingSplitIds.Add(split.Id))
                     {
                         result.Statistics.Splits.Skipped++;
                         continue;
                     }
 
-                    // Clear navigation property
                     split.Workout = null!;
-
                     _db.WorkoutSplits.Add(split);
-                    splitsImportedCount++;
+                    pending++;
                 }
                 catch (Exception ex)
                 {
                     result.Statistics.Splits.Errors++;
-                    var splitInfo = split != null 
-                        ? $"ID: {split.Id}" 
-                        : "null split";
+                    var splitInfo = split != null ? $"ID: {split.Id}" : "null split";
                     result.Errors.Add($"Error importing split {splitInfo}: {ex.Message}");
                     _logger.LogError(ex, "Error importing split {SplitId}", split?.Id);
+                }
+                finally
+                {
+                    sinceReport++;
+                    if (pending >= EntityImportBatchSize)
+                    {
+                        await FlushSplitsAsync();
+                    }
+                    else if (sinceReport >= EntityImportBatchSize)
+                    {
+                        await progress.ReportAsync(result);
+                        sinceReport = 0;
+                    }
                 }
             }
 
             try
             {
-                await _db.SaveChangesAsync();
-                // Only update statistics after successful save
-                result.Statistics.Splits.Imported += splitsImportedCount;
-                _logger.LogInformation("Imported {Count} splits", splitsImportedCount);
+                await FlushSplitsAsync();
+                await progress.ReportAsync(result);
+                _logger.LogInformation("Imported {Count} splits", result.Statistics.Splits.Imported);
             }
             catch (Exception saveEx)
             {
-                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
                 _db.ChangeTracker.Clear();
                 result.Statistics.Splits.Errors++;
                 result.Errors.Add($"Error saving splits to database: {saveEx.Message}");
                 _logger.LogError(saveEx, "Error saving splits to database");
-                throw; // Re-throw to be caught by outer catch block
+                throw;
             }
         }
         catch (Exception ex)
         {
-            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
-            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
             if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
             {
                 result.Errors.Add($"Error reading splits file: {ex.Message}");
@@ -968,7 +1069,7 @@ public class ImportService
         }
     }
 
-    private async Task ImportTimeSeriesAsync(string tempDir, ExportManifest manifest, ImportResult result)
+    private async Task ImportTimeSeriesAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
         if (string.IsNullOrEmpty(manifest.DataFormat.TimeSeries))
         {
@@ -988,22 +1089,39 @@ public class ImportService
             var json = await File.ReadAllTextAsync(timeSeriesPath);
             var timeSeries = JsonSerializer.Deserialize<List<WorkoutTimeSeries>>(json, JsonOptions) ?? new List<WorkoutTimeSeries>();
 
-            // Track time series added in this batch - only update statistics after successful save
-            var timeSeriesImportedCount = 0;
+            var workoutIds = await _db.Workouts.AsNoTracking().Select(w => w.Id).ToHashSetAsync(progress.CancellationToken);
+            var existingTsIds = await _db.WorkoutTimeSeries.AsNoTracking().Select(t => t.Id).ToHashSetAsync(progress.CancellationToken);
+            var pending = 0;
+            var sinceReport = 0;
+
+            async Task FlushTimeSeriesAsync()
+            {
+                if (pending == 0)
+                {
+                    return;
+                }
+
+                var toCommit = pending;
+                await _db.SaveChangesAsync(progress.CancellationToken);
+                result.Statistics.TimeSeries.Imported += toCommit;
+                pending = 0;
+                _db.ChangeTracker.Clear();
+                await progress.ReportAsync(result);
+                sinceReport = 0;
+            }
 
             foreach (var ts in timeSeries)
             {
-                // Skip null elements (can occur when deserializing JSON arrays)
-                if (ts == null)
-                {
-                    result.Statistics.TimeSeries.Errors++;
-                    result.Errors.Add("Null time series element found in export, skipping");
-                    continue;
-                }
-
+                progress.CancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    // Validate GUID
+                    if (ts == null)
+                    {
+                        result.Statistics.TimeSeries.Errors++;
+                        result.Errors.Add("Null time series element found in export, skipping");
+                        continue;
+                    }
+
                     if (ts.Id == Guid.Empty)
                     {
                         result.Statistics.TimeSeries.Errors++;
@@ -1011,61 +1129,62 @@ public class ImportService
                         continue;
                     }
 
-                    // Validate workout exists
-                    var workoutExists = await _db.Workouts.AnyAsync(w => w.Id == ts.WorkoutId);
-                    if (!workoutExists)
+                    if (!workoutIds.Contains(ts.WorkoutId))
                     {
                         result.Statistics.TimeSeries.Skipped++;
                         result.Warnings.Add($"Time series references non-existent workout {ts.WorkoutId}, skipping");
                         continue;
                     }
 
-                    // Check if time series already exists
-                    var existing = await _db.WorkoutTimeSeries.FindAsync(ts.Id);
-                    if (existing != null)
+                    if (!existingTsIds.Add(ts.Id))
                     {
                         result.Statistics.TimeSeries.Skipped++;
                         continue;
                     }
 
-                    // Clear navigation property
                     ts.Workout = null!;
-
                     _db.WorkoutTimeSeries.Add(ts);
-                    timeSeriesImportedCount++;
+                    pending++;
                 }
                 catch (Exception ex)
                 {
                     result.Statistics.TimeSeries.Errors++;
-                    var tsInfo = ts != null 
-                        ? $"ID: {ts.Id}" 
-                        : "null time series";
+                    var tsInfo = ts != null ? $"ID: {ts.Id}" : "null time series";
                     result.Errors.Add($"Error importing time series {tsInfo}: {ex.Message}");
                     _logger.LogError(ex, "Error importing time series {TimeSeriesId}", ts?.Id);
+                }
+                finally
+                {
+                    sinceReport++;
+                    if (pending >= EntityImportBatchSize)
+                    {
+                        await FlushTimeSeriesAsync();
+                    }
+                    else if (sinceReport >= EntityImportBatchSize)
+                    {
+                        await progress.ReportAsync(result);
+                        sinceReport = 0;
+                    }
                 }
             }
 
             try
             {
-                await _db.SaveChangesAsync();
-                // Only update statistics after successful save
-                result.Statistics.TimeSeries.Imported += timeSeriesImportedCount;
-                _logger.LogInformation("Imported {Count} time series records", timeSeriesImportedCount);
+                await FlushTimeSeriesAsync();
+                await progress.ReportAsync(result);
+                _logger.LogInformation("Imported {Count} time series records", result.Statistics.TimeSeries.Imported);
             }
             catch (Exception saveEx)
             {
-                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
                 _db.ChangeTracker.Clear();
                 result.Statistics.TimeSeries.Errors++;
                 result.Errors.Add($"Error saving time series to database: {saveEx.Message}");
                 _logger.LogError(saveEx, "Error saving time series to database");
-                throw; // Re-throw to be caught by outer catch block
+                throw;
             }
         }
         catch (Exception ex)
         {
-            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
-            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
             if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
             {
                 result.Errors.Add($"Error reading time series file: {ex.Message}");
@@ -1074,7 +1193,7 @@ public class ImportService
         }
     }
 
-    private async Task ImportBestEffortsAsync(string tempDir, ExportManifest manifest, ImportResult result)
+    private async Task ImportBestEffortsAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
         if (string.IsNullOrEmpty(manifest.DataFormat.BestEfforts))
         {
@@ -1102,6 +1221,9 @@ public class ImportService
 
             foreach (var bestEffort in bestEfforts)
             {
+                progress.CancellationToken.ThrowIfCancellationRequested();
+                try
+                {
                 // Skip null elements (can occur when deserializing JSON arrays)
                 if (bestEffort == null)
                 {
@@ -1185,6 +1307,12 @@ public class ImportService
                     result.Errors.Add($"Error importing best effort {bestEffortInfo}: {ex.Message}");
                     _logger.LogError(ex, "Error importing best effort {BestEffortId}", bestEffort?.Id);
                 }
+            
+                }
+                finally
+                {
+                    await progress.ReportAsync(result);
+                }
             }
 
             try
@@ -1192,6 +1320,7 @@ public class ImportService
                 await _db.SaveChangesAsync();
                 // Only update statistics after successful save
                 result.Statistics.BestEfforts.Imported += bestEffortsImportedCount;
+                await progress.ReportAsync(result);
                 _logger.LogInformation("Imported {Count} best efforts", bestEffortsImportedCount);
             }
             catch (Exception saveEx)
@@ -1216,7 +1345,7 @@ public class ImportService
         }
     }
 
-    private async Task ImportMediaFilesAsync(string tempDir, ExportManifest manifest, ImportResult result)
+    private async Task ImportMediaFilesAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
         if (string.IsNullOrEmpty(manifest.DataFormat.MediaMetadata))
         {
@@ -1243,6 +1372,9 @@ public class ImportService
 
             foreach (var media in mediaMetadata)
             {
+                progress.CancellationToken.ThrowIfCancellationRequested();
+                try
+                {
                 // Skip null elements (can occur when deserializing JSON arrays)
                 if (media == null)
                 {
@@ -1342,6 +1474,12 @@ public class ImportService
                     result.Errors.Add($"Error importing media {mediaInfo}: {ex.Message}");
                     _logger.LogError(ex, "Error importing media {MediaId}", media?.Id);
                 }
+            
+                }
+                finally
+                {
+                    await progress.ReportAsync(result);
+                }
             }
 
             try
@@ -1349,6 +1487,7 @@ public class ImportService
                 await _db.SaveChangesAsync();
                 // Only update statistics after successful save
                 result.Statistics.Media.Imported += mediaImportedCount;
+                await progress.ReportAsync(result);
                 _logger.LogInformation("Imported {Count} media files", mediaImportedCount);
             }
             catch (Exception saveEx)
@@ -1392,7 +1531,7 @@ public class ImportService
         }
     }
 
-    private async Task ImportRawFilesAsync(string tempDir, ExportManifest manifest, ImportResult result, HashSet<Guid> importedWorkoutIds)
+    private async Task ImportRawFilesAsync(string tempDir, ExportManifest manifest, ImportResult result, HashSet<Guid> importedWorkoutIds, ProgressGate progress)
     {
         // Raw files are stored in workouts/{workoutId}/raw/{filename}
         var workoutsDir = Path.Combine(tempDir, "workouts");
@@ -1409,6 +1548,9 @@ public class ImportService
 
             foreach (var workoutDir in workoutDirs)
             {
+                progress.CancellationToken.ThrowIfCancellationRequested();
+                try
+                {
                 var workoutIdStr = Path.GetFileName(workoutDir);
                 if (!Guid.TryParse(workoutIdStr, out var workoutId))
                 {
@@ -1468,6 +1610,12 @@ public class ImportService
                     result.Errors.Add($"Error reading raw file {rawFileName} for workout {workoutId}: {ex.Message}");
                     _logger.LogError(ex, "Error reading raw file {FileName} for workout {WorkoutId}", rawFileName, workoutId);
                 }
+            
+                }
+                finally
+                {
+                    await progress.ReportAsync(result);
+                }
             }
 
             try
@@ -1475,6 +1623,7 @@ public class ImportService
                 await _db.SaveChangesAsync();
                 // Only update statistics after successful save
                 result.Statistics.RawFiles.Imported += rawFilesImportedCount;
+                await progress.ReportAsync(result);
                 _logger.LogInformation("Imported {Count} raw files", rawFilesImportedCount);
             }
             catch (Exception saveEx)
@@ -1496,6 +1645,88 @@ public class ImportService
                 result.Errors.Add($"Error processing raw files: {ex.Message}");
                 _logger.LogError(ex, "Error processing raw files");
             }
+        }
+    }
+
+
+    private static int ComputeImportTotal(ExportManifest manifest, string tempDir)
+    {
+        var stats = manifest.Statistics;
+        var fromManifest = stats == null
+            ? 0
+            : stats.Settings + stats.Shoes + stats.Workouts + stats.Routes
+              + stats.Splits + stats.TimeSeries + stats.MediaFiles + stats.BestEfforts;
+        return fromManifest + CountRawFilesOnDisk(tempDir);
+    }
+
+    private static int CountRawFilesOnDisk(string tempDir)
+    {
+        var workoutsDir = Path.Combine(tempDir, "workouts");
+        if (!Directory.Exists(workoutsDir))
+        {
+            return 0;
+        }
+
+        var count = 0;
+        foreach (var workoutDir in Directory.GetDirectories(workoutsDir))
+        {
+            var rawDir = Path.Combine(workoutDir, "raw");
+            if (!Directory.Exists(rawDir))
+            {
+                continue;
+            }
+
+            count += Directory.GetFiles(rawDir).Length;
+        }
+
+        return count;
+    }
+
+    private static int SumProcessed(ImportStatistics statistics)
+    {
+        return CountItem(statistics.Settings)
+            + CountItem(statistics.Shoes)
+            + CountItem(statistics.Workouts)
+            + CountItem(statistics.Routes)
+            + CountItem(statistics.Splits)
+            + CountItem(statistics.TimeSeries)
+            + CountItem(statistics.Media)
+            + CountItem(statistics.BestEfforts)
+            + CountItem(statistics.RawFiles);
+    }
+
+    private static int CountItem(ItemStatistics item) =>
+        item.Imported + item.Skipped + item.Errors;
+
+    private sealed class ProgressGate
+    {
+        private readonly Func<TempoExportProgress, Task>? _onProgress;
+        private readonly CancellationToken _cancellationToken;
+
+        public ProgressGate(Func<TempoExportProgress, Task>? onProgress, CancellationToken cancellationToken)
+        {
+            _onProgress = onProgress;
+            _cancellationToken = cancellationToken;
+        }
+
+        public int Total { get; set; }
+
+        public CancellationToken CancellationToken => _cancellationToken;
+
+        public async Task ReportAsync(ImportResult result)
+        {
+            _cancellationToken.ThrowIfCancellationRequested();
+            if (_onProgress == null)
+            {
+                return;
+            }
+
+            await _onProgress(new TempoExportProgress
+            {
+                Processed = SumProcessed(result.Statistics),
+                Total = Total,
+                Snapshot = result
+            });
         }
     }
 

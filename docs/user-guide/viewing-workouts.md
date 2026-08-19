@@ -4,6 +4,8 @@ Learn how to navigate and explore your workouts in Tempo.
 
 ## Dashboard Overview
 
+![Dashboard](./screenshots/dashboard.png)
+
 The dashboard provides an overview of your running activity:
 
 - **Weekly Statistics** - Distance, time, and relative effort for the current week
@@ -14,6 +16,8 @@ The dashboard provides an overview of your running activity:
 - **Charts and Graphs** - Additional visual representations of your progress
 
 ## Activities List
+
+![My Activities](./screenshots/activities.png)
 
 The activities list shows all your imported workouts with:
 
@@ -34,15 +38,22 @@ You can filter and sort activities by:
 - Activity type
 - Search by name
 
-## Activity Details
+## Workout Overview
 
-Click on any workout to view detailed information:
+![Workout overview](./screenshots/workout-overview.png)
+
+Click any workout to open **Workout overview** — the command-center screen for one Workout (map, splits, time series, weather, media, comparison). Use the Overview and Route comparison tabs when similar routes exist.
+
+### Highlight
+
+Map, splits, and time-series charts share one **Highlight**: a split index and/or elapsed seconds (or none). Hover or click a split, a chart point, or the route and the other two follow. Leaving the hover restores the unhighlighted overview.
 
 ### Map View
 
 - **Interactive Route Map** - Visualize your route with Leaflet maps
-- **Elevation Profile** - See elevation changes along the route
+- **Themed tiles** - Dark Matter in Dark appearance, Voyager in Light (CARTO; attribution includes OpenStreetMap)
 - **Zoom and Pan** - Explore different parts of your route
+- Route stroke and Highlight colors follow the command-center identity (volt on dark; a dark stroke on light)
 
 ### Statistics
 
@@ -57,6 +68,8 @@ Detailed metrics including:
 - **Relative Effort** - Calculated intensity score
 - **Shoe** - Assigned running shoe (if any), showing brand, model, and current total mileage
 
+You can also edit notes, RPE, run type, and shoe assignment on this screen.
+
 ### Splits
 
 Distance-based splits showing:
@@ -67,16 +80,15 @@ Distance-based splits showing:
 - Elevation change
 - Heart rate (if available)
 
-Splits are calculated based on your unit preference (1km for metric, 1 mile for imperial).
+Splits are calculated based on your unit preference (1km for metric, 1 mile for imperial). Hover or click a split to set Highlight on the map and charts.
 
-### Time Series Data
+### Time Series Charts
 
-Time-series data is stored and available for analysis:
-- **Heart Rate** - Heart rate throughout the workout (when available)
-- **Pace** - Pace variations over time
-- **Elevation** - Elevation profile
-- **Cadence, Power, Temperature** - Additional sensor data from FIT files or GPX TrackPointExtension (when available)
-- **Speed, Grade, Vertical Speed** - Additional metrics from FIT files (when available)
+When sensor samples exist, Workout overview charts heart rate, pace (from speed), and elevation over elapsed time. A series with no samples is omitted. A Workout with no time series shows **No sensor data** instead of empty chart frames.
+
+Cadence, power, temperature, speed, grade, and vertical speed remain in stored WorkoutTimeSeries when the file provided them; they are not charted on this screen.
+
+For very long Workouts, the command center loads up to 20,000 samples (paged from `GET /workouts/{id}/time-series`) and still renders what it loaded.
 
 ### Weather Information
 
@@ -98,42 +110,43 @@ Tempo can automatically find workouts that follow similar routes:
 **How It Works:**
 - Routes are matched based on start/end proximity, distance similarity, and route geometry
 - Only workouts from the last 2 years are considered (configurable)
-- Similar routes are automatically displayed when viewing workout details
-- Click on any similar route to view that workout's details
+- Similar routes are automatically displayed on Workout overview
+- Click on any similar route to open that Workout's overview
 
 ## Managing Workouts
 
 ### Edit Workout
 
-You can edit workout details:
+You can edit:
 - **Activity Name** - Change the name of the workout
 - **Shoe Assignment** - Assign, change, or remove the shoe associated with this workout
-- Use the edit button on the workout details page
+- Use the edit control on Workout overview
 
 #### Assigning a Shoe to a Workout
 
 To assign or change the shoe for a workout:
 
-1. Go to the workout details page
-2. Click the edit button
-3. Find the "Shoe" field
-4. Select a shoe from the dropdown list, or select "No Shoe" to remove the assignment
-5. Save your changes
+1. Open Workout overview
+2. Use the shoe field (or edit controls) on that screen
+3. Select a shoe from the dropdown list, or select "No Shoe" to remove the assignment
+4. Save your changes if prompted
 
 **Note**: Changing a workout's shoe assignment will automatically update the total mileage for both the old and new shoes (if applicable). The workout's distance is added to the new shoe's total and removed from the old shoe's total.
 
 ### Crop Workout
 
 Remove time from the start or end of a workout:
-1. Go to workout details
+1. Open Workout overview
 2. Use the crop feature
 3. Specify time to remove from start and/or end
 4. Save changes
 
+Crop rebuilds route, splits, time series, and elevation from the remaining **TrackPoint**s through track geometry. Device session distance from the original FIT/GPX file is not reused on the trimmed Workout.
+
 ### Delete Workout
 
 To delete a workout:
-1. Go to workout details
+1. Open Workout overview
 2. Click the delete button
 3. Confirm deletion
 
@@ -143,7 +156,7 @@ To delete a workout:
 
 You can recalculate:
 - **Relative Effort** - Recalculate based on current heart rate zone settings
-- **Splits** - Recalculate splits if you've changed unit preferences
+- **Splits** - Recalculate splits if you've changed unit preferences (replaces `WorkoutSplit` rows only; stored distance, duration, and elevation stay)
 
 ## Statistics and Analytics
 
@@ -177,7 +190,7 @@ Track workout intensity over time:
 - Filter by date range to focus on specific periods
 - Sort by different metrics to identify your best performances
 - Use the map view to explore routes visually
-- Review time-series charts to analyze performance patterns
+- On Workout overview, hover splits and charts together (Highlight) to analyze a segment
 
 ## Next Steps
 

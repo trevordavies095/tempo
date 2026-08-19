@@ -1,64 +1,101 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
-import { importTempoExport, type ExportImportResponse, getUnitPreference } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  getUnitPreference,
+  importJobToExportImportResponse,
+  type ExportImportResponse,
+  type ImportJob,
+} from '@/lib/api';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { useFileDrop } from '@/hooks/useFileDrop';
+import { useImportJobSession } from '@/hooks/useImportJobSession';
 import { useSettings } from '@/lib/settings';
 import { IconUpload } from '@tabler/icons-react';
+import { Button } from '@/components/ui/Button';
 
-export function TempoExportImport() {
+export type TempoExportImportProps = {
+  onJobCompleted?: (job: ImportJob) => void | Promise<void>;
+  onJobFailedOrCancelled?: (message: string) => void;
+};
+
+export function TempoExportImport(props: TempoExportImportProps = {}) {
+  const { onJobCompleted, onJobFailedOrCancelled } = props;
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<ExportImportResponse | null>(null);
   const queryClient = useQueryClient();
   const { setUnitPreference } = useSettings();
 
-  const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
-    onFilesSelected: (files) => {
-      if (files.length > 0) {
-        setSelectedFile(files[0]);
-        setImportResult(null);
-      }
-    },
-    acceptExtensions: ['.zip'],
-    maxFiles: 1,
-  });
-
-  const mutation = useMutation({
-    mutationFn: (file: File) => importTempoExport(file),
-    onSuccess: async (data) => {
+  const onCompleted = useCallback(
+    async (job: ImportJob) => {
       invalidateWorkoutQueries(queryClient);
-      
-      // Invalidate settings-related queries
       queryClient.invalidateQueries({ queryKey: ['heart-rate-zones'] });
       queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
-      
-      // Refresh unit preference from backend
       try {
         const unitPref = await getUnitPreference();
         setUnitPreference(unitPref.unitPreference);
       } catch (error) {
         console.warn('Failed to refresh unit preference after import:', error);
       }
-      
-      setImportResult(data);
+      setImportResult(importJobToExportImportResponse(job));
       setSelectedFile(null);
+      await onJobCompleted?.(job);
     },
-    onError: (error: Error) => {
-      alert(`Error importing Tempo export: ${error.message}`);
+    [queryClient, setUnitPreference, onJobCompleted]
+  );
+
+  const onFailed = useCallback(
+    (message: string) => {
+      onJobFailedOrCancelled?.(message);
     },
+    [onJobFailedOrCancelled]
+  );
+
+  const session = useImportJobSession({
+    kind: 'tempo_export',
+    onCompleted,
+    onFailed,
+  });
+
+  const {
+    canStart,
+    isWorking,
+    jobId,
+    jobError,
+    otherKindMessage,
+    uploadError,
+    cancelPending,
+    progressLabel: getProgressLabel,
+    startUpload,
+    cancel,
+    clearError,
+  } = session;
+
+  const { dragActive, handleDrag, handleDrop, handleFileInput } = useFileDrop({
+    onFilesSelected: (files) => {
+      if (files.length > 0) {
+        setSelectedFile(files[0]);
+        setImportResult(null);
+        clearError();
+      }
+    },
+    acceptExtensions: ['.zip'],
+    maxFiles: 1,
   });
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      if (selectedFile) {
-        mutation.mutate(selectedFile);
+      if (selectedFile && canStart) {
+        startUpload(selectedFile);
       }
     },
-    [selectedFile, mutation]
+    [selectedFile, canStart, startUpload]
   );
+
+  const progressLabel = getProgressLabel('Import Tempo Export');
+  const showError = !!jobError || !!uploadError;
 
   return (
     <div className="w-full max-w-2xl">
@@ -68,10 +105,10 @@ export function TempoExportImport() {
           onDragLeave={handleDrag}
           onDragOver={handleDrag}
           onDrop={handleDrop}
-          className={`relative border-2 border-dashed rounded-lg p-8 transition-colors ${
+          className={`relative border-2 border-dashed rounded-tempo p-8 transition-colors ${
             dragActive
-              ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
-              : 'border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900'
+              ? 'border-volt bg-canvas'
+              : 'border-border bg-canvas'
           }`}
         >
           <input
@@ -79,127 +116,154 @@ export function TempoExportImport() {
             id="tempo-export-upload"
             accept=".zip"
             onChange={handleFileInput}
+            disabled={isWorking}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div className="text-center">
-            <IconUpload className="mx-auto h-12 w-12 text-gray-400" />
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              <span className="font-semibold">Click to upload</span> or drag and drop
+            <IconUpload className="mx-auto h-12 w-12 text-muted" />
+            <p className="mt-2 text-sm text-muted">
+              <span className="font-semibold text-ink">Click to upload</span> or drag and drop
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-500">
+            <p className="text-xs text-muted">
               Tempo export ZIP file
             </p>
             {selectedFile && (
-              <p className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+              <p className="mt-2 text-sm font-medium text-ink">
                 Selected: {selectedFile.name}
               </p>
             )}
           </div>
         </div>
 
-        {selectedFile && (
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {mutation.isPending ? 'Importing...' : 'Import Tempo Export'}
-          </button>
+        {otherKindMessage && (
+          <div className="p-4 bg-canvas border border-border rounded-tempo">
+            <p className="text-sm text-ink">{otherKindMessage}</p>
+          </div>
         )}
 
-        {mutation.isError && (
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-sm text-red-800 dark:text-red-200">
-              Error: {mutation.error instanceof Error ? mutation.error.message : 'Unknown error'}
+        {selectedFile && (
+          <Button
+            type="submit"
+            disabled={!canStart}
+            className="w-full"
+          >
+            {isWorking ? progressLabel : 'Import Tempo Export'}
+          </Button>
+        )}
+
+        {isWorking && !selectedFile && (
+          <p className="text-sm text-ink">{progressLabel}</p>
+        )}
+
+        {isWorking && jobId && (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={cancelPending}
+            className="w-full"
+            onClick={() => cancel()}
+          >
+            Cancel import
+          </Button>
+        )}
+
+        {showError && (
+          <div className="p-4 bg-canvas border border-danger rounded-tempo">
+            <p className="text-sm text-danger">
+              Error:{' '}
+              {jobError ||
+                (uploadError instanceof Error
+                  ? uploadError.message
+                  : 'Unknown error')}
             </p>
           </div>
         )}
 
         {importResult && (
-          <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg space-y-3">
-            <h3 className="text-lg font-semibold text-green-900 dark:text-green-100">
+          <div className="p-4 bg-canvas border border-border rounded-tempo space-y-3">
+            <h3 className="text-lg font-semibold text-ink">
               {importResult.success ? 'Import Complete!' : 'Import Completed with Errors'}
             </h3>
-            <div className="text-sm text-green-800 dark:text-green-200 space-y-2">
+            <div className="text-sm text-ink space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <span className="font-medium">Settings:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.settings.imported} imported
                   </span>
                   {importResult.statistics.settings.skipped > 0 && (
-                    <span className="text-yellow-700 dark:text-yellow-300 ml-1">
+                    <span className="text-muted ml-1">
                       ({importResult.statistics.settings.skipped} skipped)
                     </span>
                   )}
                 </div>
                 <div>
                   <span className="font-medium">Shoes:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.shoes.imported} imported
                   </span>
                   {importResult.statistics.shoes.skipped > 0 && (
-                    <span className="text-yellow-700 dark:text-yellow-300 ml-1">
+                    <span className="text-muted ml-1">
                       ({importResult.statistics.shoes.skipped} skipped)
                     </span>
                   )}
                 </div>
                 <div>
                   <span className="font-medium">Workouts:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.workouts.imported} imported
                   </span>
                   {importResult.statistics.workouts.skipped > 0 && (
-                    <span className="text-yellow-700 dark:text-yellow-300 ml-1">
+                    <span className="text-muted ml-1">
                       ({importResult.statistics.workouts.skipped} skipped)
                     </span>
                   )}
                 </div>
                 <div>
                   <span className="font-medium">Routes:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.routes.imported} imported
                   </span>
                 </div>
                 <div>
                   <span className="font-medium">Splits:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.splits.imported} imported
                   </span>
                 </div>
                 <div>
                   <span className="font-medium">Time Series:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.timeSeries.imported} imported
                   </span>
                 </div>
                 <div>
                   <span className="font-medium">Media:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.media.imported} imported
                   </span>
                   {importResult.statistics.media.skipped > 0 && (
-                    <span className="text-yellow-700 dark:text-yellow-300 ml-1">
+                    <span className="text-muted ml-1">
                       ({importResult.statistics.media.skipped} skipped)
                     </span>
                   )}
                 </div>
                 <div>
                   <span className="font-medium">Best Efforts:</span>{' '}
-                  <span className="text-green-700 dark:text-green-300">
+                  <span className="text-muted">
                     {importResult.statistics.bestEfforts.imported} imported
                   </span>
                   {importResult.statistics.bestEfforts.skipped > 0 && (
-                    <span className="text-yellow-700 dark:text-yellow-300 ml-1">
+                    <span className="text-muted ml-1">
                       ({importResult.statistics.bestEfforts.skipped} skipped)
                     </span>
                   )}
                 </div>
               </div>
-              
+
               {importResult.warnings && importResult.warnings.length > 0 && (
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-yellow-700 dark:text-yellow-300 hover:underline">
+                  <summary className="cursor-pointer text-muted hover:underline">
                     View warnings ({importResult.warnings.length})
                   </summary>
                   <ul className="mt-2 ml-4 list-disc space-y-1">
@@ -211,10 +275,10 @@ export function TempoExportImport() {
                   </ul>
                 </details>
               )}
-              
+
               {importResult.errors && importResult.errors.length > 0 && (
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-red-700 dark:text-red-300 hover:underline">
+                  <summary className="cursor-pointer text-danger hover:underline">
                     View errors ({importResult.errors.length})
                   </summary>
                   <ul className="mt-2 ml-4 list-disc space-y-1">
@@ -233,4 +297,3 @@ export function TempoExportImport() {
     </div>
   );
 }
-

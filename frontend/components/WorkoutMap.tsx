@@ -1,8 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import {
+  highlightFromRouteDistance,
+  routeDistanceFromElapsed,
+  type WorkoutHighlight,
+  type WorkoutSplit,
+} from '@/lib/workoutHighlight';
 
 // Fix for default marker icons in Next.js
 if (typeof window !== 'undefined') {
@@ -14,25 +20,80 @@ if (typeof window !== 'undefined') {
   });
 }
 
+const CARTO_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+const DARK_TILES = {
+  url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  attribution: CARTO_ATTRIBUTION,
+};
+
+const LIGHT_TILES = {
+  url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  attribution: CARTO_ATTRIBUTION,
+};
+
+const TILE_OPTIONS: L.TileLayerOptions = {
+  attribution: CARTO_ATTRIBUTION,
+  subdomains: 'abcd',
+  maxZoom: 20,
+};
+
+/** Light-mode route stroke: `--ink` flips in `.dark`, so keep a fixed dark stroke. */
+const LIGHT_POLYLINE = '#1c1917';
+
 interface RouteGeoJson {
   type: string;
   coordinates: [number, number][];
 }
 
-interface Split {
-  idx: number;
-  distanceM: number;
-  durationS: number;
-  paceS: number;
-}
-
 interface WorkoutMapProps {
   route: RouteGeoJson | null;
   workoutId?: string;
-  splits?: Split[];
+  splits?: WorkoutSplit[];
   hoveredSplitIdx?: number | null;
+  highlightElapsedSeconds?: number | null;
+  workoutDistanceM?: number;
+  workoutDurationS?: number;
+  onHighlightFromMap?: (highlight: WorkoutHighlight | null) => void;
   height?: string; // Optional height class (e.g., 'h-48', 'h-64')
   interactive?: boolean; // Whether the map should be interactive (default: true)
+}
+
+function readCssVar(name: string, fallback: string): string {
+  if (typeof window === 'undefined') {
+    return fallback;
+  }
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+  return value || fallback;
+}
+
+function mapStrokeColors(isDark: boolean) {
+  return {
+    polyline: isDark ? readCssVar('--volt', '#e8ff00') : LIGHT_POLYLINE,
+    highlight: readCssVar('--danger', isDark ? '#f07171' : '#e05656'),
+  };
+}
+
+function useDocumentDark(): boolean {
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== 'undefined'
+      ? document.documentElement.classList.contains('dark')
+      : false
+  );
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setIsDark(root.classList.contains('dark'));
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  return isDark;
 }
 
 // Haversine distance calculation (same as backend)
@@ -60,7 +121,7 @@ interface SplitSegment {
 // Calculate which route coordinate indices correspond to each split
 function calculateSplitSegments(
   coordinates: [number, number][],
-  splits: Split[]
+  splits: WorkoutSplit[]
 ): SplitSegment[] {
   if (!coordinates || coordinates.length === 0 || !splits || splits.length === 0) {
     return [];
@@ -113,23 +174,132 @@ function calculateSplitSegments(
   return segments;
 }
 
-export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, height = 'h-64', interactive = true }: WorkoutMapProps) {
+const MAP_HIT_PX = 24;
+
+function pointAtDistance(
+  coordinates: [number, number][],
+  targetM: number
+): [number, number] | null {
+  if (coordinates.length === 0) {
+    return null;
+  }
+  if (coordinates.length === 1 || targetM <= 0) {
+    const [lon, lat] = coordinates[0];
+    return [lat, lon];
+  }
+
+  let accumulated = 0;
+  for (let i = 1; i < coordinates.length; i++) {
+    const [lon1, lat1] = coordinates[i - 1];
+    const [lon2, lat2] = coordinates[i];
+    const segment = haversineDistance(lat1, lon1, lat2, lon2);
+    if (accumulated + segment >= targetM || i === coordinates.length - 1) {
+      const t =
+        segment > 0
+          ? Math.min(1, Math.max(0, (targetM - accumulated) / segment))
+          : 1;
+      return [lat1 + (lat2 - lat1) * t, lon1 + (lon2 - lon1) * t];
+    }
+    accumulated += segment;
+  }
+
+  const [lon, lat] = coordinates[coordinates.length - 1];
+  return [lat, lon];
+}
+
+function closestPointOnRoute(
+  latlng: L.LatLng,
+  leafletCoordinates: [number, number][]
+): { lat: number; lon: number; distanceAlongM: number } | null {
+  if (leafletCoordinates.length === 0) {
+    return null;
+  }
+
+  let best = {
+    lat: leafletCoordinates[0][0],
+    lon: leafletCoordinates[0][1],
+    distanceAlongM: 0,
+    distSq: Number.POSITIVE_INFINITY,
+  };
+  let along = 0;
+
+  for (let i = 1; i < leafletCoordinates.length; i++) {
+    const [lat1, lon1] = leafletCoordinates[i - 1];
+    const [lat2, lon2] = leafletCoordinates[i];
+    const dx = lat2 - lat1;
+    const dy = lon2 - lon1;
+    const lenSq = dx * dx + dy * dy;
+    const t =
+      lenSq === 0
+        ? 0
+        : Math.min(
+            1,
+            Math.max(
+              0,
+              ((latlng.lat - lat1) * dx + (latlng.lng - lon1) * dy) / lenSq
+            )
+          );
+    const lat = lat1 + dx * t;
+    const lon = lon1 + dy * t;
+    const dLat = latlng.lat - lat;
+    const dLon = latlng.lng - lon;
+    const distSq = dLat * dLat + dLon * dLon;
+    const alongHere = along + t * haversineDistance(lat1, lon1, lat2, lon2);
+
+    if (distSq < best.distSq) {
+      best = { lat, lon, distanceAlongM: alongHere, distSq };
+    }
+
+    along += haversineDistance(lat1, lon1, lat2, lon2);
+  }
+
+  return {
+    lat: best.lat,
+    lon: best.lon,
+    distanceAlongM: best.distanceAlongM,
+  };
+}
+
+export default function WorkoutMap({
+  route,
+  workoutId,
+  splits,
+  hoveredSplitIdx,
+  highlightElapsedSeconds = null,
+  workoutDistanceM,
+  workoutDurationS,
+  onHighlightFromMap,
+  height = 'h-64',
+  interactive = true,
+}: WorkoutMapProps) {
+  const isDark = useDocumentDark();
   // Ref to store the Leaflet map instance
   const mapRef = useRef<L.Map | null>(null);
   // Ref to container div element
   const containerRef = useRef<HTMLDivElement>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
   // Ref to store polyline instance for cleanup
   const polylineRef = useRef<L.Polyline | null>(null);
   // Ref to store highlighted polyline instance for cleanup
   const highlightedPolylineRef = useRef<L.Polyline | null>(null);
+  const highlightMarkerRef = useRef<L.CircleMarker | null>(null);
+  const onHighlightFromMapRef = useRef(onHighlightFromMap);
+  const splitsRef = useRef(splits);
+  const totalsRef = useRef({ workoutDistanceM, workoutDurationS });
 
-  // Convert GeoJSON coordinates [lon, lat] to Leaflet format [lat, lon]
   const leafletCoordinates = useMemo(() => {
     if (!route || !route.coordinates || route.coordinates.length === 0) {
       return [];
     }
     return route.coordinates.map(([lon, lat]) => [lat, lon] as [number, number]);
   }, [route]);
+
+  const leafletCoordinatesRef = useRef(leafletCoordinates);
+
+  onHighlightFromMapRef.current = onHighlightFromMap;
+  splitsRef.current = splits;
+  totalsRef.current = { workoutDistanceM, workoutDurationS };
+  leafletCoordinatesRef.current = leafletCoordinates;
 
   // Calculate bounds from coordinates
   const bounds = useMemo(() => {
@@ -200,17 +370,70 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
       keyboard: interactive,
     });
 
-    // Add tile layer
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    const tiles = document.documentElement.classList.contains('dark')
+      ? DARK_TILES
+      : LIGHT_TILES;
+    const tileLayer = L.tileLayer(tiles.url, TILE_OPTIONS).addTo(map);
+
+    const { polyline: polylineColor } = mapStrokeColors(
+      document.documentElement.classList.contains('dark')
+    );
+    const polyline = L.polyline(leafletCoordinates, {
+      color: polylineColor,
+      weight: 4,
+      opacity: 0.9,
     }).addTo(map);
 
-    // Add polyline
-    const polyline = L.polyline(leafletCoordinates, {
-      color: '#3b82f6',
-      weight: 4,
-      opacity: 0.8,
-    }).addTo(map);
+    const emitFromLatLng = (latlng: L.LatLng) => {
+      const emit = onHighlightFromMapRef.current;
+      if (!emit) {
+        return;
+      }
+      const closest = closestPointOnRoute(latlng, leafletCoordinatesRef.current);
+      if (!closest) {
+        emit(null);
+        return;
+      }
+      const pixelDist = map
+        .latLngToLayerPoint(latlng)
+        .distanceTo(map.latLngToLayerPoint(L.latLng(closest.lat, closest.lon)));
+      if (pixelDist > MAP_HIT_PX) {
+        emit(null);
+        return;
+      }
+      const totals =
+        totalsRef.current.workoutDistanceM != null &&
+        totalsRef.current.workoutDurationS != null
+          ? {
+              totalDistanceM: totalsRef.current.workoutDistanceM,
+              totalDurationS: totalsRef.current.workoutDurationS,
+            }
+          : undefined;
+      const next = highlightFromRouteDistance(
+        splitsRef.current ?? [],
+        closest.distanceAlongM,
+        totals
+      );
+      emit({
+        ...next,
+        elapsedSeconds:
+          next.elapsedSeconds == null
+            ? null
+            : Math.round(next.elapsedSeconds),
+      });
+    };
+
+    if (interactive) {
+      map.on('mousemove', (event: L.LeafletMouseEvent) => {
+        emitFromLatLng(event.latlng);
+      });
+      map.on('click', (event: L.LeafletMouseEvent) => {
+        emitFromLatLng(event.latlng);
+      });
+      map.on('mouseout', () => {
+        onHighlightFromMapRef.current?.(null);
+      });
+    }
 
     // Fit bounds if available
     if (bounds) {
@@ -219,6 +442,7 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
 
     // Store references
     mapRef.current = map;
+    tileLayerRef.current = tileLayer;
     polylineRef.current = polyline;
 
     // Cleanup function
@@ -237,6 +461,14 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
         }
         highlightedPolylineRef.current = null;
       }
+      if (highlightMarkerRef.current) {
+        try {
+          mapToCleanup.removeLayer(highlightMarkerRef.current);
+        } catch (e) {
+          // Ignore errors if layer was already removed
+        }
+        highlightMarkerRef.current = null;
+      }
       if (polylineRef.current) {
         try {
           mapToCleanup.removeLayer(polylineRef.current);
@@ -245,6 +477,7 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
         }
         polylineRef.current = null;
       }
+      tileLayerRef.current = null;
       
       // Remove the map
       try {
@@ -263,6 +496,19 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
       }
     };
   }, [workoutId, center, bounds, leafletCoordinates, route, interactive]);
+
+  useEffect(() => {
+    const tiles = isDark ? DARK_TILES : LIGHT_TILES;
+    tileLayerRef.current?.setUrl(tiles.url);
+
+    const colors = mapStrokeColors(isDark);
+    polylineRef.current?.setStyle({ color: colors.polyline });
+    highlightedPolylineRef.current?.setStyle({ color: colors.highlight });
+    highlightMarkerRef.current?.setStyle({
+      color: colors.highlight,
+      fillColor: colors.highlight,
+    });
+  }, [isDark]);
 
   // Effect to handle highlighted split segment
   useEffect(() => {
@@ -305,20 +551,81 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
       return;
     }
 
-    // Create highlighted polyline
+    const { highlight } = mapStrokeColors(
+      document.documentElement.classList.contains('dark')
+    );
     const highlightedPolyline = L.polyline(segmentCoordinates, {
-      color: '#ef4444',
-      weight: 6,
-      opacity: 0.9,
+      color: highlight,
+      weight: 7,
+      opacity: 1,
+      interactive: false,
     }).addTo(map);
 
     highlightedPolylineRef.current = highlightedPolyline;
   }, [hoveredSplitIdx, route, splits]);
 
+  useEffect(() => {
+    if (!mapRef.current || !route || highlightElapsedSeconds == null) {
+      if (highlightMarkerRef.current && mapRef.current) {
+        mapRef.current.removeLayer(highlightMarkerRef.current);
+        highlightMarkerRef.current = null;
+      }
+      return;
+    }
+
+    const totals =
+      workoutDistanceM != null && workoutDurationS != null
+        ? { totalDistanceM: workoutDistanceM, totalDurationS: workoutDurationS }
+        : undefined;
+    const distanceM = routeDistanceFromElapsed(
+      splits ?? [],
+      highlightElapsedSeconds,
+      totals
+    );
+    const point =
+      distanceM == null ? null : pointAtDistance(route.coordinates, distanceM);
+
+    if (!point) {
+      if (highlightMarkerRef.current) {
+        mapRef.current.removeLayer(highlightMarkerRef.current);
+        highlightMarkerRef.current = null;
+      }
+      return;
+    }
+
+    const { highlight } = mapStrokeColors(
+      document.documentElement.classList.contains('dark')
+    );
+
+    if (highlightMarkerRef.current) {
+      highlightMarkerRef.current.setLatLng(point);
+      highlightMarkerRef.current.setStyle({
+        color: highlight,
+        fillColor: highlight,
+      });
+      return;
+    }
+
+    highlightMarkerRef.current = L.circleMarker(point, {
+      radius: 7,
+      color: highlight,
+      fillColor: highlight,
+      fillOpacity: 1,
+      weight: 2,
+      interactive: false,
+    }).addTo(mapRef.current);
+  }, [
+    highlightElapsedSeconds,
+    route,
+    splits,
+    workoutDistanceM,
+    workoutDurationS,
+  ]);
+
   if (!route || !route.coordinates || route.coordinates.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-        <p className="text-gray-500 dark:text-gray-400">No route data available</p>
+      <div className={`flex items-center justify-center ${height} bg-canvas rounded-tempo border border-border`}>
+        <p className="text-muted">No route data available</p>
       </div>
     );
   }
@@ -326,7 +633,7 @@ export default function WorkoutMap({ route, workoutId, splits, hoveredSplitIdx, 
   return (
     <div
       ref={containerRef}
-      className={`w-full ${height} rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700`}
+      className={`w-full ${height} rounded-tempo overflow-hidden border border-border`}
       style={{ position: 'relative', isolation: 'isolate' }}
     />
   );

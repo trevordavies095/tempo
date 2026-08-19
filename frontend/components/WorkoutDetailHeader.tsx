@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { getWorkoutDisplayName, formatDateTime } from '@/lib/format';
 import type { WorkoutDetail } from '@/lib/api';
 import { useWorkoutMutations } from '@/hooks/useWorkoutMutations';
 import { CropWorkoutDialog } from './CropWorkoutDialog';
+import { Button } from '@/components/ui/Button';
 import { IconPencil, IconDotsVertical, IconCrop, IconTrash, IconLoader2 } from '@tabler/icons-react';
 
 interface WorkoutDetailHeaderProps {
@@ -33,13 +33,6 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
       };
     }
   }, [isMenuOpen]);
-
-  // Sync nameValue with workout.name when entering edit mode or data changes
-  useEffect(() => {
-    if (workout && isEditingName) {
-      setNameValue(workout.name || '');
-    }
-  }, [workout, isEditingName]);
 
   const handleSaveName = () => {
     const trimmedName = nameValue.trim() || null;
@@ -81,7 +74,7 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
               disabled={updateWorkoutMutation.isPending}
               placeholder="Enter activity name..."
               maxLength={200}
-              className="flex-1 px-3 py-2 text-3xl font-bold border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-3 py-2 text-3xl font-bold border border-border rounded-tempo bg-raised text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-volt disabled:opacity-50 disabled:cursor-not-allowed"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -91,27 +84,24 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
                 }
               }}
             />
-            <button
+            <Button
               onClick={handleSaveName}
               disabled={updateWorkoutMutation.isPending}
-              className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              type="button"
             >
               Save
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
               onClick={handleCancelName}
               disabled={updateWorkoutMutation.isPending}
-              className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              type="button"
             >
               Cancel
-            </button>
+            </Button>
             {updateWorkoutMutation.isPending && (
-              <span className="text-sm text-gray-500 dark:text-gray-400">Saving...</span>
+              <span className="text-sm text-muted">Saving...</span>
             )}
             {updateWorkoutMutation.isError && (
-              <span className="text-sm text-red-600 dark:text-red-400">
+              <span className="text-sm text-danger">
                 Error: {updateWorkoutMutation.error instanceof Error ? updateWorkoutMutation.error.message : 'Failed to update'}
               </span>
             )}
@@ -122,19 +112,19 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
               setNameValue(workout.name || '');
               setIsEditingName(true);
             }}
-            className="flex items-center gap-2 group hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-left"
+            className="flex items-center gap-2 group hover:text-ink dark:hover:text-volt transition-colors text-left"
             type="button"
           >
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+            <h2 className="text-3xl font-bold text-ink group-hover:text-ink dark:group-hover:text-volt">
               {getWorkoutDisplayName(workout.name, workout.startedAt)}
-            </h1>
+            </h2>
             <IconPencil className="w-5 h-5 opacity-0 group-hover:opacity-50 flex-shrink-0" />
           </button>
         )}
         <div className="relative">
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+            className="p-1.5 text-muted hover:text-ink hover:bg-canvas rounded-tempo transition-colors"
             type="button"
             aria-label="More options"
             aria-expanded={isMenuOpen}
@@ -142,7 +132,7 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
             <IconDotsVertical className="w-5 h-5" />
           </button>
           {isMenuOpen && (
-            <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-10">
+            <div className="absolute right-0 mt-1 w-48 bg-raised rounded-tempo shadow-lg border border-border z-10">
               <div className="py-1">
                 {workout.route && (
                   <button
@@ -151,7 +141,7 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
                       setIsCropDialogOpen(true);
                     }}
                     disabled={cropWorkoutMutation.isPending}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                    className="w-full text-left px-4 py-2 text-sm text-ink hover:bg-canvas disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                     type="button"
                   >
                     <IconCrop className="w-4 h-4" />
@@ -164,7 +154,7 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
                     handleDeleteWorkout();
                   }}
                   disabled={deleteWorkoutMutation.isPending}
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  className="w-full text-left px-4 py-2 text-sm text-danger hover:bg-canvas disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                   type="button"
                 >
                   {deleteWorkoutMutation.isPending ? (
@@ -186,19 +176,19 @@ export default function WorkoutDetailHeader({ workout }: WorkoutDetailHeaderProp
       </div>
       {deleteWorkoutMutation.isError && (
         <div className="mb-2">
-          <span className="text-xs text-red-600 dark:text-red-400">
+          <span className="text-xs text-danger">
             {deleteWorkoutMutation.error instanceof Error ? deleteWorkoutMutation.error.message : 'Failed to delete workout'}
           </span>
         </div>
       )}
       {cropWorkoutMutation.isError && (
         <div className="mb-2">
-          <span className="text-xs text-red-600 dark:text-red-400">
+          <span className="text-xs text-danger">
             {cropWorkoutMutation.error instanceof Error ? cropWorkoutMutation.error.message : 'Failed to crop workout'}
           </span>
         </div>
       )}
-      <p className="text-base text-gray-600 dark:text-gray-400">
+      <p className="text-base text-muted">
         {formatDateTime(workout.startedAt)}
       </p>
       <CropWorkoutDialog

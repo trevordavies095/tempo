@@ -1,25 +1,29 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
-using Tempo.Api.Utils;
 
 namespace Tempo.Api.Services;
 
 /// <summary>
-/// Service for cropping/trimming workouts by removing time from the beginning or end.
+/// Crops/trims workouts by removing time from the beginning or end.
 /// </summary>
 public class WorkoutCropService
 {
     private readonly TempoDbContext _db;
+    private readonly TrackPointRehydration _rehydration;
+    private readonly TrackGeometry _trackGeometry;
     private readonly ILogger<WorkoutCropService> _logger;
     private const int MinimumRemainingDurationSeconds = 10;
 
     public WorkoutCropService(
         TempoDbContext db,
+        TrackPointRehydration rehydration,
+        TrackGeometry trackGeometry,
         ILogger<WorkoutCropService> logger)
     {
         _db = db;
+        _rehydration = rehydration;
+        _trackGeometry = trackGeometry;
         _logger = logger;
     }
 
@@ -37,6 +41,7 @@ public class WorkoutCropService
         }
 
         var originalDurationS = workout.DurationS;
+        var originalStartedAt = workout.StartedAt;
         var newDurationS = originalDurationS - startTrimSeconds - endTrimSeconds;
 
         if (newDurationS < MinimumRemainingDurationSeconds)
@@ -52,44 +57,56 @@ public class WorkoutCropService
             "New duration: {NewDuration}s",
             workout.Id, originalDurationS, startTrimSeconds, endTrimSeconds, newDurationS);
 
-        // Load time series data
+        var trackPoints = _rehydration.Rehydrate(workout);
+        if (trackPoints == null || trackPoints.Count < 2)
+        {
+            throw new InvalidOperationException("Workout has insufficient track point data. Cannot crop.");
+        }
+
         var timeSeries = await _db.WorkoutTimeSeries
             .Where(ts => ts.WorkoutId == workout.Id)
             .OrderBy(ts => ts.ElapsedSeconds)
             .ToListAsync();
 
-        // Filter and reindex time series
-        var croppedTimeSeries = await CropTimeSeriesAsync(
-            workout.Id,
-            timeSeries,
-            startTrimSeconds,
-            endTrimSeconds,
-            originalDurationS);
+        StampSensorsFromTimeSeries(trackPoints, timeSeries, originalStartedAt);
 
-        // Trim route coordinates
-        var croppedRoute = CropRoute(workout.Route, timeSeries, startTrimSeconds, endTrimSeconds, originalDurationS);
+        var endBound = originalDurationS - endTrimSeconds;
+        var sliced = SliceByElapsed(trackPoints, originalStartedAt, startTrimSeconds, endBound);
+        if (sliced.Count < 2)
+        {
+            throw new InvalidOperationException("Cropping would leave insufficient track points.");
+        }
 
-        // Recalculate aggregates from cropped data
-        RecalculateAggregates(workout, croppedTimeSeries, croppedRoute, startTrimSeconds, newDurationS);
+        var newStartedAt = originalStartedAt.AddSeconds(startTrimSeconds);
+        var splitDistanceMeters = await GetSplitDistanceMetersAsync();
+        var geometry = _trackGeometry.Derive(sliced, newStartedAt, splitDistanceMeters, workout.Id);
 
-        // Update workout fields
         workout.DurationS = newDurationS;
-        workout.StartedAt = workout.StartedAt.AddSeconds(startTrimSeconds);
+        workout.StartedAt = newStartedAt;
+        workout.DistanceM = geometry.DistanceM;
+        workout.ElevGainM = geometry.ElevGainM;
         workout.AvgPaceS = newDurationS > 0 && workout.DistanceM > 0
             ? newDurationS / (workout.DistanceM / 1000.0)
             : 0;
 
-        // Update route
-        workout.Route.RouteGeoJson = croppedRoute;
+        workout.Route.RouteGeoJson = geometry.Route.RouteGeoJson;
 
-        // Delete old time series and add new ones
+        ApplySeriesAggregates(workout, geometry.TimeSeries);
+
+        var oldSplits = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        if (oldSplits.Count > 0)
+        {
+            _db.WorkoutSplits.RemoveRange(oldSplits);
+        }
+        _db.WorkoutSplits.AddRange(geometry.Splits);
+
         if (timeSeries.Count > 0)
         {
             _db.WorkoutTimeSeries.RemoveRange(timeSeries);
         }
-        if (croppedTimeSeries.Count > 0)
+        if (geometry.TimeSeries.Count > 0)
         {
-            _db.WorkoutTimeSeries.AddRange(croppedTimeSeries);
+            _db.WorkoutTimeSeries.AddRange(geometry.TimeSeries);
         }
 
         await _db.SaveChangesAsync();
@@ -101,358 +118,242 @@ public class WorkoutCropService
         return workout;
     }
 
-    /// <summary>
-    /// Filters and reindexes time series data based on crop parameters.
-    /// </summary>
-    private async Task<List<WorkoutTimeSeries>> CropTimeSeriesAsync(
-        Guid workoutId,
+    private async Task<double> GetSplitDistanceMetersAsync()
+    {
+        var settings = await _db.UserSettings.FirstOrDefaultAsync();
+        var unitPreference = settings?.UnitPreference;
+        return unitPreference != null && unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
+            ? 1609.344
+            : 1000.0;
+    }
+
+    private static void StampSensorsFromTimeSeries(
+        List<TrackPoint> trackPoints,
         List<WorkoutTimeSeries> timeSeries,
+        DateTime startedAt)
+    {
+        if (timeSeries.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var point in trackPoints)
+        {
+            if (!point.Time.HasValue)
+            {
+                continue;
+            }
+
+            var elapsed = (int)Math.Round((point.Time.Value - startedAt).TotalSeconds);
+            var nearest = timeSeries
+                .OrderBy(ts => Math.Abs(ts.ElapsedSeconds - elapsed))
+                .First();
+
+            point.HeartRateBpm ??= nearest.HeartRateBpm;
+            point.CadenceRpm ??= nearest.CadenceRpm;
+            point.PowerWatts ??= nearest.PowerWatts;
+            point.TemperatureC ??= nearest.TemperatureC;
+            point.SpeedMps ??= nearest.SpeedMps;
+            point.Elevation ??= nearest.ElevationM;
+            point.DistanceM ??= nearest.DistanceM;
+        }
+    }
+
+    private static List<TrackPoint> SliceByElapsed(
+        List<TrackPoint> trackPoints,
+        DateTime startedAt,
         int startTrimSeconds,
-        int endTrimSeconds,
-        int originalDurationS)
+        int endBoundSeconds)
     {
-        var endTimeThreshold = originalDurationS - endTrimSeconds;
+        var timed = trackPoints.Where(p => p.Time.HasValue).OrderBy(p => p.Time).ToList();
+        if (timed.Count < 2)
+        {
+            return timed;
+        }
 
-        var cropped = timeSeries
-            .Where(ts => ts.ElapsedSeconds >= startTrimSeconds && ts.ElapsedSeconds <= endTimeThreshold)
-            .Select(ts => new WorkoutTimeSeries
+        var sliced = new List<TrackPoint>();
+        var startBound = InterpolateAtElapsed(timed, startedAt, startTrimSeconds);
+        if (startBound != null)
+        {
+            sliced.Add(startBound);
+        }
+
+        foreach (var point in timed)
+        {
+            var elapsed = (point.Time!.Value - startedAt).TotalSeconds;
+            if (elapsed > startTrimSeconds && elapsed < endBoundSeconds)
             {
-                Id = Guid.NewGuid(),
-                WorkoutId = workoutId,
-                ElapsedSeconds = ts.ElapsedSeconds - startTrimSeconds,
-                DistanceM = ts.DistanceM.HasValue && timeSeries.Count > 0
-                    ? CalculateCroppedDistance(ts.DistanceM.Value, timeSeries, startTrimSeconds)
-                    : ts.DistanceM,
-                HeartRateBpm = ts.HeartRateBpm,
-                CadenceRpm = ts.CadenceRpm,
-                PowerWatts = ts.PowerWatts,
-                SpeedMps = ts.SpeedMps,
-                GradePercent = ts.GradePercent,
-                ElevationM = ts.ElevationM,
-                TemperatureC = ts.TemperatureC,
-                VerticalSpeedMps = ts.VerticalSpeedMps
-            })
-            .ToList();
+                sliced.Add(point);
+            }
+        }
 
-        return cropped;
+        var endBound = InterpolateAtElapsed(timed, startedAt, endBoundSeconds);
+        if (endBound != null
+            && (sliced.Count == 0 || sliced[^1].Time != endBound.Time))
+        {
+            sliced.Add(endBound);
+        }
+
+        return sliced;
     }
 
-    /// <summary>
-    /// Calculates the cropped distance by subtracting the distance at the start trim point.
-    /// </summary>
-    private double? CalculateCroppedDistance(
-        double distanceAtPoint,
-        List<WorkoutTimeSeries> timeSeries,
-        int startTrimSeconds)
+    private static TrackPoint? InterpolateAtElapsed(
+        List<TrackPoint> timed,
+        DateTime startedAt,
+        int targetElapsed)
     {
-        // Find the distance at the start trim point (or closest point before it)
-        var startPoint = timeSeries
-            .Where(ts => ts.ElapsedSeconds <= startTrimSeconds && ts.DistanceM.HasValue)
-            .OrderByDescending(ts => ts.ElapsedSeconds)
-            .FirstOrDefault();
-
-        if (startPoint?.DistanceM.HasValue == true)
+        var targetTime = startedAt.AddSeconds(targetElapsed);
+        if (targetElapsed <= 0)
         {
-            var startDistance = startPoint.DistanceM.Value;
-            return Math.Max(0, distanceAtPoint - startDistance);
+            return ClonePoint(timed[0], startedAt);
         }
 
-        // If we can't find a start point, return null (will be recalculated from route)
-        return null;
+        TrackPoint? before = null;
+        TrackPoint? after = null;
+        foreach (var point in timed)
+        {
+            var elapsed = (point.Time!.Value - startedAt).TotalSeconds;
+            if (elapsed <= targetElapsed)
+            {
+                before = point;
+            }
+            if (elapsed >= targetElapsed)
+            {
+                after = point;
+                break;
+            }
+        }
+
+        if (before == null)
+        {
+            return ClonePoint(timed[0], targetTime);
+        }
+
+        if (after == null)
+        {
+            return ClonePoint(timed[^1], targetTime);
+        }
+
+        if (before.Time == after.Time)
+        {
+            return ClonePoint(before, targetTime);
+        }
+
+        var span = (after.Time!.Value - before.Time!.Value).TotalSeconds;
+        var t = span > 0 ? (targetTime - before.Time.Value).TotalSeconds / span : 0;
+        return Lerp(before, after, t, targetTime);
     }
 
-    /// <summary>
-    /// Trims route coordinates based on crop parameters.
-    /// </summary>
-    private string CropRoute(
-        WorkoutRoute route,
-        List<WorkoutTimeSeries> timeSeries,
-        int startTrimSeconds,
-        int endTrimSeconds,
-        int originalDurationS)
+    private static TrackPoint ClonePoint(TrackPoint source, DateTime time)
     {
-        try
+        return new TrackPoint
         {
-            var geoJson = JsonSerializer.Deserialize<JsonElement>(route.RouteGeoJson);
-            if (!geoJson.TryGetProperty("coordinates", out var coordinatesElement))
-            {
-                throw new InvalidOperationException("Route GeoJSON does not contain coordinates");
-            }
-
-            var coordinates = coordinatesElement.EnumerateArray().ToList();
-            if (coordinates.Count == 0)
-            {
-                return route.RouteGeoJson;
-            }
-
-            // Determine start and end indices for cropping
-            int startIndex = 0;
-            int endIndex = coordinates.Count - 1;
-
-            if (timeSeries.Count > 0)
-            {
-                // Map time-based crop to coordinate indices using time series
-                startIndex = FindCoordinateIndexFromTime(timeSeries, startTrimSeconds, coordinates.Count);
-                endIndex = FindCoordinateIndexFromTime(timeSeries, originalDurationS - endTrimSeconds, coordinates.Count);
-            }
-            else
-            {
-                // No time series: estimate based on time ratio
-                var startRatio = (double)startTrimSeconds / originalDurationS;
-                var endRatio = (double)(originalDurationS - endTrimSeconds) / originalDurationS;
-                startIndex = (int)Math.Floor(startRatio * coordinates.Count);
-                endIndex = (int)Math.Ceiling(endRatio * coordinates.Count) - 1;
-            }
-
-            // Ensure valid indices
-            startIndex = Math.Max(0, Math.Min(startIndex, coordinates.Count - 1));
-            endIndex = Math.Max(startIndex, Math.Min(endIndex, coordinates.Count - 1));
-
-            // Extract cropped coordinates
-            var croppedCoordinates = new List<JsonElement>();
-            for (int i = startIndex; i <= endIndex; i++)
-            {
-                croppedCoordinates.Add(coordinates[i]);
-            }
-
-            // Rebuild GeoJSON
-            var croppedGeoJson = new
-            {
-                type = "LineString",
-                coordinates = croppedCoordinates.Select(c => c.EnumerateArray().Select(e => e.GetDouble()).ToArray()).ToArray()
-            };
-
-            return JsonSerializer.Serialize(croppedGeoJson);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to crop route coordinates, returning original route");
-            return route.RouteGeoJson;
-        }
+            Latitude = source.Latitude,
+            Longitude = source.Longitude,
+            Elevation = source.Elevation,
+            Time = time,
+            HeartRateBpm = source.HeartRateBpm,
+            CadenceRpm = source.CadenceRpm,
+            PowerWatts = source.PowerWatts,
+            TemperatureC = source.TemperatureC,
+            SpeedMps = source.SpeedMps,
+            DistanceM = source.DistanceM,
+            GradePercent = source.GradePercent,
+            VerticalSpeedMps = source.VerticalSpeedMps
+        };
     }
 
-    /// <summary>
-    /// Finds the coordinate index corresponding to a specific elapsed time.
-    /// </summary>
-    private int FindCoordinateIndexFromTime(
-        List<WorkoutTimeSeries> timeSeries,
-        int targetElapsedSeconds,
-        int totalCoordinates)
+    private static TrackPoint Lerp(TrackPoint a, TrackPoint b, double t, DateTime time)
     {
-        // Find the time series point closest to the target time
-        var closestPoint = timeSeries
-            .OrderBy(ts => Math.Abs(ts.ElapsedSeconds - targetElapsedSeconds))
-            .FirstOrDefault();
-
-        if (closestPoint == null)
+        t = Math.Clamp(t, 0, 1);
+        return new TrackPoint
         {
-            // Fallback: estimate based on time ratio
-            var timeRatio = (double)targetElapsedSeconds / (timeSeries.LastOrDefault()?.ElapsedSeconds ?? 1);
-            return (int)Math.Floor(timeRatio * totalCoordinates);
-        }
-
-        // Map time series index to coordinate index
-        var timeSeriesIndex = timeSeries.IndexOf(closestPoint);
-        var indexRatio = (double)timeSeriesIndex / timeSeries.Count;
-        return (int)Math.Floor(indexRatio * totalCoordinates);
+            Latitude = LerpNullable(a.Latitude, b.Latitude, t),
+            Longitude = LerpNullable(a.Longitude, b.Longitude, t),
+            Elevation = LerpNullable(a.Elevation, b.Elevation, t),
+            Time = time,
+            HeartRateBpm = LerpByte(a.HeartRateBpm, b.HeartRateBpm, t),
+            CadenceRpm = LerpByte(a.CadenceRpm, b.CadenceRpm, t),
+            PowerWatts = LerpUshort(a.PowerWatts, b.PowerWatts, t),
+            TemperatureC = a.TemperatureC ?? b.TemperatureC,
+            SpeedMps = LerpNullable(a.SpeedMps, b.SpeedMps, t),
+            DistanceM = LerpNullable(a.DistanceM, b.DistanceM, t),
+            GradePercent = LerpNullable(a.GradePercent, b.GradePercent, t),
+            VerticalSpeedMps = LerpNullable(a.VerticalSpeedMps, b.VerticalSpeedMps, t)
+        };
     }
 
-    /// <summary>
-    /// Recalculates workout aggregates from cropped time series and route data.
-    /// </summary>
-    private void RecalculateAggregates(
-        Workout workout,
-        List<WorkoutTimeSeries> croppedTimeSeries,
-        string croppedRouteJson,
-        int startTrimSeconds,
-        int newDurationS)
+    private static double? LerpNullable(double? a, double? b, double t)
     {
-        // Recalculate distance from route
-        try
+        if (a.HasValue && b.HasValue)
         {
-            var geoJson = JsonSerializer.Deserialize<JsonElement>(croppedRouteJson);
-            if (geoJson.TryGetProperty("coordinates", out var coordinatesElement))
-            {
-                var coordinates = coordinatesElement.EnumerateArray().ToList();
-                double totalDistance = 0.0;
-
-                for (int i = 1; i < coordinates.Count; i++)
-                {
-                    var prevCoord = coordinates[i - 1].EnumerateArray().ToArray();
-                    var currCoord = coordinates[i].EnumerateArray().ToArray();
-
-                    if (prevCoord.Length >= 2 && currCoord.Length >= 2)
-                    {
-                        var distance = GeoUtils.HaversineDistance(
-                            prevCoord[1].GetDouble(), // latitude
-                            prevCoord[0].GetDouble(), // longitude
-                            currCoord[1].GetDouble(),
-                            currCoord[0].GetDouble()
-                        );
-                        totalDistance += distance;
-                    }
-                }
-
-                workout.DistanceM = totalDistance;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to recalculate distance from route, using time series data");
+            return a.Value + (b.Value - a.Value) * t;
         }
 
-        // If we have time series data, use it for distance and other metrics
-        if (croppedTimeSeries.Count > 0)
+        return a ?? b;
+    }
+
+    private static byte? LerpByte(byte? a, byte? b, double t)
+    {
+        if (a.HasValue && b.HasValue)
         {
-            var lastPoint = croppedTimeSeries.LastOrDefault(ts => ts.DistanceM.HasValue);
-            if (lastPoint?.DistanceM.HasValue == true)
-            {
-                workout.DistanceM = lastPoint.DistanceM.Value;
-            }
-
-            // Recalculate heart rate stats
-            var heartRates = croppedTimeSeries
-                .Where(ts => ts.HeartRateBpm.HasValue)
-                .Select(ts => (int)ts.HeartRateBpm!.Value)
-                .ToList();
-
-            if (heartRates.Count > 0)
-            {
-                workout.MaxHeartRateBpm = (byte)heartRates.Max();
-                workout.MinHeartRateBpm = (byte)heartRates.Min();
-                workout.AvgHeartRateBpm = (byte)Math.Round(heartRates.Average());
-            }
-
-            // Recalculate cadence stats
-            var cadences = croppedTimeSeries
-                .Where(ts => ts.CadenceRpm.HasValue)
-                .Select(ts => (int)ts.CadenceRpm!.Value)
-                .ToList();
-
-            if (cadences.Count > 0)
-            {
-                workout.MaxCadenceRpm = (byte)cadences.Max();
-                workout.AvgCadenceRpm = (byte)Math.Round(cadences.Average());
-            }
-
-            // Recalculate power stats
-            var powers = croppedTimeSeries
-                .Where(ts => ts.PowerWatts.HasValue)
-                .Select(ts => (int)ts.PowerWatts!.Value)
-                .ToList();
-
-            if (powers.Count > 0)
-            {
-                workout.MaxPowerWatts = (ushort)powers.Max();
-                workout.AvgPowerWatts = (ushort)Math.Round(powers.Average());
-            }
-
-            // Recalculate speed stats
-            var speeds = croppedTimeSeries
-                .Where(ts => ts.SpeedMps.HasValue)
-                .Select(ts => ts.SpeedMps!.Value)
-                .ToList();
-
-            if (speeds.Count > 0)
-            {
-                workout.MaxSpeedMps = speeds.Max();
-                workout.AvgSpeedMps = speeds.Average();
-            }
-
-            // Recalculate elevation stats
-            var elevations = croppedTimeSeries
-                .Where(ts => ts.ElevationM.HasValue)
-                .Select(ts => ts.ElevationM!.Value)
-                .ToList();
-
-            if (elevations.Count > 0)
-            {
-                workout.MinElevM = elevations.Min();
-                workout.MaxElevM = elevations.Max();
-
-                // Calculate elevation gain/loss from cropped data
-                double elevationGain = 0.0;
-                double elevationLoss = 0.0;
-                double? lastElevation = null;
-
-                foreach (var elevation in elevations)
-                {
-                    if (lastElevation.HasValue)
-                    {
-                        var diff = elevation - lastElevation.Value;
-                        if (diff > 0)
-                        {
-                            elevationGain += diff;
-                        }
-                        else if (diff < 0)
-                        {
-                            elevationLoss += Math.Abs(diff);
-                        }
-                    }
-                    lastElevation = elevation;
-                }
-
-                workout.ElevGainM = elevationGain > 0 ? elevationGain : null;
-                workout.ElevLossM = elevationLoss > 0 ? elevationLoss : null;
-            }
+            return (byte)Math.Round(a.Value + (b.Value - a.Value) * t);
         }
-        else
+
+        return a ?? b;
+    }
+
+    private static ushort? LerpUshort(ushort? a, ushort? b, double t)
+    {
+        if (a.HasValue && b.HasValue)
         {
-            // No time series: try to recalculate elevation from route
-            try
-            {
-                var geoJson = JsonSerializer.Deserialize<JsonElement>(croppedRouteJson);
-                if (geoJson.TryGetProperty("coordinates", out var coordinatesElement))
-                {
-                    var coordinates = coordinatesElement.EnumerateArray().ToList();
-                    var elevations = new List<double>();
+            return (ushort)Math.Round(a.Value + (b.Value - a.Value) * t);
+        }
 
-                    foreach (var coord in coordinates)
-                    {
-                        var coordArray = coord.EnumerateArray().ToArray();
-                        if (coordArray.Length >= 3)
-                        {
-                            elevations.Add(coordArray[2].GetDouble());
-                        }
-                    }
+        return a ?? b;
+    }
 
-                    if (elevations.Count > 0)
-                    {
-                        workout.MinElevM = elevations.Min();
-                        workout.MaxElevM = elevations.Max();
+    private static void ApplySeriesAggregates(Workout workout, IReadOnlyList<WorkoutTimeSeries> timeSeries)
+    {
+        if (timeSeries.Count == 0)
+        {
+            return;
+        }
 
-                        // Simple elevation gain/loss calculation
-                        double elevationGain = 0.0;
-                        double elevationLoss = 0.0;
-                        double? lastElevation = null;
+        var heartRates = timeSeries.Where(ts => ts.HeartRateBpm.HasValue).Select(ts => ts.HeartRateBpm!.Value).ToList();
+        if (heartRates.Count > 0)
+        {
+            workout.MaxHeartRateBpm = heartRates.Max();
+            workout.MinHeartRateBpm = heartRates.Min();
+            workout.AvgHeartRateBpm = (byte)Math.Round(heartRates.Average(x => (double)x));
+        }
 
-                        foreach (var elevation in elevations)
-                        {
-                            if (lastElevation.HasValue)
-                            {
-                                var diff = elevation - lastElevation.Value;
-                                if (diff > 0)
-                                {
-                                    elevationGain += diff;
-                                }
-                                else if (diff < 0)
-                                {
-                                    elevationLoss += Math.Abs(diff);
-                                }
-                            }
-                            lastElevation = elevation;
-                        }
+        var cadences = timeSeries.Where(ts => ts.CadenceRpm.HasValue).Select(ts => ts.CadenceRpm!.Value).ToList();
+        if (cadences.Count > 0)
+        {
+            workout.MaxCadenceRpm = cadences.Max();
+            workout.AvgCadenceRpm = (byte)Math.Round(cadences.Average(x => (double)x));
+        }
 
-                        workout.ElevGainM = elevationGain > 0 ? elevationGain : null;
-                        workout.ElevLossM = elevationLoss > 0 ? elevationLoss : null;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to recalculate elevation from route");
-            }
+        var powers = timeSeries.Where(ts => ts.PowerWatts.HasValue).Select(ts => ts.PowerWatts!.Value).ToList();
+        if (powers.Count > 0)
+        {
+            workout.MaxPowerWatts = powers.Max();
+            workout.AvgPowerWatts = (ushort)Math.Round(powers.Average(x => (double)x));
+        }
+
+        var speeds = timeSeries.Where(ts => ts.SpeedMps.HasValue).Select(ts => ts.SpeedMps!.Value).ToList();
+        if (speeds.Count > 0)
+        {
+            workout.MaxSpeedMps = speeds.Max();
+            workout.AvgSpeedMps = speeds.Average();
+        }
+
+        var elevations = timeSeries.Where(ts => ts.ElevationM.HasValue).Select(ts => ts.ElevationM!.Value).ToList();
+        if (elevations.Count > 0)
+        {
+            workout.MinElevM = elevations.Min();
+            workout.MaxElevM = elevations.Max();
         }
     }
 }
-

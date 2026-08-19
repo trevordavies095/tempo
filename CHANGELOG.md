@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-08-19
+
+### Added
+- **First-run onboarding**
+  - Hard-gated wizard after registration: optional Tempo export restore, essential units/HR zones (optional default shoe), optional Strava archive
+  - `User.OnboardingCompleted` on `GET /auth/me`; `POST /auth/onboarding/complete` (idempotent); existing users backfilled completed on upgrade
+- **Import jobs** for Strava bulk and Tempo export restore
+  - Command center uploads ZIPs in **512 KiB** chunks, then polls job progress; cancel and refresh resume are supported
+  - At most one active import job across Strava bulk and Tempo restore (onboarding or Settings → Migrate / restore)
+  - Tempo export restore uses the same rails (`kind: tempo_export`) with nested statistics on the job document
+- **Shoe retirement**
+  - `IsRetired` on shoes; retire/restore from Settings; retired shoes stay on historical workouts but are hidden from active assignment defaults
+- **Command-center appearance**
+  - System / Dark / Light in Settings (this browser only, `tempo-appearance` in `localStorage`; default System). Not UserSettings and not synced to iOS
+- **WorkoutTimeSeries on Workout overview**
+  - Heart rate, pace (from speed), and elevation charts when samples exist; empty state when they do not
+  - Shared **Highlight** across map, splits, and charts
+
+### Changed
+- **Import page** is GPX/FIT (and `.fit.gz`) file upload only; Strava bulk and Tempo restore live under Settings → Data Management → **Migrate / restore** (also offered during onboarding)
+- **Breaking (API clients):** `POST /workouts/import/bulk` and `POST /workouts/import/export` return **202** with an import job document instead of a blocking **200** summary. Poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`.
+- **Single-file import** now uses the same duplicate rule as Strava bulk: incomplete FIT/GPX JSON (or missing raw bytes) can update an existing Workout; complete duplicates are skipped. Distance, duration, and elevation are not rewritten on those updates.
+- **Strava bulk import** per-file persist uses the same Workout intake pipeline as single-file import (ZIP extract, `activities.csv`, non-run skip, and media copy unchanged).
+- **Track geometry** + **Workout intake**: elevation, route, splits, and time series derive from `TrackPoint`s; `POST /workouts/import` and Strava bulk share one persist pipeline (HTTP JSON unchanged)
+- **Crop** rebuilds route, splits, time series, and elevation from remaining TrackPoints through track geometry (not device session distance).
+- **WebUI visual identity**
+  - Dark-first command center: Geist, T mark, black + volt yellow tokens; hand-rolled kit (`PageShell`, `Card`, `Button`, `Dialog`, `EmptyState`, `Tabs`)
+  - Control plane and Workout overview reskinned without IA changes
+- **Maps**
+  - Carto Dark Matter in Dark appearance and Voyager in Light; polyline and highlight from identity tokens (OSM + CARTO attribution)
+
+### Migration
+- **Database:** applies `AddShoeIsRetired` (`IsRetired` on `Shoes`), `AddImportJobs` / `AddImportJobCancelAndChunks` / `AddImportJobResultJson` (`ImportJobs` table and related columns), and `AddUserOnboardingCompleted` (`OnboardingCompleted` on `Users`, existing users backfilled `true`). Run migrations or rely on automatic migration on startup.
+
 ## [2.6.0] - 2026-05-13
 
 ### Added

@@ -46,8 +46,8 @@ export function WorkoutMediaGallery({ workoutId, media, isLoading, onMediaClick,
   if (isLoading) {
     return (
       <div className="mt-4">
-        <dt className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Media</dt>
-        <dd className="text-sm text-gray-500 dark:text-gray-400">Loading media...</dd>
+        <dt className="text-sm font-medium text-muted mb-2">Media</dt>
+        <dd className="text-sm text-muted">Loading media...</dd>
       </div>
     );
   }
@@ -73,7 +73,7 @@ export function WorkoutMediaGallery({ workoutId, media, isLoading, onMediaClick,
 
   return (
     <div className="mt-4">
-      <dt className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+      <dt className="text-sm font-medium text-muted mb-2">
         Media {process.env.NODE_ENV === 'development' && `(${media.length} items)`}
       </dt>
       <dd>
@@ -81,7 +81,7 @@ export function WorkoutMediaGallery({ workoutId, media, isLoading, onMediaClick,
           {media.map((item, index) => (
             <div
               key={item.id}
-              className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md transition-all group"
+              className="relative aspect-square rounded-lg overflow-hidden border border-border hover:border-ink hover:shadow-md transition-all group"
             >
               <button
                 onClick={() => onMediaClick(item, index)}
@@ -95,7 +95,7 @@ export function WorkoutMediaGallery({ workoutId, media, isLoading, onMediaClick,
                   loading="lazy"
                 />
               ) : isVideo(item.mimeType) ? (
-                <div className="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                <div className="w-full h-full bg-canvas flex items-center justify-center">
                   <video
                     src={getWorkoutMediaUrl(workoutId, item.id)}
                     className="w-full h-full object-cover"
@@ -106,8 +106,8 @@ export function WorkoutMediaGallery({ workoutId, media, isLoading, onMediaClick,
                   </div>
                 </div>
               ) : (
-                <div className="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                  <IconFile className="w-8 h-8 text-gray-400" />
+                <div className="w-full h-full bg-canvas flex items-center justify-center">
+                  <IconFile className="w-8 h-8 text-muted" />
                 </div>
               )}
               </button>
@@ -115,7 +115,7 @@ export function WorkoutMediaGallery({ workoutId, media, isLoading, onMediaClick,
               <button
                 onClick={(e) => handleDelete(e, item.id, item.filename)}
                 disabled={deleteMutation.isPending}
-                className="absolute top-2 right-2 p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed z-10"
+                className="absolute top-2 right-2 p-1.5 bg-danger text-on-danger hover:opacity-90 rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed z-10"
                 aria-label="Delete media"
                 title="Delete media"
               >

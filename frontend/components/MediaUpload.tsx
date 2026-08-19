@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { uploadWorkoutMedia } from '@/lib/api';
 import { IconPlus, IconX } from '@tabler/icons-react';
+import { Button } from '@/components/ui/Button';
 
 interface MediaUploadProps {
   workoutId: string;
@@ -86,7 +87,7 @@ export function MediaUpload({ workoutId, onUploadSuccess }: MediaUploadProps) {
         <button
           type="button"
           onClick={handleButtonClick}
-          className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors flex items-center gap-1.5"
+          className="text-sm text-muted hover:text-ink transition-colors flex items-center gap-1.5"
         >
           <IconPlus className="w-4 h-4" />
           <span>Add Media</span>
@@ -109,48 +110,48 @@ export function MediaUpload({ workoutId, onUploadSuccess }: MediaUploadProps) {
               {selectedFiles.map((file, index) => (
                 <div
                   key={`${file.name}-${index}`}
-                  className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700"
+                  className="flex items-center justify-between p-2 bg-canvas rounded border border-border"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-900 dark:text-gray-100 truncate">
+                    <p className="text-sm text-ink truncate">
                       {file.name}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="text-xs text-muted">
                       {formatFileSize(file.size)}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleRemoveFile(index)}
-                    className="ml-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                    className="ml-2 text-muted hover:text-danger transition-colors"
                   >
                     <IconX className="w-5 h-5" />
                   </button>
                 </div>
               ))}
             </div>
-            <button
+            <Button
               type="submit"
               disabled={mutation.isPending}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+              className="w-full"
             >
               {mutation.isPending ? 'Uploading...' : `Upload ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}`}
-            </button>
+            </Button>
           </div>
         )}
 
         {/* Success/Error messages */}
         {mutation.isSuccess && (
-          <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-            <p className="text-sm text-green-800 dark:text-green-200">
+          <div className="p-3 bg-canvas border border-border rounded-tempo">
+            <p className="text-sm text-ink">
               Media uploaded successfully!
             </p>
           </div>
         )}
 
         {mutation.isError && (
-          <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-sm text-red-800 dark:text-red-200">
+          <div className="p-3 bg-canvas border border-danger rounded-tempo">
+            <p className="text-sm text-danger">
               Error: {mutation.error instanceof Error ? mutation.error.message : 'Unknown error'}
             </p>
           </div>

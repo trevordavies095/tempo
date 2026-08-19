@@ -11,7 +11,7 @@ namespace Tempo.Api.Services;
 /// Service for calculating and managing best effort times for standard running distances.
 /// Best efforts are calculated from any segment within any workout.
 /// </summary>
-public class BestEffortService
+public class BestEffortService : IBestEffortService
 {
     private readonly ILogger<BestEffortService> _logger;
 

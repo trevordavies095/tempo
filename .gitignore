@@ -2,6 +2,7 @@
 .cursor/
 
 # .NET
+.tools/
 api/bin/
 api/obj/
 api/*.user
@@ -24,6 +25,8 @@ frontend/.vercel
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 
 # IDE
@@ -54,6 +57,7 @@ RELEASES.md
 # Testing
 TestResults/
 **/TestResults/
+coverage-report/
 **/coverage.cobertura.xml
 **/coverage.xml
 **/coverage.json
@@ -66,3 +70,5 @@ TestResults/
 site/
 
 Tempo_Icons/
+
+.scratch/

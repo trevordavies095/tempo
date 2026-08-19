@@ -50,11 +50,12 @@ docs/
 ├── index.md                    # Homepage
 ├── getting-started/           # Getting started guides
 ├── user-guide/                # User documentation
+│   └── screenshots/           # Copies for Markdown preview (same-folder paths)
 ├── developers/                # Developer documentation
 ├── deployment/                # Deployment guides
 ├── troubleshooting/           # Troubleshooting guides
-└── assets/                    # Images, diagrams, etc.
-    ├── screenshots/
+└── assets/
+    ├── screenshots/           # Canonical UI screenshots (README + docs home)
     └── diagrams/
 ```
 
@@ -72,8 +73,14 @@ Documentation configuration is in `mkdocs.yml` at the repository root.
 
 ### Adding Images
 
-1. Place images in `docs/assets/` (screenshots or diagrams subdirectories)
-2. Reference them in Markdown: `![Alt text](assets/screenshots/image.png)`
+1. Place canonical screenshots in `docs/assets/screenshots/`
+2. For pages under `docs/user-guide/`, also copy into `docs/user-guide/screenshots/` (Cursor Markdown preview does not reliably load `../` or symlinks)
+3. Reference them with same-folder relative paths (include the `./` prefix):
+   - From `docs/index.md`: `![Alt text](./assets/screenshots/image.png)`
+   - From `docs/user-guide/*.md`: `![Alt text](./screenshots/image.png)`
+   - From the root `README.md`: `![Alt text](./docs/assets/screenshots/image.png)`
+4. Workspace setting `markdown.preview.security: allow` is set in `.vscode/settings.json` so local images are permitted in preview
+
 
 ### Code Blocks
 

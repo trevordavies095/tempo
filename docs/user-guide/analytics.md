@@ -34,7 +34,7 @@ Tempo provides comprehensive analytics to help you understand and improve your r
 - **Average Heart Rate** - Mean heart rate throughout the workout
 - **Max Heart Rate** - Highest heart rate recorded
 - **Heart Rate Zones** - Time spent in each zone (based on your zone configuration)
-- **Heart Rate Chart** - Time-series visualization
+- **Heart Rate Chart** - Time-series visualization on Workout overview (shares Highlight with map and splits)
 
 ### Cadence
 
@@ -134,6 +134,10 @@ Track workout intensity over time:
 - **Comparisons** - Week-over-week or month-over-month changes
 
 ## Time-Series Data
+
+Heart rate, pace, and elevation charts live on **Workout overview**. They share **Highlight** with the map and splits: hover or click a chart point, split, or the route and the others follow.
+
+A series with no samples is omitted. Workouts without time series show an empty state instead of blank charts. Cadence, power, temperature, and related FIT/GPX sensors may still be stored even when they are not charted here.
 
 ### Heart Rate Chart
 

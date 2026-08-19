@@ -1,4 +1,6 @@
 import { type SortColumn } from '@/hooks/useActivitiesFilters';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 
 const RUN_TYPES = [
   { value: '', label: 'All Run Types' },
@@ -7,6 +9,9 @@ const RUN_TYPES = [
   { value: 'Long Run', label: 'Long Run' },
   { value: 'Easy Run', label: 'Easy Run' },
 ];
+
+const fieldClass =
+  'flex-1 px-4 py-2 border border-border rounded-tempo bg-raised text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-volt';
 
 interface ActivitiesFiltersProps {
   searchInput: string;
@@ -26,11 +31,11 @@ export default function ActivitiesFilters({
   onRunTypeChange,
 }: ActivitiesFiltersProps) {
   return (
-    <div className="w-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6 mb-6">
+    <Card className="mb-6">
       <div className="flex flex-col sm:flex-row gap-4">
         {/* Keywords Search */}
         <div className="flex-1">
-          <label htmlFor="keywords" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label htmlFor="keywords" className="block text-sm font-medium text-ink mb-2">
             Keywords
           </label>
           <div className="flex gap-2">
@@ -41,27 +46,24 @@ export default function ActivitiesFilters({
               onChange={(e) => onSearchInputChange(e.target.value)}
               onKeyPress={onKeyPress}
               placeholder="My Morning Workout"
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className={fieldClass}
             />
-            <button
-              onClick={onSearch}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-            >
+            <Button onClick={onSearch} size="sm">
               Search
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Run Type Filter */}
         <div className="sm:w-48">
-          <label htmlFor="runType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label htmlFor="runType" className="block text-sm font-medium text-ink mb-2">
             Run Type
           </label>
           <select
             id="runType"
             value={runType}
             onChange={(e) => onRunTypeChange(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-4 py-2 border border-border rounded-tempo bg-raised text-ink focus:outline-none focus:ring-2 focus:ring-volt"
           >
             {RUN_TYPES.map((type) => (
               <option key={type.value} value={type.value}>
@@ -71,7 +73,6 @@ export default function ActivitiesFilters({
           </select>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
-

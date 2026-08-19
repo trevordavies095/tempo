@@ -259,14 +259,45 @@ public static class AuthEndpoints
             return Results.Unauthorized();
         }
 
-        return Results.Ok(new
-        {
-            userId = dbUser.Id,
-            username = dbUser.Username,
-            createdAt = dbUser.CreatedAt,
-            lastLoginAt = dbUser.LastLoginAt
-        });
+        return Results.Ok(ToCurrentUserResponse(dbUser));
     }
+
+    /// <summary>
+    /// Mark first-run onboarding as complete (idempotent).
+    /// </summary>
+    private static async Task<IResult> CompleteOnboarding(
+        ClaimsPrincipal user,
+        TempoDbContext db)
+    {
+        var userId = GetUserIdFromClaims(user);
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var dbUser = await db.Users.FindAsync(userId.Value);
+        if (dbUser == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (!dbUser.OnboardingCompleted)
+        {
+            dbUser.OnboardingCompleted = true;
+            await db.SaveChangesAsync();
+        }
+
+        return Results.Ok(ToCurrentUserResponse(dbUser));
+    }
+
+    private static object ToCurrentUserResponse(User dbUser) => new
+    {
+        userId = dbUser.Id,
+        username = dbUser.Username,
+        createdAt = dbUser.CreatedAt,
+        lastLoginAt = dbUser.LastLoginAt,
+        onboardingCompleted = dbUser.OnboardingCompleted
+    };
 
     /// <summary>
     /// Logout (clear auth cookie)
@@ -429,6 +460,15 @@ public static class AuthEndpoints
             .WithSummary("Get current user")
             .WithDescription(
                 "Returns information about the currently authenticated user. Accepts JWT (cookie or Bearer) or API key (Bearer, prefix tmp_).");
+
+        group.MapPost("/onboarding/complete", CompleteOnboarding)
+            .WithName("CompleteOnboarding")
+            .RequireAuthorization()
+            .Produces(200)
+            .Produces(401)
+            .WithSummary("Complete onboarding")
+            .WithDescription(
+                "Marks first-run onboarding as complete for the current user. Idempotent; cannot set the flag back to false.");
 
         group.MapPost("/logout", Logout)
             .WithName("Logout")

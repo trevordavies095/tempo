@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getShoes,
@@ -14,6 +15,9 @@ import {
   type UpdateShoeRequest,
 } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 export function ShoeManagementSection() {
   const queryClient = useQueryClient();
@@ -50,8 +54,8 @@ export function ShoeManagementSection() {
   };
 
   const { data: shoes, isLoading } = useQuery({
-    queryKey: ['shoes'],
-    queryFn: getShoes,
+    queryKey: ['shoes', 'active'],
+    queryFn: () => getShoes({ status: 'active' }),
   });
 
   const { data: defaultShoe } = useQuery({
@@ -70,12 +74,23 @@ export function ShoeManagementSection() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateShoeRequest }) => updateShoe(id, data),
-    onSuccess: () => {
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: UpdateShoeRequest;
+      /** When false, leave the edit form open (e.g. retiring a different shoe than the one being edited). */
+      resetEditForm?: boolean;
+    }) => updateShoe(id, data),
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['shoes'] });
       queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
-      setEditingId(null);
-      setEditShoe({ brand: '', model: '', initialMileageM: null });
+      if (variables.resetEditForm !== false) {
+        setEditingId(null);
+        setEditShoe({ brand: '', model: '', initialMileageM: null });
+        setEditShoeInitialMileageInput('');
+      }
     },
   });
 
@@ -120,6 +135,16 @@ export function ShoeManagementSection() {
     }
   };
 
+  const handleRetire = (id: string) => {
+    if (
+      window.confirm(
+        'Retire this shoe? It will no longer appear in lists or as an option for new workouts. Past workouts keep their assignment. You can un-retire it later from Retired shoes.'
+      )
+    ) {
+      updateMutation.mutate({ id, data: { isRetired: true }, resetEditForm: false });
+    }
+  };
+
   const handleSetDefault = (id: string | null) => {
     setDefaultMutation.mutate(id);
   };
@@ -144,30 +169,38 @@ export function ShoeManagementSection() {
 
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-        <p className="text-gray-600 dark:text-gray-400">Loading shoes...</p>
-      </div>
+      <Card>
+        <p className="text-muted">Loading shoes...</p>
+      </Card>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-800">
-      <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+    <Card>
+      <h2 className="text-lg font-semibold text-ink mb-4">
         Shoe Management
       </h2>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+      <p className="text-sm text-muted mb-2">
         Track mileage on your running shoes. Assign shoes to workouts to automatically calculate total mileage.
+      </p>
+      <p className="text-sm mb-6">
+        <Link
+          href="/settings/shoes/retired"
+          className="text-ink underline hover:opacity-80"
+        >
+          View retired shoes and mileage
+        </Link>
       </p>
 
       {/* Default Shoe Selector */}
       <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        <label className="block text-sm font-medium text-ink mb-2">
           Default Shoe
         </label>
         <select
           value={defaultShoe?.defaultShoeId || ''}
           onChange={(e) => handleSetDefault(e.target.value === '' ? null : e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+          className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
         >
           <option value="">None</option>
           {shoes?.map((shoe) => (
@@ -176,49 +209,49 @@ export function ShoeManagementSection() {
             </option>
           ))}
         </select>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        <p className="text-xs text-muted mt-1">
           New workouts will automatically be assigned to the default shoe.
         </p>
       </div>
 
       {/* Create New Shoe */}
       {!isCreating ? (
-        <button
+        <Button
+          className="mb-6"
           onClick={() => setIsCreating(true)}
-          className="mb-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
         >
           + Add New Shoe
-        </button>
+        </Button>
       ) : (
-        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Add New Shoe</h3>
+        <div className="mb-6 p-4 bg-canvas rounded-lg border border-border">
+          <h3 className="text-sm font-semibold text-ink mb-3">Add New Shoe</h3>
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-ink mb-1">
                 Brand *
               </label>
               <input
                 type="text"
                 value={newShoe.brand}
                 onChange={(e) => setNewShoe({ ...newShoe, brand: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                 placeholder="e.g., Nike"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-ink mb-1">
                 Model *
               </label>
               <input
                 type="text"
                 value={newShoe.model}
                 onChange={(e) => setNewShoe({ ...newShoe, model: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                 placeholder="e.g., Air Zoom Pegasus 40"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-ink mb-1">
                 Initial Mileage (optional)
               </label>
               <input
@@ -226,31 +259,30 @@ export function ShoeManagementSection() {
                 step="0.1"
                 value={newShoeInitialMileageInput}
                 onChange={(e) => setNewShoeInitialMileageInput(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                 placeholder={unitPreference === 'imperial' ? 'Miles already on shoe' : 'Kilometers already on shoe'}
               />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 Enter mileage in {unitPreference === 'imperial' ? 'miles' : 'kilometers'}
               </p>
             </div>
             <div className="flex gap-2">
-              <button
+              <Button
                 onClick={handleCreate}
                 disabled={!newShoe.brand.trim() || !newShoe.model.trim() || createMutation.isPending}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
                 {createMutation.isPending ? 'Creating...' : 'Create'}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => {
                   setIsCreating(false);
                   setNewShoe({ brand: '', model: '', initialMileageM: null });
                   setNewShoeInitialMileageInput('');
                 }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -259,39 +291,42 @@ export function ShoeManagementSection() {
       {/* Shoe List */}
       <div className="space-y-4">
         {shoes && shoes.length === 0 ? (
-          <p className="text-gray-600 dark:text-gray-400">No shoes added yet. Add your first shoe above.</p>
+          <EmptyState
+            title="No shoes yet"
+            description="Add your first shoe above to track mileage."
+          />
         ) : (
           shoes?.map((shoe) => (
             <div
               key={shoe.id}
-              className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
+              className="p-4 bg-canvas rounded-lg border border-border"
             >
               {editingId === shoe.id ? (
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-ink mb-1">
                       Brand *
                     </label>
                     <input
                       type="text"
                       value={editShoe.brand || ''}
                       onChange={(e) => setEditShoe({ ...editShoe, brand: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-ink mb-1">
                       Model *
                     </label>
                     <input
                       type="text"
                       value={editShoe.model || ''}
                       onChange={(e) => setEditShoe({ ...editShoe, model: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-ink mb-1">
                       Initial Mileage
                     </label>
                     <input
@@ -299,59 +334,62 @@ export function ShoeManagementSection() {
                       step="0.1"
                       value={editShoeInitialMileageInput}
                       onChange={(e) => setEditShoeInitialMileageInput(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      className="w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt"
                       placeholder={unitPreference === 'imperial' ? 'Miles' : 'Kilometers'}
                     />
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-xs text-muted mt-1">
                       Enter mileage in {unitPreference === 'imperial' ? 'miles' : 'kilometers'}
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <button
+                    <Button
                       onClick={() => handleUpdate(shoe.id)}
                       disabled={!editShoe.brand?.trim() || !editShoe.model?.trim() || updateMutation.isPending}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
                     >
                       {updateMutation.isPending ? 'Saving...' : 'Save'}
-                    </button>
-                    <button
-                      onClick={cancelEdit}
-                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                    >
+                    </Button>
+                    <Button variant="secondary" onClick={cancelEdit}>
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : (
                 <div>
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      <h3 className="text-lg font-semibold text-ink">
                         {shoe.brand} {shoe.model}
                       </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <p className="text-sm text-muted">
                         Total: {shoe.totalMileage.toFixed(1)} {shoe.unit}
                       </p>
                       {defaultShoe?.defaultShoeId === shoe.id && (
-                        <span className="inline-block mt-1 px-2 py-1 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded">
+                        <span className="inline-block mt-1 px-2 py-1 text-xs bg-ink text-inverse dark:bg-volt dark:text-on-volt rounded-tempo">
                           Default
                         </span>
                       )}
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => startEdit(shoe)}
-                        className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                      >
+                    <div className="flex flex-wrap gap-2 justify-end">
+                      <Button size="sm" variant="secondary" onClick={() => startEdit(shoe)}>
                         Edit
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleRetire(shoe.id)}
+                        disabled={updateMutation.isPending}
+                      >
+                        Retire
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
                         onClick={() => handleDelete(shoe.id)}
                         disabled={deleteMutation.isPending}
-                        className="px-3 py-1 text-sm bg-red-200 text-red-700 rounded hover:bg-red-300 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800 disabled:bg-gray-400 disabled:cursor-not-allowed"
                       >
                         {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -360,7 +398,7 @@ export function ShoeManagementSection() {
           ))
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 

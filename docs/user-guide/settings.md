@@ -4,12 +4,36 @@ Configure Tempo to match your preferences and needs.
 
 ## Overview
 
+![Settings](./screenshots/settings.png)
+
 Tempo settings allow you to customize:
+- Appearance (System, Dark, or Light) on this browser
 - Unit preferences (metric/imperial)
 - Heart rate zones
 - Relative effort calculation
 - Shoe tracking and management
-- Data export and import
+- **Export** (prominent under Data Management) and collapsed **Migrate / restore** (Strava archive + Tempo export restore)
+
+On a fresh install, units, heart rate zones, and an optional default shoe are usually set during [first-run onboarding](../getting-started/onboarding.md). You can change them anytime here.
+
+## Appearance
+
+The command center is dark-first (black canvas, volt yellow accent). Light theme still exists. Appearance is a **browser preference**, not UserSettings: it is not stored on the server and does not sync to the iOS app.
+
+### Options
+
+- **System** (default) — Follows the operating system light/dark preference
+- **Dark** — Forces the dark theme
+- **Light** — Forces the light theme
+
+The choice is stored in this browser as `tempo-appearance` and survives reload. Volt yellow is used for primary actions, active navigation, and highlights — never as body text.
+
+### Changing Appearance
+
+1. Navigate to Settings
+2. In **Display Preferences**, choose System, Dark, or Light
+
+No Save button is required; the selection applies immediately.
 
 ## Unit Preferences
 
@@ -195,14 +219,14 @@ To remove a shoe from your collection:
 
 ## Export / Import
 
-Tempo allows you to export all your data in a portable ZIP format for backup, migration, or data portability. You can also import previously exported data to restore your workouts, settings, and media files.
+Tempo allows you to export all your data in a portable ZIP format for backup, migration, or data portability. Under **Migrate / restore**, you can restore a previous Tempo export or import a Strava archive after onboarding.
 
 ### Exporting Your Data
 
 To export all your Tempo data:
 
 1. Navigate to Settings
-2. Find the "Export / Import" section
+2. Find the **Export** section under Data Management
 3. Click "Export All Data"
 4. Wait for the export to complete (may take a moment for large datasets)
 5. Your browser will download a ZIP file named `tempo-export-{timestamp}.zip`
@@ -280,25 +304,31 @@ Export your data for:
 - **Data Portability** - Keep a portable copy of all your data
 - **Recovery** - Restore data after accidental deletion or system failure
 
-### Importing Data
+### Importing Data {#migrate--restore}
 
-Import functionality allows you to restore data from a previously exported Tempo ZIP file. This enables you to:
+**Migrate / restore** (collapsed under Data Management) lets you restore data from a previously exported Tempo ZIP file, or import a Strava archive after onboarding. This enables you to:
 
 - Restore all workouts, media, shoes, and settings
 - Import into a new or existing Tempo instance
 - Migrate data between Tempo instances
 - Recover from data loss or accidental deletion
+- Import a late Strava archive (see [Bulk Import](bulk-import.md))
 - Handle duplicate detection automatically
+
+Settings restore runs as a background import job (same rails as [Strava bulk import](bulk-import.md)): the ZIP uploads in chunks, then Tempo restores item by item with live progress.
 
 #### How to Import
 
 1. Navigate to Settings
-2. Find the "Export / Import" section
-3. In the "Import Data" area, click or drag and drop your Tempo export ZIP file
-4. Wait for the import to complete (may take several minutes for large exports)
-5. Review the import summary showing what was imported, skipped, or had errors
+2. Under Data Management, expand **Migrate / restore**
+3. For a Tempo backup: use **Restore Tempo export** and upload your Tempo export ZIP
+4. For Strava: use **Import Strava archive** (see [Bulk Import](bulk-import.md))
+5. Watch upload progress (%), then restore/import progress (`processed` / `total`)
+6. When finished, review the summary showing what was imported, skipped, or had errors
 
-**Note**: The import process may take several minutes if you have many workouts or large media files. The page will show "Importing..." while the process is running.
+**Progress and cancel**: Large exports can take several minutes. You can cancel while uploading or restoring; items already restored stay. Re-upload the same ZIP later — duplicates are skipped (and incomplete workouts can be updated) as usual.
+
+**One import at a time**: Tempo allows only one active import job across Tempo restore and Strava bulk import (both under Migrate / restore, or during onboarding). If the other kind is running, the UI shows a message and will not start until that job finishes or is cancelled. Refreshing Settings resumes an in-progress job.
 
 #### What Gets Imported
 
@@ -363,6 +393,21 @@ After import completes, you'll see a detailed summary including:
 - Ensure you're logged in
 - Check API logs for specific error messages
 
+**Cannot Start Import / Message About Strava**
+- Finish or cancel the Strava bulk import under Settings → Migrate / restore first
+- Only one import job can run at a time (Tempo restore or Strava bulk)
+
+**Progress Seems Stuck**
+- Large restores can take 10+ minutes; watch `processed` / `total` update
+- Refresh the Settings page — an active Tempo restore resumes from the server
+- Check whether you cancelled; partial restore is expected after cancel
+- Verify server resources and API logs
+
+**Partial Restore After Cancel**
+- Already imported shoes, workouts, media, and settings remain
+- Re-import the same ZIP; duplicates skip and incomplete items can update
+- Review the previous summary warnings/errors if present
+
 **Some Items Not Imported**
 - Check the import summary for skipped items
 - Review warnings for duplicate detection
@@ -393,6 +438,7 @@ Import your data for:
 ### Viewing Settings
 
 All settings are accessible from the Settings page:
+- Appearance (this browser only)
 - Unit preferences
 - Heart rate zone configuration
 - Relative effort management
