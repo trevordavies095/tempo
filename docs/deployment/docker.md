@@ -38,6 +38,7 @@ Edit `docker-compose.prod.yml` or use environment variables:
 **Recommended:**
 - `ConnectionStrings__DefaultConnection` - Database connection string
 - `CORS__AllowedOrigins` - Comma-separated list of allowed origins
+- `CARTO_BASEMAPS_API_KEY` - Free [CARTO basemaps API key](https://carto.com/basemaps/apikey) (set in `.env`; removes map watermark)
 - Database password (change from default)
 
 ### 3. Start Services

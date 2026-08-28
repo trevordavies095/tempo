@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **CARTO basemaps API key** - Optional `CartoBasemaps:ApiKey` / `CartoBasemaps__ApiKey` on the API (Docker: `CARTO_BASEMAPS_API_KEY` in `.env`). Authenticated `GET /settings/carto-basemaps` exposes the key to the command center; workout maps append `?key=` to CARTO raster tile URLs.
+
 ## [2.7.0] - 2026-08-19
 
 ### Added

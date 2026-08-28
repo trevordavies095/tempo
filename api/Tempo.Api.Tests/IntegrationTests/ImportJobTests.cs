@@ -664,26 +664,31 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
 
         var deadline = DateTime.UtcNow.AddSeconds(30);
         ImportJobDocument? snapshot = null;
+        var cancelSent = false;
         while (DateTime.UtcNow < deadline)
         {
             var poll = await client.GetAsync($"/workouts/import/jobs/{started!.Id}");
             snapshot = await poll.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
-            if (snapshot!.Processed >= 3 && snapshot.Status == ImportJobStatuses.Running)
+            if (snapshot!.Status is ImportJobStatuses.Completed or ImportJobStatuses.Failed)
             {
                 break;
             }
-            if (snapshot.Status is ImportJobStatuses.Completed or ImportJobStatuses.Failed)
+
+            if (!cancelSent &&
+                snapshot.Processed >= 3 &&
+                snapshot.Status == ImportJobStatuses.Running)
             {
-                break;
+                (await client.DeleteAsync($"/workouts/import/jobs/{started!.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
+                cancelSent = true;
             }
+
             await Task.Delay(20);
         }
 
         snapshot.Should().NotBeNull();
-        if (snapshot!.Status is ImportJobStatuses.Queued or ImportJobStatuses.Running or ImportJobStatuses.Receiving)
+        if (cancelSent)
         {
-            (await client.DeleteAsync($"/workouts/import/jobs/{started!.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
-            var finished = await PollUntilTerminalAsync(client, started.Id);
+            var finished = await PollUntilTerminalAsync(client, started!.Id);
             finished.Status.Should().Be(ImportJobStatuses.Failed);
             finished.ErrorMessage.Should().Be(ImportJobErrorMessages.Cancelled);
         }

@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { getCartoBasemaps } from '@/lib/api';
+import { cartoTilesForAppearance } from '@/lib/cartoTiles';
 import {
   highlightFromRouteDistance,
   routeDistanceFromElapsed,
@@ -22,16 +25,6 @@ if (typeof window !== 'undefined') {
 
 const CARTO_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
-
-const DARK_TILES = {
-  url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  attribution: CARTO_ATTRIBUTION,
-};
-
-const LIGHT_TILES = {
-  url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-  attribution: CARTO_ATTRIBUTION,
-};
 
 const TILE_OPTIONS: L.TileLayerOptions = {
   attribution: CARTO_ATTRIBUTION,
@@ -273,6 +266,13 @@ export default function WorkoutMap({
   interactive = true,
 }: WorkoutMapProps) {
   const isDark = useDocumentDark();
+  const { data: cartoBasemaps, isPending: cartoBasemapsPending } = useQuery({
+    queryKey: ['carto-basemaps'],
+    queryFn: getCartoBasemaps,
+    staleTime: Infinity,
+    retry: 1,
+  });
+  const cartoApiKey = cartoBasemaps?.apiKey ?? null;
   // Ref to store the Leaflet map instance
   const mapRef = useRef<L.Map | null>(null);
   // Ref to container div element
@@ -338,6 +338,10 @@ export default function WorkoutMap({
 
   // Effect to create and manage the Leaflet map
   useEffect(() => {
+    if (cartoBasemapsPending) {
+      return;
+    }
+
     if (!containerRef.current || !route || leafletCoordinates.length === 0) {
       return;
     }
@@ -370,14 +374,11 @@ export default function WorkoutMap({
       keyboard: interactive,
     });
 
-    const tiles = document.documentElement.classList.contains('dark')
-      ? DARK_TILES
-      : LIGHT_TILES;
-    const tileLayer = L.tileLayer(tiles.url, TILE_OPTIONS).addTo(map);
+    const isDarkMode = document.documentElement.classList.contains('dark');
+    const tileUrl = cartoTilesForAppearance(isDarkMode, cartoApiKey);
+    const tileLayer = L.tileLayer(tileUrl, TILE_OPTIONS).addTo(map);
 
-    const { polyline: polylineColor } = mapStrokeColors(
-      document.documentElement.classList.contains('dark')
-    );
+    const { polyline: polylineColor } = mapStrokeColors(isDarkMode);
     const polyline = L.polyline(leafletCoordinates, {
       color: polylineColor,
       weight: 4,
@@ -495,11 +496,15 @@ export default function WorkoutMap({
         delete (container as any)._leaflet;
       }
     };
-  }, [workoutId, center, bounds, leafletCoordinates, route, interactive]);
+  }, [workoutId, center, bounds, leafletCoordinates, route, interactive, cartoBasemapsPending, cartoApiKey]);
 
   useEffect(() => {
-    const tiles = isDark ? DARK_TILES : LIGHT_TILES;
-    tileLayerRef.current?.setUrl(tiles.url);
+    if (cartoBasemapsPending) {
+      return;
+    }
+
+    const tileUrl = cartoTilesForAppearance(isDark, cartoApiKey);
+    tileLayerRef.current?.setUrl(tileUrl);
 
     const colors = mapStrokeColors(isDark);
     polylineRef.current?.setStyle({ color: colors.polyline });
@@ -508,7 +513,7 @@ export default function WorkoutMap({
       color: colors.highlight,
       fillColor: colors.highlight,
     });
-  }, [isDark]);
+  }, [isDark, cartoBasemapsPending, cartoApiKey]);
 
   // Effect to handle highlighted split segment
   useEffect(() => {

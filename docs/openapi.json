@@ -424,6 +424,26 @@
         ]
       }
     },
+    "/settings/carto-basemaps": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get CARTO basemaps configuration for the command center",
+        "description": "Returns the operator-configured CARTO basemaps API key from environment configuration.\nWhen not set, map tiles are served without a key (watermarked by CARTO).",
+        "operationId": "GetCartoBasemaps",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/settings/default-shoe": {
       "get": {
         "tags": [

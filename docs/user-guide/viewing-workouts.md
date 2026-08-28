@@ -52,6 +52,7 @@ Map, splits, and time-series charts share one **Highlight**: a split index and/o
 
 - **Interactive Route Map** - Visualize your route with Leaflet maps
 - **Themed tiles** - Dark Matter in Dark appearance, Voyager in Light (CARTO; attribution includes OpenStreetMap)
+- **CARTO API key** - CARTO now requires a free API key for basemap tiles. Without one, maps show an "API key required" watermark. Request a key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey), set `CARTO_BASEMAPS_API_KEY` in your deployment `.env` (see [Configuration](../getting-started/configuration.md#carto-basemaps-maps)), restart the API, and hard-refresh the browser.
 - **Zoom and Pan** - Explore different parts of your route
 - Route stroke and Highlight colors follow the command-center identity (volt on dark; a dark stroke on light)
 

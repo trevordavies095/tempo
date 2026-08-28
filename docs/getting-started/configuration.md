@@ -118,6 +118,44 @@ environment:
 - Change the default database password in production
 - Store the JWT secret key securely (environment variables, secrets manager, etc.)
 
+## CARTO Basemaps (Maps)
+
+Workout maps use CARTO raster tiles (Dark Matter / Voyager). CARTO now requires a free API key; without one, tiles show an "API key required" watermark.
+
+1. Request a key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey) (free within CARTO's fair use limit; no CARTO account required).
+2. Configure the key on the **API** service (not the frontend). Do not commit the key to git.
+
+### Docker
+
+Add to a gitignored `.env` file in your deployment directory:
+
+```bash
+CARTO_BASEMAPS_API_KEY=your-key-here
+```
+
+Both `docker-compose.yml` and `docker-compose.prod.yml` pass this to the API as `CartoBasemaps__ApiKey`. Restart the API after changing the key.
+
+### Local development
+
+Set the environment variable before starting the API:
+
+```bash
+export CARTO_BASEMAPS_API_KEY=your-key-here
+cd api && dotnet watch run
+```
+
+Or add to `api/appsettings.Development.json` (local only; do not commit real keys):
+
+```json
+{
+  "CartoBasemaps": {
+    "ApiKey": "your-key-here"
+  }
+}
+```
+
+After configuring, hard-refresh the browser — CARTO and your browser may cache watermarked tiles briefly.
+
 ## Environment Variables Reference
 
 All configuration can be set via environment variables using the double underscore (`__`) notation for nested keys:
@@ -129,6 +167,7 @@ All configuration can be set via environment variables using the double undersco
 | `MediaStorage:MaxFileSizeBytes` | `MediaStorage__MaxFileSizeBytes` | `52428800` |
 | `ElevationCalculation:NoiseThresholdMeters` | `ElevationCalculation__NoiseThresholdMeters` | `2.0` |
 | `ElevationCalculation:MinDistanceMeters` | `ElevationCalculation__MinDistanceMeters` | `10.0` |
+| `CartoBasemaps:ApiKey` | `CartoBasemaps__ApiKey` or `CARTO_BASEMAPS_API_KEY` (via compose `.env`) | empty (watermarked tiles) |
 | `CORS:AllowedOrigins` | `CORS__AllowedOrigins` | - |
 | `JWT:SecretKey` | `JWT__SecretKey` | - (REQUIRED in production) |
 | `JWT:Issuer` | `JWT__Issuer` | `Tempo` |

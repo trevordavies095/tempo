@@ -187,6 +187,12 @@ builder.Services.AddSingleton(new ElevationCalculationConfig
     MinDistanceMeters = builder.Configuration.GetValue<double>("ElevationCalculation:MinDistanceMeters", 10.0)
 });
 
+// Configure CARTO basemaps (optional; missing key serves watermarked tiles)
+builder.Services.AddSingleton(new CartoBasemapsConfig
+{
+    ApiKey = builder.Configuration["CartoBasemaps:ApiKey"]?.Trim() ?? string.Empty
+});
+
 // Configure form options for large file uploads (bulk import)
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
 {

@@ -39,6 +39,8 @@ services:
       # CORS
       CORS__AllowedOrigins: "http://localhost:3000"
       JWT__SecretKey: "UXRYmMMI1s3Wmrfeno2RKQCuA98eu3gfcq5sjNm+0w0="
+      # CARTO basemaps (optional; set CARTO_BASEMAPS_API_KEY in .env)
+      CartoBasemaps__ApiKey: "${CARTO_BASEMAPS_API_KEY:-}"
     ports:
       - "5001:5001"
     volumes:
