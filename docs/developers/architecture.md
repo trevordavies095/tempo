@@ -13,7 +13,7 @@ Tempo is a self-hosted running tracker built as a full-stack application with a 
 - **Appearance**: Dark-first. Tailwind `class` strategy on `<html>` (`dark`). Preference is `system` | `dark` | `light` in `localStorage` (`tempo-appearance`); not UserSettings. See `frontend/lib/appearance.ts`.
 - **Icons**: Tabler Icons (`@tabler/icons-react`) for UI icons. Brand marks live in `frontend/public/` (`tempo-mark-volt.png`, `tempo-mark-ink.png`).
 - **State Management**: TanStack Query for server state
-- **Maps**: Leaflet/React-Leaflet. Carto Dark Matter in Dark appearance, Voyager in Light; polyline and Highlight from tokens; OSM + CARTO attribution (no OSM-only fallback).
+- **Maps**: Leaflet/React-Leaflet. Carto Dark Matter in Dark appearance, Voyager in Light; polyline and Highlight from tokens; OSM + CARTO attribution. Operators configure a CARTO basemaps API key via `CartoBasemaps:ApiKey` / `CartoBasemaps__ApiKey` on the API; the command center reads it from `GET /settings/carto-basemaps`.
 - **Charts**: Recharts; series colors from identity tokens. Workout overview charts HR, pace, and elevation via `getWorkoutTimeSeries` in `frontend/lib/api.ts` (pages until complete or 20,000 samples).
 - **Highlight**: Shared overview focus (`splitIdx` and/or `elapsedSeconds`) in `frontend/lib/workoutHighlight.ts` — map, splits, and charts follow together.
 

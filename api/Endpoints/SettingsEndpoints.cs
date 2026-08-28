@@ -349,6 +349,24 @@ public static class SettingsEndpoints
     }
 
     /// <summary>
+    /// Get CARTO basemaps configuration for the command center
+    /// </summary>
+    /// <param name="cartoBasemaps">CARTO basemaps configuration</param>
+    /// <returns>API key when configured, otherwise null</returns>
+    /// <remarks>
+    /// Returns the operator-configured CARTO basemaps API key from environment configuration.
+    /// When not set, map tiles are served without a key (watermarked by CARTO).
+    /// </remarks>
+    private static IResult GetCartoBasemaps(CartoBasemapsConfig cartoBasemaps)
+    {
+        var apiKey = string.IsNullOrWhiteSpace(cartoBasemaps.ApiKey)
+            ? null
+            : cartoBasemaps.ApiKey.Trim();
+
+        return Results.Ok(new { apiKey });
+    }
+
+    /// <summary>
     /// Get unit preference
     /// </summary>
     /// <param name="db">Database context</param>
@@ -460,6 +478,12 @@ public static class SettingsEndpoints
             .Produces(400)
             .WithSummary("Update unit preference")
             .WithDescription("Updates the unit preference (metric or imperial)");
+
+        group.MapGet("/carto-basemaps", GetCartoBasemaps)
+            .WithName("GetCartoBasemaps")
+            .Produces(200)
+            .WithSummary("Get CARTO basemaps configuration")
+            .WithDescription("Returns the operator-configured CARTO basemaps API key from environment configuration. When not set, map tiles are served without a key.");
 
         group.MapGet("/default-shoe", GetDefaultShoe)
             .WithName("GetDefaultShoe")

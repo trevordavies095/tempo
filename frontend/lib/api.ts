@@ -1244,6 +1244,20 @@ export async function recalculateAllRelativeEffort(): Promise<RecalculateRelativ
   return response.json();
 }
 
+export async function getCartoBasemaps(): Promise<{ apiKey: string | null }> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/carto-basemaps`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get CARTO basemaps configuration: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function getUnitPreference(): Promise<{ unitPreference: 'metric' | 'imperial' }> {
   const response = await fetchWithAuth(`${API_BASE_URL}/settings/unit-preference`, {
     method: 'GET',

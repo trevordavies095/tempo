@@ -48,6 +48,8 @@ services:
       JWT__Audience: "Tempo"
       JWT__ExpirationDays: "7"
       JWT__RememberMeExpirationDays: "30"
+      # CARTO basemaps (optional; set CARTO_BASEMAPS_API_KEY in .env)
+      CartoBasemaps__ApiKey: "${CARTO_BASEMAPS_API_KEY:-}"
     ports:
       - "5001:5001"
     volumes:
