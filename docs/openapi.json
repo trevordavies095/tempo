@@ -1028,6 +1028,41 @@
         ]
       }
     },
+    "/workouts/import/healthkit": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Import a HealthKit workout from tempo-ios (JSON decode adapter → PersistAsync).",
+        "description": "Accepts a schema-versioned HealthKit workout JSON document from tempo-ios. Outdoor runs only in this release; feeds the same PersistAsync pipeline as file import.",
+        "operationId": "ImportHealthKitWorkout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthKitImportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/workouts": {
       "get": {
         "tags": [
@@ -2202,6 +2237,129 @@
         },
         "additionalProperties": false,
         "description": "Request model for creating a shoe"
+      },
+      "HealthKitImportRequest": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "healthKitUuid": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceApp": {
+            "$ref": "#/components/schemas/HealthKitSourceAppDto"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/HealthKitSummaryDto"
+          },
+          "trackPoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthKitTrackPointDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Versioned HealthKit import document from tempo-ios."
+      },
+      "HealthKitSourceAppDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "bundleId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HealthKitSummaryDto": {
+        "type": "object",
+        "properties": {
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "isIndoor": {
+            "type": "boolean"
+          },
+          "energyKcal": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "avgHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HealthKitTrackPointDto": {
+        "type": "object",
+        "properties": {
+          "t": {
+            "type": "string",
+            "nullable": true
+          },
+          "lat": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lon": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ele": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "hr": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cad": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "pwr": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "distM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "HeartRateZone": {
         "type": "object",
