@@ -30,6 +30,29 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
+    /// Import a HealthKit workout from tempo-ios (JSON decode adapter → PersistAsync).
+    /// </summary>
+    private static async Task<IResult> ImportHealthKitWorkout(
+        HealthKitImportRequest? request,
+        HealthKitWorkoutDecoder decoder,
+        WorkoutIntake workoutIntake)
+    {
+        var decoded = decoder.Decode(request);
+        if (!decoded.Success)
+        {
+            return Results.BadRequest(new { error = decoded.ErrorMessage ?? "Invalid HealthKit payload" });
+        }
+
+        var result = await workoutIntake.PersistAsync(decoded.Decoded!, decoded.Overlay);
+        if (result.Action == "error")
+        {
+            return Results.BadRequest(new { error = result.ErrorMessage ?? "Error importing HealthKit workout" });
+        }
+
+        return Results.Ok(MapIntakeHttpResponse(result));
+    }
+
+    /// <summary>
     /// Import workout file(s)
     /// </summary>
     /// <param name="request">HTTP request containing multipart/form-data with file(s)</param>
@@ -364,6 +387,7 @@ public static class WorkoutsEndpoints
                 runType = w.RunType,
                 source = w.Source,
                 device = w.Device,
+                healthKitUuid = w.HealthKitUuid,
                 name = w.Name,
                 hasRoute = w.Route != null,
                 route = routeGeoJson,
@@ -1214,6 +1238,19 @@ public static class WorkoutsEndpoints
             }
         }
 
+        object? rawHealthKitData = null;
+        if (!string.IsNullOrEmpty(workout.RawHealthKitData))
+        {
+            try
+            {
+                rawHealthKitData = JsonSerializer.Deserialize<object>(workout.RawHealthKitData);
+            }
+            catch (JsonException ex)
+            {
+                logger.LogWarning(ex, "Failed to parse RawHealthKitData JSON for workout {WorkoutId}", workout.Id);
+            }
+        }
+
         // Include shoe information if assigned
         object? shoe = null;
         if (workout.Shoe != null)
@@ -1254,6 +1291,7 @@ public static class WorkoutsEndpoints
             notes = workout.Notes,
             source = workout.Source,
             device = workout.Device,
+            healthKitUuid = workout.HealthKitUuid,
             name = workout.Name,
             shoeId = workout.ShoeId,
             shoe = shoe,
@@ -1261,6 +1299,7 @@ public static class WorkoutsEndpoints
             rawGpxData = rawGpxData,
             rawFitData = rawFitData,
             rawStravaData = rawStravaData,
+            rawHealthKitData = rawHealthKitData,
             createdAt = workout.CreatedAt,
             route = routeGeoJson,
             splits = splits
@@ -2205,6 +2244,15 @@ public static class WorkoutsEndpoints
             .Produces(500)
             .WithSummary("Import workout file(s)")
             .WithDescription("Uploads and processes one or more GPX or FIT files (.gpx, .fit, or .fit.gz), extracting workout data and saving it to the database. Supports multiple files for batch import.");
+
+        group.MapPost("/import/healthkit", ImportHealthKitWorkout)
+            .WithName("ImportHealthKitWorkout")
+            .Accepts<HealthKitImportRequest>("application/json")
+            .Produces(200)
+            .Produces(400)
+            .Produces(401)
+            .WithSummary("Import HealthKit workout")
+            .WithDescription("Accepts a schema-versioned HealthKit workout JSON document from tempo-ios (outdoor GPS or indoor DistM/summary). Feeds the same PersistAsync pipeline as file import.");
 
         group.MapGet("", ListWorkouts)
         .WithName("ListWorkouts")

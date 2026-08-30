@@ -32,15 +32,18 @@ Core workout entity with statistics and metadata.
 - `RawGpxData` (JSONB, nullable) - Raw GPX XML data
 - `RawFitData` (JSONB, nullable) - Raw FIT file data
 - `RawStravaData` (JSONB, nullable) - Raw Strava CSV data
+- `RawHealthKitData` (JSONB, nullable) - Schema-versioned HealthKit import payload from tempo-ios
+- `HealthKitUuid` (Guid, nullable, unique) - HKWorkout UUID for HealthKit import idempotency; null for file imports
 - `Weather` (JSONB, nullable) - Weather data from Open-Meteo API
 
 **Indexes:**
 - `StartedAt`
 - Composite index on `(StartedAt, DistanceM, DurationS)` for duplicate detection
+- Unique index on `HealthKitUuid` (multiple NULLs allowed)
 - `Source`
 - `RunType`
 - `ShoeId` - Foreign key index for efficient shoe queries
-- GIN indexes on JSONB fields: `RawGpxData`, `RawFitData`, `RawStravaData`, `Weather`
+- GIN indexes on JSONB fields: `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, `Weather`
 
 ### WorkoutRoute
 
@@ -229,6 +232,7 @@ The `__EFMigrationsHistory` table tracks applied migrations. The `DatabaseMigrat
 
 - **Workout.StartedAt** - Fast date range queries
 - **Workout composite (StartedAt, DistanceM, DurationS)** - Duplicate detection
+- **Workout.HealthKitUuid** (unique) - HealthKit import idempotency
 - **WorkoutSplit (WorkoutId, Idx)** - Efficient split queries
 - **WorkoutTimeSeries (WorkoutId, ElapsedSeconds)** - Time-series queries
 
@@ -238,6 +242,7 @@ GIN indexes on JSONB fields enable efficient JSON queries:
 - `RawGpxData`
 - `RawFitData`
 - `RawStravaData`
+- `RawHealthKitData`
 - `Weather`
 
 ## Data Storage Patterns

@@ -10,6 +10,8 @@ public sealed class TrackGeometryResult
     public int DurationS { get; init; }
     public double? ElevGainM { get; init; }
     public required WorkoutRoute Route { get; init; }
+    /// <summary>True when the route LineString has at least one coordinate.</summary>
+    public bool HasRouteCoordinates { get; init; }
     public required IReadOnlyList<WorkoutSplit> Splits { get; init; }
     public required IReadOnlyList<WorkoutTimeSeries> TimeSeries { get; init; }
 }
@@ -36,6 +38,14 @@ public class TrackGeometry
         IReadOnlyList<TrackPoint>? seriesPoints = null)
     {
         var positioned = points.Where(p => p.HasPosition).ToList();
+        var splits = positioned.Count >= 2
+            ? CalculateSplitsFromHaversine(positioned, distanceMeters, durationSeconds, splitDistanceMeters, workoutId)
+            : CalculateSplitsFromDistanceStream(
+                ResolveDistanceStream(points, seriesPoints),
+                distanceMeters,
+                durationSeconds,
+                splitDistanceMeters,
+                workoutId);
 
         return new TrackGeometryResult
         {
@@ -43,7 +53,8 @@ public class TrackGeometry
             DurationS = durationSeconds,
             ElevGainM = CalculateElevationGain(positioned),
             Route = CreateRoute(workoutId, positioned),
-            Splits = CalculateSplits(positioned, distanceMeters, durationSeconds, splitDistanceMeters, workoutId),
+            HasRouteCoordinates = positioned.Count > 0,
+            Splits = splits,
             TimeSeries = seriesPoints == null
                 ? CreateGpxTimeSeries(workoutId, startedAt, points)
                 : CreateFitTimeSeries(workoutId, startedAt, seriesPoints)
@@ -64,6 +75,30 @@ public class TrackGeometry
             : 0;
 
         return Derive(points, startedAt, splitDistanceMeters, workoutId, distanceMeters, durationSeconds);
+    }
+
+    private static List<TrackPoint> ResolveDistanceStream(
+        IReadOnlyList<TrackPoint> points,
+        IReadOnlyList<TrackPoint>? seriesPoints)
+    {
+        var fromPoints = points
+            .Where(p => p.DistanceM.HasValue && p.Time.HasValue)
+            .OrderBy(p => p.DistanceM!.Value)
+            .ToList();
+        if (fromPoints.Count >= 2)
+        {
+            return fromPoints;
+        }
+
+        if (seriesPoints == null)
+        {
+            return fromPoints;
+        }
+
+        return seriesPoints
+            .Where(p => p.DistanceM.HasValue && p.Time.HasValue)
+            .OrderBy(p => p.DistanceM!.Value)
+            .ToList();
     }
 
     private static double DistanceFromPoints(List<TrackPoint> positioned)
@@ -168,7 +203,7 @@ public class TrackGeometry
         };
     }
 
-    private static List<WorkoutSplit> CalculateSplits(
+    private static List<WorkoutSplit> CalculateSplitsFromHaversine(
         List<TrackPoint> trackPoints,
         double distanceMeters,
         int durationSeconds,
@@ -189,19 +224,16 @@ public class TrackGeometry
 
             if (accumulatedDistance - splitStartDistance >= splitDistanceMeters)
             {
-                var splitDistance = accumulatedDistance - splitStartDistance;
-                var splitDuration = SplitDuration(trackPoints, splitStartIndex, i, splitDistance, distanceMeters, durationSeconds);
-                var splitPace = splitDuration > 0 ? splitDuration / (splitDistance / 1000.0) : 0;
-
-                splits.Add(new WorkoutSplit
-                {
-                    Id = Guid.NewGuid(),
-                    WorkoutId = workoutId,
-                    Idx = splitIndex++,
-                    DistanceM = splitDistance,
-                    DurationS = splitDuration,
-                    PaceS = splitPace
-                });
+                EmitSplit(
+                    splits,
+                    trackPoints,
+                    workoutId,
+                    ref splitIndex,
+                    splitStartIndex,
+                    i,
+                    accumulatedDistance - splitStartDistance,
+                    distanceMeters,
+                    durationSeconds);
 
                 splitStartDistance = accumulatedDistance;
                 lastSplitStartIndex = splitStartIndex;
@@ -209,56 +241,157 @@ public class TrackGeometry
             }
         }
 
-        var remainingDistance = accumulatedDistance - splitStartDistance;
-        if (remainingDistance > 0)
+        FinalizeRemainder(
+            splits,
+            trackPoints,
+            workoutId,
+            splitIndex,
+            splitStartIndex,
+            lastSplitStartIndex,
+            accumulatedDistance - splitStartDistance,
+            splitDistanceMeters,
+            distanceMeters,
+            durationSeconds);
+
+        return splits;
+    }
+
+    private static List<WorkoutSplit> CalculateSplitsFromDistanceStream(
+        List<TrackPoint> distancePoints,
+        double distanceMeters,
+        int durationSeconds,
+        double splitDistanceMeters,
+        Guid workoutId)
+    {
+        if (distancePoints.Count < 2)
         {
-            if (remainingDistance >= splitDistanceMeters * 0.1 && splits.Count > 0)
+            return new List<WorkoutSplit>();
+        }
+
+        var splits = new List<WorkoutSplit>();
+        var splitStartDistance = distancePoints[0].DistanceM ?? 0.0;
+        var splitStartIndex = 0;
+        var lastSplitStartIndex = 0;
+        var splitIndex = 0;
+        var accumulatedDistance = splitStartDistance;
+
+        for (int i = 1; i < distancePoints.Count; i++)
+        {
+            accumulatedDistance = distancePoints[i].DistanceM!.Value;
+
+            if (accumulatedDistance - splitStartDistance >= splitDistanceMeters)
             {
-                var finalSplitDuration = SplitDuration(
-                    trackPoints,
+                EmitSplit(
+                    splits,
+                    distancePoints,
+                    workoutId,
+                    ref splitIndex,
                     splitStartIndex,
-                    trackPoints.Count - 1,
-                    remainingDistance,
+                    i,
+                    accumulatedDistance - splitStartDistance,
                     distanceMeters,
                     durationSeconds);
-                var finalSplitPace = finalSplitDuration > 0 ? finalSplitDuration / (remainingDistance / 1000.0) : 0;
 
-                splits.Add(new WorkoutSplit
-                {
-                    Id = Guid.NewGuid(),
-                    WorkoutId = workoutId,
-                    Idx = splitIndex,
-                    DistanceM = remainingDistance,
-                    DurationS = finalSplitDuration,
-                    PaceS = finalSplitPace
-                });
-            }
-            else if (splits.Count > 0)
-            {
-                var lastSplit = splits[^1];
-                var totalLastSplitDistance = lastSplit.DistanceM + remainingDistance;
-
-                var mergedDuration = lastSplit.DurationS;
-                if (trackPoints.Count > 1 && trackPoints[^1].Time.HasValue)
-                {
-                    var lastSplitStartTime = trackPoints[lastSplitStartIndex].Time;
-                    if (lastSplitStartTime.HasValue && trackPoints[^1].Time.HasValue)
-                    {
-                        mergedDuration = (int)(trackPoints[^1].Time!.Value - lastSplitStartTime.Value).TotalSeconds;
-                    }
-                }
-                else
-                {
-                    mergedDuration = (int)((totalLastSplitDistance / distanceMeters) * durationSeconds);
-                }
-
-                lastSplit.DistanceM = totalLastSplitDistance;
-                lastSplit.DurationS = mergedDuration;
-                lastSplit.PaceS = mergedDuration > 0 ? mergedDuration / (totalLastSplitDistance / 1000.0) : lastSplit.PaceS;
+                splitStartDistance = accumulatedDistance;
+                lastSplitStartIndex = splitStartIndex;
+                splitStartIndex = i;
             }
         }
 
+        FinalizeRemainder(
+            splits,
+            distancePoints,
+            workoutId,
+            splitIndex,
+            splitStartIndex,
+            lastSplitStartIndex,
+            accumulatedDistance - splitStartDistance,
+            splitDistanceMeters,
+            distanceMeters,
+            durationSeconds);
+
         return splits;
+    }
+
+    private static void EmitSplit(
+        List<WorkoutSplit> splits,
+        List<TrackPoint> trackPoints,
+        Guid workoutId,
+        ref int splitIndex,
+        int splitStartIndex,
+        int endIndex,
+        double splitDistance,
+        double distanceMeters,
+        int durationSeconds)
+    {
+        var splitDuration = SplitDuration(
+            trackPoints, splitStartIndex, endIndex, splitDistance, distanceMeters, durationSeconds);
+        var splitPace = splitDuration > 0 ? splitDuration / (splitDistance / 1000.0) : 0;
+
+        splits.Add(new WorkoutSplit
+        {
+            Id = Guid.NewGuid(),
+            WorkoutId = workoutId,
+            Idx = splitIndex++,
+            DistanceM = splitDistance,
+            DurationS = splitDuration,
+            PaceS = splitPace
+        });
+    }
+
+    private static void FinalizeRemainder(
+        List<WorkoutSplit> splits,
+        List<TrackPoint> trackPoints,
+        Guid workoutId,
+        int splitIndex,
+        int splitStartIndex,
+        int lastSplitStartIndex,
+        double remainingDistance,
+        double splitDistanceMeters,
+        double distanceMeters,
+        int durationSeconds)
+    {
+        if (remainingDistance <= 0)
+        {
+            return;
+        }
+
+        if (remainingDistance >= splitDistanceMeters * 0.1 && splits.Count > 0)
+        {
+            EmitSplit(
+                splits,
+                trackPoints,
+                workoutId,
+                ref splitIndex,
+                splitStartIndex,
+                trackPoints.Count - 1,
+                remainingDistance,
+                distanceMeters,
+                durationSeconds);
+        }
+        else if (splits.Count > 0)
+        {
+            var lastSplit = splits[^1];
+            var totalLastSplitDistance = lastSplit.DistanceM + remainingDistance;
+
+            var mergedDuration = lastSplit.DurationS;
+            if (trackPoints.Count > 1 && trackPoints[^1].Time.HasValue)
+            {
+                var lastSplitStartTime = trackPoints[lastSplitStartIndex].Time;
+                if (lastSplitStartTime.HasValue && trackPoints[^1].Time.HasValue)
+                {
+                    mergedDuration = (int)(trackPoints[^1].Time!.Value - lastSplitStartTime.Value).TotalSeconds;
+                }
+            }
+            else if (distanceMeters > 0)
+            {
+                mergedDuration = (int)((totalLastSplitDistance / distanceMeters) * durationSeconds);
+            }
+
+            lastSplit.DistanceM = totalLastSplitDistance;
+            lastSplit.DurationS = mergedDuration;
+            lastSplit.PaceS = mergedDuration > 0 ? mergedDuration / (totalLastSplitDistance / 1000.0) : lastSplit.PaceS;
+        }
     }
 
     private static int SplitDuration(
@@ -272,6 +405,11 @@ public class TrackGeometry
         if (trackPoints[endIndex].Time.HasValue && trackPoints[startIndex].Time.HasValue)
         {
             return (int)(trackPoints[endIndex].Time!.Value - trackPoints[startIndex].Time!.Value).TotalSeconds;
+        }
+
+        if (distanceMeters <= 0)
+        {
+            return 0;
         }
 
         return (int)((splitDistance / distanceMeters) * durationSeconds);
@@ -293,7 +431,8 @@ public class TrackGeometry
             if (point.HeartRateBpm.HasValue ||
                 point.CadenceRpm.HasValue ||
                 point.PowerWatts.HasValue ||
-                point.TemperatureC.HasValue)
+                point.TemperatureC.HasValue ||
+                point.DistanceM.HasValue)
             {
                 timeSeries.Add(new WorkoutTimeSeries
                 {
@@ -304,7 +443,8 @@ public class TrackGeometry
                     CadenceRpm = point.CadenceRpm,
                     PowerWatts = point.PowerWatts,
                     TemperatureC = point.TemperatureC,
-                    ElevationM = point.Elevation
+                    ElevationM = point.Elevation,
+                    DistanceM = point.DistanceM
                 });
             }
         }

@@ -158,6 +158,35 @@ file: [workout file]
 
 Outcomes per file: `created`, `updated`, or `skipped` (plus error). Incomplete FIT/GPX JSON or missing raw bytes on a duplicate can `updated`; complete duplicates are `skipped`. HTTP JSON is unchanged from before intake.
 
+### Import HealthKit Workout
+
+Import one outdoor run from tempo-ios as schema-versioned JSON (feeds the same `PersistAsync` pipeline as file import):
+
+```http
+POST /workouts/import/healthkit
+Content-Type: application/json
+
+{
+  "schemaVersion": 1,
+  "healthKitUuid": "…",
+  "sourceApp": { "name": "Apple Watch", "bundleId": "com.apple.health" },
+  "summary": {
+    "startedAt": "2024-06-15T10:00:00Z",
+    "durationS": 1800,
+    "distanceM": 5000,
+    "isIndoor": false,
+    "energyKcal": 420,
+    "avgHeartRateBpm": 150,
+    "maxHeartRateBpm": 175
+  },
+  "trackPoints": [
+    { "t": "2024-06-15T10:00:00Z", "lat": 37.7749, "lon": -122.4194, "ele": 10, "hr": 140, "cad": 160, "pwr": 250, "distM": 0 }
+  ]
+}
+```
+
+Requires authentication. `schemaVersion` must be `1`. Summary distance/duration are authoritative. Outdoor runs require at least two track points with `lat`, `lon`, and `t`. Indoor runs (`isIndoor: true`) may omit GPS; provide `summary.distanceM > 0` and/or a cumulative `distM` stream for splits and time series. Summary-only indoor payloads persist stats without a route. A payload with neither summary distance nor a `distM` stream returns 400. Max 20,000 track points. Response shape matches single-file import (`created` / `updated` / `skipped` plus workout id). Raw payload is stored in `RawHealthKitData`. Duplicate check: `HealthKitUuid` identity first (repeat POST → `skipped` without re-deriving geometry); then start/distance/duration as a cross-source backstop (e.g. GPX already imported). Matching HealthKit imports stamp `HealthKitUuid` onto the existing row when it was null so list/detail can badge. `GET /workouts` and `GET /workouts/{id}` expose top-level `healthKitUuid` (nullable). Indoor imports leave `route` null when there are no GPS coordinates.
+
 ### Bulk Import
 
 The command center uploads a Strava ZIP in **512 KiB** chunks during [first-run onboarding](../getting-started/onboarding.md) or **Settings → Migrate / restore** (not the day-to-day Import page). Bruno/curl can still POST the whole ZIP.
@@ -346,6 +375,8 @@ Query parameters:
 - `page` - Page number (default: 1)
 - `pageSize` - Items per page (default: 20)
 
+List and detail responses include nullable `healthKitUuid` for tempo-ios already-imported badging.
+
 ### Get Workout
 
 Get detailed workout information:
@@ -354,6 +385,7 @@ Get detailed workout information:
 GET /workouts/{id}
 ```
 
+Detail includes top-level `healthKitUuid` when the workout was imported (or stamped) from HealthKit.
 ### Update Workout
 
 Update workout details (e.g., activity name, shoe assignment):

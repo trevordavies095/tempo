@@ -1,0 +1,452 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Tempo.Api.Data;
+using Tempo.Api.Services;
+using Tempo.Api.Tests.Infrastructure;
+using Xunit;
+
+namespace Tempo.Api.Tests.IntegrationTests;
+
+[Collection("Integration Tests")]
+public class ImportHealthKitWorkoutTests : IClassFixture<TempoWebApplicationFactory>
+{
+    private readonly TempoWebApplicationFactory _factory;
+
+    public ImportHealthKitWorkoutTests(TempoWebApplicationFactory factory)
+    {
+        _factory = factory;
+    }
+
+    private async Task EnsureCleanDatabaseAsync()
+    {
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        await TestDataSeeder.SafeClearAllDataAsync(db, preserveUsers: true);
+    }
+
+    private static HealthKitImportRequest CreateOutdoorPayload(
+        DateTime? startedAt = null,
+        double distanceM = 5000,
+        int durationS = 1800,
+        string uuid = "A1B2C3D4-E5F6-7890-ABCD-EF1234567890")
+    {
+        var start = startedAt ?? new DateTime(2024, 6, 15, 10, 0, 0, DateTimeKind.Utc);
+        return new HealthKitImportRequest
+        {
+            SchemaVersion = 1,
+            HealthKitUuid = uuid,
+            SourceApp = new HealthKitSourceAppDto { Name = "Apple Watch", BundleId = "com.apple.health" },
+            Summary = new HealthKitSummaryDto
+            {
+                StartedAt = start,
+                DurationS = durationS,
+                DistanceM = distanceM,
+                IsIndoor = false,
+                EnergyKcal = 420,
+                AvgHeartRateBpm = 150,
+                MaxHeartRateBpm = 175
+            },
+            TrackPoints = new List<HealthKitTrackPointDto>
+            {
+                new()
+                {
+                    T = start.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    Lat = 37.7749,
+                    Lon = -122.4194,
+                    Ele = 10,
+                    Hr = 140,
+                    Cad = 160,
+                    Pwr = 250,
+                    DistM = 0
+                },
+                new()
+                {
+                    T = start.AddMinutes(15).ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    Lat = 37.7849,
+                    Lon = -122.4094,
+                    Ele = 25,
+                    Hr = 155,
+                    Cad = 165,
+                    Pwr = 270,
+                    DistM = distanceM / 2
+                },
+                new()
+                {
+                    T = start.AddSeconds(durationS).ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    Lat = 37.7949,
+                    Lon = -122.3994,
+                    Ele = 40,
+                    Hr = 160,
+                    Cad = 168,
+                    Pwr = 280,
+                    DistM = distanceM
+                }
+            }
+        };
+    }
+
+    private static HealthKitImportRequest CreateIndoorPayload(
+        bool withDistanceStream,
+        DateTime? startedAt = null,
+        double distanceM = 5000,
+        int durationS = 1800,
+        string uuid = "B2C3D4E5-F6A7-8901-BCDE-F12345678901")
+    {
+        var start = startedAt ?? new DateTime(2024, 7, 1, 8, 0, 0, DateTimeKind.Utc);
+        var trackPoints = new List<HealthKitTrackPointDto>();
+        if (withDistanceStream)
+        {
+            for (var i = 0; i < 50; i++)
+            {
+                var progress = (double)i / 49;
+                trackPoints.Add(new HealthKitTrackPointDto
+                {
+                    T = start.AddSeconds(progress * durationS).ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    Hr = (byte)(140 + (i % 20)),
+                    Cad = (byte)(160 + (i % 10)),
+                    DistM = progress * distanceM
+                });
+            }
+        }
+
+        return new HealthKitImportRequest
+        {
+            SchemaVersion = 1,
+            HealthKitUuid = uuid,
+            SourceApp = new HealthKitSourceAppDto { Name = "Apple Watch", BundleId = "com.apple.health" },
+            Summary = new HealthKitSummaryDto
+            {
+                StartedAt = start,
+                DurationS = durationS,
+                DistanceM = distanceM,
+                IsIndoor = true,
+                EnergyKcal = 380,
+                AvgHeartRateBpm = 145,
+                MaxHeartRateBpm = 168
+            },
+            TrackPoints = trackPoints
+        };
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_ReturnsUnauthorized_WhenUnauthenticated()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = _factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/workouts/import/healthkit", CreateOutdoorPayload());
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_ReturnsBadRequest_WhenSchemaVersionInvalid()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateOutdoorPayload();
+        payload.SchemaVersion = 99;
+
+        var response = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("schemaVersion");
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_ReturnsBadRequest_WhenIndoorHasNoDistance()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateIndoorPayload(withDistanceStream: false);
+        payload.Summary!.DistanceM = 0;
+        payload.TrackPoints = new List<HealthKitTrackPointDto>
+        {
+            new() { T = "2024-07-01T08:00:00Z", Hr = 140 },
+            new() { T = "2024-07-01T08:15:00Z", Hr = 155 }
+        };
+
+        var response = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("distanceM");
+        body.Should().Contain("distM");
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_Indoor_WithDistanceStream_CreatesWorkoutWithoutRoute()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateIndoorPayload(withDistanceStream: true);
+        var expectedUuid = Guid.Parse("B2C3D4E5-F6A7-8901-BCDE-F12345678901");
+
+        var response = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("action").GetString().Should().Be("created");
+        var workoutId = doc.RootElement.GetProperty("id").GetGuid();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await db.Workouts.SingleAsync(w => w.Id == workoutId);
+            workout.Source.Should().Be("healthkit");
+            workout.HealthKitUuid.Should().Be(expectedUuid);
+            workout.DistanceM.Should().Be(5000);
+            workout.Weather.Should().BeNull();
+            (await db.WorkoutRoutes.CountAsync(r => r.WorkoutId == workoutId)).Should().Be(0);
+            (await db.WorkoutSplits.CountAsync(s => s.WorkoutId == workoutId)).Should().BeGreaterThan(0);
+            (await db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId && ts.HeartRateBpm != null))
+                .Should().BeGreaterThan(0);
+            (await db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId && ts.DistanceM != null))
+                .Should().BeGreaterThan(0);
+        }
+
+        var details = await client.GetAsync($"/workouts/{workoutId}");
+        details.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var detailsDoc = JsonDocument.Parse(await details.Content.ReadAsStringAsync());
+        detailsDoc.RootElement.GetProperty("healthKitUuid").GetGuid().Should().Be(expectedUuid);
+        detailsDoc.RootElement.TryGetProperty("route", out var routeProp).Should().BeTrue();
+        (routeProp.ValueKind == JsonValueKind.Null).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_Indoor_SummaryOnly_CreatesWorkoutWithoutRouteSplitsSeries()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateIndoorPayload(withDistanceStream: false);
+
+        var response = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("action").GetString().Should().Be("created");
+        var workoutId = doc.RootElement.GetProperty("id").GetGuid();
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var workout = await db.Workouts.SingleAsync(w => w.Id == workoutId);
+        workout.DistanceM.Should().Be(5000);
+        workout.AvgHeartRateBpm.Should().Be(145);
+        workout.Weather.Should().BeNull();
+        (await db.WorkoutRoutes.CountAsync(r => r.WorkoutId == workoutId)).Should().Be(0);
+        (await db.WorkoutSplits.CountAsync(s => s.WorkoutId == workoutId)).Should().Be(0);
+        (await db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_Indoor_SecondPost_IsSkipped()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateIndoorPayload(withDistanceStream: true);
+
+        var first = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var firstDoc = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        var id = firstDoc.RootElement.GetProperty("id").GetGuid();
+
+        var second = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var secondDoc = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+        secondDoc.RootElement.GetProperty("action").GetString().Should().Be("skipped");
+        secondDoc.RootElement.GetProperty("id").GetGuid().Should().Be(id);
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.Workouts.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_Outdoor_CreatesWorkoutWithRouteSplitsAndHr()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateOutdoorPayload();
+        var expectedUuid = Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
+
+        var response = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("action").GetString().Should().Be("created");
+        var workoutId = doc.RootElement.GetProperty("id").GetGuid();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await db.Workouts.SingleAsync(w => w.Id == workoutId);
+            workout.Source.Should().Be("healthkit");
+            workout.RawHealthKitData.Should().NotBeNullOrEmpty();
+            workout.HealthKitUuid.Should().Be(expectedUuid);
+            workout.DistanceM.Should().Be(5000);
+            workout.Calories.Should().Be(420);
+            (await db.WorkoutRoutes.CountAsync(r => r.WorkoutId == workoutId)).Should().Be(1);
+            (await db.WorkoutSplits.CountAsync(s => s.WorkoutId == workoutId)).Should().BeGreaterThan(0);
+            (await db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId && ts.HeartRateBpm != null))
+                .Should().BeGreaterThan(0);
+        }
+
+        var details = await client.GetAsync($"/workouts/{workoutId}");
+        details.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var detailsDoc = JsonDocument.Parse(await details.Content.ReadAsStringAsync());
+        detailsDoc.RootElement.GetProperty("healthKitUuid").GetGuid().Should().Be(expectedUuid);
+        detailsDoc.RootElement.TryGetProperty("rawHealthKitData", out _).Should().BeTrue();
+
+        var list = await client.GetAsync("/workouts?page=1&pageSize=20");
+        list.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var listDoc = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        listDoc.RootElement.GetProperty("items")[0].GetProperty("healthKitUuid").GetGuid()
+            .Should().Be(expectedUuid);
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_Skipped_WhenMatchingGpxAlreadyImported()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var start = new DateTime(2024, 6, 15, 10, 0, 0, DateTimeKind.Utc);
+        var gpx = CreateGpxMatching(start, durationMinutes: 30, distanceKmApprox: 5.0);
+        var formData = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes(gpx));
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/gpx+xml");
+        fileContent.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("form-data")
+        {
+            Name = "file",
+            FileName = "match.gpx"
+        };
+        formData.Add(fileContent);
+
+        var gpxResponse = await client.PostAsync("/workouts/import", formData);
+        gpxResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var gpxDoc = JsonDocument.Parse(await gpxResponse.Content.ReadAsStringAsync());
+        var gpxId = gpxDoc.RootElement.GetProperty("id").GetGuid();
+        var distanceM = gpxDoc.RootElement.GetProperty("distanceM").GetDouble();
+        var durationS = gpxDoc.RootElement.GetProperty("durationS").GetInt32();
+
+        var expectedUuid = Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
+        var payload = CreateOutdoorPayload(startedAt: start, distanceM: distanceM, durationS: durationS);
+        var hkResponse = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+
+        hkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var hkDoc = JsonDocument.Parse(await hkResponse.Content.ReadAsStringAsync());
+        hkDoc.RootElement.GetProperty("action").GetString().Should().Be("skipped");
+        hkDoc.RootElement.GetProperty("id").GetGuid().Should().Be(gpxId);
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.Workouts.CountAsync()).Should().Be(1);
+        var stored = await db.Workouts.SingleAsync();
+        stored.HealthKitUuid.Should().Be(expectedUuid);
+        stored.RawHealthKitData.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_SecondPost_IsSkipped()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateOutdoorPayload();
+        var expectedUuid = Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
+
+        var first = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var firstDoc = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        firstDoc.RootElement.GetProperty("action").GetString().Should().Be("created");
+        var id = firstDoc.RootElement.GetProperty("id").GetGuid();
+
+        var second = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var secondDoc = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+        secondDoc.RootElement.GetProperty("action").GetString().Should().Be("skipped");
+        secondDoc.RootElement.GetProperty("id").GetGuid().Should().Be(id);
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.Workouts.CountAsync()).Should().Be(1);
+        (await db.Workouts.SingleAsync()).HealthKitUuid.Should().Be(expectedUuid);
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_ParallelPosts_SameUuid_YieldOneWorkout()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client1 = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var client2 = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateOutdoorPayload(uuid: "CCCCCCCC-DDDD-EEEE-FFFF-000000000001");
+
+        var task1 = client1.PostAsJsonAsync("/workouts/import/healthkit", payload);
+        var task2 = client2.PostAsJsonAsync("/workouts/import/healthkit", payload);
+        var responses = await Task.WhenAll(task1, task2);
+
+        foreach (var response in responses)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var actions = new List<string>();
+        var ids = new List<Guid>();
+        foreach (var response in responses)
+        {
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            actions.Add(doc.RootElement.GetProperty("action").GetString()!);
+            ids.Add(doc.RootElement.GetProperty("id").GetGuid());
+        }
+
+        actions.Should().Contain("created");
+        actions.Should().OnlyContain(a => a == "created" || a == "skipped");
+        ids.Distinct().Should().HaveCount(1);
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.Workouts.CountAsync()).Should().Be(1);
+        (await db.Workouts.SingleAsync()).HealthKitUuid
+            .Should().Be(Guid.Parse("CCCCCCCC-DDDD-EEEE-FFFF-000000000001"));
+    }
+
+    /// <summary>
+    /// GPX whose parsed start/duration/distance can be matched for HealthKit duplicate tests.
+    /// Points spaced for ~5km over 30 minutes (same geometry approach as ImportWorkoutTests).
+    /// </summary>
+    private static string CreateGpxMatching(DateTime start, int durationMinutes, double distanceKmApprox)
+    {
+        var startLat = 37.7749;
+        var startLon = -122.4194;
+        var degreeIncrement = distanceKmApprox / 141.0;
+        var numPoints = 20;
+        var points = new List<string>();
+        for (var i = 0; i < numPoints; i++)
+        {
+            var progress = (double)i / (numPoints - 1);
+            var lat = startLat + (progress * degreeIncrement);
+            var lon = startLon + (progress * degreeIncrement);
+            var ele = 10.0 + (progress * 50.0);
+            var time = start.AddMinutes(progress * durationMinutes);
+            points.Add($@"      <trkpt lat=""{lat:F6}"" lon=""{lon:F6}"">
+        <ele>{ele:F1}</ele>
+        <time>{time:yyyy-MM-ddTHH:mm:ss}Z</time>
+      </trkpt>");
+        }
+
+        return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<gpx version=""1.1"" creator=""Tempo Test"" xmlns=""http://www.topografix.com/GPX/1/1"">
+  <trk>
+    <name>Test Run</name>
+    <trkseg>
+{string.Join("\n", points)}
+    </trkseg>
+  </trk>
+</gpx>";
+    }
+}
