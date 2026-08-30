@@ -210,6 +210,40 @@ public class WorkoutIntakeTests : IDisposable
         (await _db.Workouts.CountAsync()).Should().Be(0);
     }
 
+    [Fact]
+    public async Task PersistAsync_Created_FromDecodedWorkoutWithoutFileAdapter()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var stream = CreateGpxStream();
+        var rawFileData = stream.ToArray();
+        stream.Position = 0;
+        var parsed = _gpxParser.ParseGpx(stream);
+
+        var decoded = new DecodedWorkout
+        {
+            StartedAt = parsed.StartTime,
+            DurationS = parsed.DurationSeconds,
+            DistanceM = parsed.DistanceMeters,
+            TrackPoints = parsed.TrackPoints,
+            SeriesPoints = null,
+            Name = parsed.Name,
+            RawGpxDataJson = parsed.RawGpxDataJson,
+            RawFileData = rawFileData,
+            RawFileName = "morning.gpx",
+            RawFileType = "gpx"
+        };
+
+        var result = await _intake.PersistAsync(decoded);
+
+        result.Action.Should().Be("created");
+        result.Workout.Should().NotBeNull();
+        result.SplitsCount.Should().BeGreaterThan(0);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        _weather.CallCount.Should().Be(1);
+        _relativeEffort.CallCount.Should().Be(1);
+        _bestEfforts.CallCount.Should().Be(1);
+    }
+
     private static MemoryStream CreateGpxStream()
     {
         var xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>

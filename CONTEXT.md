@@ -33,7 +33,7 @@ In-process derive of elevation gain, `WorkoutRoute`, `WorkoutSplit`s, and `Worko
 _Avoid_: GpxParser splits, GPS smoothing (as the module name)
 
 **Workout intake**:
-The persist pipeline behind `POST /workouts/import` and Strava bulk per-file processing: parse, geometry, duplicate policy, weather, relative effort, best efforts. Not the HTTP module and not Settings ZIP restore.
+The persist pipeline behind `POST /workouts/import` and Strava bulk per-file processing: decode adapter (GPX/FIT) then `PersistAsync` (geometry, duplicate policy, weather, relative effort, best efforts). Persist is the single pipeline; new formats enter via decoded input, not a second pipeline. Not the HTTP module and not Settings ZIP restore.
 _Avoid_: import endpoint (when meaning this module), bulk persist
 
 **Import job**:
