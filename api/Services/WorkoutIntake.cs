@@ -231,7 +231,10 @@ public class WorkoutIntake
             await AssignDefaultShoeAsync(workout);
 
             _db.Workouts.Add(workout);
-            _db.WorkoutRoutes.Add(route);
+            if (geometry.HasRouteCoordinates)
+            {
+                _db.WorkoutRoutes.Add(route);
+            }
             _db.WorkoutSplits.AddRange(splits);
             if (timeSeries.Count > 0)
             {
@@ -450,7 +453,8 @@ public class WorkoutIntake
             _db.WorkoutSplits.RemoveRange(oldSplits);
             _db.WorkoutSplits.AddRange(geometry.Splits);
 
-            if (existingWorkout.Route == null || string.IsNullOrWhiteSpace(existingWorkout.Route.RouteGeoJson))
+            if (geometry.HasRouteCoordinates &&
+                (existingWorkout.Route == null || string.IsNullOrWhiteSpace(existingWorkout.Route.RouteGeoJson)))
             {
                 if (existingWorkout.Route == null)
                 {

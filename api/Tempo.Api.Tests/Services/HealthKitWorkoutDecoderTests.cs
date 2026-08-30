@@ -87,15 +87,63 @@ public class HealthKitWorkoutDecoderTests
     }
 
     [Fact]
-    public void Decode_RejectsIndoorWorkouts()
+    public void Decode_Indoor_WithDistanceStream_Succeeds()
     {
-        var request = ValidOutdoorRequest();
-        request.Summary!.IsIndoor = true;
+        var request = ValidIndoorRequestWithDistanceStream();
+
+        var result = _decoder.Decode(request);
+
+        result.Success.Should().BeTrue();
+        result.Decoded!.DistanceM.Should().Be(5000);
+        result.Decoded.DurationS.Should().Be(1800);
+        result.Decoded.TrackPoints.Should().HaveCount(3);
+        result.Decoded.TrackPoints.Should().OnlyContain(p => !p.HasPosition);
+        result.Decoded.TrackPoints[0].HeartRateBpm.Should().Be(140);
+        result.Decoded.TrackPoints[0].DistanceM.Should().Be(0);
+        result.Overlay!.Source.Should().Be("healthkit");
+    }
+
+    [Fact]
+    public void Decode_Indoor_SummaryOnly_Succeeds()
+    {
+        var request = ValidIndoorRequestWithDistanceStream();
+        request.TrackPoints = new List<HealthKitTrackPointDto>();
+
+        var result = _decoder.Decode(request);
+
+        result.Success.Should().BeTrue();
+        result.Decoded!.DistanceM.Should().Be(5000);
+        result.Decoded.TrackPoints.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Decode_Indoor_UsesMaxDistM_WhenSummaryDistanceMissing()
+    {
+        var request = ValidIndoorRequestWithDistanceStream();
+        request.Summary!.DistanceM = 0;
+
+        var result = _decoder.Decode(request);
+
+        result.Success.Should().BeTrue();
+        result.Decoded!.DistanceM.Should().Be(5000);
+    }
+
+    [Fact]
+    public void Decode_Indoor_RejectsWhenNoDistance()
+    {
+        var request = ValidIndoorRequestWithDistanceStream();
+        request.Summary!.DistanceM = 0;
+        request.TrackPoints = new List<HealthKitTrackPointDto>
+        {
+            new() { T = "2024-06-15T10:00:00Z", Hr = 140 },
+            new() { T = "2024-06-15T10:15:00Z", Hr = 155 }
+        };
 
         var result = _decoder.Decode(request);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("Indoor");
+        result.ErrorMessage.Should().Contain("summary.distanceM");
+        result.ErrorMessage.Should().Contain("distM");
     }
 
     [Fact]
@@ -206,6 +254,29 @@ public class HealthKitWorkoutDecoderTests
                 Pwr = 280,
                 DistM = 5000
             }
+        }
+    };
+
+    private static HealthKitImportRequest ValidIndoorRequestWithDistanceStream() => new()
+    {
+        SchemaVersion = 1,
+        HealthKitUuid = "B2C3D4E5-F6A7-8901-BCDE-F12345678901",
+        SourceApp = new HealthKitSourceAppDto { Name = "Apple Watch", BundleId = "com.apple.health" },
+        Summary = new HealthKitSummaryDto
+        {
+            StartedAt = new DateTime(2024, 6, 15, 10, 0, 0, DateTimeKind.Utc),
+            DurationS = 1800,
+            DistanceM = 5000,
+            IsIndoor = true,
+            EnergyKcal = 380,
+            AvgHeartRateBpm = 145,
+            MaxHeartRateBpm = 168
+        },
+        TrackPoints = new List<HealthKitTrackPointDto>
+        {
+            new() { T = "2024-06-15T10:00:00Z", Hr = 140, Cad = 160, DistM = 0 },
+            new() { T = "2024-06-15T10:15:00Z", Hr = 155, Cad = 165, DistM = 2500 },
+            new() { T = "2024-06-15T10:30:00Z", Hr = 160, Cad = 168, DistM = 5000 }
         }
     };
 }

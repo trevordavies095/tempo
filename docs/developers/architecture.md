@@ -55,7 +55,7 @@ Each extension method:
 
 - `GpxParserService` / `FitParserService` — decode adapters: `TrackPoint`s, raw JSON, optional device summary (and GPX name). They do not expose `CalculateSplits` and do not hand FIT `RecordMesg` to callers. The FIT SDK is compiled from `api/Libraries/FitSDK/` (not a NuGet package).
 - `StravaCsvParserService` — parses Strava export CSV metadata for bulk ZIP import.
-- `TrackGeometry` — in-process: `TrackPoint`s in; elevation gain, `WorkoutRoute`, `WorkoutSplit`s, `WorkoutTimeSeries` out. No `DbContext`.
+- `TrackGeometry` — in-process: `TrackPoint`s in; elevation gain, `WorkoutRoute` (empty when no GPS), `WorkoutSplit`s (Haversine or cumulative `DistanceM` stream), `WorkoutTimeSeries` out. No `DbContext`.
 - `WorkoutIntake` — decode adapters (GPX/FIT file → `DecodedWorkout`; HealthKit JSON via `HealthKitWorkoutDecoder`) feed `PersistAsync` (geometry, duplicate policy, default shoe, weather, relative effort, incremental best efforts). Persist is the single pipeline; HTTP import is a thin adapter. Bulk calls intake per activity file.
 - `TrackPointRehydration` — stored Workout fields → `TrackPoint`s for crop and split recalc.
 - `ImportJobService` — create/chunk/complete/current/get/cancel, one-active-job rules, archive staging under `media/imports/{jobId}/`.
@@ -116,7 +116,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 1. File uploaded to `POST /workouts/import`, or HealthKit JSON posted to `POST /workouts/import/healthkit`
 2. HTTP maps `IFormFile` to `WorkoutIntake` (stream + filename), or `HealthKitWorkoutDecoder` maps JSON → `DecodedWorkout` + overlay
 3. File decode adapter: GPX or FIT → `DecodedWorkout` (`TrackPoint`s, raw JSON, optional device summary); HealthKit skips file parse
-4. `PersistAsync` → `TrackGeometry.Derive` builds elevation, route, splits, and time series (device summary wins for distance/duration when present)
+4. `PersistAsync` → `TrackGeometry.Derive` builds elevation, route (omitted when there are no GPS coordinates), splits (Haversine or DistM stream), and time series (device summary wins for distance/duration when present)
 5. Duplicate policy: HealthKit UUID identity first when present (`skipped` before geometry/enrichment); then same key (`StartedAt`, `DistanceM`, `DurationS`). Incomplete raw JSON/bytes can `updated`; complete duplicates `skipped` (HealthKit vs complete GPX/FIT is always `skipped`, but may stamp `HealthKitUuid` onto the existing row for client badging)
 6. Weather, default shoe, relative effort, incremental best efforts
 7. Workout persisted with JSONB raw data and `WorkoutRoute`

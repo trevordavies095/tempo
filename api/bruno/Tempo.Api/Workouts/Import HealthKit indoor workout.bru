@@ -1,0 +1,51 @@
+meta {
+  name: Import HealthKit indoor workout
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/workouts/import/healthkit
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "schemaVersion": 1,
+    "healthKitUuid": "B2C3D4E5-F6A7-8901-BCDE-F12345678901",
+    "sourceApp": {
+      "name": "Apple Watch",
+      "bundleId": "com.apple.health"
+    },
+    "summary": {
+      "startedAt": "2024-07-01T08:00:00Z",
+      "durationS": 1800,
+      "distanceM": 5000,
+      "isIndoor": true,
+      "energyKcal": 380,
+      "avgHeartRateBpm": 145,
+      "maxHeartRateBpm": 168
+    },
+    "trackPoints": [
+      {
+        "t": "2024-07-01T08:00:00Z",
+        "hr": 140,
+        "cad": 160,
+        "distM": 0
+      },
+      {
+        "t": "2024-07-01T08:15:00Z",
+        "hr": 155,
+        "cad": 165,
+        "distM": 2500
+      },
+      {
+        "t": "2024-07-01T08:30:00Z",
+        "hr": 160,
+        "cad": 168,
+        "distM": 5000
+      }
+    ]
+  }
+}

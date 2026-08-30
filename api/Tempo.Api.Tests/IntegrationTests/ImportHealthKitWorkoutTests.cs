@@ -90,6 +90,49 @@ public class ImportHealthKitWorkoutTests : IClassFixture<TempoWebApplicationFact
         };
     }
 
+    private static HealthKitImportRequest CreateIndoorPayload(
+        bool withDistanceStream,
+        DateTime? startedAt = null,
+        double distanceM = 5000,
+        int durationS = 1800,
+        string uuid = "B2C3D4E5-F6A7-8901-BCDE-F12345678901")
+    {
+        var start = startedAt ?? new DateTime(2024, 7, 1, 8, 0, 0, DateTimeKind.Utc);
+        var trackPoints = new List<HealthKitTrackPointDto>();
+        if (withDistanceStream)
+        {
+            for (var i = 0; i < 50; i++)
+            {
+                var progress = (double)i / 49;
+                trackPoints.Add(new HealthKitTrackPointDto
+                {
+                    T = start.AddSeconds(progress * durationS).ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    Hr = (byte)(140 + (i % 20)),
+                    Cad = (byte)(160 + (i % 10)),
+                    DistM = progress * distanceM
+                });
+            }
+        }
+
+        return new HealthKitImportRequest
+        {
+            SchemaVersion = 1,
+            HealthKitUuid = uuid,
+            SourceApp = new HealthKitSourceAppDto { Name = "Apple Watch", BundleId = "com.apple.health" },
+            Summary = new HealthKitSummaryDto
+            {
+                StartedAt = start,
+                DurationS = durationS,
+                DistanceM = distanceM,
+                IsIndoor = true,
+                EnergyKcal = 380,
+                AvgHeartRateBpm = 145,
+                MaxHeartRateBpm = 168
+            },
+            TrackPoints = trackPoints
+        };
+    }
+
     [Fact]
     public async Task ImportHealthKit_ReturnsUnauthorized_WhenUnauthenticated()
     {
@@ -117,18 +160,111 @@ public class ImportHealthKitWorkoutTests : IClassFixture<TempoWebApplicationFact
     }
 
     [Fact]
-    public async Task ImportHealthKit_ReturnsBadRequest_WhenIndoor()
+    public async Task ImportHealthKit_ReturnsBadRequest_WhenIndoorHasNoDistance()
     {
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
-        var payload = CreateOutdoorPayload();
-        payload.Summary!.IsIndoor = true;
+        var payload = CreateIndoorPayload(withDistanceStream: false);
+        payload.Summary!.DistanceM = 0;
+        payload.TrackPoints = new List<HealthKitTrackPointDto>
+        {
+            new() { T = "2024-07-01T08:00:00Z", Hr = 140 },
+            new() { T = "2024-07-01T08:15:00Z", Hr = 155 }
+        };
 
         var response = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("Indoor");
+        body.Should().Contain("distanceM");
+        body.Should().Contain("distM");
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_Indoor_WithDistanceStream_CreatesWorkoutWithoutRoute()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateIndoorPayload(withDistanceStream: true);
+        var expectedUuid = Guid.Parse("B2C3D4E5-F6A7-8901-BCDE-F12345678901");
+
+        var response = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("action").GetString().Should().Be("created");
+        var workoutId = doc.RootElement.GetProperty("id").GetGuid();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await db.Workouts.SingleAsync(w => w.Id == workoutId);
+            workout.Source.Should().Be("healthkit");
+            workout.HealthKitUuid.Should().Be(expectedUuid);
+            workout.DistanceM.Should().Be(5000);
+            workout.Weather.Should().BeNull();
+            (await db.WorkoutRoutes.CountAsync(r => r.WorkoutId == workoutId)).Should().Be(0);
+            (await db.WorkoutSplits.CountAsync(s => s.WorkoutId == workoutId)).Should().BeGreaterThan(0);
+            (await db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId && ts.HeartRateBpm != null))
+                .Should().BeGreaterThan(0);
+            (await db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId && ts.DistanceM != null))
+                .Should().BeGreaterThan(0);
+        }
+
+        var details = await client.GetAsync($"/workouts/{workoutId}");
+        details.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var detailsDoc = JsonDocument.Parse(await details.Content.ReadAsStringAsync());
+        detailsDoc.RootElement.GetProperty("healthKitUuid").GetGuid().Should().Be(expectedUuid);
+        detailsDoc.RootElement.TryGetProperty("route", out var routeProp).Should().BeTrue();
+        (routeProp.ValueKind == JsonValueKind.Null).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_Indoor_SummaryOnly_CreatesWorkoutWithoutRouteSplitsSeries()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateIndoorPayload(withDistanceStream: false);
+
+        var response = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("action").GetString().Should().Be("created");
+        var workoutId = doc.RootElement.GetProperty("id").GetGuid();
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var workout = await db.Workouts.SingleAsync(w => w.Id == workoutId);
+        workout.DistanceM.Should().Be(5000);
+        workout.AvgHeartRateBpm.Should().Be(145);
+        workout.Weather.Should().BeNull();
+        (await db.WorkoutRoutes.CountAsync(r => r.WorkoutId == workoutId)).Should().Be(0);
+        (await db.WorkoutSplits.CountAsync(s => s.WorkoutId == workoutId)).Should().Be(0);
+        (await db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_Indoor_SecondPost_IsSkipped()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateIndoorPayload(withDistanceStream: true);
+
+        var first = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var firstDoc = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        var id = firstDoc.RootElement.GetProperty("id").GetGuid();
+
+        var second = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var secondDoc = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+        secondDoc.RootElement.GetProperty("action").GetString().Should().Be("skipped");
+        secondDoc.RootElement.GetProperty("id").GetGuid().Should().Be(id);
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.Workouts.CountAsync()).Should().Be(1);
     }
 
     [Fact]

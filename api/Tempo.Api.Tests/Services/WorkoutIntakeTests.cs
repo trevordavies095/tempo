@@ -379,6 +379,80 @@ public class WorkoutIntakeTests : IDisposable
         result.Workout.DurationS.Should().Be(1800);
     }
 
+    [Fact]
+    public async Task PersistAsync_HealthKitIndoor_WithDistanceStream_PersistsSplitsSeriesNoRoute()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateHealthKitIndoorDecoded(withDistanceStream: true);
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        result.Workout.Should().NotBeNull();
+        result.SplitsCount.Should().BeGreaterThan(0);
+
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Source.Should().Be("healthkit");
+        stored.RawHealthKitData.Should().NotBeNullOrEmpty();
+        stored.DistanceM.Should().Be(5000);
+        stored.AvgHeartRateBpm.Should().NotBeNull();
+        stored.Calories.Should().Be(380);
+        stored.Weather.Should().BeNull();
+        (await _db.WorkoutRoutes.CountAsync(r => r.WorkoutId == stored.Id)).Should().Be(0);
+        (await _db.WorkoutSplits.CountAsync(s => s.WorkoutId == stored.Id)).Should().BeGreaterThan(0);
+        (await _db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == stored.Id && ts.HeartRateBpm != null))
+            .Should().BeGreaterThan(0);
+        (await _db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == stored.Id && ts.DistanceM != null))
+            .Should().BeGreaterThan(0);
+        _weather.CallCount.Should().Be(0);
+        _relativeEffort.CallCount.Should().Be(1);
+        _bestEfforts.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKitIndoor_SummaryOnly_PersistsStatsWithoutRouteSplitsSeries()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateHealthKitIndoorDecoded(withDistanceStream: false);
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        result.SplitsCount.Should().Be(0);
+
+        var stored = await _db.Workouts.SingleAsync();
+        stored.DistanceM.Should().Be(5000);
+        stored.DurationS.Should().Be(1800);
+        stored.AvgHeartRateBpm.Should().Be(145);
+        stored.MaxHeartRateBpm.Should().Be(168);
+        stored.Calories.Should().Be(380);
+        stored.Weather.Should().BeNull();
+        (await _db.WorkoutRoutes.CountAsync(r => r.WorkoutId == stored.Id)).Should().Be(0);
+        (await _db.WorkoutSplits.CountAsync(s => s.WorkoutId == stored.Id)).Should().Be(0);
+        (await _db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == stored.Id)).Should().Be(0);
+        _weather.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKitIndoor_Skipped_WhenSameUuidPostedTwice()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var uuid = Guid.Parse("DDDDDDDD-EEEE-FFFF-AAAA-BBBBBBBBBBBB");
+        var (decoded, overlay) = CreateHealthKitIndoorDecoded(withDistanceStream: true, healthKitUuid: uuid);
+
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+
+        _weather.Reset();
+        var (decoded2, overlay2) = CreateHealthKitIndoorDecoded(withDistanceStream: true, healthKitUuid: uuid);
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(first.Workout!.Id);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        _weather.CallCount.Should().Be(0);
+    }
+
     private static (DecodedWorkout Decoded, WorkoutIntakeOverlay Overlay) CreateHealthKitOutdoorDecoded(
         System.DateTime? startedAt = null,
         int durationS = 1800,
@@ -442,6 +516,60 @@ public class WorkoutIntakeTests : IDisposable
             AvgHeartRateBpm = 150,
             MaxHeartRateBpm = 175,
             EnergyKcal = 420
+        };
+
+        return (decoded, overlay);
+    }
+
+    private static (DecodedWorkout Decoded, WorkoutIntakeOverlay Overlay) CreateHealthKitIndoorDecoded(
+        bool withDistanceStream,
+        System.DateTime? startedAt = null,
+        int durationS = 1800,
+        double distanceM = 5000,
+        Guid? healthKitUuid = null)
+    {
+        var start = startedAt ?? new System.DateTime(2024, 7, 1, 8, 0, 0, System.DateTimeKind.Utc);
+        var uuid = healthKitUuid ?? Guid.Parse("B2C3D4E5-F6A7-8901-BCDE-F12345678901");
+
+        List<TrackPoint> trackPoints;
+        if (withDistanceStream)
+        {
+            trackPoints = new List<TrackPoint>();
+            for (var i = 0; i < 50; i++)
+            {
+                var progress = (double)i / 49;
+                trackPoints.Add(new TrackPoint
+                {
+                    Time = start.AddSeconds(progress * durationS),
+                    DistanceM = progress * distanceM,
+                    HeartRateBpm = (byte)(140 + (i % 20)),
+                    CadenceRpm = (byte)(160 + (i % 10))
+                });
+            }
+        }
+        else
+        {
+            trackPoints = new List<TrackPoint>();
+        }
+
+        var decoded = new DecodedWorkout
+        {
+            StartedAt = start,
+            DurationS = durationS,
+            DistanceM = distanceM,
+            TrackPoints = trackPoints,
+            SeriesPoints = null
+        };
+
+        var overlay = new WorkoutIntakeOverlay
+        {
+            Source = "healthkit",
+            Device = "Apple Watch",
+            HealthKitUuid = uuid,
+            RawHealthKitDataJson = "{\"schemaVersion\":1,\"healthKitUuid\":\"" + uuid + "\",\"summary\":{\"isIndoor\":true}}",
+            AvgHeartRateBpm = 145,
+            MaxHeartRateBpm = 168,
+            EnergyKcal = 380
         };
 
         return (decoded, overlay);

@@ -60,16 +60,6 @@ public class HealthKitWorkoutDecoder
             return Fail("summary.durationS must be positive");
         }
 
-        if (summary.DistanceM <= 0)
-        {
-            return Fail("summary.distanceM must be positive");
-        }
-
-        if (summary.IsIndoor)
-        {
-            return Fail("Indoor HealthKit workouts are not supported yet");
-        }
-
         var points = request.TrackPoints ?? new List<HealthKitTrackPointDto>();
         if (points.Count > MaxTrackPoints)
         {
@@ -88,10 +78,43 @@ public class HealthKitWorkoutDecoder
             trackPoints.Add(mapped);
         }
 
-        var positionedWithTime = trackPoints.Count(p => p.HasPosition && p.Time.HasValue);
-        if (positionedWithTime < 2)
+        double distanceM;
+        if (summary.IsIndoor)
         {
-            return Fail("Outdoor workouts require at least two trackPoints with lat, lon, and t");
+            var maxDistM = trackPoints
+                .Where(p => p.DistanceM.HasValue && p.DistanceM.Value > 0)
+                .Select(p => p.DistanceM!.Value)
+                .DefaultIfEmpty(0)
+                .Max();
+
+            if (summary.DistanceM > 0)
+            {
+                distanceM = summary.DistanceM;
+            }
+            else if (maxDistM > 0)
+            {
+                distanceM = maxDistM;
+            }
+            else
+            {
+                return Fail(
+                    "Indoor workouts require summary.distanceM > 0 or at least one trackPoint with distM > 0");
+            }
+        }
+        else
+        {
+            if (summary.DistanceM <= 0)
+            {
+                return Fail("summary.distanceM must be positive");
+            }
+
+            distanceM = summary.DistanceM;
+
+            var positionedWithTime = trackPoints.Count(p => p.HasPosition && p.Time.HasValue);
+            if (positionedWithTime < 2)
+            {
+                return Fail("Outdoor workouts require at least two trackPoints with lat, lon, and t");
+            }
         }
 
         var serializeOptions = new JsonSerializerOptions(JsonUtils.DefaultOptions)
@@ -107,7 +130,7 @@ public class HealthKitWorkoutDecoder
             {
                 StartedAt = summary.StartedAt,
                 DurationS = summary.DurationS,
-                DistanceM = summary.DistanceM,
+                DistanceM = distanceM,
                 TrackPoints = trackPoints,
                 SeriesPoints = null,
                 Name = null,

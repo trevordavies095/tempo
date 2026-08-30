@@ -76,17 +76,17 @@ public class TrackPointRehydration
             var trackPoints = new List<TrackPoint>();
             foreach (var pointElement in trackPointsElement.EnumerateArray())
             {
-                if (!pointElement.TryGetProperty("lat", out var latElement) ||
-                    !pointElement.TryGetProperty("lon", out var lonElement))
-                {
-                    continue;
-                }
+                var point = new TrackPoint();
 
-                var point = new TrackPoint
+                var hasLat = pointElement.TryGetProperty("lat", out var latElement) &&
+                             latElement.ValueKind == JsonValueKind.Number;
+                var hasLon = pointElement.TryGetProperty("lon", out var lonElement) &&
+                             lonElement.ValueKind == JsonValueKind.Number;
+                if (hasLat && hasLon)
                 {
-                    Latitude = latElement.GetDouble(),
-                    Longitude = lonElement.GetDouble()
-                };
+                    point.Latitude = latElement.GetDouble();
+                    point.Longitude = lonElement.GetDouble();
+                }
 
                 if (pointElement.TryGetProperty("ele", out var eleElement) && eleElement.ValueKind == JsonValueKind.Number)
                 {
@@ -135,6 +135,21 @@ public class TrackPointRehydration
                 if (pointElement.TryGetProperty("distM", out var distElement) && distElement.ValueKind == JsonValueKind.Number)
                 {
                     point.DistanceM = distElement.GetDouble();
+                }
+
+                // Keep GPS points and GPS-free samples that carry a timestamp plus distance or sensors
+                // (indoor HealthKit / FIT series). Skip completely empty objects.
+                var hasPosition = point.HasPosition;
+                var hasTimedPayload = point.Time.HasValue &&
+                    (point.DistanceM.HasValue ||
+                     point.HeartRateBpm.HasValue ||
+                     point.CadenceRpm.HasValue ||
+                     point.PowerWatts.HasValue ||
+                     point.TemperatureC.HasValue ||
+                     point.Elevation.HasValue);
+                if (!hasPosition && !hasTimedPayload)
+                {
+                    continue;
                 }
 
                 trackPoints.Add(point);
