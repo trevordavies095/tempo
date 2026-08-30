@@ -1034,7 +1034,7 @@
           "Workouts"
         ],
         "summary": "Import a HealthKit workout from tempo-ios (JSON decode adapter → PersistAsync).",
-        "description": "Accepts a schema-versioned HealthKit workout JSON document from tempo-ios. Outdoor runs only in this release; feeds the same PersistAsync pipeline as file import.",
+        "description": "Accepts a schema-versioned HealthKit workout JSON document from tempo-ios (outdoor GPS or indoor DistM/summary). Feeds the same PersistAsync pipeline as file import.",
         "operationId": "ImportHealthKitWorkout",
         "requestBody": {
           "content": {

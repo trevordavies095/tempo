@@ -2252,7 +2252,7 @@ public static class WorkoutsEndpoints
             .Produces(400)
             .Produces(401)
             .WithSummary("Import HealthKit workout")
-            .WithDescription("Accepts a schema-versioned HealthKit workout JSON document from tempo-ios. Outdoor runs only in this release; feeds the same PersistAsync pipeline as file import.");
+            .WithDescription("Accepts a schema-versioned HealthKit workout JSON document from tempo-ios (outdoor GPS or indoor DistM/summary). Feeds the same PersistAsync pipeline as file import.");
 
         group.MapGet("", ListWorkouts)
         .WithName("ListWorkouts")
