@@ -92,6 +92,11 @@ public class Workout
     [Column(TypeName = "text")]
     public string? Device { get; set; }  // Device used to record workout (e.g., "Garmin Forerunner 945", "Apple Watch Series 9")
 
+    /// <summary>
+    /// HKWorkout.uuid from tempo-ios HealthKit import. Unique when set; null for file imports.
+    /// </summary>
+    public Guid? HealthKitUuid { get; set; }
+
     [Column(TypeName = "bytea")]
     public byte[]? RawFileData { get; set; }
 

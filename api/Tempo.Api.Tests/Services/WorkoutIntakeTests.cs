@@ -259,6 +259,7 @@ public class WorkoutIntakeTests : IDisposable
         var stored = await _db.Workouts.SingleAsync();
         stored.Source.Should().Be("healthkit");
         stored.RawHealthKitData.Should().NotBeNullOrEmpty();
+        stored.HealthKitUuid.Should().Be(Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890"));
         stored.DistanceM.Should().Be(5000);
         stored.DurationS.Should().Be(1800);
         stored.Calories.Should().Be(420);
@@ -290,7 +291,38 @@ public class WorkoutIntakeTests : IDisposable
         second.Action.Should().Be("skipped");
         second.Workout!.Id.Should().Be(first.Workout!.Id);
         (await _db.Workouts.CountAsync()).Should().Be(1);
+        (await _db.Workouts.SingleAsync()).HealthKitUuid.Should().Be(Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890"));
         _weather.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKit_Skipped_WhenSameUuidDifferentStats()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var uuid = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded(distanceM: 5000, healthKitUuid: uuid);
+
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        // Same UUID, different distance/duration — identity wins over stats.
+        var (decoded2, overlay2) = CreateHealthKitOutdoorDecoded(
+            startedAt: decoded.StartedAt.AddHours(1),
+            durationS: 2400,
+            distanceM: 10000,
+            healthKitUuid: uuid);
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(first.Workout!.Id);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        _weather.CallCount.Should().Be(0);
+        _relativeEffort.CallCount.Should().Be(0);
+        _bestEfforts.CallCount.Should().Be(0);
     }
 
     [Fact]
@@ -302,10 +334,12 @@ public class WorkoutIntakeTests : IDisposable
         created.Action.Should().Be("created");
         var gpx = created.Workout!;
 
+        var uuid = Guid.Parse("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE");
         var (decoded, overlay) = CreateHealthKitOutdoorDecoded(
             startedAt: gpx.StartedAt,
             durationS: gpx.DurationS,
-            distanceM: gpx.DistanceM);
+            distanceM: gpx.DistanceM,
+            healthKitUuid: uuid);
 
         var result = await _intake.PersistAsync(decoded, overlay);
 
@@ -315,6 +349,20 @@ public class WorkoutIntakeTests : IDisposable
         var stored = await _db.Workouts.SingleAsync();
         stored.RawGpxData.Should().NotBeNullOrEmpty();
         stored.RawHealthKitData.Should().BeNull();
+        stored.HealthKitUuid.Should().Be(uuid);
+    }
+
+    [Fact]
+    public async Task PersistAsync_FileImport_DoesNotRequireHealthKitUuid()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var stream = CreateGpxStream();
+
+        var result = await _intake.ProcessAsync(stream, "morning.gpx");
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.HealthKitUuid.Should().BeNull();
     }
 
     [Fact]
@@ -334,9 +382,11 @@ public class WorkoutIntakeTests : IDisposable
     private static (DecodedWorkout Decoded, WorkoutIntakeOverlay Overlay) CreateHealthKitOutdoorDecoded(
         System.DateTime? startedAt = null,
         int durationS = 1800,
-        double distanceM = 5000)
+        double distanceM = 5000,
+        Guid? healthKitUuid = null)
     {
         var start = startedAt ?? new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var uuid = healthKitUuid ?? Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
         var trackPoints = new List<TrackPoint>
         {
             new()
@@ -387,7 +437,8 @@ public class WorkoutIntakeTests : IDisposable
         {
             Source = "healthkit",
             Device = "Apple Watch",
-            RawHealthKitDataJson = """{"schemaVersion":1,"healthKitUuid":"test-uuid"}""",
+            HealthKitUuid = uuid,
+            RawHealthKitDataJson = $$"""{"schemaVersion":1,"healthKitUuid":"{{uuid}}"}""",
             AvgHeartRateBpm = 150,
             MaxHeartRateBpm = 175,
             EnergyKcal = 420

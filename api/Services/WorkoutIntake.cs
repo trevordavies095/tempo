@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Utils;
@@ -12,6 +14,7 @@ public sealed class WorkoutIntakeOverlay
     public string? Notes { get; init; }
     public string? RawStravaDataJson { get; init; }
     public string? RawHealthKitDataJson { get; init; }
+    public Guid? HealthKitUuid { get; init; }
     public string? Source { get; init; }
     public string? Device { get; init; }
     public byte? AvgHeartRateBpm { get; init; }
@@ -156,11 +159,40 @@ public class WorkoutIntake
 
             var calculated = ExtractCalculatedMetrics(decoded.RawGpxDataJson);
 
+            // HealthKit UUID identity check first — short-circuit before geometry/enrichment.
+            if (overlay?.HealthKitUuid is Guid healthKitUuid)
+            {
+                var byUuid = await WorkoutQueryService.FindByHealthKitUuidAsync(_db, healthKitUuid);
+                if (byUuid != null)
+                {
+                    _logger.LogInformation(
+                        "Skipped duplicate workout (HealthKit UUID match): {HealthKitUuid}",
+                        healthKitUuid);
+
+                    return new WorkoutIntakeResult
+                    {
+                        Action = "skipped",
+                        Workout = byUuid
+                    };
+                }
+            }
+
             var existingWorkout = await WorkoutQueryService.FindDuplicateWorkoutAsync(
                 _db, startedAtUtc, distanceMeters, durationSeconds);
 
             if (existingWorkout != null)
             {
+                var stampedOwner = await TryStampHealthKitUuidAsync(existingWorkout, overlay);
+                if (stampedOwner != null && stampedOwner.Id != existingWorkout.Id)
+                {
+                    // UUID already owned by another workout — identity wins over stats match.
+                    return new WorkoutIntakeResult
+                    {
+                        Action = "skipped",
+                        Workout = stampedOwner
+                    };
+                }
+
                 return await HandleDuplicateAsync(existingWorkout, decoded, overlay, startedAtUtc);
             }
 
@@ -205,7 +237,30 @@ public class WorkoutIntake
             {
                 _db.WorkoutTimeSeries.AddRange(timeSeries);
             }
-            await _db.SaveChangesAsync();
+
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (IsHealthKitUuidUniqueViolation(ex) && overlay?.HealthKitUuid is Guid racedUuid)
+            {
+                _db.ChangeTracker.Clear();
+                var winner = await WorkoutQueryService.FindByHealthKitUuidAsync(_db, racedUuid);
+                if (winner != null)
+                {
+                    _logger.LogInformation(
+                        "Skipped duplicate workout (HealthKit UUID race): {HealthKitUuid}",
+                        racedUuid);
+
+                    return new WorkoutIntakeResult
+                    {
+                        Action = "skipped",
+                        Workout = winner
+                    };
+                }
+
+                throw;
+            }
 
             await CalculateAndSaveRelativeEffortAsync(workout);
 
@@ -237,6 +292,62 @@ public class WorkoutIntake
             _logger.LogError(ex, "Error persisting workout");
             return Error(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Stamps HealthKitUuid onto an existing workout when missing.
+    /// Returns null on success or when no stamp was needed.
+    /// Returns the workout that already owns the UUID if stamping collides.
+    /// </summary>
+    private async Task<Workout?> TryStampHealthKitUuidAsync(Workout existingWorkout, WorkoutIntakeOverlay? overlay)
+    {
+        if (overlay?.HealthKitUuid is not Guid healthKitUuid || existingWorkout.HealthKitUuid.HasValue)
+        {
+            return null;
+        }
+
+        existingWorkout.HealthKitUuid = healthKitUuid;
+        try
+        {
+            await _db.SaveChangesAsync();
+            _logger.LogInformation(
+                "Stamped HealthKit UUID {HealthKitUuid} onto existing workout {WorkoutId}",
+                healthKitUuid, existingWorkout.Id);
+            return null;
+        }
+        catch (DbUpdateException ex) when (IsHealthKitUuidUniqueViolation(ex))
+        {
+            _db.Entry(existingWorkout).Property(w => w.HealthKitUuid).CurrentValue = null;
+            _db.Entry(existingWorkout).Property(w => w.HealthKitUuid).IsModified = false;
+            _logger.LogWarning(
+                ex,
+                "Could not stamp HealthKit UUID {HealthKitUuid} onto workout {WorkoutId}; UUID already owned",
+                healthKitUuid, existingWorkout.Id);
+
+            return await WorkoutQueryService.FindByHealthKitUuidAsync(_db, healthKitUuid);
+        }
+    }
+
+    private static bool IsHealthKitUuidUniqueViolation(DbUpdateException ex)
+    {
+        for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+        {
+            if (inner is PostgresException pg && pg.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                return pg.ConstraintName?.Contains("HealthKitUuid", StringComparison.OrdinalIgnoreCase) == true
+                    || pg.MessageText.Contains("HealthKitUuid", StringComparison.OrdinalIgnoreCase);
+            }
+
+            // SQLite (unit/integration tests): UNIQUE constraint on HealthKitUuid
+            if (inner is SqliteException sqlite
+                && (sqlite.SqliteErrorCode == 19 || sqlite.SqliteExtendedErrorCode == 2067)
+                && sqlite.Message.Contains("HealthKitUuid", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<WorkoutIntakeResult> HandleDuplicateAsync(
@@ -548,6 +659,11 @@ public class WorkoutIntake
         if (!string.IsNullOrWhiteSpace(overlay?.RawHealthKitDataJson))
         {
             workout.RawHealthKitData = overlay.RawHealthKitDataJson;
+        }
+
+        if (overlay?.HealthKitUuid is Guid healthKitUuid)
+        {
+            workout.HealthKitUuid = healthKitUuid;
         }
 
         if (!string.IsNullOrWhiteSpace(overlay?.Device))

@@ -117,7 +117,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 2. HTTP maps `IFormFile` to `WorkoutIntake` (stream + filename), or `HealthKitWorkoutDecoder` maps JSON → `DecodedWorkout` + overlay
 3. File decode adapter: GPX or FIT → `DecodedWorkout` (`TrackPoint`s, raw JSON, optional device summary); HealthKit skips file parse
 4. `PersistAsync` → `TrackGeometry.Derive` builds elevation, route, splits, and time series (device summary wins for distance/duration when present)
-5. Duplicate policy: same key (`StartedAt`, `DistanceM`, `DurationS`); incomplete raw JSON/bytes can `updated`; complete duplicates `skipped` (HealthKit vs complete GPX/FIT is always `skipped`)
+5. Duplicate policy: HealthKit UUID identity first when present (`skipped` before geometry/enrichment); then same key (`StartedAt`, `DistanceM`, `DurationS`). Incomplete raw JSON/bytes can `updated`; complete duplicates `skipped` (HealthKit vs complete GPX/FIT is always `skipped`, but may stamp `HealthKitUuid` onto the existing row for client badging)
 6. Weather, default shoe, relative effort, incremental best efforts
 7. Workout persisted with JSONB raw data and `WorkoutRoute`
 
@@ -148,6 +148,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 The `TempoDbContext` configures several important indexes:
 - **Workout indexes**: `StartedAt`, composite index on `(StartedAt, DistanceM, DurationS)` for duplicate detection
 - **JSONB GIN indexes**: On `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, and `Weather` fields
+- **HealthKit UUID**: Unique index on `HealthKitUuid` for import idempotency
 - **WorkoutSplit**: Composite index on `(WorkoutId, Idx)`
 - **WorkoutTimeSeries**: Composite index on `(WorkoutId, ElapsedSeconds)`
 - **User**: Unique index on `Username`

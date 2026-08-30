@@ -30,6 +30,7 @@ public class TempoDbContext : DbContext
             // Indexes for core stats (querying/filtering)
             entity.HasIndex(e => e.StartedAt);
             entity.HasIndex(e => new { e.StartedAt, e.DistanceM, e.DurationS }); // Duplicate detection
+            entity.HasIndex(e => e.HealthKitUuid).IsUnique(); // HealthKit import idempotency
             entity.HasIndex(e => e.Source);
             entity.HasIndex(e => e.RunType);
             entity.HasIndex(e => e.ShoeId);

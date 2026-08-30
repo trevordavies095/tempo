@@ -137,6 +137,7 @@ public class ImportHealthKitWorkoutTests : IClassFixture<TempoWebApplicationFact
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
         var payload = CreateOutdoorPayload();
+        var expectedUuid = Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
 
         var response = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
 
@@ -145,23 +146,32 @@ public class ImportHealthKitWorkoutTests : IClassFixture<TempoWebApplicationFact
         doc.RootElement.GetProperty("action").GetString().Should().Be("created");
         var workoutId = doc.RootElement.GetProperty("id").GetGuid();
 
-        using var scope = _factory.Server.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-        var workout = await db.Workouts.SingleAsync(w => w.Id == workoutId);
-        workout.Source.Should().Be("healthkit");
-        workout.RawHealthKitData.Should().NotBeNullOrEmpty();
-        workout.DistanceM.Should().Be(5000);
-        workout.Calories.Should().Be(420);
-        (await db.WorkoutRoutes.CountAsync(r => r.WorkoutId == workoutId)).Should().Be(1);
-        (await db.WorkoutSplits.CountAsync(s => s.WorkoutId == workoutId)).Should().BeGreaterThan(0);
-        (await db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId && ts.HeartRateBpm != null))
-            .Should().BeGreaterThan(0);
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await db.Workouts.SingleAsync(w => w.Id == workoutId);
+            workout.Source.Should().Be("healthkit");
+            workout.RawHealthKitData.Should().NotBeNullOrEmpty();
+            workout.HealthKitUuid.Should().Be(expectedUuid);
+            workout.DistanceM.Should().Be(5000);
+            workout.Calories.Should().Be(420);
+            (await db.WorkoutRoutes.CountAsync(r => r.WorkoutId == workoutId)).Should().Be(1);
+            (await db.WorkoutSplits.CountAsync(s => s.WorkoutId == workoutId)).Should().BeGreaterThan(0);
+            (await db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId && ts.HeartRateBpm != null))
+                .Should().BeGreaterThan(0);
+        }
 
         var details = await client.GetAsync($"/workouts/{workoutId}");
         details.StatusCode.Should().Be(HttpStatusCode.OK);
-        var detailsJson = await details.Content.ReadAsStringAsync();
-        detailsJson.Should().Contain("rawHealthKitData");
-        detailsJson.Should().Contain("healthKitUuid");
+        using var detailsDoc = JsonDocument.Parse(await details.Content.ReadAsStringAsync());
+        detailsDoc.RootElement.GetProperty("healthKitUuid").GetGuid().Should().Be(expectedUuid);
+        detailsDoc.RootElement.TryGetProperty("rawHealthKitData", out _).Should().BeTrue();
+
+        var list = await client.GetAsync("/workouts?page=1&pageSize=20");
+        list.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var listDoc = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        listDoc.RootElement.GetProperty("items")[0].GetProperty("healthKitUuid").GetGuid()
+            .Should().Be(expectedUuid);
     }
 
     [Fact]
@@ -189,6 +199,7 @@ public class ImportHealthKitWorkoutTests : IClassFixture<TempoWebApplicationFact
         var distanceM = gpxDoc.RootElement.GetProperty("distanceM").GetDouble();
         var durationS = gpxDoc.RootElement.GetProperty("durationS").GetInt32();
 
+        var expectedUuid = Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
         var payload = CreateOutdoorPayload(startedAt: start, distanceM: distanceM, durationS: durationS);
         var hkResponse = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
 
@@ -200,6 +211,9 @@ public class ImportHealthKitWorkoutTests : IClassFixture<TempoWebApplicationFact
         using var scope = _factory.Server.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
         (await db.Workouts.CountAsync()).Should().Be(1);
+        var stored = await db.Workouts.SingleAsync();
+        stored.HealthKitUuid.Should().Be(expectedUuid);
+        stored.RawHealthKitData.Should().BeNull();
     }
 
     [Fact]
@@ -208,6 +222,7 @@ public class ImportHealthKitWorkoutTests : IClassFixture<TempoWebApplicationFact
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
         var payload = CreateOutdoorPayload();
+        var expectedUuid = Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
 
         var first = await client.PostAsJsonAsync("/workouts/import/healthkit", payload);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -224,6 +239,44 @@ public class ImportHealthKitWorkoutTests : IClassFixture<TempoWebApplicationFact
         using var scope = _factory.Server.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
         (await db.Workouts.CountAsync()).Should().Be(1);
+        (await db.Workouts.SingleAsync()).HealthKitUuid.Should().Be(expectedUuid);
+    }
+
+    [Fact]
+    public async Task ImportHealthKit_ParallelPosts_SameUuid_YieldOneWorkout()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client1 = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var client2 = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var payload = CreateOutdoorPayload(uuid: "CCCCCCCC-DDDD-EEEE-FFFF-000000000001");
+
+        var task1 = client1.PostAsJsonAsync("/workouts/import/healthkit", payload);
+        var task2 = client2.PostAsJsonAsync("/workouts/import/healthkit", payload);
+        var responses = await Task.WhenAll(task1, task2);
+
+        foreach (var response in responses)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var actions = new List<string>();
+        var ids = new List<Guid>();
+        foreach (var response in responses)
+        {
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            actions.Add(doc.RootElement.GetProperty("action").GetString()!);
+            ids.Add(doc.RootElement.GetProperty("id").GetGuid());
+        }
+
+        actions.Should().Contain("created");
+        actions.Should().OnlyContain(a => a == "created" || a == "skipped");
+        ids.Distinct().Should().HaveCount(1);
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.Workouts.CountAsync()).Should().Be(1);
+        (await db.Workouts.SingleAsync()).HealthKitUuid
+            .Should().Be(Guid.Parse("CCCCCCCC-DDDD-EEEE-FFFF-000000000001"));
     }
 
     /// <summary>

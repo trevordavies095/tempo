@@ -131,6 +131,7 @@ export interface WorkoutListItem {
   runType: string | null;
   source: string | null;
   device: string | null;
+  healthKitUuid: string | null;
   name: string | null;
   hasRoute: boolean;
   route: {
@@ -188,11 +189,13 @@ export interface WorkoutDetail {
   notes: string | null;
   source: string | null;
   device: string | null;
+  healthKitUuid: string | null;
   name: string | null;
   weather: any | null;
   rawGpxData: any | null;
   rawFitData: any | null;
   rawStravaData: any | null;
+  rawHealthKitData: any | null;
   createdAt: string;
   shoeId: string | null;
   shoe: {

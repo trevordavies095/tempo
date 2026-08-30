@@ -10,6 +10,15 @@ namespace Tempo.Api.Services;
 public static class WorkoutQueryService
 {
     /// <summary>
+    /// Finds a workout previously imported from HealthKit by HKWorkout UUID.
+    /// </summary>
+    public static async Task<Workout?> FindByHealthKitUuidAsync(TempoDbContext db, Guid healthKitUuid)
+    {
+        return await db.Workouts
+            .FirstOrDefaultAsync(w => w.HealthKitUuid == healthKitUuid);
+    }
+
+    /// <summary>
     /// Finds a duplicate workout based on start time, distance, and duration.
     /// A workout is considered a duplicate if it has the same start time and very similar distance and duration.
     /// </summary>

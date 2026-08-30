@@ -185,7 +185,7 @@ Content-Type: application/json
 }
 ```
 
-Requires authentication. `schemaVersion` must be `1`. Summary distance/duration are authoritative. Outdoor only in this release (`isIndoor: true` → 400). Max 20,000 track points. Response shape matches single-file import (`created` / `updated` / `skipped` plus workout id). Raw payload is stored in `RawHealthKitData`. Duplicate check uses start/distance/duration (HealthKit UUID column comes later).
+Requires authentication. `schemaVersion` must be `1`. Summary distance/duration are authoritative. Outdoor only in this release (`isIndoor: true` → 400). Max 20,000 track points. Response shape matches single-file import (`created` / `updated` / `skipped` plus workout id). Raw payload is stored in `RawHealthKitData`. Duplicate check: `HealthKitUuid` identity first (repeat POST → `skipped` without re-deriving geometry); then start/distance/duration as a cross-source backstop (e.g. GPX already imported). Matching HealthKit imports stamp `HealthKitUuid` onto the existing row when it was null so list/detail can badge. `GET /workouts` and `GET /workouts/{id}` expose top-level `healthKitUuid` (nullable).
 
 ### Bulk Import
 
@@ -375,6 +375,8 @@ Query parameters:
 - `page` - Page number (default: 1)
 - `pageSize` - Items per page (default: 20)
 
+List and detail responses include nullable `healthKitUuid` for tempo-ios already-imported badging.
+
 ### Get Workout
 
 Get detailed workout information:
@@ -383,6 +385,7 @@ Get detailed workout information:
 GET /workouts/{id}
 ```
 
+Detail includes top-level `healthKitUuid` when the workout was imported (or stamped) from HealthKit.
 ### Update Workout
 
 Update workout details (e.g., activity name, shoe assignment):

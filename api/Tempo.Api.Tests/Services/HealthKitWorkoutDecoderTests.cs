@@ -51,6 +51,18 @@ public class HealthKitWorkoutDecoderTests
     }
 
     [Fact]
+    public void Decode_RejectsInvalidHealthKitUuid()
+    {
+        var request = ValidOutdoorRequest();
+        request.HealthKitUuid = "not-a-uuid";
+
+        var result = _decoder.Decode(request);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("valid UUID");
+    }
+
+    [Fact]
     public void Decode_RejectsNonPositiveDuration()
     {
         var request = ValidOutdoorRequest();
@@ -134,6 +146,7 @@ public class HealthKitWorkoutDecoderTests
         result.Decoded.DurationS.Should().Be(1800);
         result.Decoded.SeriesPoints.Should().BeNull();
         result.Overlay!.Source.Should().Be("healthkit");
+        result.Overlay.HealthKitUuid.Should().Be(Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890"));
         result.Overlay.RawHealthKitDataJson.Should().NotBeNullOrEmpty();
         result.Overlay.Device.Should().Be("Apple Watch");
         result.Overlay.EnergyKcal.Should().Be(420);

@@ -39,6 +39,11 @@ public class HealthKitWorkoutDecoder
             return Fail("healthKitUuid is required");
         }
 
+        if (!Guid.TryParse(request.HealthKitUuid, out var healthKitUuid))
+        {
+            return Fail("healthKitUuid must be a valid UUID");
+        }
+
         if (request.Summary == null)
         {
             return Fail("summary is required");
@@ -113,6 +118,7 @@ public class HealthKitWorkoutDecoder
             Overlay = new WorkoutIntakeOverlay
             {
                 Source = "healthkit",
+                HealthKitUuid = healthKitUuid,
                 RawHealthKitDataJson = rawJson,
                 Device = deviceName,
                 AvgHeartRateBpm = summary.AvgHeartRateBpm,

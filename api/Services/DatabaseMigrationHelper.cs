@@ -54,7 +54,8 @@ public static class DatabaseMigrationHelper
         { ("ImportJobs", "CancelRequested"), "20260816182633_AddImportJobCancelAndChunks" },
         { ("ImportJobs", "LastChunkAt"), "20260816182633_AddImportJobCancelAndChunks" },
         { ("ImportJobs", "ResultJson"), "20260816191738_AddImportJobResultJson" },
-        { ("Workouts", "RawHealthKitData"), "20260830153912_AddWorkoutRawHealthKitData" }
+        { ("Workouts", "RawHealthKitData"), "20260830153912_AddWorkoutRawHealthKitData" },
+        { ("Workouts", "HealthKitUuid"), "20260830154859_AddWorkoutHealthKitUuid" }
     };
 
     private const string ProductVersion = "10.0.0";
