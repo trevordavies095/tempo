@@ -47,6 +47,8 @@ public class TempoDbContext : DbContext
                 .HasMethod("gin");
             entity.HasIndex(e => e.RawStravaData)
                 .HasMethod("gin");
+            entity.HasIndex(e => e.RawHealthKitData)
+                .HasMethod("gin");
             entity.HasIndex(e => e.Weather)
                 .HasMethod("gin");
         });

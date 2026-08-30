@@ -244,6 +244,158 @@ public class WorkoutIntakeTests : IDisposable
         _bestEfforts.CallCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task PersistAsync_HealthKit_Created_PersistsRouteSplitsSeriesAndRawJson()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded();
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        result.Workout.Should().NotBeNull();
+        result.SplitsCount.Should().BeGreaterThan(0);
+
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Source.Should().Be("healthkit");
+        stored.RawHealthKitData.Should().NotBeNullOrEmpty();
+        stored.DistanceM.Should().Be(5000);
+        stored.DurationS.Should().Be(1800);
+        stored.Calories.Should().Be(420);
+        stored.Device.Should().Be("Apple Watch");
+        (await _db.WorkoutRoutes.CountAsync(r => r.WorkoutId == stored.Id)).Should().Be(1);
+        (await _db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == stored.Id && ts.HeartRateBpm != null))
+            .Should().BeGreaterThan(0);
+        _weather.CallCount.Should().Be(1);
+        _relativeEffort.CallCount.Should().Be(1);
+        _bestEfforts.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKit_Skipped_WhenSameStatsPostedTwice()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded();
+
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        var (decoded2, overlay2) = CreateHealthKitOutdoorDecoded();
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(first.Workout!.Id);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        _weather.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKit_Skipped_WhenMatchingGpxAlreadyImported()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var stream = CreateGpxStream();
+        var created = await _intake.ProcessAsync(stream, "morning.gpx");
+        created.Action.Should().Be("created");
+        var gpx = created.Workout!;
+
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded(
+            startedAt: gpx.StartedAt,
+            durationS: gpx.DurationS,
+            distanceM: gpx.DistanceM);
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("skipped");
+        result.Workout!.Id.Should().Be(gpx.Id);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        var stored = await _db.Workouts.SingleAsync();
+        stored.RawGpxData.Should().NotBeNullOrEmpty();
+        stored.RawHealthKitData.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKit_UsesSummaryDistanceOverGpsSpan()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        // Track points span ~3km GPS but summary says 5000m — summary wins.
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded(distanceM: 5000);
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        result.Workout!.DistanceM.Should().Be(5000);
+        result.Workout.DurationS.Should().Be(1800);
+    }
+
+    private static (DecodedWorkout Decoded, WorkoutIntakeOverlay Overlay) CreateHealthKitOutdoorDecoded(
+        System.DateTime? startedAt = null,
+        int durationS = 1800,
+        double distanceM = 5000)
+    {
+        var start = startedAt ?? new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var trackPoints = new List<TrackPoint>
+        {
+            new()
+            {
+                Time = start,
+                Latitude = 37.7749,
+                Longitude = -122.4194,
+                Elevation = 10,
+                HeartRateBpm = 140,
+                CadenceRpm = 160,
+                PowerWatts = 250,
+                DistanceM = 0
+            },
+            new()
+            {
+                Time = start.AddMinutes(15),
+                Latitude = 37.7849,
+                Longitude = -122.4094,
+                Elevation = 25,
+                HeartRateBpm = 155,
+                CadenceRpm = 165,
+                PowerWatts = 270,
+                DistanceM = distanceM / 2
+            },
+            new()
+            {
+                Time = start.AddSeconds(durationS),
+                Latitude = 37.7949,
+                Longitude = -122.3994,
+                Elevation = 40,
+                HeartRateBpm = 160,
+                CadenceRpm = 168,
+                PowerWatts = 280,
+                DistanceM = distanceM
+            }
+        };
+
+        var decoded = new DecodedWorkout
+        {
+            StartedAt = start,
+            DurationS = durationS,
+            DistanceM = distanceM,
+            TrackPoints = trackPoints,
+            SeriesPoints = null
+        };
+
+        var overlay = new WorkoutIntakeOverlay
+        {
+            Source = "healthkit",
+            Device = "Apple Watch",
+            RawHealthKitDataJson = """{"schemaVersion":1,"healthKitUuid":"test-uuid"}""",
+            AvgHeartRateBpm = 150,
+            MaxHeartRateBpm = 175,
+            EnergyKcal = 420
+        };
+
+        return (decoded, overlay);
+    }
+
     private static MemoryStream CreateGpxStream()
     {
         var xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>

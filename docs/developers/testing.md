@@ -9,7 +9,7 @@ The Tempo API uses **xUnit** for testing with **coverlet** for code coverage col
 - **Unit Tests**: Test individual services in isolation (located in `api/Tempo.Api.Tests/Services/`)
   - Parser tests (`GpxParserServiceTests`, `FitParserServiceTests`) assert decode: fixture file → `TrackPoint`s and optional device summary, not split counts or elevation-gain algorithm details
   - `TrackGeometryTests` assert elevation, split boundaries, GeoJSON, and series elapsed-seconds from fixture `TrackPoint` lists (no `DbContext`)
-  - `WorkoutIntakeTests` cover `created` / `updated` / `skipped` / `error` with faked weather, relative effort, and best efforts; persist and duplicate stay real. Includes a `PersistAsync` seam test that builds `DecodedWorkout` without the file adapter.
+  - `WorkoutIntakeTests` cover `created` / `updated` / `skipped` / `error` with faked weather, relative effort, and best efforts; persist and duplicate stay real. Includes a `PersistAsync` seam test that builds `DecodedWorkout` without the file adapter, plus HealthKit outdoor persist/skip cases. `HealthKitWorkoutDecoderTests` and `ImportHealthKitWorkoutTests` cover the JSON import path.
 - **Integration Tests**: Test endpoints and full request/response cycles (located in `api/Tempo.Api.Tests/IntegrationTests/`)
   - Import-job and Tempo export-import tests (`ImportJobTests`, `ImportExportTests`) poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Do not expect a blocking **200** summary from `POST /workouts/import/bulk` or `POST /workouts/import/export` (those adapters return **202**).
 

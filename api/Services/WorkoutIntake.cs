@@ -11,7 +11,12 @@ public sealed class WorkoutIntakeOverlay
     public string? Name { get; init; }
     public string? Notes { get; init; }
     public string? RawStravaDataJson { get; init; }
+    public string? RawHealthKitDataJson { get; init; }
     public string? Source { get; init; }
+    public string? Device { get; init; }
+    public byte? AvgHeartRateBpm { get; init; }
+    public byte? MaxHeartRateBpm { get; init; }
+    public ushort? EnergyKcal { get; init; }
 }
 
 public sealed class WorkoutIntakeResult
@@ -156,13 +161,14 @@ public class WorkoutIntake
 
             if (existingWorkout != null)
             {
-                return await HandleDuplicateAsync(existingWorkout, decoded, startedAtUtc);
+                return await HandleDuplicateAsync(existingWorkout, decoded, overlay, startedAtUtc);
             }
 
             var workout = CreateWorkoutEntity(decoded, startedAtUtc, avgPaceS, overlay);
 
             PopulateWorkoutMetrics(workout, calculated, decoded.RawFitDataJson);
             PopulateMetricsFromStrava(workout, overlay?.RawStravaDataJson);
+            PopulateMetricsFromHealthKitOverlay(workout, overlay);
 
             var splitDistanceMeters = await GetSplitDistanceMetersAsync();
             var geometry = _trackGeometry.Derive(
@@ -236,6 +242,7 @@ public class WorkoutIntake
     private async Task<WorkoutIntakeResult> HandleDuplicateAsync(
         Workout existingWorkout,
         DecodedWorkout decoded,
+        WorkoutIntakeOverlay? overlay,
         DateTime startedAtUtc)
     {
         var fileName = decoded.RawFileName ?? string.Empty;
@@ -243,14 +250,35 @@ public class WorkoutIntake
         var rawFileData = decoded.RawFileData;
         var rawGpxDataJson = decoded.RawGpxDataJson;
         var rawFitDataJson = decoded.RawFitDataJson;
+        var rawHealthKitDataJson = overlay?.RawHealthKitDataJson;
         var trackPoints = decoded.TrackPoints;
         var distanceMeters = decoded.DistanceM;
         var durationSeconds = decoded.DurationS;
+        var incomingIsHealthKit = !string.IsNullOrWhiteSpace(rawHealthKitDataJson);
 
-        var needsRawFileUpdate = existingWorkout.RawFileData == null || existingWorkout.RawFileData.Length == 0;
-        var needsRawJsonUpdate = fileType == "fit"
-            ? IsFitJsonIncomplete(existingWorkout.RawFitData)
-            : IsGpxJsonIncomplete(existingWorkout.RawGpxData);
+        var needsRawFileUpdate = !incomingIsHealthKit
+            && (existingWorkout.RawFileData == null || existingWorkout.RawFileData.Length == 0);
+        var needsRawJsonUpdate = fileType switch
+        {
+            "fit" => IsFitJsonIncomplete(existingWorkout.RawFitData),
+            "gpx" => IsGpxJsonIncomplete(existingWorkout.RawGpxData),
+            _ when incomingIsHealthKit => IsHealthKitJsonIncomplete(existingWorkout.RawHealthKitData),
+            _ => IsGpxJsonIncomplete(existingWorkout.RawGpxData)
+        };
+
+        // HealthKit against a complete file-backed workout: skip (do not overwrite).
+        if (incomingIsHealthKit && ExistingHasCompleteFileData(existingWorkout))
+        {
+            _logger.LogInformation(
+                "Skipped duplicate workout (existing file import is complete): at {StartTime}",
+                startedAtUtc);
+
+            return new WorkoutIntakeResult
+            {
+                Action = "skipped",
+                Workout = existingWorkout
+            };
+        }
 
         if (!needsRawFileUpdate && !needsRawJsonUpdate)
         {
@@ -282,6 +310,15 @@ public class WorkoutIntake
         if (fileType == "gpx" && rawGpxDataJson != null)
         {
             existingWorkout.RawGpxData = rawGpxDataJson;
+        }
+
+        if (incomingIsHealthKit && IsHealthKitJsonIncomplete(existingWorkout.RawHealthKitData))
+        {
+            existingWorkout.RawHealthKitData = rawHealthKitDataJson;
+            if (string.IsNullOrWhiteSpace(existingWorkout.Source))
+            {
+                existingWorkout.Source = overlay?.Source ?? "healthkit";
+            }
         }
 
         await _db.SaveChangesAsync();
@@ -336,6 +373,31 @@ public class WorkoutIntake
             Action = "updated",
             Workout = existingWorkout
         };
+    }
+
+    private static bool ExistingHasCompleteFileData(Workout existingWorkout)
+    {
+        if (existingWorkout.RawFileType == "fit" && !IsFitJsonIncomplete(existingWorkout.RawFitData))
+        {
+            return true;
+        }
+
+        if (existingWorkout.RawFileType == "gpx" && !IsGpxJsonIncomplete(existingWorkout.RawGpxData))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrEmpty(existingWorkout.RawFitData) && !IsFitJsonIncomplete(existingWorkout.RawFitData))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrEmpty(existingWorkout.RawGpxData) && !IsGpxJsonIncomplete(existingWorkout.RawGpxData))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private (GpxParserService.GpxParseResult? GpxResult, FitParserService.FitParseResult? FitResult) ParseWorkoutFile(
@@ -483,7 +545,40 @@ public class WorkoutIntake
             workout.RawStravaData = overlay.RawStravaDataJson;
         }
 
+        if (!string.IsNullOrWhiteSpace(overlay?.RawHealthKitDataJson))
+        {
+            workout.RawHealthKitData = overlay.RawHealthKitDataJson;
+        }
+
+        if (!string.IsNullOrWhiteSpace(overlay?.Device))
+        {
+            workout.Device = overlay.Device;
+        }
+
         return workout;
+    }
+
+    private static void PopulateMetricsFromHealthKitOverlay(Workout workout, WorkoutIntakeOverlay? overlay)
+    {
+        if (overlay == null)
+        {
+            return;
+        }
+
+        if (overlay.AvgHeartRateBpm.HasValue)
+        {
+            workout.AvgHeartRateBpm = overlay.AvgHeartRateBpm;
+        }
+
+        if (overlay.MaxHeartRateBpm.HasValue)
+        {
+            workout.MaxHeartRateBpm = overlay.MaxHeartRateBpm;
+        }
+
+        if (overlay.EnergyKcal.HasValue)
+        {
+            workout.Calories = overlay.EnergyKcal;
+        }
     }
 
     private void PopulateWorkoutMetrics(
@@ -545,7 +640,7 @@ public class WorkoutIntake
 
         if (string.IsNullOrWhiteSpace(workout.Device) || workout.Device == "Development")
         {
-            if (workout.Source == "gpx_import" || workout.Source == "apple_watch")
+            if (workout.Source == "gpx_import" || workout.Source == "apple_watch" || workout.Source == "healthkit")
             {
                 workout.Device = "Apple Watch";
             }
@@ -722,6 +817,11 @@ public class WorkoutIntake
         return unitPreference != null && unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
             ? 1609.344
             : 1000.0;
+    }
+
+    private static bool IsHealthKitJsonIncomplete(string? rawHealthKitData)
+    {
+        return string.IsNullOrWhiteSpace(rawHealthKitData);
     }
 
     private static bool IsFitJsonIncomplete(string? rawFitData)

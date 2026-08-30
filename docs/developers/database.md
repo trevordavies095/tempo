@@ -32,6 +32,7 @@ Core workout entity with statistics and metadata.
 - `RawGpxData` (JSONB, nullable) - Raw GPX XML data
 - `RawFitData` (JSONB, nullable) - Raw FIT file data
 - `RawStravaData` (JSONB, nullable) - Raw Strava CSV data
+- `RawHealthKitData` (JSONB, nullable) - Schema-versioned HealthKit import payload from tempo-ios
 - `Weather` (JSONB, nullable) - Weather data from Open-Meteo API
 
 **Indexes:**
@@ -40,7 +41,7 @@ Core workout entity with statistics and metadata.
 - `Source`
 - `RunType`
 - `ShoeId` - Foreign key index for efficient shoe queries
-- GIN indexes on JSONB fields: `RawGpxData`, `RawFitData`, `RawStravaData`, `Weather`
+- GIN indexes on JSONB fields: `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, `Weather`
 
 ### WorkoutRoute
 
@@ -238,6 +239,7 @@ GIN indexes on JSONB fields enable efficient JSON queries:
 - `RawGpxData`
 - `RawFitData`
 - `RawStravaData`
+- `RawHealthKitData`
 - `Weather`
 
 ## Data Storage Patterns

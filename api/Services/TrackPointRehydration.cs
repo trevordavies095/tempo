@@ -38,6 +38,11 @@ public class TrackPointRehydration
             trackPoints = ExtractTrackPointsFromJsonData(workout.RawFitData, "RawFitData");
         }
 
+        if (trackPoints == null && !string.IsNullOrEmpty(workout.RawHealthKitData))
+        {
+            trackPoints = ExtractTrackPointsFromJsonData(workout.RawHealthKitData, "RawHealthKitData");
+        }
+
         if (trackPoints == null && workout.RawFileData != null && workout.RawFileData.Length > 0)
         {
             trackPoints = ReparseTrackPointsFromRawFile(workout);
@@ -95,6 +100,13 @@ public class TrackPointRehydration
                         point.Time = DateTime.SpecifyKind(time, DateTimeKind.Utc);
                     }
                 }
+                else if (pointElement.TryGetProperty("t", out var tElement) && tElement.ValueKind == JsonValueKind.String)
+                {
+                    if (DateTime.TryParse(tElement.GetString(), null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var t))
+                    {
+                        point.Time = DateTime.SpecifyKind(t, DateTimeKind.Utc);
+                    }
+                }
 
                 if (pointElement.TryGetProperty("hr", out var hrElement) && hrElement.ValueKind == JsonValueKind.Number)
                 {
@@ -110,10 +122,19 @@ public class TrackPointRehydration
                 {
                     point.PowerWatts = (ushort)powerElement.GetInt32();
                 }
+                else if (pointElement.TryGetProperty("pwr", out var pwrElement) && pwrElement.ValueKind == JsonValueKind.Number)
+                {
+                    point.PowerWatts = (ushort)pwrElement.GetInt32();
+                }
 
                 if (pointElement.TryGetProperty("temp", out var tempElement) && tempElement.ValueKind == JsonValueKind.Number)
                 {
                     point.TemperatureC = (sbyte)tempElement.GetInt32();
+                }
+
+                if (pointElement.TryGetProperty("distM", out var distElement) && distElement.ValueKind == JsonValueKind.Number)
+                {
+                    point.DistanceM = distElement.GetDouble();
                 }
 
                 trackPoints.Add(point);

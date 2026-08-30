@@ -126,6 +126,12 @@ public class Workout
     public string? RawStravaData { get; set; }
 
     /// <summary>
+    /// Raw HealthKit import payload from tempo-ios (schema-versioned JSON)
+    /// </summary>
+    [Column(TypeName = "jsonb")]
+    public string? RawHealthKitData { get; set; }
+
+    /// <summary>
     /// Weather data: Open-Meteo API response + FIT/Strava weather if available
     /// </summary>
     [Column(TypeName = "jsonb")]

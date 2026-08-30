@@ -158,6 +158,35 @@ file: [workout file]
 
 Outcomes per file: `created`, `updated`, or `skipped` (plus error). Incomplete FIT/GPX JSON or missing raw bytes on a duplicate can `updated`; complete duplicates are `skipped`. HTTP JSON is unchanged from before intake.
 
+### Import HealthKit Workout
+
+Import one outdoor run from tempo-ios as schema-versioned JSON (feeds the same `PersistAsync` pipeline as file import):
+
+```http
+POST /workouts/import/healthkit
+Content-Type: application/json
+
+{
+  "schemaVersion": 1,
+  "healthKitUuid": "…",
+  "sourceApp": { "name": "Apple Watch", "bundleId": "com.apple.health" },
+  "summary": {
+    "startedAt": "2024-06-15T10:00:00Z",
+    "durationS": 1800,
+    "distanceM": 5000,
+    "isIndoor": false,
+    "energyKcal": 420,
+    "avgHeartRateBpm": 150,
+    "maxHeartRateBpm": 175
+  },
+  "trackPoints": [
+    { "t": "2024-06-15T10:00:00Z", "lat": 37.7749, "lon": -122.4194, "ele": 10, "hr": 140, "cad": 160, "pwr": 250, "distM": 0 }
+  ]
+}
+```
+
+Requires authentication. `schemaVersion` must be `1`. Summary distance/duration are authoritative. Outdoor only in this release (`isIndoor: true` → 400). Max 20,000 track points. Response shape matches single-file import (`created` / `updated` / `skipped` plus workout id). Raw payload is stored in `RawHealthKitData`. Duplicate check uses start/distance/duration (HealthKit UUID column comes later).
+
 ### Bulk Import
 
 The command center uploads a Strava ZIP in **512 KiB** chunks during [first-run onboarding](../getting-started/onboarding.md) or **Settings → Migrate / restore** (not the day-to-day Import page). Bruno/curl can still POST the whole ZIP.

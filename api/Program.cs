@@ -167,6 +167,7 @@ builder.Services.AddScoped<InsightsService>();
 builder.Services.AddHttpClient<WeatherService>();
 builder.Services.AddScoped<IWeatherService>(sp => sp.GetRequiredService<WeatherService>());
 builder.Services.AddScoped<WorkoutIntake>();
+builder.Services.AddScoped<HealthKitWorkoutDecoder>();
 
 // Configure media storage
 var mediaRootPath = builder.Configuration["MediaStorage:RootPath"] ?? "./media";
