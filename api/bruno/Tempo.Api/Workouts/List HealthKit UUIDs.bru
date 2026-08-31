@@ -1,0 +1,40 @@
+meta {
+  name: List HealthKit UUIDs
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/workouts/healthkit-uuids
+  body: none
+  auth: inherit
+}
+
+example {
+  name: 200 Response
+  description: OK
+  
+  request: {
+    url: {{baseUrl}}/workouts/healthkit-uuids
+    method: GET
+    mode: none
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+{
+  "uuids": [
+    "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+  ]
+}
+      '''
+    }
+  }
+}

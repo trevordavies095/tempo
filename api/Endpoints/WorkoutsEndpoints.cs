@@ -151,6 +151,21 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
+    /// List HealthKit UUIDs stored on workouts
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <returns>Object with uuids array of non-null HealthKitUuid values</returns>
+    /// <remarks>
+    /// Returns HealthKitUuid values stored on workouts (nulls omitted). Used by tempo-ios to badge
+    /// already-imported runs without paging GET /workouts.
+    /// </remarks>
+    private static async Task<IResult> ListHealthKitUuids(TempoDbContext db)
+    {
+        var uuids = await WorkoutQueryService.ListHealthKitUuidsAsync(db);
+        return Results.Ok(new { uuids });
+    }
+
+    /// <summary>
     /// List workouts with pagination and filtering
     /// </summary>
     /// <param name="db">Database context</param>
@@ -2253,6 +2268,13 @@ public static class WorkoutsEndpoints
             .Produces(401)
             .WithSummary("Import HealthKit workout")
             .WithDescription("Accepts a schema-versioned HealthKit workout JSON document from tempo-ios (outdoor GPS or indoor DistM/summary). Feeds the same PersistAsync pipeline as file import.");
+
+        group.MapGet("/healthkit-uuids", ListHealthKitUuids)
+            .WithName("ListHealthKitUuids")
+            .Produces(200)
+            .Produces(401)
+            .WithSummary("List HealthKit UUIDs")
+            .WithDescription("Returns HealthKitUuid values stored on workouts (nulls omitted). Used by tempo-ios to badge already-imported runs without paging GET /workouts.");
 
         group.MapGet("", ListWorkouts)
         .WithName("ListWorkouts")

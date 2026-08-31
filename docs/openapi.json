@@ -1063,6 +1063,29 @@
         ]
       }
     },
+    "/workouts/healthkit-uuids": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "List HealthKit UUIDs stored on workouts",
+        "description": "Returns HealthKitUuid values stored on workouts (nulls omitted). Used by tempo-ios to badge\nalready-imported runs without paging GET /workouts.",
+        "operationId": "ListHealthKitUuids",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/workouts": {
       "get": {
         "tags": [
