@@ -1,5 +1,5 @@
 meta {
-  name: Get workout details
+  name: Get workout details with raw data
   type: http
   seq: 10
 }
@@ -15,7 +15,7 @@ params:path {
 }
 
 params:query {
-  ~includeRaw: false
+  includeRaw: true
 }
 
 example {
@@ -30,7 +30,7 @@ example {
       id: 
     }
     params:query: {
-      ~includeRaw: false
+      includeRaw: true
     }
   }
   
@@ -38,34 +38,6 @@ example {
     status: {
       code: 200
       text: OK
-    }
-  
-    body: {
-      type: text
-      content: '''
-  
-      '''
-    }
-  }
-}
-
-example {
-  name: 404 Response
-  description: Not Found
-  
-  request: {
-    url: {{baseUrl}}/workouts/:id
-    method: GET
-    mode: none
-    params:path: {
-      id: 
-    }
-  }
-  
-  response: {
-    status: {
-      code: 404
-      text: Not Found
     }
   
     body: {

@@ -318,5 +318,51 @@ public class WorkoutQueryServiceTests : IDisposable
 
         result.Should().BeEquivalentTo(new[] { uuid1, uuid2 });
     }
+
+    [Fact]
+    public async Task QueryDetail_WhenIncludeRawFalse_DoesNotSelectOrPopulateRawColumns()
+    {
+        var workout = new Workout
+        {
+            StartedAt = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc),
+            DistanceM = 5000,
+            DurationS = 1800,
+            AvgPaceS = 360,
+            Source = "gpx",
+            RawGpxData = """{"trackPoints":[{"lat":1.0}]}""",
+            RawFitData = """{"sessions":[]}""",
+            RawStravaData = """{"id":1}""",
+            RawHealthKitData = """{"uuid":"x"}""",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Workouts.Add(workout);
+        await _db.SaveChangesAsync();
+
+        var sql = WorkoutQueryService.QueryDetail(_db, workout.Id, includeRaw: false).ToQueryString();
+        sql.Should().NotContain("RawGpxData");
+        sql.Should().NotContain("RawFitData");
+        sql.Should().NotContain("RawStravaData");
+        sql.Should().NotContain("RawHealthKitData");
+
+        var result = await WorkoutQueryService.QueryDetail(_db, workout.Id, includeRaw: false)
+            .FirstOrDefaultAsync();
+
+        result.Should().NotBeNull();
+        result!.RawGpxData.Should().BeNull();
+        result.RawFitData.Should().BeNull();
+        result.RawStravaData.Should().BeNull();
+        result.RawHealthKitData.Should().BeNull();
+        result.DistanceM.Should().Be(5000);
+    }
+
+    [Fact]
+    public void QueryDetail_WhenIncludeRawTrue_SelectsRawColumns()
+    {
+        var sql = WorkoutQueryService.QueryDetail(_db, Guid.NewGuid(), includeRaw: true).ToQueryString();
+        sql.Should().Contain("RawGpxData");
+        sql.Should().Contain("RawFitData");
+        sql.Should().Contain("RawStravaData");
+        sql.Should().Contain("RawHealthKitData");
+    }
 }
 

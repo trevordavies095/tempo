@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Dynastream.Fit;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
@@ -85,6 +86,7 @@ public class WorkoutIntakeTests : IDisposable
         stored.RawGpxData.Should().NotBeNullOrEmpty();
         (await _db.WorkoutRoutes.CountAsync()).Should().Be(1);
         (await _db.WorkoutSplits.CountAsync(s => s.WorkoutId == stored.Id)).Should().Be(result.SplitsCount);
+        await AssertRoutePreviewPersistedAsync(stored.Id);
 
         _weather.CallCount.Should().Be(1);
         _relativeEffort.CallCount.Should().Be(1);
@@ -163,7 +165,22 @@ public class WorkoutIntakeTests : IDisposable
             updated.DurationS.Should().Be(parsed.DurationSeconds);
             updated.ElevGainM.Should().Be(42);
             updated.RawFitData.Should().Contain("trackPoints");
+            await AssertRoutePreviewPersistedAsync(existing.Id);
         }
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Created_Fit_PersistsRoutePreview()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes();
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "run.fit");
+
+        result.Action.Should().Be("created");
+        result.Workout.Should().NotBeNull();
+        await AssertRoutePreviewPersistedAsync(result.Workout!.Id);
     }
 
     [Fact]
@@ -265,6 +282,7 @@ public class WorkoutIntakeTests : IDisposable
         stored.Calories.Should().Be(420);
         stored.Device.Should().Be("Apple Watch");
         (await _db.WorkoutRoutes.CountAsync(r => r.WorkoutId == stored.Id)).Should().Be(1);
+        await AssertRoutePreviewPersistedAsync(stored.Id);
         (await _db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == stored.Id && ts.HeartRateBpm != null))
             .Should().BeGreaterThan(0);
         _weather.CallCount.Should().Be(1);
@@ -573,6 +591,18 @@ public class WorkoutIntakeTests : IDisposable
         };
 
         return (decoded, overlay);
+    }
+
+    private async Task AssertRoutePreviewPersistedAsync(Guid workoutId)
+    {
+        var route = await _db.WorkoutRoutes.SingleAsync(r => r.WorkoutId == workoutId);
+        route.PreviewGeoJson.Should().NotBeNull();
+        route.PreviewGeoJson.Should().NotBe(TrackGeometry.EmptyRoutePreviewSentinel);
+        var preview = JsonSerializer.Deserialize<JsonElement>(route.PreviewGeoJson!);
+        preview.GetProperty("type").GetString().Should().Be("LineString");
+        var count = preview.GetProperty("coordinates").GetArrayLength();
+        count.Should().BeGreaterThan(0);
+        count.Should().BeLessThanOrEqualTo(TrackGeometry.RoutePreviewMaxPoints);
     }
 
     private static MemoryStream CreateGpxStream()

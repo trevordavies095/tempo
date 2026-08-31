@@ -184,6 +184,7 @@ public static class WorkoutsEndpoints
     /// <remarks>
     /// Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,
     /// and run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.
+    /// Item <c>route</c> is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.
     /// </remarks>
     private static async Task<IResult> ListWorkouts(
         TempoDbContext db,
@@ -238,7 +239,6 @@ public static class WorkoutsEndpoints
 
         // Build query
         var query = db.Workouts
-            .Include(w => w.Route)
             .Include(w => w.Splits)
             .AsQueryable();
 
@@ -358,21 +358,20 @@ public static class WorkoutsEndpoints
             .AsNoTracking()
             .ToListAsync();
 
+        var listRoutes = await LoadListRouteGeoJsonAsync(db, workouts.Select(w => w.Id).ToList());
+
         // Map to response
         var items = workouts.Select(w =>
         {
-            // Parse route GeoJSON if exists
             object? routeGeoJson = null;
-            if (w.Route != null && !string.IsNullOrEmpty(w.Route.RouteGeoJson))
+            var hasRoute = listRoutes.TryGetValue(w.Id, out var listRoute);
+            if (hasRoute)
             {
-                try
-                {
-                    routeGeoJson = JsonSerializer.Deserialize<object>(w.Route.RouteGeoJson);
-                }
-                catch (JsonException ex)
-                {
-                    logger.LogWarning(ex, "Failed to parse route GeoJSON for workout {WorkoutId}", w.Id);
-                }
+                routeGeoJson = DeserializeListRoute(
+                    listRoute.PreviewGeoJson,
+                    listRoute.FallbackRouteGeoJson,
+                    w.Id,
+                    logger);
             }
 
             return new
@@ -404,7 +403,7 @@ public static class WorkoutsEndpoints
                 device = w.Device,
                 healthKitUuid = w.HealthKitUuid,
                 name = w.Name,
-                hasRoute = w.Route != null,
+                hasRoute,
                 route = routeGeoJson,
                 splitsCount = w.Splits.Count
             };
@@ -418,6 +417,69 @@ public static class WorkoutsEndpoints
             pageSize,
             totalPages
         });
+    }
+
+    private static async Task<Dictionary<Guid, (string? PreviewGeoJson, string? FallbackRouteGeoJson)>> LoadListRouteGeoJsonAsync(
+        TempoDbContext db,
+        List<Guid> workoutIds)
+    {
+        if (workoutIds.Count == 0)
+        {
+            return new Dictionary<Guid, (string? PreviewGeoJson, string? FallbackRouteGeoJson)>();
+        }
+
+        // COALESCE-style: read RouteGeoJson only when preview is null or the empty-string sentinel.
+        var rows = await db.WorkoutRoutes
+            .AsNoTracking()
+            .Where(r => workoutIds.Contains(r.WorkoutId))
+            .Select(r => new
+            {
+                r.WorkoutId,
+                r.PreviewGeoJson,
+                FallbackRouteGeoJson = r.PreviewGeoJson == null || r.PreviewGeoJson == ""
+                    ? r.RouteGeoJson
+                    : null
+            })
+            .ToListAsync();
+
+        return rows.ToDictionary(
+            r => r.WorkoutId,
+            r => (r.PreviewGeoJson, r.FallbackRouteGeoJson));
+    }
+
+    private static object? DeserializeListRoute(
+        string? previewGeoJson,
+        string? fallbackRouteGeoJson,
+        Guid workoutId,
+        ILogger logger)
+    {
+        var json = !string.IsNullOrEmpty(previewGeoJson) ? previewGeoJson : fallbackRouteGeoJson;
+        if (string.IsNullOrEmpty(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<object>(json);
+        }
+        catch (JsonException ex)
+        {
+            if (!string.IsNullOrEmpty(fallbackRouteGeoJson) && fallbackRouteGeoJson != json)
+            {
+                try
+                {
+                    return JsonSerializer.Deserialize<object>(fallbackRouteGeoJson);
+                }
+                catch (JsonException)
+                {
+                    // Fall through to log the original failure.
+                }
+            }
+
+            logger.LogWarning(ex, "Failed to parse route GeoJSON for workout {WorkoutId}", workoutId);
+            return null;
+        }
     }
 
     /// <summary>
@@ -1125,23 +1187,25 @@ public static class WorkoutsEndpoints
     /// <param name="db">Database context</param>
     /// <param name="weatherService">Weather service</param>
     /// <param name="logger">Logger instance</param>
-    /// <returns>Complete workout data including route, splits, weather, and raw data</returns>
+    /// <param name="includeRaw">
+    /// When true, include raw GPX/FIT/Strava/HealthKit JSON blobs. Defaults to false: those four
+    /// fields are returned as JSON null and are not read from the database.
+    /// </param>
+    /// <returns>Complete workout data including route, splits, weather, and optional raw data</returns>
     /// <remarks>
-    /// Retrieves complete workout data including route (as GeoJSON), splits, weather information,
-    /// and raw GPX/FIT/Strava data. Weather humidity values are normalized for consistency.
+    /// Retrieves complete workout data including route (as GeoJSON), splits, and weather information.
+    /// Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values
+    /// are normalized for consistency.
     /// </remarks>
     private static async Task<IResult> GetWorkout(
         Guid id,
         TempoDbContext db,
         WeatherService weatherService,
-        ILogger<Program> logger)
+        ILogger<Program> logger,
+        [FromQuery] bool includeRaw = false)
     {
-        var workout = await db.Workouts
-            .Include(w => w.Route)
-            .Include(w => w.Splits.OrderBy(s => s.Idx))
-            .Include(w => w.Shoe)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(w => w.Id == id);
+        var workout = await WorkoutQueryService.QueryDetail(db, id, includeRaw)
+            .FirstOrDefaultAsync();
 
         if (workout == null)
         {
@@ -1213,56 +1277,59 @@ public static class WorkoutsEndpoints
             paceS = s.PaceS
         }).ToList();
 
-        // Parse raw data JSON if exists
+        // Raw JSONB blobs are opt-in: default query projects them out, so skip deserialize too.
         object? rawGpxData = null;
-        if (!string.IsNullOrEmpty(workout.RawGpxData))
-        {
-            try
-            {
-                rawGpxData = JsonSerializer.Deserialize<object>(workout.RawGpxData);
-            }
-            catch (JsonException ex)
-            {
-                logger.LogWarning(ex, "Failed to parse RawGpxData JSON for workout {WorkoutId}", workout.Id);
-            }
-        }
-
         object? rawFitData = null;
-        if (!string.IsNullOrEmpty(workout.RawFitData))
-        {
-            try
-            {
-                rawFitData = JsonSerializer.Deserialize<object>(workout.RawFitData);
-            }
-            catch (JsonException ex)
-            {
-                logger.LogWarning(ex, "Failed to parse RawFitData JSON for workout {WorkoutId}", workout.Id);
-            }
-        }
-
         object? rawStravaData = null;
-        if (!string.IsNullOrEmpty(workout.RawStravaData))
-        {
-            try
-            {
-                rawStravaData = JsonSerializer.Deserialize<object>(workout.RawStravaData);
-            }
-            catch (JsonException ex)
-            {
-                logger.LogWarning(ex, "Failed to parse RawStravaData JSON for workout {WorkoutId}", workout.Id);
-            }
-        }
-
         object? rawHealthKitData = null;
-        if (!string.IsNullOrEmpty(workout.RawHealthKitData))
+        if (includeRaw)
         {
-            try
+            if (!string.IsNullOrEmpty(workout.RawGpxData))
             {
-                rawHealthKitData = JsonSerializer.Deserialize<object>(workout.RawHealthKitData);
+                try
+                {
+                    rawGpxData = JsonSerializer.Deserialize<object>(workout.RawGpxData);
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning(ex, "Failed to parse RawGpxData JSON for workout {WorkoutId}", workout.Id);
+                }
             }
-            catch (JsonException ex)
+
+            if (!string.IsNullOrEmpty(workout.RawFitData))
             {
-                logger.LogWarning(ex, "Failed to parse RawHealthKitData JSON for workout {WorkoutId}", workout.Id);
+                try
+                {
+                    rawFitData = JsonSerializer.Deserialize<object>(workout.RawFitData);
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning(ex, "Failed to parse RawFitData JSON for workout {WorkoutId}", workout.Id);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(workout.RawStravaData))
+            {
+                try
+                {
+                    rawStravaData = JsonSerializer.Deserialize<object>(workout.RawStravaData);
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning(ex, "Failed to parse RawStravaData JSON for workout {WorkoutId}", workout.Id);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(workout.RawHealthKitData))
+            {
+                try
+                {
+                    rawHealthKitData = JsonSerializer.Deserialize<object>(workout.RawHealthKitData);
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning(ex, "Failed to parse RawHealthKitData JSON for workout {WorkoutId}", workout.Id);
+                }
             }
         }
 
@@ -2281,7 +2348,7 @@ public static class WorkoutsEndpoints
         .Produces(200)
         .Produces(404)
         .WithSummary("List workouts")
-        .WithDescription("Returns a paginated list of workouts with optional filtering");
+        .WithDescription("Returns a paginated list of workouts with optional filtering. Item route is a simplified preview when stored; otherwise the full route.");
 
         // Media routes must come before the generic /{id:guid} route to ensure proper routing
         group.MapPost("/{id:guid}/media", UploadWorkoutMedia)
@@ -2363,7 +2430,7 @@ public static class WorkoutsEndpoints
         .Produces(200)
         .Produces(404)
         .WithSummary("Get workout details")
-        .WithDescription("Retrieves complete workout data including route and splits");
+        .WithDescription("Retrieves complete workout data including route and splits. Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true.");
 
         group.MapPost("/import/bulk", BulkImportWorkouts)
         .Accepts<IFormFile>("multipart/form-data")

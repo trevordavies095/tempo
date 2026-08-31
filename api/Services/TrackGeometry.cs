@@ -21,6 +21,13 @@ public sealed class TrackGeometryResult
 /// </summary>
 public class TrackGeometry
 {
+    public const int RoutePreviewMaxPoints = 100;
+    public const string EmptyRoutePreviewSentinel = "";
+
+    private const int PreviewToleranceSearchIterations = 40;
+    private const double PreviewToleranceStartMeters = 1.0;
+    private const double PreviewToleranceMaxMeters = 20_000_000.0;
+
     private readonly ElevationCalculationConfig _elevationConfig;
 
     public TrackGeometry(ElevationCalculationConfig elevationConfig)
@@ -199,8 +206,192 @@ public class TrackGeometry
         {
             Id = Guid.NewGuid(),
             WorkoutId = workoutId,
-            RouteGeoJson = routeGeoJson
+            RouteGeoJson = routeGeoJson,
+            PreviewGeoJson = BuildRoutePreviewGeoJson(routeGeoJson)
         };
+    }
+
+    /// <summary>
+    /// Builds a ≤ 100-point LineString preview. Routes with ≤ 100 points are returned verbatim.
+    /// Empty or unparseable GeoJSON returns <see cref="EmptyRoutePreviewSentinel"/>.
+    /// </summary>
+    public static string BuildRoutePreviewGeoJson(string? routeGeoJson)
+    {
+        if (!TryParseLineStringCoordinates(routeGeoJson, out var coordinates))
+        {
+            return EmptyRoutePreviewSentinel;
+        }
+
+        if (coordinates.Count <= RoutePreviewMaxPoints)
+        {
+            return routeGeoJson!;
+        }
+
+        var simplified = SimplifyToMaxPoints(coordinates);
+        return JsonSerializer.Serialize(new
+        {
+            type = "LineString",
+            coordinates = simplified
+        });
+    }
+
+    private static bool TryParseLineStringCoordinates(string? routeGeoJson, out List<double[]> coordinates)
+    {
+        coordinates = new List<double[]>();
+        if (string.IsNullOrWhiteSpace(routeGeoJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(routeGeoJson);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("coordinates", out var coordsEl)
+                || coordsEl.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            foreach (var pt in coordsEl.EnumerateArray())
+            {
+                if (pt.ValueKind != JsonValueKind.Array || pt.GetArrayLength() < 2)
+                {
+                    return false;
+                }
+
+                coordinates.Add(new[] { pt[0].GetDouble(), pt[1].GetDouble() });
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static List<double[]> SimplifyToMaxPoints(IReadOnlyList<double[]> coordinates)
+    {
+        var lo = 0.0;
+        var hi = PreviewToleranceStartMeters;
+        var simplified = DouglasPeucker(coordinates, hi);
+        while (simplified.Count > RoutePreviewMaxPoints && hi < PreviewToleranceMaxMeters)
+        {
+            hi *= 2;
+            simplified = DouglasPeucker(coordinates, hi);
+        }
+
+        var best = simplified;
+        for (var i = 0; i < PreviewToleranceSearchIterations; i++)
+        {
+            var mid = (lo + hi) / 2.0;
+            simplified = DouglasPeucker(coordinates, mid);
+            if (simplified.Count <= RoutePreviewMaxPoints)
+            {
+                hi = mid;
+                best = simplified;
+            }
+            else
+            {
+                lo = mid;
+            }
+        }
+
+        return best;
+    }
+
+    private static List<double[]> DouglasPeucker(IReadOnlyList<double[]> points, double epsilonMeters)
+    {
+        var n = points.Count;
+        if (n <= 2)
+        {
+            return points.ToList();
+        }
+
+        var keep = new bool[n];
+        keep[0] = true;
+        keep[n - 1] = true;
+
+        var stack = new Stack<(int Start, int End)>();
+        stack.Push((0, n - 1));
+
+        while (stack.Count > 0)
+        {
+            var (start, end) = stack.Pop();
+            if (end <= start + 1)
+            {
+                continue;
+            }
+
+            var maxDist = -1.0;
+            var maxIdx = start;
+            for (var i = start + 1; i < end; i++)
+            {
+                var d = PerpendicularDistanceMeters(points[i], points[start], points[end]);
+                if (d > maxDist)
+                {
+                    maxDist = d;
+                    maxIdx = i;
+                }
+            }
+
+            if (maxDist > epsilonMeters)
+            {
+                keep[maxIdx] = true;
+                stack.Push((start, maxIdx));
+                stack.Push((maxIdx, end));
+            }
+        }
+
+        var result = new List<double[]>();
+        for (var i = 0; i < n; i++)
+        {
+            if (keep[i])
+            {
+                result.Add(points[i]);
+            }
+        }
+
+        return result;
+    }
+
+    private static double PerpendicularDistanceMeters(double[] point, double[] lineStart, double[] lineEnd)
+    {
+        const double earthRadiusM = 6371000.0;
+        const double degToRad = Math.PI / 180.0;
+        var lat0 = (lineStart[1] + lineEnd[1]) * 0.5 * degToRad;
+        var mx = earthRadiusM * degToRad * Math.Cos(lat0);
+        var my = earthRadiusM * degToRad;
+
+        var ax = lineStart[0] * mx;
+        var ay = lineStart[1] * my;
+        var bx = lineEnd[0] * mx;
+        var by = lineEnd[1] * my;
+        var px = point[0] * mx;
+        var py = point[1] * my;
+
+        var dx = bx - ax;
+        var dy = by - ay;
+        var lengthSq = dx * dx + dy * dy;
+        if (lengthSq < 1e-12)
+        {
+            var ex = px - ax;
+            var ey = py - ay;
+            return Math.Sqrt(ex * ex + ey * ey);
+        }
+
+        var cross = (px - ax) * dy - (py - ay) * dx;
+        return Math.Abs(cross) / Math.Sqrt(lengthSq);
     }
 
     private static List<WorkoutSplit> CalculateSplitsFromHaversine(
