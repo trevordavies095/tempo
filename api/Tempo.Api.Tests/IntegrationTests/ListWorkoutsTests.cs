@@ -1,9 +1,14 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tempo.Api.Data;
+using Tempo.Api.Models;
+using Tempo.Api.Services;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -889,6 +894,328 @@ public class ListWorkoutsTests : IClassFixture<TempoWebApplicationFactory>
         result.Should().NotBeNull();
         result!.Items.Should().HaveCount(1);
         result.TotalCount.Should().Be(1);
+    }
+
+    #endregion
+
+    #region Route preview tests
+
+    [Fact]
+    public async Task ListWorkouts_ReturnsPreviewRoute_AfterImport()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var gpxContent = CreateGpxContent(pointCount: 150);
+        var formData = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes(gpxContent));
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/gpx+xml");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "file",
+            FileName = "long-run.gpx"
+        };
+        formData.Add(fileContent);
+
+        var importResponse = await client.PostAsync("/workouts/import", formData);
+        importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        int fullPointCount;
+        int previewPointCount;
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await db.Workouts.Include(w => w.Route).SingleAsync();
+            workout.Route.Should().NotBeNull();
+            workout.Route!.PreviewGeoJson.Should().NotBeNullOrEmpty();
+            fullPointCount = CountLineStringPoints(workout.Route.RouteGeoJson);
+            previewPointCount = CountLineStringPoints(workout.Route.PreviewGeoJson!);
+            workoutId = workout.Id;
+        }
+
+        fullPointCount.Should().BeGreaterThan(100);
+        previewPointCount.Should().BeLessThanOrEqualTo(100);
+        previewPointCount.Should().BeLessThan(fullPointCount);
+
+        var response = await client.GetAsync("/workouts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var item = payload.GetProperty("items").EnumerateArray().Single();
+        item.GetProperty("id").GetGuid().Should().Be(workoutId);
+        item.GetProperty("hasRoute").GetBoolean().Should().BeTrue();
+        var route = item.GetProperty("route");
+        route.GetProperty("type").GetString().Should().Be("LineString");
+        route.GetProperty("coordinates").GetArrayLength().Should().Be(previewPointCount);
+        route.GetProperty("coordinates").GetArrayLength().Should().BeLessThanOrEqualTo(100);
+    }
+
+    [Fact]
+    public async Task ListWorkouts_ReturnsFullRoute_WhenPreviewIsNull()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var coordinates = CreateWavyCoordinates(180);
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Unbackfilled");
+            var route = await TestDataSeeder.SeedWorkoutWithRouteAsync(db, workout, coordinates);
+            route.PreviewGeoJson.Should().BeNull();
+            workoutId = workout.Id;
+        }
+
+        var response = await client.GetAsync("/workouts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var item = payload.GetProperty("items").EnumerateArray().Single();
+        item.GetProperty("id").GetGuid().Should().Be(workoutId);
+        item.GetProperty("hasRoute").GetBoolean().Should().BeTrue();
+        item.GetProperty("route").GetProperty("type").GetString().Should().Be("LineString");
+        item.GetProperty("route").GetProperty("coordinates").GetArrayLength().Should().Be(180);
+    }
+
+    [Fact]
+    public async Task ListWorkouts_ReturnsFullRoute_WhenPreviewIsSentinel()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var coordinates = CreateWavyCoordinates(120);
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Sentinel preview");
+            var route = await TestDataSeeder.SeedWorkoutWithRouteAsync(db, workout, coordinates);
+            route.PreviewGeoJson = TrackGeometry.EmptyRoutePreviewSentinel;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync("/workouts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var item = payload.GetProperty("items").EnumerateArray().Single();
+        item.GetProperty("hasRoute").GetBoolean().Should().BeTrue();
+        item.GetProperty("route").GetProperty("coordinates").GetArrayLength().Should().Be(120);
+    }
+
+    #endregion
+
+    #region Media and splitsCount tests
+
+    [Fact]
+    public async Task ListWorkouts_IncludesMediaInCreatedAtOrder_AndEmptyArrayWhenNone()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid withMediaId;
+        Guid withoutMediaId;
+        Guid earliestId;
+        Guid middleId;
+        Guid latestId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var withMedia = await TestDataSeeder.SeedWorkoutAsync(
+                db, startedAt: new DateTime(2024, 6, 2, 10, 0, 0, DateTimeKind.Utc), name: "With media");
+            var withoutMedia = await TestDataSeeder.SeedWorkoutAsync(
+                db, startedAt: new DateTime(2024, 6, 1, 10, 0, 0, DateTimeKind.Utc), name: "No media");
+            withMediaId = withMedia.Id;
+            withoutMediaId = withoutMedia.Id;
+
+            var latest = new WorkoutMedia
+            {
+                WorkoutId = withMedia.Id,
+                Filename = "latest.jpg",
+                FilePath = "/tmp/latest.jpg",
+                MimeType = "image/jpeg",
+                FileSizeBytes = 100,
+                Caption = "should not appear on list",
+                CreatedAt = new DateTime(2024, 6, 2, 12, 0, 2, DateTimeKind.Utc)
+            };
+            var earliest = new WorkoutMedia
+            {
+                WorkoutId = withMedia.Id,
+                Filename = "earliest.mp4",
+                FilePath = "/tmp/earliest.mp4",
+                MimeType = "video/mp4",
+                FileSizeBytes = 200,
+                CreatedAt = new DateTime(2024, 6, 2, 12, 0, 0, DateTimeKind.Utc)
+            };
+            var middle = new WorkoutMedia
+            {
+                WorkoutId = withMedia.Id,
+                Filename = "middle.png",
+                FilePath = "/tmp/middle.png",
+                MimeType = "image/png",
+                FileSizeBytes = 150,
+                CreatedAt = new DateTime(2024, 6, 2, 12, 0, 1, DateTimeKind.Utc)
+            };
+            db.WorkoutMedia.AddRange(latest, earliest, middle);
+            await db.SaveChangesAsync();
+            earliestId = earliest.Id;
+            middleId = middle.Id;
+            latestId = latest.Id;
+        }
+
+        var response = await client.GetAsync("/workouts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = payload.GetProperty("items").EnumerateArray().ToList();
+        items.Should().HaveCount(2);
+
+        var withMediaItem = items.Single(i => i.GetProperty("id").GetGuid() == withMediaId);
+        var media = withMediaItem.GetProperty("media").EnumerateArray().ToList();
+        media.Should().HaveCount(3);
+        media.Select(m => m.GetProperty("id").GetGuid()).Should().Equal(earliestId, middleId, latestId);
+        media.Select(m => m.GetProperty("mimeType").GetString()).Should().Equal("video/mp4", "image/png", "image/jpeg");
+        foreach (var mediaItem in media)
+        {
+            mediaItem.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("id", "mimeType");
+        }
+
+        var withoutMediaItem = items.Single(i => i.GetProperty("id").GetGuid() == withoutMediaId);
+        withoutMediaItem.GetProperty("media").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ListWorkouts_ReturnsCorrectSplitsCount()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid withSplitsId;
+        Guid withoutSplitsId;
+        int expectedSplits;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var withSplits = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2024, 6, 2, 10, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "Has splits");
+            var splits = await TestDataSeeder.SeedWorkoutWithSplitsAsync(db, withSplits);
+            expectedSplits = splits.Count;
+            withSplitsId = withSplits.Id;
+
+            var withoutSplits = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2024, 6, 1, 10, 0, 0, DateTimeKind.Utc),
+                name: "No splits");
+            withoutSplitsId = withoutSplits.Id;
+        }
+
+        expectedSplits.Should().BeGreaterThan(0);
+
+        var response = await client.GetAsync("/workouts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = payload.GetProperty("items").EnumerateArray().ToList();
+
+        items.Single(i => i.GetProperty("id").GetGuid() == withSplitsId)
+            .GetProperty("splitsCount").GetInt32().Should().Be(expectedSplits);
+        items.Single(i => i.GetProperty("id").GetGuid() == withoutSplitsId)
+            .GetProperty("splitsCount").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ListWorkoutMedia_ResponseShapeUnchanged_WhenListedFromFeed()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        Guid mediaId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Media shape");
+            workoutId = workout.Id;
+            var media = new WorkoutMedia
+            {
+                WorkoutId = workout.Id,
+                Filename = "photo.jpg",
+                FilePath = "/tmp/photo.jpg",
+                MimeType = "image/jpeg",
+                FileSizeBytes = 2048,
+                Caption = "finish line",
+                CreatedAt = new DateTime(2024, 6, 2, 12, 0, 0, DateTimeKind.Utc)
+            };
+            db.WorkoutMedia.Add(media);
+            await db.SaveChangesAsync();
+            mediaId = media.Id;
+        }
+
+        var listResponse = await client.GetAsync("/workouts");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var listPayload = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var listMedia = listPayload.GetProperty("items")[0].GetProperty("media")[0];
+        listMedia.GetProperty("id").GetGuid().Should().Be(mediaId);
+        listMedia.GetProperty("mimeType").GetString().Should().Be("image/jpeg");
+        listMedia.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("id", "mimeType");
+
+        var mediaResponse = await client.GetAsync($"/workouts/{workoutId}/media");
+        mediaResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var mediaPayload = await mediaResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var detail = mediaPayload.EnumerateArray().Single();
+        detail.GetProperty("id").GetGuid().Should().Be(mediaId);
+        detail.GetProperty("filename").GetString().Should().Be("photo.jpg");
+        detail.GetProperty("mimeType").GetString().Should().Be("image/jpeg");
+        detail.GetProperty("fileSizeBytes").GetInt64().Should().Be(2048);
+        detail.GetProperty("caption").GetString().Should().Be("finish line");
+        detail.TryGetProperty("createdAt", out _).Should().BeTrue();
+        detail.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
+            "id", "filename", "mimeType", "fileSizeBytes", "caption", "createdAt");
+    }
+
+    private static List<double[]> CreateWavyCoordinates(int count)
+    {
+        var coordinates = new List<double[]>(count);
+        for (var i = 0; i < count; i++)
+        {
+            coordinates.Add(new[]
+            {
+                -122.4194 + i * 0.0008,
+                37.7749 + Math.Sin(i / 2.5) * 0.012
+            });
+        }
+
+        return coordinates;
+    }
+
+    private static string CreateGpxContent(int pointCount)
+    {
+        var start = new DateTime(2024, 3, 1, 10, 0, 0, DateTimeKind.Utc);
+        var points = new StringBuilder();
+        for (var i = 0; i < pointCount; i++)
+        {
+            var progress = (double)i / (pointCount - 1);
+            var lat = 37.7749 + progress * 0.12;
+            var lon = -122.4194 + progress * 0.12;
+            var time = start.AddSeconds(progress * 3600);
+            points.AppendLine($@"      <trkpt lat=""{lat:F6}"" lon=""{lon:F6}"">
+        <ele>10.0</ele>
+        <time>{time:yyyy-MM-ddTHH:mm:ss}Z</time>
+      </trkpt>");
+        }
+
+        return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<gpx version=""1.1"" xmlns=""http://www.topografix.com/GPX/1/1"">
+  <trk>
+    <name>Long Run</name>
+    <trkseg>
+{points}
+    </trkseg>
+  </trk>
+</gpx>";
+    }
+
+    private static int CountLineStringPoints(string geoJson)
+    {
+        using var doc = JsonDocument.Parse(geoJson);
+        return doc.RootElement.GetProperty("coordinates").GetArrayLength();
     }
 
     #endregion

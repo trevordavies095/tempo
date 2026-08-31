@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **CARTO basemaps API key** - Optional `CartoBasemaps:ApiKey` / `CartoBasemaps__ApiKey` on the API (Docker: `CARTO_BASEMAPS_API_KEY` in `.env`). Authenticated `GET /settings/carto-basemaps` exposes the key to the command center; workout maps append `?key=` to CARTO raster tile URLs.
+- **`includeRaw` on workout detail** - `GET /workouts/{id}` omits raw GPX/FIT/Strava/HealthKit JSON by default (`rawGpxData`, `rawFitData`, `rawStravaData`, `rawHealthKitData` are JSON `null`). Pass `includeRaw=true` to include the blobs. Clients that do not read these fields need no change; clients that do should schedule adoption of the query parameter.
+- **Route previews on the workout list** - `GET /workouts` item `route` is a ≤ 100-point GeoJSON LineString (Douglas-Peucker). Field name and shape are unchanged. A startup backfill fills `WorkoutRoutes.PreviewGeoJson`; until a row is backfilled the list falls back to the full route.
+- **List `media` field** - each list item includes `media: [{ id, mimeType }, ...]` ordered by `createdAt` (empty array when none) so feed clients can render galleries without per-workout follow-up requests.
+
+### Changed
+- **Crop, duplicate-update, and split/route recalculation** that rewrite `RouteGeoJson` also recompute `PreviewGeoJson` in the same save. Tempo export restore still writes routes without a preview; backfill covers those rows.
+
+### Migration
+- **Database:** `AddWorkoutRoutePreviewGeoJson` — nullable `PreviewGeoJson` on `WorkoutRoutes`. Applied automatically on startup; `RoutePreviewBackfillWorker` then backfills remaining nulls in batches.
 
 ## [2.7.0] - 2026-08-19
 

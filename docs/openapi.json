@@ -3,7 +3,7 @@
   "info": {
     "title": "Tempo API",
     "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
-    "version": "2.7.0"
+    "version": "2.8.0"
   },
   "paths": {
     "/auth/register": {
@@ -1092,7 +1092,7 @@
           "Workouts"
         ],
         "summary": "List workouts with pagination and filtering",
-        "description": "Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,\nand run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.",
+        "description": "Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,\nand run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.\nItem `route` is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.\nItem `media` is `{ id, mimeType }` ordered by createdAt (empty array when none).\n`splitsCount` is a SQL COUNT; split rows are not loaded.",
         "operationId": "ListWorkouts",
         "parameters": [
           {
@@ -1589,7 +1589,7 @@
           "Workouts"
         ],
         "summary": "Get workout details",
-        "description": "Retrieves complete workout data including route (as GeoJSON), splits, weather information,\nand raw GPX/FIT/Strava data. Weather humidity values are normalized for consistency.",
+        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
         "operationId": "GetWorkout",
         "parameters": [
           {
@@ -1600,6 +1600,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "includeRaw",
+            "in": "query",
+            "description": "When true, include raw GPX/FIT/Strava/HealthKit JSON blobs. Defaults to false: those four\nfields are returned as JSON null and are not read from the database.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],

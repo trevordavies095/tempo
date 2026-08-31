@@ -90,6 +90,7 @@ public class WorkoutCropService
             : 0;
 
         workout.Route.RouteGeoJson = geometry.Route.RouteGeoJson;
+        workout.Route.PreviewGeoJson = geometry.Route.PreviewGeoJson;
 
         ApplySeriesAggregates(workout, geometry.TimeSeries);
 
