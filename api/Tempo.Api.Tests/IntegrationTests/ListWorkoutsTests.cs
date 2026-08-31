@@ -7,6 +7,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tempo.Api.Data;
+using Tempo.Api.Models;
 using Tempo.Api.Services;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
@@ -995,6 +996,178 @@ public class ListWorkoutsTests : IClassFixture<TempoWebApplicationFactory>
         var item = payload.GetProperty("items").EnumerateArray().Single();
         item.GetProperty("hasRoute").GetBoolean().Should().BeTrue();
         item.GetProperty("route").GetProperty("coordinates").GetArrayLength().Should().Be(120);
+    }
+
+    #endregion
+
+    #region Media and splitsCount tests
+
+    [Fact]
+    public async Task ListWorkouts_IncludesMediaInCreatedAtOrder_AndEmptyArrayWhenNone()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid withMediaId;
+        Guid withoutMediaId;
+        Guid earliestId;
+        Guid middleId;
+        Guid latestId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var withMedia = await TestDataSeeder.SeedWorkoutAsync(
+                db, startedAt: new DateTime(2024, 6, 2, 10, 0, 0, DateTimeKind.Utc), name: "With media");
+            var withoutMedia = await TestDataSeeder.SeedWorkoutAsync(
+                db, startedAt: new DateTime(2024, 6, 1, 10, 0, 0, DateTimeKind.Utc), name: "No media");
+            withMediaId = withMedia.Id;
+            withoutMediaId = withoutMedia.Id;
+
+            var latest = new WorkoutMedia
+            {
+                WorkoutId = withMedia.Id,
+                Filename = "latest.jpg",
+                FilePath = "/tmp/latest.jpg",
+                MimeType = "image/jpeg",
+                FileSizeBytes = 100,
+                Caption = "should not appear on list",
+                CreatedAt = new DateTime(2024, 6, 2, 12, 0, 2, DateTimeKind.Utc)
+            };
+            var earliest = new WorkoutMedia
+            {
+                WorkoutId = withMedia.Id,
+                Filename = "earliest.mp4",
+                FilePath = "/tmp/earliest.mp4",
+                MimeType = "video/mp4",
+                FileSizeBytes = 200,
+                CreatedAt = new DateTime(2024, 6, 2, 12, 0, 0, DateTimeKind.Utc)
+            };
+            var middle = new WorkoutMedia
+            {
+                WorkoutId = withMedia.Id,
+                Filename = "middle.png",
+                FilePath = "/tmp/middle.png",
+                MimeType = "image/png",
+                FileSizeBytes = 150,
+                CreatedAt = new DateTime(2024, 6, 2, 12, 0, 1, DateTimeKind.Utc)
+            };
+            db.WorkoutMedia.AddRange(latest, earliest, middle);
+            await db.SaveChangesAsync();
+            earliestId = earliest.Id;
+            middleId = middle.Id;
+            latestId = latest.Id;
+        }
+
+        var response = await client.GetAsync("/workouts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = payload.GetProperty("items").EnumerateArray().ToList();
+        items.Should().HaveCount(2);
+
+        var withMediaItem = items.Single(i => i.GetProperty("id").GetGuid() == withMediaId);
+        var media = withMediaItem.GetProperty("media").EnumerateArray().ToList();
+        media.Should().HaveCount(3);
+        media.Select(m => m.GetProperty("id").GetGuid()).Should().Equal(earliestId, middleId, latestId);
+        media.Select(m => m.GetProperty("mimeType").GetString()).Should().Equal("video/mp4", "image/png", "image/jpeg");
+        foreach (var mediaItem in media)
+        {
+            mediaItem.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("id", "mimeType");
+        }
+
+        var withoutMediaItem = items.Single(i => i.GetProperty("id").GetGuid() == withoutMediaId);
+        withoutMediaItem.GetProperty("media").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ListWorkouts_ReturnsCorrectSplitsCount()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid withSplitsId;
+        Guid withoutSplitsId;
+        int expectedSplits;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var withSplits = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2024, 6, 2, 10, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "Has splits");
+            var splits = await TestDataSeeder.SeedWorkoutWithSplitsAsync(db, withSplits);
+            expectedSplits = splits.Count;
+            withSplitsId = withSplits.Id;
+
+            var withoutSplits = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2024, 6, 1, 10, 0, 0, DateTimeKind.Utc),
+                name: "No splits");
+            withoutSplitsId = withoutSplits.Id;
+        }
+
+        expectedSplits.Should().BeGreaterThan(0);
+
+        var response = await client.GetAsync("/workouts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = payload.GetProperty("items").EnumerateArray().ToList();
+
+        items.Single(i => i.GetProperty("id").GetGuid() == withSplitsId)
+            .GetProperty("splitsCount").GetInt32().Should().Be(expectedSplits);
+        items.Single(i => i.GetProperty("id").GetGuid() == withoutSplitsId)
+            .GetProperty("splitsCount").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ListWorkoutMedia_ResponseShapeUnchanged_WhenListedFromFeed()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        Guid mediaId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Media shape");
+            workoutId = workout.Id;
+            var media = new WorkoutMedia
+            {
+                WorkoutId = workout.Id,
+                Filename = "photo.jpg",
+                FilePath = "/tmp/photo.jpg",
+                MimeType = "image/jpeg",
+                FileSizeBytes = 2048,
+                Caption = "finish line",
+                CreatedAt = new DateTime(2024, 6, 2, 12, 0, 0, DateTimeKind.Utc)
+            };
+            db.WorkoutMedia.Add(media);
+            await db.SaveChangesAsync();
+            mediaId = media.Id;
+        }
+
+        var listResponse = await client.GetAsync("/workouts");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var listPayload = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var listMedia = listPayload.GetProperty("items")[0].GetProperty("media")[0];
+        listMedia.GetProperty("id").GetGuid().Should().Be(mediaId);
+        listMedia.GetProperty("mimeType").GetString().Should().Be("image/jpeg");
+        listMedia.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("id", "mimeType");
+
+        var mediaResponse = await client.GetAsync($"/workouts/{workoutId}/media");
+        mediaResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var mediaPayload = await mediaResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var detail = mediaPayload.EnumerateArray().Single();
+        detail.GetProperty("id").GetGuid().Should().Be(mediaId);
+        detail.GetProperty("filename").GetString().Should().Be("photo.jpg");
+        detail.GetProperty("mimeType").GetString().Should().Be("image/jpeg");
+        detail.GetProperty("fileSizeBytes").GetInt64().Should().Be(2048);
+        detail.GetProperty("caption").GetString().Should().Be("finish line");
+        detail.TryGetProperty("createdAt", out _).Should().BeTrue();
+        detail.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
+            "id", "filename", "mimeType", "fileSizeBytes", "caption", "createdAt");
     }
 
     private static List<double[]> CreateWavyCoordinates(int count)

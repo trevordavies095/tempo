@@ -185,6 +185,8 @@ public static class WorkoutsEndpoints
     /// Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,
     /// and run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.
     /// Item <c>route</c> is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.
+    /// Item <c>media</c> is <c>{ id, mimeType }</c> ordered by createdAt (empty array when none).
+    /// <c>splitsCount</c> is a SQL COUNT; split rows are not loaded.
     /// </remarks>
     private static async Task<IResult> ListWorkouts(
         TempoDbContext db,
@@ -237,10 +239,8 @@ public static class WorkoutsEndpoints
             endDate = end.Date.AddDays(1).AddTicks(-1); // End of day (23:59:59.999)
         }
 
-        // Build query
-        var query = db.Workouts
-            .Include(w => w.Splits)
-            .AsQueryable();
+        // Build query (splitsCount is a SQL COUNT projection; do not Include split rows)
+        var query = db.Workouts.AsQueryable();
 
         // Apply filters
         if (startDate.HasValue)
@@ -352,17 +352,21 @@ public static class WorkoutsEndpoints
         }
 
         // Apply pagination
-        var workouts = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .AsNoTracking()
+        var pageRows = await WorkoutQueryService.QueryListPage(
+                query
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .AsNoTracking())
             .ToListAsync();
 
-        var listRoutes = await LoadListRouteGeoJsonAsync(db, workouts.Select(w => w.Id).ToList());
+        var workoutIds = pageRows.Select(r => r.Workout.Id).ToList();
+        var listRoutes = await LoadListRouteGeoJsonAsync(db, workoutIds);
+        var listMedia = await LoadListMediaAsync(db, workoutIds);
 
         // Map to response
-        var items = workouts.Select(w =>
+        var items = pageRows.Select(row =>
         {
+            var w = row.Workout;
             object? routeGeoJson = null;
             var hasRoute = listRoutes.TryGetValue(w.Id, out var listRoute);
             if (hasRoute)
@@ -405,7 +409,8 @@ public static class WorkoutsEndpoints
                 name = w.Name,
                 hasRoute,
                 route = routeGeoJson,
-                splitsCount = w.Splits.Count
+                splitsCount = row.SplitsCount,
+                media = listMedia.GetValueOrDefault(w.Id) ?? []
             };
         }).ToList();
 
@@ -445,6 +450,23 @@ public static class WorkoutsEndpoints
         return rows.ToDictionary(
             r => r.WorkoutId,
             r => (r.PreviewGeoJson, r.FallbackRouteGeoJson));
+    }
+
+    private static async Task<Dictionary<Guid, List<object>>> LoadListMediaAsync(
+        TempoDbContext db,
+        List<Guid> workoutIds)
+    {
+        if (workoutIds.Count == 0)
+        {
+            return new Dictionary<Guid, List<object>>();
+        }
+
+        var rows = await WorkoutQueryService.QueryListMedia(db, workoutIds).ToListAsync();
+        return rows
+            .GroupBy(m => m.WorkoutId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(m => (object)new { id = m.Id, mimeType = m.MimeType }).ToList());
     }
 
     private static object? DeserializeListRoute(
@@ -2348,7 +2370,7 @@ public static class WorkoutsEndpoints
         .Produces(200)
         .Produces(404)
         .WithSummary("List workouts")
-        .WithDescription("Returns a paginated list of workouts with optional filtering. Item route is a simplified preview when stored; otherwise the full route.");
+        .WithDescription("Returns a paginated list of workouts with optional filtering. Item route is a simplified preview when stored; otherwise the full route. Each item includes media { id, mimeType } and splitsCount.");
 
         // Media routes must come before the generic /{id:guid} route to ensure proper routing
         group.MapPost("/{id:guid}/media", UploadWorkoutMedia)

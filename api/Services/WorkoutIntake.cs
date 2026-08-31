@@ -463,6 +463,7 @@ public class WorkoutIntake
                 else
                 {
                     existingWorkout.Route.RouteGeoJson = geometry.Route.RouteGeoJson;
+                    existingWorkout.Route.PreviewGeoJson = geometry.Route.PreviewGeoJson;
                 }
             }
 

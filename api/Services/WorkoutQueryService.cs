@@ -32,6 +32,40 @@ public static class WorkoutQueryService
     }
 
     /// <summary>
+    /// Projects a <c>GET /workouts</c> page with <c>splitsCount</c> as a SQL <c>COUNT</c>.
+    /// Does not load <see cref="WorkoutSplit"/> rows.
+    /// </summary>
+    public static IQueryable<WorkoutListPageRow> QueryListPage(IQueryable<Workout> workouts)
+    {
+        return workouts.Select(w => new WorkoutListPageRow
+        {
+            Workout = w,
+            SplitsCount = w.Splits.Count()
+        });
+    }
+
+    /// <summary>
+    /// Media metadata for a <c>GET /workouts</c> page: one query for the page's workout ids,
+    /// ordered by <see cref="WorkoutMedia.CreatedAt"/> then id.
+    /// </summary>
+    public static IQueryable<WorkoutListMediaRow> QueryListMedia(
+        TempoDbContext db,
+        IReadOnlyCollection<Guid> workoutIds)
+    {
+        return db.WorkoutMedia
+            .AsNoTracking()
+            .Where(m => workoutIds.Contains(m.WorkoutId))
+            .OrderBy(m => m.CreatedAt)
+            .ThenBy(m => m.Id)
+            .Select(m => new WorkoutListMediaRow
+            {
+                WorkoutId = m.WorkoutId,
+                Id = m.Id,
+                MimeType = m.MimeType
+            });
+    }
+
+    /// <summary>
     /// Query used by <c>GET /workouts/{id}</c>. When <paramref name="includeRaw"/> is false, the four
     /// raw JSONB columns are projected out so they are neither read nor deserialized.
     /// </summary>
@@ -110,5 +144,24 @@ public static class WorkoutQueryService
                         Math.Abs(w.DurationS - durationSeconds) < 1)
             .FirstOrDefaultAsync();
     }
+}
+
+/// <summary>
+/// One row of a <c>GET /workouts</c> page: workout scalars plus a SQL split count.
+/// </summary>
+public sealed class WorkoutListPageRow
+{
+    public Workout Workout { get; set; } = null!;
+    public int SplitsCount { get; set; }
+}
+
+/// <summary>
+/// Minimal media metadata for a <c>GET /workouts</c> list item.
+/// </summary>
+public sealed class WorkoutListMediaRow
+{
+    public Guid WorkoutId { get; set; }
+    public Guid Id { get; set; }
+    public string MimeType { get; set; } = string.Empty;
 }
 

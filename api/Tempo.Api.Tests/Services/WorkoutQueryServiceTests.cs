@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
@@ -363,6 +364,153 @@ public class WorkoutQueryServiceTests : IDisposable
         sql.Should().Contain("RawFitData");
         sql.Should().Contain("RawStravaData");
         sql.Should().Contain("RawHealthKitData");
+    }
+
+    [Fact]
+    public async Task QueryListPage_ProjectsSplitsCountWithoutLoadingSplitRows()
+    {
+        var workout = new Workout
+        {
+            StartedAt = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc),
+            DistanceM = 5000,
+            DurationS = 1800,
+            AvgPaceS = 360,
+            Source = "test",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Workouts.Add(workout);
+        await _db.SaveChangesAsync();
+
+        for (var i = 0; i < 4; i++)
+        {
+            _db.WorkoutSplits.Add(new WorkoutSplit
+            {
+                WorkoutId = workout.Id,
+                Idx = i,
+                DistanceM = 1000,
+                DurationS = 360,
+                PaceS = 360
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var sql = WorkoutQueryService.QueryListPage(_db.Workouts.AsNoTracking()).ToQueryString();
+        sql.Should().Contain("COUNT");
+        sql.Should().Contain("WorkoutSplits");
+        sql.Should().NotContain("\"Idx\"");
+
+        var commands = new List<string>();
+        await using var loggingDb = CreateLoggingDb(commands);
+        var rows = await WorkoutQueryService.QueryListPage(loggingDb.Workouts.AsNoTracking()).ToListAsync();
+
+        rows.Should().ContainSingle();
+        rows[0].SplitsCount.Should().Be(4);
+        rows[0].Workout.Id.Should().Be(workout.Id);
+        rows[0].Workout.Splits.Should().BeEmpty();
+
+        var splitCommands = commands
+            .Where(c => c.Contains("WorkoutSplits", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        splitCommands.Should().NotBeEmpty();
+        splitCommands.Should().OnlyContain(c => c.Contains("COUNT", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task QueryListMedia_LoadsPageMediaInOneQueryOrderedByCreatedAt()
+    {
+        var workoutA = new Workout
+        {
+            StartedAt = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc),
+            DistanceM = 5000,
+            DurationS = 1800,
+            AvgPaceS = 360,
+            Source = "test",
+            CreatedAt = DateTime.UtcNow
+        };
+        var workoutB = new Workout
+        {
+            StartedAt = new DateTime(2024, 1, 16, 10, 0, 0, DateTimeKind.Utc),
+            DistanceM = 3000,
+            DurationS = 1200,
+            AvgPaceS = 400,
+            Source = "test",
+            CreatedAt = DateTime.UtcNow
+        };
+        var workoutC = new Workout
+        {
+            StartedAt = new DateTime(2024, 1, 17, 10, 0, 0, DateTimeKind.Utc),
+            DistanceM = 2000,
+            DurationS = 900,
+            AvgPaceS = 450,
+            Source = "test",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Workouts.AddRange(workoutA, workoutB, workoutC);
+        await _db.SaveChangesAsync();
+
+        var later = new WorkoutMedia
+        {
+            WorkoutId = workoutA.Id,
+            Filename = "later.jpg",
+            FilePath = "/tmp/later.jpg",
+            MimeType = "image/jpeg",
+            FileSizeBytes = 10,
+            CreatedAt = new DateTime(2024, 2, 1, 12, 0, 2, DateTimeKind.Utc)
+        };
+        var earlier = new WorkoutMedia
+        {
+            WorkoutId = workoutA.Id,
+            Filename = "earlier.mp4",
+            FilePath = "/tmp/earlier.mp4",
+            MimeType = "video/mp4",
+            FileSizeBytes = 20,
+            CreatedAt = new DateTime(2024, 2, 1, 12, 0, 0, DateTimeKind.Utc)
+        };
+        var other = new WorkoutMedia
+        {
+            WorkoutId = workoutB.Id,
+            Filename = "b.png",
+            FilePath = "/tmp/b.png",
+            MimeType = "image/png",
+            FileSizeBytes = 30,
+            CreatedAt = new DateTime(2024, 2, 1, 11, 0, 0, DateTimeKind.Utc)
+        };
+        _db.WorkoutMedia.AddRange(later, earlier, other);
+        await _db.SaveChangesAsync();
+
+        var pageIds = new List<Guid> { workoutA.Id, workoutB.Id, workoutC.Id };
+        var sql = WorkoutQueryService.QueryListMedia(_db, pageIds).ToQueryString();
+        sql.Should().Contain("WorkoutMedia");
+        sql.Should().NotContain("Filename");
+        sql.Should().NotContain("FilePath");
+        sql.Should().NotContain("FileSizeBytes");
+        sql.Should().NotContain("Caption");
+
+        var commands = new List<string>();
+        await using var loggingDb = CreateLoggingDb(commands);
+        var rows = await WorkoutQueryService.QueryListMedia(loggingDb, pageIds).ToListAsync();
+
+        var mediaCommands = commands
+            .Where(c => c.Contains("WorkoutMedia", StringComparison.OrdinalIgnoreCase)
+                        && c.Contains("SELECT", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        mediaCommands.Should().HaveCount(1);
+
+        rows.Should().HaveCount(3);
+        var aMedia = rows.Where(r => r.WorkoutId == workoutA.Id).ToList();
+        aMedia.Select(m => m.Id).Should().Equal(earlier.Id, later.Id);
+        aMedia.Select(m => m.MimeType).Should().Equal("video/mp4", "image/jpeg");
+        rows.Should().ContainSingle(r => r.WorkoutId == workoutB.Id && r.Id == other.Id);
+        rows.Should().NotContain(r => r.WorkoutId == workoutC.Id);
+    }
+
+    private TempoDbContext CreateLoggingDb(List<string> commands)
+    {
+        var options = new DbContextOptionsBuilder<TempoDbContext>()
+            .UseSqlite(_connection)
+            .LogTo(commands.Add, [DbLoggerCategory.Database.Command.Name], LogLevel.Information)
+            .Options;
+        return new TempoDbContext(options);
     }
 }
 

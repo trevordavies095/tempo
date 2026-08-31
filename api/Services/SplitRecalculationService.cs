@@ -65,6 +65,12 @@ public class SplitRecalculationService
             workout.DistanceM,
             workout.DurationS);
 
+        if (derived.HasRouteCoordinates && workout.Route != null)
+        {
+            workout.Route.RouteGeoJson = derived.Route.RouteGeoJson;
+            workout.Route.PreviewGeoJson = derived.Route.PreviewGeoJson;
+        }
+
         _db.WorkoutSplits.AddRange(derived.Splits);
         await _db.SaveChangesAsync();
 

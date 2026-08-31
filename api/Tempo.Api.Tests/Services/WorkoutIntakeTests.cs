@@ -170,6 +170,44 @@ public class WorkoutIntakeTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessAsync_Updated_OverwritesEmptyRouteAndPersistsPreview()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var parseStream = CreateGpxStream();
+        var parsed = _gpxParser.ParseGpx(parseStream);
+
+        var existing = new Workout
+        {
+            StartedAt = parsed.StartTime,
+            DurationS = parsed.DurationSeconds,
+            DistanceM = parsed.DistanceMeters,
+            AvgPaceS = parsed.DurationSeconds / (parsed.DistanceMeters / 1000.0),
+            RawFileType = "gpx",
+            RawGpxData = "{}",
+            Source = "gpx_import",
+            RunType = "Easy Run",
+            CreatedAt = System.DateTime.UtcNow
+        };
+        _db.Workouts.Add(existing);
+        await _db.SaveChangesAsync();
+        _db.WorkoutRoutes.Add(new WorkoutRoute
+        {
+            WorkoutId = existing.Id,
+            RouteGeoJson = ""
+        });
+        await _db.SaveChangesAsync();
+
+        using var stream = CreateGpxStream();
+        var result = await _intake.ProcessAsync(stream, "morning.gpx");
+
+        result.Action.Should().Be("updated");
+        result.Workout!.Id.Should().Be(existing.Id);
+        var route = await _db.WorkoutRoutes.SingleAsync(r => r.WorkoutId == existing.Id);
+        route.RouteGeoJson.Should().NotBeNullOrWhiteSpace();
+        await AssertRoutePreviewPersistedAsync(existing.Id);
+    }
+
+    [Fact]
     public async Task ProcessAsync_Created_Fit_PersistsRoutePreview()
     {
         await TestDataSeeder.SeedUserSettingsAsync(_db);

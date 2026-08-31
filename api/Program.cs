@@ -154,6 +154,8 @@ builder.Services.AddScoped<StravaBulkImportOrchestrator>();
 builder.Services.AddSingleton<ImportJobQueue>();
 builder.Services.AddScoped<ImportJobService>();
 builder.Services.AddHostedService<ImportJobWorker>();
+builder.Services.AddScoped<RoutePreviewBackfillService>();
+builder.Services.AddHostedService<RoutePreviewBackfillWorker>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();

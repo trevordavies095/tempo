@@ -213,6 +213,9 @@ public class SplitRecalculationServiceTests : IDisposable
         result.Should().BeTrue();
         var splits = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
         splits.Should().HaveCountGreaterThan(0);
+        var route = await _db.WorkoutRoutes.SingleAsync(r => r.WorkoutId == workout.Id);
+        route.PreviewGeoJson.Should().Be(TrackGeometry.BuildRoutePreviewGeoJson(route.RouteGeoJson));
+        route.PreviewGeoJson.Should().NotBe(TrackGeometry.EmptyRoutePreviewSentinel);
     }
 
     [Fact]
