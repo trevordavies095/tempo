@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Crop, duplicate-update, and split/route recalculation** that rewrite `RouteGeoJson` also recompute `PreviewGeoJson` in the same save. Tempo export restore still writes routes without a preview; backfill covers those rows.
 
+### Security
+- **Frontend: Next.js 16.2.11**
+  - Raised `next` and `eslint-config-next` to **>=16.2.11** (lockfile resolves 16.2.11)
+  - Addresses Next.js advisories patched in 16.2.11 (Server Action DoS, rewrite/custom-server SSRF, Turbopack middleware bypass, cache confusion, image optimizer SVG DoS, Server Function disclosure, unbounded Edge Server Action payloads)
+- **Frontend: transitive dependency overrides**
+  - Pins `postcss` >= 8.5.23, `nanoid` >= 3.3.18, `js-yaml` >= 4.3.1, `brace-expansion` 1.1.18 / 2.1.4, `sharp` >= 0.35.0, and `@babel/core` >= 7.29.6
+- **API: Microsoft.OpenApi / Swashbuckle**
+  - Bumped `Microsoft.OpenApi` to 2.7.5 and `Swashbuckle.AspNetCore` (and CLI) to 10.2.3 (addresses [GHSA-v5pm-xwqc-g5wc](https://github.com/advisories/GHSA-v5pm-xwqc-g5wc); stays on OpenAPI.NET 2.x)
+
 ### Migration
 - **Database:** `AddWorkoutRoutePreviewGeoJson` — nullable `PreviewGeoJson` on `WorkoutRoutes`. Applied automatically on startup; `RoutePreviewBackfillWorker` then backfills remaining nulls in batches.
 
