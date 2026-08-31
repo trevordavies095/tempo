@@ -22,7 +22,18 @@ public sealed class TrackGeometryResult
 public class TrackGeometry
 {
     public const int RoutePreviewMaxPoints = 100;
-    public const string EmptyRoutePreviewSentinel = "";
+
+    /// <summary>
+    /// Valid JSON stored when source geometry is empty or unparseable.
+    /// Must be legal jsonb — an empty string is rejected by PostgreSQL.
+    /// </summary>
+    public const string EmptyRoutePreviewSentinel = "[]";
+
+    /// <summary>
+    /// True when the list endpoint should fall back to the full route (or omit the preview).
+    /// </summary>
+    public static bool IsUnusableListPreview(string? previewGeoJson) =>
+        string.IsNullOrWhiteSpace(previewGeoJson) || previewGeoJson == EmptyRoutePreviewSentinel;
 
     private const int PreviewToleranceSearchIterations = 40;
     private const double PreviewToleranceStartMeters = 1.0;

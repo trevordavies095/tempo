@@ -17,7 +17,7 @@ public class WorkoutRoute
 
     /// <summary>
     /// Douglas-Peucker preview of <see cref="RouteGeoJson"/> (≤ 100 points).
-    /// Null means not yet computed; empty string is a sentinel for empty or unparseable source geometry.
+    /// Null means not yet computed; <c>[]</c> is a sentinel for empty or unparseable source geometry.
     /// </summary>
     [Column(TypeName = "jsonb")]
     public string? PreviewGeoJson { get; set; }

@@ -433,23 +433,32 @@ public static class WorkoutsEndpoints
             return new Dictionary<Guid, (string? PreviewGeoJson, string? FallbackRouteGeoJson)>();
         }
 
-        // COALESCE-style: read RouteGeoJson only when preview is null or the empty-string sentinel.
-        var rows = await db.WorkoutRoutes
+        // Do not compare jsonb to '' in SQL — PostgreSQL rejects `jsonb = ''` (500 on GET /workouts).
+        // Load previews first, then the full route only for rows that still need a fallback.
+        var previews = await db.WorkoutRoutes
             .AsNoTracking()
             .Where(r => workoutIds.Contains(r.WorkoutId))
-            .Select(r => new
-            {
-                r.WorkoutId,
-                r.PreviewGeoJson,
-                FallbackRouteGeoJson = r.PreviewGeoJson == null || r.PreviewGeoJson == ""
-                    ? r.RouteGeoJson
-                    : null
-            })
+            .Select(r => new { r.WorkoutId, r.PreviewGeoJson })
             .ToListAsync();
 
-        return rows.ToDictionary(
+        var fallbackIds = previews
+            .Where(r => TrackGeometry.IsUnusableListPreview(r.PreviewGeoJson))
+            .Select(r => r.WorkoutId)
+            .ToList();
+
+        Dictionary<Guid, string?> fallbacks = new();
+        if (fallbackIds.Count > 0)
+        {
+            fallbacks = await db.WorkoutRoutes
+                .AsNoTracking()
+                .Where(r => fallbackIds.Contains(r.WorkoutId))
+                .Select(r => new { r.WorkoutId, r.RouteGeoJson })
+                .ToDictionaryAsync(r => r.WorkoutId, r => (string?)r.RouteGeoJson);
+        }
+
+        return previews.ToDictionary(
             r => r.WorkoutId,
-            r => (r.PreviewGeoJson, r.FallbackRouteGeoJson));
+            r => (r.PreviewGeoJson, fallbacks.GetValueOrDefault(r.WorkoutId)));
     }
 
     private static async Task<Dictionary<Guid, List<object>>> LoadListMediaAsync(
@@ -475,7 +484,9 @@ public static class WorkoutsEndpoints
         Guid workoutId,
         ILogger logger)
     {
-        var json = !string.IsNullOrEmpty(previewGeoJson) ? previewGeoJson : fallbackRouteGeoJson;
+        var json = TrackGeometry.IsUnusableListPreview(previewGeoJson)
+            ? fallbackRouteGeoJson
+            : previewGeoJson;
         if (string.IsNullOrEmpty(json))
         {
             return null;
