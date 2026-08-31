@@ -70,6 +70,22 @@ public class RoutePreviewTests
         TrackGeometry.BuildRoutePreviewGeoJson(geoJson).Should().Be(TrackGeometry.EmptyRoutePreviewSentinel);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("[]")]
+    public void IsUnusableListPreview_IsTrue_ForMissingOrSentinel(string? preview)
+    {
+        TrackGeometry.IsUnusableListPreview(preview).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsUnusableListPreview_IsFalse_ForLineString()
+    {
+        TrackGeometry.IsUnusableListPreview(LineStringWithCount(3)).Should().BeFalse();
+    }
+
     private static string LineStringWithCount(int count, bool wavy = false)
     {
         var coordinates = new List<double[]>(count);

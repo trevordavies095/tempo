@@ -5,7 +5,7 @@ namespace Tempo.Api.Services;
 
 /// <summary>
 /// Fills <c>WorkoutRoutes.PreviewGeoJson</c> for rows that still have a null preview.
-/// Idempotent: sentinel empty-string previews are left alone; a fully backfilled database is one count query.
+/// Idempotent: sentinel (<c>[]</c>) previews are left alone; a fully backfilled database is one count query.
 /// </summary>
 public class RoutePreviewBackfillService
 {
