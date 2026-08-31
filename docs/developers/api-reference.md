@@ -377,6 +377,27 @@ Query parameters:
 
 List and detail responses include nullable `healthKitUuid` for tempo-ios already-imported badging.
 
+### List HealthKit UUIDs
+
+Returns all non-null `HealthKitUuid` values stored on workouts (nulls omitted). Used by tempo-ios to badge already-imported runs without paging `GET /workouts`.
+
+```http
+GET /workouts/healthkit-uuids
+```
+
+Requires authentication. Response:
+
+```json
+{
+  "uuids": [
+    "A1B2C3D4-E5F6-7890-ABCD-EF1234567890",
+    "B2C3D4E5-F6A7-8901-BCDE-F12345678901"
+  ]
+}
+```
+
+Empty library or GPX/FIT-only library → `{ "uuids": [] }`. Unpaginated; no Tempo workout ids.
+
 ### Get Workout
 
 Get detailed workout information:

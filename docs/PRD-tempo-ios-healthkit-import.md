@@ -122,6 +122,7 @@ The app merges HR/cadence/power samples onto route points by timestamp (nearest-
 3. **Idempotency:** persist the HealthKit UUID on the workout (new nullable external-ID column). Duplicate check order: UUID match → return the existing workout (200-equivalent "skipped/exists" result, not an error) → existing start/distance/duration rule as backstop.
 4. Store the raw request payload in a JSONB column following the `RawStravaData` pattern, so future reprocessing (e.g., improved split derivation) can rehydrate from source.
 5. Response mirrors the existing import result shape (`created` / `updated` / `skipped` + workout ID) so the app can badge accurately.
+6. **UUID index** `GET /workouts/healthkit-uuids` returns `{ "uuids": [...] }` of all non-null `HealthKitUuid` values so tempo-ios can badge the history picker without paging `GET /workouts`.
 
 ---
 

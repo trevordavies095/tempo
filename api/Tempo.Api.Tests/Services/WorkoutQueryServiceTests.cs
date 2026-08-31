@@ -266,5 +266,57 @@ public class WorkoutQueryServiceTests : IDisposable
         // Should return one of the matches (FirstOrDefault behavior)
         (result!.Id == workout1.Id || result.Id == workout2.Id).Should().BeTrue();
     }
+
+    [Fact]
+    public async Task ListHealthKitUuidsAsync_ReturnsEmpty_WhenNoWorkoutsExist()
+    {
+        var result = await WorkoutQueryService.ListHealthKitUuidsAsync(_db);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListHealthKitUuidsAsync_ReturnsOnlyNonNullUuids()
+    {
+        var uuid1 = Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
+        var uuid2 = Guid.Parse("B2C3D4E5-F6A7-8901-BCDE-F12345678901");
+
+        _db.Workouts.AddRange(
+            new Workout
+            {
+                StartedAt = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc),
+                DistanceM = 5000,
+                DurationS = 1800,
+                AvgPaceS = 360,
+                Source = "test",
+                HealthKitUuid = uuid1,
+                CreatedAt = DateTime.UtcNow
+            },
+            new Workout
+            {
+                StartedAt = new DateTime(2024, 1, 16, 10, 0, 0, DateTimeKind.Utc),
+                DistanceM = 5000,
+                DurationS = 1800,
+                AvgPaceS = 360,
+                Source = "test",
+                HealthKitUuid = null,
+                CreatedAt = DateTime.UtcNow
+            },
+            new Workout
+            {
+                StartedAt = new DateTime(2024, 1, 17, 10, 0, 0, DateTimeKind.Utc),
+                DistanceM = 5000,
+                DurationS = 1800,
+                AvgPaceS = 360,
+                Source = "test",
+                HealthKitUuid = uuid2,
+                CreatedAt = DateTime.UtcNow
+            });
+        await _db.SaveChangesAsync();
+
+        var result = await WorkoutQueryService.ListHealthKitUuidsAsync(_db);
+
+        result.Should().BeEquivalentTo(new[] { uuid1, uuid2 });
+    }
 }
 
