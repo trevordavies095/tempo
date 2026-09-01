@@ -10,14 +10,27 @@
 
 ### Summary
 
-Merges **`develop` → `main`** for **Tempo 2.8.0**: **HealthKit import** for tempo-ios (outdoor GPS and indoor distance/summary, idempotent UUID), **smaller workout list/detail payloads** (route previews, list `media` / `splitsCount`, `includeRaw` on detail), optional **CARTO basemaps API key**, and **Dependabot security bumps** (Next.js 16.2.11, transitive npm pins, Microsoft.OpenApi 2.7.5). This release builds on **2.7.0** (onboarding, import jobs, UI identity) already on `main`.
+Merges **`develop` → `main`** for **Tempo 2.8.0**. Builds on **2.7.0** (onboarding, import jobs, UI identity) already on `main`.
 
-### Highlights
+### Added
 
-- **HealthKit** — `POST /workouts/import/healthkit` through the same intake pipeline as file import; unique `healthKitUuid`; `GET /workouts/healthkit-uuids` for iOS already-imported badges.
-- **Lighter payloads** — List `route` is a ≤ 100-point preview; list items include `media` and `splitsCount`; `GET /workouts/{id}` omits raw GPX/FIT/Strava/HealthKit JSON unless `includeRaw=true`.
-- **CARTO** — Optional `CartoBasemaps__ApiKey` / `CARTO_BASEMAPS_API_KEY`; command center maps append `?key=` when configured.
-- **Security** — Next.js / eslint-config-next **>=16.2.11**; npm overrides for postcss, nanoid, js-yaml, brace-expansion, sharp, @babel/core; Microsoft.OpenApi 2.7.5 + Swashbuckle 10.2.3.
+- **HealthKit import (tempo-ios)** — `POST /workouts/import/healthkit` accepts a versioned HealthKit JSON document (outdoor GPS or indoor distance/summary) and persists through the same workout intake pipeline as file import. Indoor runs without GPS still get splits/time series from the distance stream.
+- **HealthKit UUID** — Optional unique `healthKitUuid` on workouts for idempotent iOS imports. `GET /workouts/healthkit-uuids` returns stored UUIDs so tempo-ios can badge already-imported runs without paging the feed.
+- **CARTO basemaps API key** — Optional `CartoBasemaps:ApiKey` / `CartoBasemaps__ApiKey` on the API (Docker: `CARTO_BASEMAPS_API_KEY` in `.env`). Authenticated `GET /settings/carto-basemaps` exposes the key to the command center; workout maps append `?key=` to CARTO raster tile URLs.
+- **`includeRaw` on workout detail** — `GET /workouts/{id}` omits raw GPX/FIT/Strava/HealthKit JSON by default. Pass `includeRaw=true` to include the blobs.
+- **Route previews on the workout list** — `GET /workouts` item `route` is a ≤ 100-point GeoJSON LineString (Douglas-Peucker). Startup backfill fills `WorkoutRoutes.PreviewGeoJson`.
+- **List `media` field** — `media: [{ id, mimeType }, ...]` ordered by `createdAt` (empty array when none).
+- **List `splitsCount`** — SQL `COUNT` of split rows; split rows themselves are not loaded.
+
+### Changed
+
+- Crop, duplicate-update, and split/route recalculation that rewrite `RouteGeoJson` also recompute `PreviewGeoJson` in the same save.
+
+### Security
+
+- **Next.js 16.2.11** — `next` and `eslint-config-next` **>=16.2.11**.
+- **Transitive npm overrides** — postcss, nanoid, js-yaml, brace-expansion, sharp, @babel/core.
+- **API OpenAPI stack** — Microsoft.OpenApi 2.7.5 and Swashbuckle.AspNetCore 10.2.3.
 
 ### Version & artifacts
 
