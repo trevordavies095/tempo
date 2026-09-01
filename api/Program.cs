@@ -154,6 +154,8 @@ builder.Services.AddScoped<StravaBulkImportOrchestrator>();
 builder.Services.AddSingleton<ImportJobQueue>();
 builder.Services.AddScoped<ImportJobService>();
 builder.Services.AddHostedService<ImportJobWorker>();
+builder.Services.AddScoped<RoutePreviewBackfillService>();
+builder.Services.AddHostedService<RoutePreviewBackfillWorker>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();
@@ -167,6 +169,7 @@ builder.Services.AddScoped<InsightsService>();
 builder.Services.AddHttpClient<WeatherService>();
 builder.Services.AddScoped<IWeatherService>(sp => sp.GetRequiredService<WeatherService>());
 builder.Services.AddScoped<WorkoutIntake>();
+builder.Services.AddScoped<HealthKitWorkoutDecoder>();
 
 // Configure media storage
 var mediaRootPath = builder.Configuration["MediaStorage:RootPath"] ?? "./media";
@@ -185,6 +188,12 @@ builder.Services.AddSingleton(new ElevationCalculationConfig
 {
     NoiseThresholdMeters = builder.Configuration.GetValue<double>("ElevationCalculation:NoiseThresholdMeters", 2.0),
     MinDistanceMeters = builder.Configuration.GetValue<double>("ElevationCalculation:MinDistanceMeters", 10.0)
+});
+
+// Configure CARTO basemaps (optional; missing key serves watermarked tiles)
+builder.Services.AddSingleton(new CartoBasemapsConfig
+{
+    ApiKey = builder.Configuration["CartoBasemaps:ApiKey"]?.Trim() ?? string.Empty
 });
 
 // Configure form options for large file uploads (bulk import)

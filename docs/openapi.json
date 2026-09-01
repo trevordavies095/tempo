@@ -3,7 +3,7 @@
   "info": {
     "title": "Tempo API",
     "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
-    "version": "2.7.0"
+    "version": "2.8.0"
   },
   "paths": {
     "/auth/register": {
@@ -415,6 +415,26 @@
           },
           "400": {
             "description": "Bad Request"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/carto-basemaps": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get CARTO basemaps configuration for the command center",
+        "description": "Returns the operator-configured CARTO basemaps API key from environment configuration.\nWhen not set, map tiles are served without a key (watermarked by CARTO).",
+        "operationId": "GetCartoBasemaps",
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         },
         "security": [
@@ -1008,13 +1028,71 @@
         ]
       }
     },
+    "/workouts/import/healthkit": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Import a HealthKit workout from tempo-ios (JSON decode adapter → PersistAsync).",
+        "description": "Accepts a schema-versioned HealthKit workout JSON document from tempo-ios (outdoor GPS or indoor DistM/summary). Feeds the same PersistAsync pipeline as file import.",
+        "operationId": "ImportHealthKitWorkout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthKitImportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/workouts/healthkit-uuids": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "List HealthKit UUIDs stored on workouts",
+        "description": "Returns HealthKitUuid values stored on workouts (nulls omitted). Used by tempo-ios to badge\nalready-imported runs without paging GET /workouts.",
+        "operationId": "ListHealthKitUuids",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/workouts": {
       "get": {
         "tags": [
           "Workouts"
         ],
         "summary": "List workouts with pagination and filtering",
-        "description": "Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,\nand run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.",
+        "description": "Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,\nand run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.\nItem `route` is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.\nItem `media` is `{ id, mimeType }` ordered by createdAt (empty array when none).\n`splitsCount` is a SQL COUNT; split rows are not loaded.",
         "operationId": "ListWorkouts",
         "parameters": [
           {
@@ -1511,7 +1589,7 @@
           "Workouts"
         ],
         "summary": "Get workout details",
-        "description": "Retrieves complete workout data including route (as GeoJSON), splits, weather information,\nand raw GPX/FIT/Strava data. Weather humidity values are normalized for consistency.",
+        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
         "operationId": "GetWorkout",
         "parameters": [
           {
@@ -1522,6 +1600,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "includeRaw",
+            "in": "query",
+            "description": "When true, include raw GPX/FIT/Strava/HealthKit JSON blobs. Defaults to false: those four\nfields are returned as JSON null and are not read from the database.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -2182,6 +2269,129 @@
         },
         "additionalProperties": false,
         "description": "Request model for creating a shoe"
+      },
+      "HealthKitImportRequest": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "healthKitUuid": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceApp": {
+            "$ref": "#/components/schemas/HealthKitSourceAppDto"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/HealthKitSummaryDto"
+          },
+          "trackPoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthKitTrackPointDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Versioned HealthKit import document from tempo-ios."
+      },
+      "HealthKitSourceAppDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "bundleId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HealthKitSummaryDto": {
+        "type": "object",
+        "properties": {
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "isIndoor": {
+            "type": "boolean"
+          },
+          "energyKcal": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "avgHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HealthKitTrackPointDto": {
+        "type": "object",
+        "properties": {
+          "t": {
+            "type": "string",
+            "nullable": true
+          },
+          "lat": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lon": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ele": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "hr": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cad": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "pwr": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "distM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "HeartRateZone": {
         "type": "object",

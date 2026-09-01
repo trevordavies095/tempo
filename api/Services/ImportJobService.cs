@@ -232,10 +232,9 @@ public class ImportJobService
             return ImportJobHttpResult.Fail(StatusCodes.Status400BadRequest, "Job cannot be cancelled");
         }
 
-        job.CancelRequested = true;
-
         if (job.Status is ImportJobStatuses.Receiving or ImportJobStatuses.Queued)
         {
+            job.CancelRequested = true;
             FailCancelled(job);
             await _db.SaveChangesAsync();
             DeleteJobDirectory(job.Id);
@@ -244,7 +243,17 @@ public class ImportJobService
         }
         else
         {
-            await _db.SaveChangesAsync();
+            var updated = await _db.ImportJobs
+                .Where(row => row.Id == id && row.Status == ImportJobStatuses.Running)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(row => row.CancelRequested, true));
+
+            if (updated == 0)
+            {
+                return ImportJobHttpResult.Fail(StatusCodes.Status400BadRequest, "Job cannot be cancelled");
+            }
+
+            await _db.Entry(job).ReloadAsync();
         }
 
         return ImportJobHttpResult.Json(StatusCodes.Status200OK, job);

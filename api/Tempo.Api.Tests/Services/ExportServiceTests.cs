@@ -404,6 +404,33 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         active.GetProperty("isRetired").GetBoolean().Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ExportAllDataAsync_RoutesJsonDoesNotIncludePreviewGeoJson()
+    {
+        await CleanDatabaseAsync();
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db);
+        var route = await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout);
+        route.PreviewGeoJson = TrackGeometry.BuildRoutePreviewGeoJson(route.RouteGeoJson);
+        await _db.SaveChangesAsync();
+
+        using var zipStream = new MemoryStream();
+        await _exportService.ExportAllDataAsync(zipStream);
+        zipStream.Position = 0;
+
+        using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+        var routesEntry = archive.GetEntry("data/routes.json");
+        routesEntry.Should().NotBeNull();
+        using var routesStream = routesEntry!.Open();
+        var routesJson = await new StreamReader(routesStream).ReadToEndAsync();
+        var routes = JsonSerializer.Deserialize<List<JsonElement>>(routesJson);
+        routes.Should().NotBeNull();
+        routes!.Should().HaveCount(1);
+        routes[0].TryGetProperty("previewGeoJson", out _).Should().BeFalse();
+        routes[0].TryGetProperty("PreviewGeoJson", out _).Should().BeFalse();
+        routes[0].TryGetProperty("routeGeoJson", out var geoJson).Should().BeTrue();
+        geoJson.GetProperty("type").GetString().Should().Be("LineString");
+    }
+
     private async Task CleanDatabaseAsync()
     {
         // Delete in order to respect foreign key constraints

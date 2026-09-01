@@ -363,6 +363,9 @@ namespace Tempo.Api.Migrations
                     b.Property<double?>("ElevLossM")
                         .HasColumnType("double precision");
 
+                    b.Property<Guid?>("HealthKitUuid")
+                        .HasColumnType("uuid");
+
                     b.Property<byte?>("MaxCadenceRpm")
                         .HasColumnType("smallint");
 
@@ -411,6 +414,9 @@ namespace Tempo.Api.Migrations
                     b.Property<string>("RawGpxData")
                         .HasColumnType("jsonb");
 
+                    b.Property<string>("RawHealthKitData")
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("RawStravaData")
                         .HasColumnType("jsonb");
 
@@ -439,6 +445,9 @@ namespace Tempo.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("HealthKitUuid")
+                        .IsUnique();
+
                     b.HasIndex("RawFitData");
 
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("RawFitData"), "gin");
@@ -446,6 +455,10 @@ namespace Tempo.Api.Migrations
                     b.HasIndex("RawGpxData");
 
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("RawGpxData"), "gin");
+
+                    b.HasIndex("RawHealthKitData");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("RawHealthKitData"), "gin");
 
                     b.HasIndex("RawStravaData");
 
@@ -513,6 +526,9 @@ namespace Tempo.Api.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<string>("PreviewGeoJson")
+                        .HasColumnType("jsonb");
 
                     b.Property<string>("RouteGeoJson")
                         .IsRequired()

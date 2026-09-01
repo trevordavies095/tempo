@@ -305,6 +305,38 @@ public class WorkoutCropServiceTests : IDisposable
         croppedCoordinates.Should().BeGreaterThan(0);
         // With 50 original coordinates and cropping ~28% (500/1800), we should have roughly 35-40 coordinates remaining
         croppedCoordinates.Should().BeInRange(30, 45);
+        updatedRoute.PreviewGeoJson.Should().Be(
+            TrackGeometry.BuildRoutePreviewGeoJson(updatedRoute.RouteGeoJson));
+    }
+
+    [Fact]
+    public async Task CropWorkoutAsync_RecomputesPreview_InSameSave()
+    {
+        var originalDuration = 1800;
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: originalDuration);
+        var coordinates = new List<double[]>();
+        for (var i = 0; i < 180; i++)
+        {
+            coordinates.Add(new[]
+            {
+                -122.4194 + i * 0.0008,
+                37.7749 + Math.Sin(i / 2.5) * 0.012
+            });
+        }
+        var route = await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout, coordinates);
+        route.PreviewGeoJson = """{"type":"LineString","coordinates":[[0,0],[1,1]]}""";
+        await _db.SaveChangesAsync();
+        await TestDataSeeder.SeedWorkoutWithTimeSeriesAsync(_db, workout, totalDurationS: originalDuration);
+
+        await _service.CropWorkoutAsync(workout, 300, 200);
+
+        var updatedRoute = await _db.WorkoutRoutes.SingleAsync(r => r.WorkoutId == workout.Id);
+        updatedRoute.PreviewGeoJson.Should().NotBeNull();
+        updatedRoute.PreviewGeoJson.Should().NotBe("""{"type":"LineString","coordinates":[[0,0],[1,1]]}""");
+        updatedRoute.PreviewGeoJson.Should().Be(
+            TrackGeometry.BuildRoutePreviewGeoJson(updatedRoute.RouteGeoJson));
+        var preview = JsonSerializer.Deserialize<JsonElement>(updatedRoute.PreviewGeoJson!);
+        preview.GetProperty("coordinates").GetArrayLength().Should().BeLessThanOrEqualTo(TrackGeometry.RoutePreviewMaxPoints);
     }
 
     [Fact]

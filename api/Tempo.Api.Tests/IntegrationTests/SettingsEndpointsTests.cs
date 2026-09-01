@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Services;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -651,6 +652,70 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
 
     #endregion
 
+    #region GetCartoBasemaps Tests
+
+    [Fact]
+    public async Task GetCartoBasemaps_WithoutAuthentication_ReturnsUnauthorized()
+    {
+        // Arrange
+        var client = _factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/settings/carto-basemaps");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task GetCartoBasemaps_WithNoConfiguredKey_ReturnsNullApiKey()
+    {
+        // Arrange
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        // Act
+        var response = await client.GetAsync("/settings/carto-basemaps");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<CartoBasemapsResponse>();
+        result.Should().NotBeNull();
+        result!.ApiKey.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetCartoBasemaps_WithConfiguredKey_ReturnsApiKey()
+    {
+        // Arrange
+        using var factoryWithCartoKey = new TempoWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    var descriptor = services.SingleOrDefault(s => s.ServiceType == typeof(CartoBasemapsConfig));
+                    if (descriptor != null)
+                    {
+                        services.Remove(descriptor);
+                    }
+
+                    services.AddSingleton(new CartoBasemapsConfig { ApiKey = "test-carto-key" });
+                });
+            });
+
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(factoryWithCartoKey);
+
+        // Act
+        var response = await client.GetAsync("/settings/carto-basemaps");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<CartoBasemapsResponse>();
+        result.Should().NotBeNull();
+        result!.ApiKey.Should().Be("test-carto-key");
+    }
+
+    #endregion
+
     #region Response Models
 
     private class HeartRateZonesResponse
@@ -694,6 +759,11 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
     private class ErrorResponse
     {
         public string Error { get; set; } = string.Empty;
+    }
+
+    private class CartoBasemapsResponse
+    {
+        public string? ApiKey { get; set; }
     }
 
     #endregion

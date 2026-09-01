@@ -1,0 +1,50 @@
+meta {
+  name: Get workout details with raw data
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/workouts/:id
+  body: none
+  auth: inherit
+}
+
+params:path {
+  id: 
+}
+
+params:query {
+  includeRaw: true
+}
+
+example {
+  name: 200 Response
+  description: OK
+  
+  request: {
+    url: {{baseUrl}}/workouts/:id
+    method: GET
+    mode: none
+    params:path: {
+      id: 
+    }
+    params:query: {
+      includeRaw: true
+    }
+  }
+  
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: text
+      content: '''
+  
+      '''
+    }
+  }
+}

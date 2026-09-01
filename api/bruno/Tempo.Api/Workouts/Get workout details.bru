@@ -14,6 +14,10 @@ params:path {
   id: 
 }
 
+params:query {
+  ~includeRaw: false
+}
+
 example {
   name: 200 Response
   description: OK
@@ -24,6 +28,9 @@ example {
     mode: none
     params:path: {
       id: 
+    }
+    params:query: {
+      ~includeRaw: false
     }
   }
   

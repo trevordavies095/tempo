@@ -39,6 +39,32 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         }
     }
 
+    private async Task<Workout> SeedWorkoutWithRawBlobsAsync()
+    {
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(db, name: "Raw Blob Run");
+        workout.RawGpxData = JsonSerializer.Serialize(new
+        {
+            metadata = new { name = "Test Run" },
+            trackPoints = new[] { new { lat = 0.0, lon = 0.0 } }
+        });
+        workout.RawFitData = JsonSerializer.Serialize(new { sessions = Array.Empty<object>() });
+        workout.RawStravaData = JsonSerializer.Serialize(new { activityId = 42 });
+        workout.RawHealthKitData = JsonSerializer.Serialize(new { uuid = Guid.NewGuid().ToString() });
+        await db.SaveChangesAsync();
+        return workout;
+    }
+
+    private static void AssertRawFieldsAreJsonNull(JsonElement root)
+    {
+        foreach (var name in new[] { "rawGpxData", "rawFitData", "rawStravaData", "rawHealthKitData" })
+        {
+            root.TryGetProperty(name, out var prop).Should().BeTrue($"expected key {name} on the response");
+            prop.ValueKind.Should().Be(JsonValueKind.Null, $"expected {name} to be JSON null");
+        }
+    }
+
     #region GetWorkout Tests
 
     [Fact]
@@ -88,7 +114,8 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        var json = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<WorkoutDetailResponse>(json, JsonSerializerOptions.Web);
         result.Should().NotBeNull();
         result!.Id.Should().Be(workout.Id);
         result.Name.Should().Be("Complete Test Run");
@@ -103,7 +130,13 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         result.Shoe.Brand.Should().Be("Nike");
         result.Shoe.Model.Should().Be("Pegasus");
         result.Weather.Should().NotBeNull();
-        result.RawGpxData.Should().NotBeNull();
+        result.RawGpxData.Should().BeNull();
+        result.RawFitData.Should().BeNull();
+        result.RawStravaData.Should().BeNull();
+        result.RawHealthKitData.Should().BeNull();
+
+        using var document = JsonDocument.Parse(json);
+        AssertRawFieldsAreJsonNull(document.RootElement);
     }
 
     [Fact]
@@ -156,6 +189,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         result.RawGpxData.Should().BeNull();
         result.RawFitData.Should().BeNull();
         result.RawStravaData.Should().BeNull();
+        result.RawHealthKitData.Should().BeNull();
     }
 
     [Fact]
@@ -231,6 +265,98 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         result.Calories.Should().Be(500);
         result.RelativeEffort.Should().Be(150);
         result.Rpe.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task GetWorkout_ReturnsNullRawFields_WhenIncludeRawIsFalse()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var workout = await SeedWorkoutWithRawBlobsAsync();
+
+        var response = await client.GetAsync($"/workouts/{workout.Id}?includeRaw=false");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertRawFieldsAreJsonNull(document.RootElement);
+    }
+
+    [Fact]
+    public async Task GetWorkout_ReturnsRawBlobs_WhenIncludeRawIsTrue()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        var workout = await SeedWorkoutWithRawBlobsAsync();
+
+        var response = await client.GetAsync($"/workouts/{workout.Id}?includeRaw=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<WorkoutDetailResponse>(json, JsonSerializerOptions.Web);
+        result.Should().NotBeNull();
+        result!.RawGpxData.Should().NotBeNull();
+        result.RawFitData.Should().NotBeNull();
+        result.RawStravaData.Should().NotBeNull();
+        result.RawHealthKitData.Should().NotBeNull();
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        root.GetProperty("rawGpxData").ValueKind.Should().Be(JsonValueKind.Object);
+        root.GetProperty("rawFitData").ValueKind.Should().Be(JsonValueKind.Object);
+        root.GetProperty("rawStravaData").ValueKind.Should().Be(JsonValueKind.Object);
+        root.GetProperty("rawHealthKitData").ValueKind.Should().Be(JsonValueKind.Object);
+        root.GetProperty("rawGpxData").GetProperty("metadata").GetProperty("name").GetString()
+            .Should().Be("Test Run");
+    }
+
+    [Fact]
+    public async Task GetWorkout_DefaultPayload_IsAtLeast90PercentSmallerThanIncludeRaw()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db,
+                name: "File Import Payload Test",
+                includeTimeSeries: false);
+
+            var trackPoints = Enumerable.Range(0, 3000).Select(i => new
+            {
+                lat = 37.7749 + (i * 0.0001),
+                lon = -122.4194 + (i * 0.0001),
+                ele = 10.0 + (i * 0.01),
+                time = $"2024-01-15T10:00:{i % 60:D2}Z"
+            }).ToArray();
+
+            workout.Source = "gpx";
+            workout.RawFileType = "gpx";
+            workout.RawFileName = "morning.gpx";
+            workout.RawGpxData = JsonSerializer.Serialize(new
+            {
+                metadata = new { name = "Morning Run" },
+                trackPoints
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var defaultResponse = await client.GetAsync($"/workouts/{workout.Id}");
+        var includeRawResponse = await client.GetAsync($"/workouts/{workout.Id}?includeRaw=true");
+
+        defaultResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        includeRawResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var defaultBytes = (await defaultResponse.Content.ReadAsByteArrayAsync()).Length;
+        var includeRawBytes = (await includeRawResponse.Content.ReadAsByteArrayAsync()).Length;
+
+        includeRawBytes.Should().BeGreaterThan(0);
+        var reduction = 1.0 - ((double)defaultBytes / includeRawBytes);
+        reduction.Should().BeGreaterThanOrEqualTo(
+            0.90,
+            $"default payload ({defaultBytes} bytes) should be ≥ 90% smaller than includeRaw ({includeRawBytes} bytes)");
     }
 
     #endregion
@@ -1170,6 +1296,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public object? RawGpxData { get; set; }
         public object? RawFitData { get; set; }
         public object? RawStravaData { get; set; }
+        public object? RawHealthKitData { get; set; }
         public DateTime CreatedAt { get; set; }
         public object? Route { get; set; }
         public List<SplitResponse> Splits { get; set; } = new();

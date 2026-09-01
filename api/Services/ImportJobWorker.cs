@@ -127,7 +127,7 @@ public class ImportJobWorker : BackgroundService
                 }
 
                 ApplyStravaProgress(completed, result);
-                if (completed.CancelRequested)
+                if (await IsCancelRequestedAsync(db, jobId))
                 {
                     await FailJobAsync(db, completed, ImportJobErrorMessages.Cancelled, logger);
                     return;
@@ -151,7 +151,7 @@ public class ImportJobWorker : BackgroundService
 
                 ApplyTempoProgressFromResult(completed, result, completed.Total);
 
-                if (completed.CancelRequested)
+                if (await IsCancelRequestedAsync(db, jobId))
                 {
                     await FailJobAsync(db, completed, ImportJobErrorMessages.Cancelled, logger);
                     return;
@@ -209,14 +209,36 @@ public class ImportJobWorker : BackgroundService
         }
     }
 
+    private static async Task<bool> IsCancelRequestedAsync(TempoDbContext db, Guid jobId) =>
+        await db.ImportJobs
+            .AsNoTracking()
+            .Where(row => row.Id == jobId)
+            .Select(row => row.CancelRequested)
+            .SingleAsync(CancellationToken.None);
+
     private static async Task CompleteJobAsync(TempoDbContext db, ImportJob job, ILogger logger)
     {
         var archivePath = job.ArchivePath;
 
+        // Read cancel state from the database so a concurrent cancel is not clobbered
+        // when persisting final counters from the tracked entity.
+        if (await IsCancelRequestedAsync(db, job.Id))
+        {
+            await FailJobAsync(db, job, ImportJobErrorMessages.Cancelled, logger);
+            return;
+        }
+
         // Persist final counters/results first, then only mark the job completed if no
         // concurrent cancel request has landed. This avoids a race where a late cancel
         // can be overwritten by the final completed write.
+        db.Entry(job).Property(row => row.CancelRequested).IsModified = false;
         await db.SaveChangesAsync(CancellationToken.None);
+
+        if (await IsCancelRequestedAsync(db, job.Id))
+        {
+            await FailJobAsync(db, job, ImportJobErrorMessages.Cancelled, logger);
+            return;
+        }
 
         var finishedAt = DateTime.UtcNow;
         var updated = await db.ImportJobs

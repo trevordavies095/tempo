@@ -63,6 +63,16 @@ ElevationCalculation__NoiseThresholdMeters: "2.0"
 ElevationCalculation__MinDistanceMeters: "10.0"
 ```
 
+### CARTO Basemaps (Maps)
+
+Workout maps require a free CARTO API key. Set in `.env` (gitignored):
+
+```bash
+CARTO_BASEMAPS_API_KEY=your-key-here
+```
+
+Compose passes this to the API as `CartoBasemaps__ApiKey`. Request a key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey). Restart the API and hard-refresh the browser after updating.
+
 ### JWT Configuration
 
 ```yaml
@@ -88,6 +98,7 @@ JWT__ExpirationDays: "7"
 - [ ] Environment variables set correctly
 - [ ] Database connection string configured
 - [ ] Media storage path configured and writable
+- [ ] CARTO basemaps API key set (`CARTO_BASEMAPS_API_KEY` in `.env`) if maps should not show the watermark
 - [ ] Ports configured appropriately
 - [ ] Health checks enabled
 

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-08-31
+
+### Added
+- **HealthKit import (tempo-ios)** - `POST /workouts/import/healthkit` accepts a versioned HealthKit JSON document (outdoor GPS or indoor distance/summary) and persists through the same workout intake pipeline as file import. Indoor runs without GPS still get splits/time series from the distance stream.
+- **HealthKit UUID** - Optional unique `healthKitUuid` on workouts for idempotent iOS imports. `GET /workouts/healthkit-uuids` returns stored UUIDs so tempo-ios can badge already-imported runs without paging the feed.
+- **CARTO basemaps API key** - Optional `CartoBasemaps:ApiKey` / `CartoBasemaps__ApiKey` on the API (Docker: `CARTO_BASEMAPS_API_KEY` in `.env`). Authenticated `GET /settings/carto-basemaps` exposes the key to the command center; workout maps append `?key=` to CARTO raster tile URLs.
+- **`includeRaw` on workout detail** - `GET /workouts/{id}` omits raw GPX/FIT/Strava/HealthKit JSON by default (`rawGpxData`, `rawFitData`, `rawStravaData`, `rawHealthKitData` are JSON `null`). Pass `includeRaw=true` to include the blobs. Clients that do not read these fields need no change; clients that do should schedule adoption of the query parameter.
+- **Route previews on the workout list** - `GET /workouts` item `route` is a ≤ 100-point GeoJSON LineString (Douglas-Peucker). Field name and shape are unchanged. A startup backfill fills `WorkoutRoutes.PreviewGeoJson`; until a row is backfilled the list falls back to the full route.
+- **List `media` field** - each list item includes `media: [{ id, mimeType }, ...]` ordered by `createdAt` (empty array when none) so feed clients can render galleries without per-workout follow-up requests.
+- **List `splitsCount`** - SQL `COUNT` of split rows on each list item; split rows themselves are not loaded.
+
+### Changed
+- **Crop, duplicate-update, and split/route recalculation** that rewrite `RouteGeoJson` also recompute `PreviewGeoJson` in the same save. Tempo export restore still writes routes without a preview; backfill covers those rows.
+
+### Security
+- **Frontend: Next.js 16.2.11**
+  - Raised `next` and `eslint-config-next` to **>=16.2.11** (lockfile resolves 16.2.11)
+  - Addresses Next.js advisories patched in 16.2.11 (Server Action DoS, rewrite/custom-server SSRF, Turbopack middleware bypass, cache confusion, image optimizer SVG DoS, Server Function disclosure, unbounded Edge Server Action payloads)
+- **Frontend: transitive dependency overrides**
+  - Pins `postcss` >= 8.5.23, `nanoid` >= 3.3.18, `js-yaml` >= 4.3.1, `brace-expansion` 1.1.18 / 2.1.4, `sharp` >= 0.35.0, and `@babel/core` >= 7.29.6
+- **API: Microsoft.OpenApi / Swashbuckle**
+  - Bumped `Microsoft.OpenApi` to 2.7.5 and `Swashbuckle.AspNetCore` (and CLI) to 10.2.3 (addresses [GHSA-v5pm-xwqc-g5wc](https://github.com/advisories/GHSA-v5pm-xwqc-g5wc); stays on OpenAPI.NET 2.x)
+
+### Migration
+- **Database:** applies `AddWorkoutRawHealthKitData` (`RawHealthKitData` JSONB + GIN on `Workouts`), `AddWorkoutHealthKitUuid` (unique nullable `HealthKitUuid` on `Workouts`), and `AddWorkoutRoutePreviewGeoJson` (nullable `PreviewGeoJson` on `WorkoutRoutes`; `RoutePreviewBackfillWorker` backfills remaining nulls in batches). Run migrations or rely on automatic migration on startup.
+
 ## [2.7.0] - 2026-08-19
 
 ### Added

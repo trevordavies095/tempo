@@ -13,7 +13,7 @@ Tempo is a self-hosted running tracker built as a full-stack application with a 
 - **Appearance**: Dark-first. Tailwind `class` strategy on `<html>` (`dark`). Preference is `system` | `dark` | `light` in `localStorage` (`tempo-appearance`); not UserSettings. See `frontend/lib/appearance.ts`.
 - **Icons**: Tabler Icons (`@tabler/icons-react`) for UI icons. Brand marks live in `frontend/public/` (`tempo-mark-volt.png`, `tempo-mark-ink.png`).
 - **State Management**: TanStack Query for server state
-- **Maps**: Leaflet/React-Leaflet. Carto Dark Matter in Dark appearance, Voyager in Light; polyline and Highlight from tokens; OSM + CARTO attribution (no OSM-only fallback).
+- **Maps**: Leaflet/React-Leaflet. Carto Dark Matter in Dark appearance, Voyager in Light; polyline and Highlight from tokens; OSM + CARTO attribution. Operators configure a CARTO basemaps API key via `CartoBasemaps:ApiKey` / `CartoBasemaps__ApiKey` on the API; the command center reads it from `GET /settings/carto-basemaps`.
 - **Charts**: Recharts; series colors from identity tokens. Workout overview charts HR, pace, and elevation via `getWorkoutTimeSeries` in `frontend/lib/api.ts` (pages until complete or 20,000 samples).
 - **Highlight**: Shared overview focus (`splitIdx` and/or `elapsedSeconds`) in `frontend/lib/workoutHighlight.ts` — map, splits, and charts follow together.
 
@@ -55,8 +55,8 @@ Each extension method:
 
 - `GpxParserService` / `FitParserService` — decode adapters: `TrackPoint`s, raw JSON, optional device summary (and GPX name). They do not expose `CalculateSplits` and do not hand FIT `RecordMesg` to callers. The FIT SDK is compiled from `api/Libraries/FitSDK/` (not a NuGet package).
 - `StravaCsvParserService` — parses Strava export CSV metadata for bulk ZIP import.
-- `TrackGeometry` — in-process: `TrackPoint`s in; elevation gain, `WorkoutRoute`, `WorkoutSplit`s, `WorkoutTimeSeries` out. No `DbContext`.
-- `WorkoutIntake` — one persist pipeline (parse, geometry, duplicate policy, default shoe, weather, relative effort, incremental best efforts). HTTP import is a thin adapter. Bulk calls intake per activity file.
+- `TrackGeometry` — in-process: `TrackPoint`s in; elevation gain, `WorkoutRoute` (empty when no GPS), `WorkoutSplit`s (Haversine or cumulative `DistanceM` stream), `WorkoutTimeSeries` out. No `DbContext`.
+- `WorkoutIntake` — decode adapters (GPX/FIT file → `DecodedWorkout`; HealthKit JSON via `HealthKitWorkoutDecoder`) feed `PersistAsync` (geometry, duplicate policy, default shoe, weather, relative effort, incremental best efforts). Persist is the single pipeline; HTTP import is a thin adapter. Bulk calls intake per activity file.
 - `TrackPointRehydration` — stored Workout fields → `TrackPoint`s for crop and split recalc.
 - `ImportJobService` — create/chunk/complete/current/get/cancel, one-active-job rules, archive staging under `media/imports/{jobId}/`.
 - `ImportJobWorker` — hosted service; wakes on channel, new DI scope per job; branches on `kind` (`strava_bulk` | `tempo_export`).
@@ -113,11 +113,11 @@ This ensures migrations can be safely applied even when database state doesn't m
 
 ### Workout Import Flow
 
-1. File uploaded to `POST /workouts/import`
-2. HTTP maps `IFormFile` to `WorkoutIntake` (stream + filename)
-3. Parser decode: GPX or FIT → `TrackPoint`s, raw JSON, optional device summary
-4. `TrackGeometry.Derive` builds elevation, route, splits, and time series (device summary wins for distance/duration when present)
-5. Duplicate policy: same key (`StartedAt`, `DistanceM`, `DurationS`); incomplete raw JSON/bytes can `updated`; complete duplicates `skipped`
+1. File uploaded to `POST /workouts/import`, or HealthKit JSON posted to `POST /workouts/import/healthkit`
+2. HTTP maps `IFormFile` to `WorkoutIntake` (stream + filename), or `HealthKitWorkoutDecoder` maps JSON → `DecodedWorkout` + overlay
+3. File decode adapter: GPX or FIT → `DecodedWorkout` (`TrackPoint`s, raw JSON, optional device summary); HealthKit skips file parse
+4. `PersistAsync` → `TrackGeometry.Derive` builds elevation, route (omitted when there are no GPS coordinates), splits (Haversine or DistM stream), and time series (device summary wins for distance/duration when present)
+5. Duplicate policy: HealthKit UUID identity first when present (`skipped` before geometry/enrichment); then same key (`StartedAt`, `DistanceM`, `DurationS`). Incomplete raw JSON/bytes can `updated`; complete duplicates `skipped` (HealthKit vs complete GPX/FIT is always `skipped`, but may stamp `HealthKitUuid` onto the existing row for client badging)
 6. Weather, default shoe, relative effort, incremental best efforts
 7. Workout persisted with JSONB raw data and `WorkoutRoute`
 
@@ -147,7 +147,8 @@ This ensures migrations can be safely applied even when database state doesn't m
 
 The `TempoDbContext` configures several important indexes:
 - **Workout indexes**: `StartedAt`, composite index on `(StartedAt, DistanceM, DurationS)` for duplicate detection
-- **JSONB GIN indexes**: On `RawGpxData`, `RawFitData`, `RawStravaData`, and `Weather` fields
+- **JSONB GIN indexes**: On `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, and `Weather` fields
+- **HealthKit UUID**: Unique index on `HealthKitUuid` for import idempotency
 - **WorkoutSplit**: Composite index on `(WorkoutId, Idx)`
 - **WorkoutTimeSeries**: Composite index on `(WorkoutId, ElapsedSeconds)`
 - **User**: Unique index on `Username`
@@ -156,7 +157,7 @@ The `TempoDbContext` configures several important indexes:
 
 - **API Endpoints**: `api/Endpoints/*.cs` — auth/onboarding in `api/Endpoints/AuthEndpoints.cs`
 - **Models**: `api/Models/*.cs` (`User.OnboardingCompleted`)
-- **Workout intake / geometry**: `api/Services/WorkoutIntake.cs`, `api/Services/TrackGeometry.cs`, `api/Services/TrackPointRehydration.cs`
+- **Workout intake / geometry**: `api/Services/WorkoutIntake.cs`, `api/Services/HealthKitWorkoutDecoder.cs`, `api/Services/TrackGeometry.cs`, `api/Services/TrackPointRehydration.cs`
 - **Import jobs**: `api/Services/ImportJobService.cs`, `api/Services/ImportJobWorker.cs`, `api/Services/StravaBulkImportOrchestrator.cs`, `api/Services/BulkImportService.cs`, `api/Services/ImportService.cs`
 - **Services**: `api/Services/*.cs`
 - **Database Context**: `api/Data/TempoDbContext.cs`

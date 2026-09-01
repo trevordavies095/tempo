@@ -118,6 +118,59 @@ public class TrackGeometryTests
         result.TimeSeries[0].ElapsedSeconds.Should().Be(3);
     }
 
+    [Fact]
+    public void Derive_GpsFreeDistanceStream_ReturnsSplitsAndNoRouteCoordinates()
+    {
+        var points = CreateDistanceStreamPoints(5000.0, 1800);
+
+        var result = _geometry.Derive(points, _start, 1000.0, _workoutId, 5000.0, 1800);
+
+        result.HasRouteCoordinates.Should().BeFalse();
+        result.Splits.Should().NotBeEmpty();
+        result.Splits[0].DistanceM.Should().BeApproximately(1000.0, 50.0);
+        result.Splits.Should().OnlyContain(s => s.WorkoutId == _workoutId);
+        result.TimeSeries.Should().NotBeEmpty();
+        result.TimeSeries.Should().OnlyContain(ts => ts.DistanceM.HasValue);
+        result.TimeSeries.Should().Contain(ts => ts.HeartRateBpm.HasValue);
+    }
+
+    [Fact]
+    public void Derive_SummaryOnly_ReturnsEmptySplitsAndSeries()
+    {
+        var result = _geometry.Derive(
+            Array.Empty<TrackPoint>(),
+            _start,
+            1000.0,
+            _workoutId,
+            5000.0,
+            1800);
+
+        result.HasRouteCoordinates.Should().BeFalse();
+        result.Splits.Should().BeEmpty();
+        result.TimeSeries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Derive_FitSeriesDistanceStream_WithoutGps_ReturnsSplits()
+    {
+        var series = CreateDistanceStreamPoints(5000.0, 1800);
+
+        var result = _geometry.Derive(
+            Array.Empty<TrackPoint>(),
+            _start,
+            1000.0,
+            _workoutId,
+            5000.0,
+            1800,
+            series);
+
+        result.HasRouteCoordinates.Should().BeFalse();
+        result.Splits.Should().NotBeEmpty();
+        result.Splits[0].DistanceM.Should().BeApproximately(1000.0, 50.0);
+        result.TimeSeries.Should().NotBeEmpty();
+        result.TimeSeries.Should().OnlyContain(ts => ts.DistanceM.HasValue);
+    }
+
     private static List<TrackPoint> CreateTrackPointsWithKnownDistance(double totalDistanceMeters, int totalDurationSeconds)
     {
         var numPoints = 100;
@@ -136,6 +189,27 @@ public class TrackGeometryTests
                 Longitude = startLon + (i * degreeIncrement),
                 Time = startTime.AddSeconds(elapsedSeconds),
                 Elevation = 100.0 + (i * 0.1)
+            });
+        }
+
+        return points;
+    }
+
+    private static List<TrackPoint> CreateDistanceStreamPoints(double totalDistanceMeters, int totalDurationSeconds)
+    {
+        var numPoints = 100;
+        var points = new List<TrackPoint>();
+        var startTime = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc);
+
+        for (int i = 0; i < numPoints; i++)
+        {
+            var progress = (double)i / (numPoints - 1);
+            var elapsedSeconds = (int)(progress * totalDurationSeconds);
+            points.Add(new TrackPoint
+            {
+                Time = startTime.AddSeconds(elapsedSeconds),
+                DistanceM = progress * totalDistanceMeters,
+                HeartRateBpm = (byte)(140 + (i % 20))
             });
         }
 

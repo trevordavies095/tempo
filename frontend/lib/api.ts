@@ -131,6 +131,7 @@ export interface WorkoutListItem {
   runType: string | null;
   source: string | null;
   device: string | null;
+  healthKitUuid: string | null;
   name: string | null;
   hasRoute: boolean;
   route: {
@@ -188,11 +189,13 @@ export interface WorkoutDetail {
   notes: string | null;
   source: string | null;
   device: string | null;
+  healthKitUuid: string | null;
   name: string | null;
   weather: any | null;
   rawGpxData: any | null;
   rawFitData: any | null;
   rawStravaData: any | null;
+  rawHealthKitData: any | null;
   createdAt: string;
   shoeId: string | null;
   shoe: {
@@ -1239,6 +1242,20 @@ export async function recalculateAllRelativeEffort(): Promise<RecalculateRelativ
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to recalculate relative effort: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCartoBasemaps(): Promise<{ apiKey: string | null }> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/carto-basemaps`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get CARTO basemaps configuration: ${response.status}`);
   }
 
   return response.json();
