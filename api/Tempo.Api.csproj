@@ -15,11 +15,11 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
-    <!-- Pin 2.x: Swashbuckle.AspNetCore 10.x targets Microsoft.OpenApi 2.4.x (OpenAPI.NET 3.x breaks Swashbuckle at runtime). -->
-    <PackageReference Include="Microsoft.OpenApi" Version="2.4.1" />
+    <!-- Pin 2.x: Swashbuckle.AspNetCore 10.x targets Microsoft.OpenApi 2.x (OpenAPI.NET 3.x breaks Swashbuckle at runtime). -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.7" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
     <PackageReference Include="CsvHelper" Version="33.0.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
