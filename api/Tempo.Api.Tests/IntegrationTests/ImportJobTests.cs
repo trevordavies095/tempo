@@ -678,8 +678,20 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
                 snapshot.Processed >= 3 &&
                 snapshot.Status == ImportJobStatuses.Running)
             {
-                (await client.DeleteAsync($"/workouts/import/jobs/{started!.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
-                cancelSent = true;
+                var cancel = await client.DeleteAsync($"/workouts/import/jobs/{started!.Id}");
+                if (cancel.StatusCode == HttpStatusCode.OK)
+                {
+                    cancelSent = true;
+                }
+                else
+                {
+                    // Worker can complete between the Running poll and DELETE.
+                    cancel.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+                    var raced = await client.GetAsync($"/workouts/import/jobs/{started.Id}");
+                    snapshot = await raced.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
+                    snapshot!.Status.Should().BeOneOf(ImportJobStatuses.Completed, ImportJobStatuses.Failed);
+                    break;
+                }
             }
 
             await Task.Delay(20);
