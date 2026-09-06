@@ -140,6 +140,42 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
     }
 
     [Fact]
+    public async Task GetWorkout_ReturnsSplitsOrderedByIdx_WhenInsertedOutOfOrder()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Out-of-order Splits");
+
+            // Insert out of Idx order so heap/insertion order would fail the assertion
+            foreach (var idx in new[] { 2, 0, 1 })
+            {
+                db.WorkoutSplits.Add(new WorkoutSplit
+                {
+                    WorkoutId = workout.Id,
+                    Idx = idx,
+                    DistanceM = 1000,
+                    DurationS = 360 + idx,
+                    PaceS = 360
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync($"/workouts/{workout.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result.Should().NotBeNull();
+        result!.Splits.Should().HaveCount(3);
+        result.Splits.Select(s => s.Idx).Should().Equal(0, 1, 2);
+    }
+
+    [Fact]
     public async Task GetWorkout_Returns404_WhenWorkoutNotFound()
     {
         // Arrange
