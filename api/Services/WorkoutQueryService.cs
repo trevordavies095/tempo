@@ -119,7 +119,7 @@ public static class WorkoutQueryService
             ShoeId = w.ShoeId,
             Shoe = w.Shoe,
             Route = w.Route,
-            Splits = w.Splits
+            Splits = w.Splits.OrderBy(s => s.Idx).ToList()
         });
     }
 

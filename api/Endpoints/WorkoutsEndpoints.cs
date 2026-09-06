@@ -1159,7 +1159,7 @@ public static class WorkoutsEndpoints
             }
 
             // Map splits
-            var splits = workout.Splits.Select(s => new
+            var splits = workout.Splits.OrderBy(s => s.Idx).Select(s => new
             {
                 idx = s.Idx,
                 distanceM = s.DistanceM,
@@ -1302,7 +1302,7 @@ public static class WorkoutsEndpoints
         }
 
         // Map splits
-        var splits = workout.Splits.Select(s => new
+        var splits = workout.Splits.OrderBy(s => s.Idx).Select(s => new
         {
             idx = s.Idx,
             distanceM = s.DistanceM,
