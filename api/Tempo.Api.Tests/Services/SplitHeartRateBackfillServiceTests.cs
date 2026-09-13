@@ -145,6 +145,47 @@ public class SplitHeartRateBackfillServiceTests : IDisposable
             .Should().Contain(s => s.AvgHeartRateBpm != null);
     }
 
+    [Fact]
+    public async Task RunAsync_FillsLongMileSplits_FromDenseHeartRateSeries()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 29_000, durationS: 12_000);
+        for (var idx = 0; idx < 18; idx++)
+        {
+            _db.WorkoutSplits.Add(new WorkoutSplit
+            {
+                WorkoutId = workout.Id,
+                Idx = idx,
+                DistanceM = 1610,
+                DurationS = 650,
+                PaceS = 400
+            });
+        }
+
+        var series = new List<WorkoutTimeSeries>(12_000);
+        for (var elapsed = 0; elapsed < 12_000; elapsed++)
+        {
+            series.Add(new WorkoutTimeSeries
+            {
+                WorkoutId = workout.Id,
+                ElapsedSeconds = elapsed,
+                DistanceM = elapsed * 2.4,
+                HeartRateBpm = (byte)(140 + elapsed % 20)
+            });
+        }
+
+        _db.WorkoutTimeSeries.AddRange(series);
+        await _db.SaveChangesAsync();
+
+        var processed = await _service.RunAsync();
+
+        processed.Should().Be(1);
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        splits.Should().OnlyContain(s => s.AvgHeartRateBpm != null);
+    }
+
     private async Task<Workout> SeedCandidateAsync(bool withRoute = false)
     {
         var workout = await TestDataSeeder.SeedWorkoutAsync(
