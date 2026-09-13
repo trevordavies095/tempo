@@ -1228,6 +1228,7 @@ public static class WorkoutsEndpoints
     /// <returns>Complete workout data including route, splits, weather, and optional raw data</returns>
     /// <remarks>
     /// Retrieves complete workout data including route (as GeoJSON), splits, and weather information.
+    /// Each split includes idx, distanceM, durationS, paceS, and avgHeartRateBpm (number or null).
     /// Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values
     /// are normalized for consistency.
     /// </remarks>
@@ -2465,7 +2466,11 @@ public static class WorkoutsEndpoints
         .Produces(200)
         .Produces(404)
         .WithSummary("Get workout details")
-        .WithDescription("Retrieves complete workout data including route (as GeoJSON), splits, and weather information. Each split includes idx, distanceM, durationS, paceS, and avgHeartRateBpm (number or null). Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values are normalized for consistency.");
+        .WithDescription(
+            "Retrieves complete workout data including route (as GeoJSON), splits, and weather information. " +
+            "Each split includes idx, distanceM, durationS, paceS, and avgHeartRateBpm (number or null). " +
+            "Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values " +
+            "are normalized for consistency.");
 
         group.MapPost("/import/bulk", BulkImportWorkouts)
         .Accepts<IFormFile>("multipart/form-data")

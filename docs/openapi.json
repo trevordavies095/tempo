@@ -1589,7 +1589,7 @@
           "Workouts"
         ],
         "summary": "Get workout details",
-        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information. Each split includes idx, distanceM, durationS, paceS, and avgHeartRateBpm (number or null).\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
+        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, distanceM, durationS, paceS, and avgHeartRateBpm (number or null).\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
         "operationId": "GetWorkout",
         "parameters": [
           {
