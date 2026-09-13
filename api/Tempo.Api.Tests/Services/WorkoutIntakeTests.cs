@@ -59,6 +59,7 @@ public class WorkoutIntakeTests : IDisposable
             new HeartRateZoneService(),
             _relativeEffort,
             _bestEfforts,
+            new SplitHeartRateService(),
             NullLogger<WorkoutIntake>.Instance);
     }
 
@@ -419,6 +420,56 @@ public class WorkoutIntakeTests : IDisposable
         result.Action.Should().Be("created");
         var stored = await _db.Workouts.SingleAsync();
         stored.HealthKitUuid.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKitOutdoor_WithHrSeries_PersistsSplitAvgHeartRate()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded();
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == result.Workout!.Id)
+            .ToListAsync();
+        splits.Should().NotBeEmpty();
+        splits.Should().Contain(s => s.AvgHeartRateBpm != null);
+    }
+
+    [Fact]
+    public async Task PersistAsync_SessionLevelHrWithoutSeriesHr_LeavesSplitHrNull()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var decoded = new DecodedWorkout
+        {
+            StartedAt = start,
+            DurationS = 1800,
+            DistanceM = 5000,
+            TrackPoints =
+            [
+                new() { Time = start, Latitude = 37.7749, Longitude = -122.4194, DistanceM = 0 },
+                new() { Time = start.AddMinutes(15), Latitude = 37.7849, Longitude = -122.4094, DistanceM = 2500 },
+                new() { Time = start.AddSeconds(1800), Latitude = 37.7949, Longitude = -122.3994, DistanceM = 5000 }
+            ]
+        };
+        var overlay = new WorkoutIntakeOverlay
+        {
+            AvgHeartRateBpm = 150,
+            MaxHeartRateBpm = 175
+        };
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        result.Workout!.AvgHeartRateBpm.Should().Be(150);
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == result.Workout.Id)
+            .ToListAsync();
+        splits.Should().NotBeEmpty();
+        splits.Should().OnlyContain(s => s.AvgHeartRateBpm == null);
     }
 
     [Fact]

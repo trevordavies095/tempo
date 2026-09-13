@@ -160,7 +160,8 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
                     Idx = idx,
                     DistanceM = 1000,
                     DurationS = 360 + idx,
-                    PaceS = 360
+                    PaceS = 360,
+                    AvgHeartRateBpm = idx == 1 ? (byte?)150 : null
                 });
             }
             await db.SaveChangesAsync();
@@ -173,6 +174,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         result.Should().NotBeNull();
         result!.Splits.Should().HaveCount(3);
         result.Splits.Select(s => s.Idx).Should().Equal(0, 1, 2);
+        result.Splits.Select(s => s.AvgHeartRateBpm).Should().Equal(null, (byte?)150, null);
     }
 
     [Fact]
@@ -1344,6 +1346,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public double DistanceM { get; set; }
         public int DurationS { get; set; }
         public int PaceS { get; set; }
+        public byte? AvgHeartRateBpm { get; set; }
     }
 
     private class ShoeResponse

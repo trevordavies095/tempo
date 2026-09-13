@@ -145,6 +145,7 @@ builder.Services.AddScoped<StravaCsvParserService>();
 builder.Services.AddScoped<FitParserService>();
 builder.Services.AddScoped<MediaService>();
 builder.Services.AddScoped<HeartRateZoneService>();
+builder.Services.AddScoped<SplitHeartRateService>();
 builder.Services.AddScoped<RelativeEffortService>();
 builder.Services.AddScoped<IRelativeEffortService>(sp => sp.GetRequiredService<RelativeEffortService>());
 builder.Services.AddScoped<BestEffortService>();

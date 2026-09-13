@@ -20,6 +20,8 @@ export default function WorkoutDetailSplits({
     return null;
   }
 
+  const showHr = splits.some((s) => s.avgHeartRateBpm != null);
+
   return (
     <Card>
       <h2 className="text-lg font-semibold text-ink mb-2">
@@ -41,6 +43,11 @@ export default function WorkoutDetailSplits({
               <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-ink">
                 Pace
               </th>
+              {showHr && (
+                <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-ink">
+                  Avg HR (bpm)
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -66,6 +73,11 @@ export default function WorkoutDetailSplits({
                 <td className="py-1.5 px-2.5 text-xs text-ink">
                   {formatPace(split.paceS, unitPreference)}
                 </td>
+                {showHr && (
+                  <td className="py-1.5 px-2.5 text-xs text-ink">
+                    {split.avgHeartRateBpm != null ? split.avgHeartRateBpm : '—'}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

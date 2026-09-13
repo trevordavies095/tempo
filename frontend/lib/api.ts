@@ -212,6 +212,7 @@ export interface WorkoutDetail {
     distanceM: number;
     durationS: number;
     paceS: number;
+    avgHeartRateBpm: number | null;
   }>;
 }
 

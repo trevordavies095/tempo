@@ -1164,7 +1164,8 @@ public static class WorkoutsEndpoints
                 idx = s.Idx,
                 distanceM = s.DistanceM,
                 durationS = s.DurationS,
-                paceS = s.PaceS
+                paceS = s.PaceS,
+                avgHeartRateBpm = s.AvgHeartRateBpm
             }).ToList();
 
             return Results.Ok(new
@@ -1307,7 +1308,8 @@ public static class WorkoutsEndpoints
             idx = s.Idx,
             distanceM = s.DistanceM,
             durationS = s.DurationS,
-            paceS = s.PaceS
+            paceS = s.PaceS,
+            avgHeartRateBpm = s.AvgHeartRateBpm
         }).ToList();
 
         // Raw JSONB blobs are opt-in: default query projects them out, so skip deserialize too.
@@ -2463,7 +2465,7 @@ public static class WorkoutsEndpoints
         .Produces(200)
         .Produces(404)
         .WithSummary("Get workout details")
-        .WithDescription("Retrieves complete workout data including route and splits. Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true.");
+        .WithDescription("Retrieves complete workout data including route (as GeoJSON), splits, and weather information. Each split includes idx, distanceM, durationS, paceS, and avgHeartRateBpm (number or null). Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values are normalized for consistency.");
 
         group.MapPost("/import/bulk", BulkImportWorkouts)
         .Accepts<IFormFile>("multipart/form-data")

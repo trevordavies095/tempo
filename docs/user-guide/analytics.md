@@ -168,18 +168,12 @@ Distance-based splits provide detailed segment analysis:
 - **Distance** - Distance covered in this split
 - **Time** - Time taken for the split
 - **Pace** - Average pace for the split
-- **Elevation** - Elevation change in the split
-- **Heart Rate** - Average heart rate (if available)
-- **Cadence** - Average cadence (if available)
-- **Power** - Average power (if available)
+- **Heart Rate** - Average heart rate (if the Workout has heart-rate time series)
 
 Splits help identify:
 - Consistent pacing
 - Performance variations
-- Impact of elevation on pace
 - Heart rate response to effort
-- Cadence patterns
-- Power output variations
 
 ## Interpreting Metrics
 
