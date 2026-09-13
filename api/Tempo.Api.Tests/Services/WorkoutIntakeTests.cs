@@ -487,6 +487,63 @@ public class WorkoutIntakeTests : IDisposable
     }
 
     [Fact]
+    public async Task PersistAsync_HealthKitIndoor_WithHrSeries_PersistsSplitAvgHeartRate()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateHealthKitIndoorDecoded(withDistanceStream: true);
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == result.Workout!.Id)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        splits.Should().NotBeEmpty();
+        splits.Should().Contain(s => s.AvgHeartRateBpm != null);
+        (await _db.WorkoutRoutes.CountAsync(r => r.WorkoutId == result.Workout.Id)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKitIndoor_SessionLevelHrWithoutSeriesHr_LeavesSplitHrNull()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 7, 1, 8, 0, 0, System.DateTimeKind.Utc);
+        var decoded = new DecodedWorkout
+        {
+            StartedAt = start,
+            DurationS = 1800,
+            DistanceM = 5000,
+            TrackPoints = Enumerable.Range(0, 50).Select(i =>
+            {
+                var progress = (double)i / 49;
+                return new TrackPoint
+                {
+                    Time = start.AddSeconds(progress * 1800),
+                    DistanceM = progress * 5000
+                };
+            }).ToList()
+        };
+        var overlay = new WorkoutIntakeOverlay
+        {
+            Source = "healthkit",
+            Device = "Apple Watch",
+            AvgHeartRateBpm = 145,
+            MaxHeartRateBpm = 168
+        };
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        result.Workout!.AvgHeartRateBpm.Should().Be(145);
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == result.Workout.Id)
+            .ToListAsync();
+        splits.Should().NotBeEmpty();
+        splits.Should().OnlyContain(s => s.AvgHeartRateBpm == null);
+    }
+
+    [Fact]
     public async Task PersistAsync_HealthKitIndoor_WithDistanceStream_PersistsSplitsSeriesNoRoute()
     {
         await TestDataSeeder.SeedUserSettingsAsync(_db);
