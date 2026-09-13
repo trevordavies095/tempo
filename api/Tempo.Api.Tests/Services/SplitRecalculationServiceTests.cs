@@ -48,7 +48,7 @@ public class SplitRecalculationServiceTests : IDisposable
             gpxParser,
             fitParser,
             LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<TrackPointRehydration>());
-        _service = new SplitRecalculationService(_db, rehydration, trackGeometry, _logger);
+        _service = new SplitRecalculationService(_db, rehydration, trackGeometry, new SplitHeartRateService(), _logger);
     }
 
     public void Dispose()
@@ -300,6 +300,66 @@ public class SplitRecalculationServiceTests : IDisposable
         newSplits.Should().HaveCountGreaterThan(0);
         // New splits should be approximately 1000m (not 500m)
         newSplits[0].DistanceM.Should().BeApproximately(1000.0, 100.0);
+    }
+
+    [Fact]
+    public async Task RecalculateSplitsForWorkoutAsync_WithHeartRateSeries_WritesSplitAverages()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: 1800);
+        await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout);
+        workout.RawGpxData = CreateRawGpxDataJson(CreateTestTrackPoints(5000.0, 1800));
+        await TestDataSeeder.SeedWorkoutWithTimeSeriesAsync(_db, workout, includeHeartRate: true);
+        await _db.SaveChangesAsync();
+
+        var result = await _service.RecalculateSplitsForWorkoutAsync(workout, "metric");
+
+        result.Should().BeTrue();
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        splits.Should().HaveCountGreaterThan(0);
+        splits[0].DistanceM.Should().BeApproximately(1000.0, 100.0);
+        splits.Should().Contain(s => s.AvgHeartRateBpm != null);
+    }
+
+    [Fact]
+    public async Task RecalculateSplitsForWorkoutAsync_Imperial_WritesSplitAveragesOnMileRows()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: 1800);
+        await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout);
+        workout.RawGpxData = CreateRawGpxDataJson(CreateTestTrackPoints(5000.0, 1800));
+        await TestDataSeeder.SeedWorkoutWithTimeSeriesAsync(_db, workout, includeHeartRate: true);
+        await _db.SaveChangesAsync();
+
+        var result = await _service.RecalculateSplitsForWorkoutAsync(workout, "imperial");
+
+        result.Should().BeTrue();
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        splits.Should().HaveCountGreaterThan(0);
+        splits[0].DistanceM.Should().BeApproximately(1609.344, 150.0);
+        splits.Should().Contain(s => s.AvgHeartRateBpm != null);
+    }
+
+    [Fact]
+    public async Task RecalculateSplitsForWorkoutAsync_WithoutSeriesHeartRate_LeavesSplitsNull()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: 1800);
+        workout.AvgHeartRateBpm = 150;
+        await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout);
+        workout.RawGpxData = CreateRawGpxDataJson(CreateTestTrackPoints(5000.0, 1800));
+        await TestDataSeeder.SeedWorkoutWithTimeSeriesAsync(_db, workout, includeHeartRate: false);
+        await _db.SaveChangesAsync();
+
+        var result = await _service.RecalculateSplitsForWorkoutAsync(workout, "metric");
+
+        result.Should().BeTrue();
+        var splits = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        splits.Should().HaveCountGreaterThan(0);
+        splits.Should().OnlyContain(s => s.AvgHeartRateBpm == null);
     }
 
     // Helper methods

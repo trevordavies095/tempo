@@ -65,10 +65,9 @@ Distance-based splits (km or mile).
 - `WorkoutId` (Guid, Foreign Key to Workout)
 - `Idx` (int) - Split index (0-based)
 - `DistanceM` (double)
-- `DurationS` (double)
-- `ElevationGainM` (double, nullable)
-- `ElevationLossM` (double, nullable)
-- `AvgHeartRateBpm` (int, nullable)
+- `DurationS` (int)
+- `PaceS` (double) - seconds per kilometer
+- `AvgHeartRateBpm` (byte, nullable) - time-weighted average from WorkoutTimeSeries; null when the split has no HR samples
 
 **Indexes:**
 - Composite index on `(WorkoutId, Idx)` for efficient split queries

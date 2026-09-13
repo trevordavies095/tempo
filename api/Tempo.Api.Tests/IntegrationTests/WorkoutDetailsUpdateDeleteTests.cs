@@ -160,7 +160,8 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
                     Idx = idx,
                     DistanceM = 1000,
                     DurationS = 360 + idx,
-                    PaceS = 360
+                    PaceS = 360,
+                    AvgHeartRateBpm = idx == 1 ? (byte?)150 : null
                 });
             }
             await db.SaveChangesAsync();
@@ -173,6 +174,53 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         result.Should().NotBeNull();
         result!.Splits.Should().HaveCount(3);
         result.Splits.Select(s => s.Idx).Should().Equal(0, 1, 2);
+        result.Splits.Select(s => s.AvgHeartRateBpm).Should().Equal(null, (byte?)150, null);
+    }
+
+    [Fact]
+    public async Task GetWorkout_ReturnsSparseSplitHeartRate_WhenSeriesStartsMidRun()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Strap Mid-run", distanceM: 3000, durationS: 900);
+            workout.AvgHeartRateBpm = 155;
+            for (var idx = 0; idx < 3; idx++)
+            {
+                db.WorkoutSplits.Add(new WorkoutSplit
+                {
+                    WorkoutId = workout.Id,
+                    Idx = idx,
+                    DistanceM = 1000,
+                    DurationS = 300,
+                    PaceS = 300
+                });
+            }
+
+            db.WorkoutTimeSeries.AddRange(
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 0, DistanceM = 100, HeartRateBpm = null },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 650, DistanceM = 2200, HeartRateBpm = 158 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 700, DistanceM = 2500, HeartRateBpm = 162 });
+            await db.SaveChangesAsync();
+
+            var splits = await db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+            var series = await db.WorkoutTimeSeries.Where(ts => ts.WorkoutId == workout.Id).ToListAsync();
+            scope.ServiceProvider.GetRequiredService<SplitHeartRateService>().ApplyToSplits(splits, series);
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var response = await client.GetAsync($"/workouts/{workoutId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result.Should().NotBeNull();
+        result!.Splits.Select(s => s.AvgHeartRateBpm).Should().Equal(null, null, (byte?)160);
+        result.AvgHeartRateBpm.Should().Be(155);
     }
 
     [Fact]
@@ -1344,6 +1392,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public double DistanceM { get; set; }
         public int DurationS { get; set; }
         public int PaceS { get; set; }
+        public byte? AvgHeartRateBpm { get; set; }
     }
 
     private class ShoeResponse

@@ -25,6 +25,11 @@ public class WorkoutSplit
     [Column(TypeName = "double precision")]
     public double PaceS { get; set; }
 
+    /// <summary>
+    /// Time-weighted average heart rate for this split (bpm). Null when the series has no HR samples in the window.
+    /// </summary>
+    public byte? AvgHeartRateBpm { get; set; }
+
     // Navigation property
     [ForeignKey(nameof(WorkoutId))]
     public Workout Workout { get; set; } = null!;

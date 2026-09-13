@@ -47,7 +47,7 @@ public class WorkoutCropServiceTests : IDisposable
             fitParser,
             LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<TrackPointRehydration>());
         _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<WorkoutCropService>();
-        _service = new WorkoutCropService(_db, rehydration, trackGeometry, _logger);
+        _service = new WorkoutCropService(_db, rehydration, trackGeometry, new SplitHeartRateService(), _logger);
     }
 
     public void Dispose()
@@ -432,6 +432,61 @@ public class WorkoutCropServiceTests : IDisposable
 
         // Assert
         result.DurationS.Should().Be(10); // Exactly the minimum
+    }
+
+    [Fact]
+    public async Task CropWorkoutAsync_WritesSplitAvgHeartRate_ForRemainingWindowOnly()
+    {
+        var originalDuration = 1800;
+        var startTrim = 300;
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: originalDuration);
+        var coordinates = new List<double[]>();
+        for (var i = 0; i < 80; i++)
+        {
+            coordinates.Add(new[] { 0.0 + (i * 0.0004), 0.0 + (i * 0.0004) });
+        }
+
+        await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout, coordinates);
+        await SeedHeartRateSeriesAsync(workout, originalDuration, startTrim);
+        await TestDataSeeder.SeedWorkoutWithSplitsAsync(_db, workout);
+        var stale = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        foreach (var split in stale)
+        {
+            split.AvgHeartRateBpm = 50;
+        }
+
+        await _db.SaveChangesAsync();
+
+        await _service.CropWorkoutAsync(workout, startTrim, 0);
+
+        var croppedSplits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        croppedSplits.Should().NotBeEmpty();
+        croppedSplits.Should().Contain(s => s.AvgHeartRateBpm != null);
+        croppedSplits.Where(s => s.AvgHeartRateBpm != null)
+            .Should()
+            .OnlyContain(s => s.AvgHeartRateBpm >= 160);
+        croppedSplits.Should().OnlyContain(s => s.AvgHeartRateBpm != 50);
+    }
+
+    private async Task SeedHeartRateSeriesAsync(Workout workout, int durationS, int lowHrUntilSeconds)
+    {
+        var series = new List<WorkoutTimeSeries>();
+        for (var elapsed = 0; elapsed <= durationS; elapsed += 10)
+        {
+            series.Add(new WorkoutTimeSeries
+            {
+                WorkoutId = workout.Id,
+                ElapsedSeconds = elapsed,
+                DistanceM = workout.DistanceM * (elapsed / (double)durationS),
+                HeartRateBpm = (byte)(elapsed < lowHrUntilSeconds ? 80 : 180)
+            });
+        }
+
+        _db.WorkoutTimeSeries.AddRange(series);
+        await _db.SaveChangesAsync();
     }
 }
 
