@@ -49,6 +49,7 @@ public class StravaBulkImportOrchestratorTests : IDisposable
             new HeartRateZoneService(),
             new FakeRelativeEffortService(),
             new FakeBestEffortService(),
+            new SplitHeartRateService(),
             NullLogger<WorkoutIntake>.Instance);
 
         var mediaService = new MediaService(

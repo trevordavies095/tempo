@@ -366,6 +366,45 @@ public class WorkoutQueryServiceTests : IDisposable
         sql.Should().Contain("RawHealthKitData");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueryDetail_ReturnsSplitsOrderedByIdx_WhenInsertedOutOfOrder(bool includeRaw)
+    {
+        var workout = new Workout
+        {
+            StartedAt = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc),
+            DistanceM = 5000,
+            DurationS = 1800,
+            AvgPaceS = 360,
+            Source = "test",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Workouts.Add(workout);
+        await _db.SaveChangesAsync();
+
+        // Insert out of Idx order so heap/insertion order would fail the assertion
+        foreach (var idx in new[] { 2, 0, 1 })
+        {
+            _db.WorkoutSplits.Add(new WorkoutSplit
+            {
+                WorkoutId = workout.Id,
+                Idx = idx,
+                DistanceM = 1000,
+                DurationS = 360 + idx,
+                PaceS = 360
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var result = await WorkoutQueryService.QueryDetail(_db, workout.Id, includeRaw)
+            .FirstOrDefaultAsync();
+
+        result.Should().NotBeNull();
+        result!.Splits.Should().HaveCount(3);
+        result.Splits.Select(s => s.Idx).Should().Equal(0, 1, 2);
+    }
+
     [Fact]
     public async Task QueryListPage_ProjectsSplitsCountWithoutLoadingSplitRows()
     {

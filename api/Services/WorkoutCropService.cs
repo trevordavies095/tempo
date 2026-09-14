@@ -12,6 +12,7 @@ public class WorkoutCropService
     private readonly TempoDbContext _db;
     private readonly TrackPointRehydration _rehydration;
     private readonly TrackGeometry _trackGeometry;
+    private readonly SplitHeartRateService _splitHeartRate;
     private readonly ILogger<WorkoutCropService> _logger;
     private const int MinimumRemainingDurationSeconds = 10;
 
@@ -19,11 +20,13 @@ public class WorkoutCropService
         TempoDbContext db,
         TrackPointRehydration rehydration,
         TrackGeometry trackGeometry,
+        SplitHeartRateService splitHeartRate,
         ILogger<WorkoutCropService> logger)
     {
         _db = db;
         _rehydration = rehydration;
         _trackGeometry = trackGeometry;
+        _splitHeartRate = splitHeartRate;
         _logger = logger;
     }
 
@@ -99,7 +102,10 @@ public class WorkoutCropService
         {
             _db.WorkoutSplits.RemoveRange(oldSplits);
         }
-        _db.WorkoutSplits.AddRange(geometry.Splits);
+
+        var splits = geometry.Splits.ToList();
+        _splitHeartRate.ApplyToSplits(splits, geometry.TimeSeries);
+        _db.WorkoutSplits.AddRange(splits);
 
         if (timeSeries.Count > 0)
         {

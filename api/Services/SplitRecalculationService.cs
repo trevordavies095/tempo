@@ -12,17 +12,20 @@ public class SplitRecalculationService
     private readonly TempoDbContext _db;
     private readonly TrackPointRehydration _rehydration;
     private readonly TrackGeometry _trackGeometry;
+    private readonly SplitHeartRateService _splitHeartRate;
     private readonly ILogger<SplitRecalculationService> _logger;
 
     public SplitRecalculationService(
         TempoDbContext db,
         TrackPointRehydration rehydration,
         TrackGeometry trackGeometry,
+        SplitHeartRateService splitHeartRate,
         ILogger<SplitRecalculationService> logger)
     {
         _db = db;
         _rehydration = rehydration;
         _trackGeometry = trackGeometry;
+        _splitHeartRate = splitHeartRate;
         _logger = logger;
     }
 
@@ -71,7 +74,14 @@ public class SplitRecalculationService
             workout.Route.PreviewGeoJson = derived.Route.PreviewGeoJson;
         }
 
-        _db.WorkoutSplits.AddRange(derived.Splits);
+        var series = await _db.WorkoutTimeSeries
+            .Where(ts => ts.WorkoutId == workout.Id)
+            .OrderBy(ts => ts.ElapsedSeconds)
+            .ToListAsync();
+
+        var splits = derived.Splits.ToList();
+        _splitHeartRate.ApplyToSplits(splits, series);
+        _db.WorkoutSplits.AddRange(splits);
         await _db.SaveChangesAsync();
 
         _logger.LogInformation("Recalculated splits for workout {WorkoutId}: {OldCount} -> {NewCount} splits",

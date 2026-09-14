@@ -78,8 +78,7 @@ Distance-based splits showing:
 - Distance
 - Time
 - Pace
-- Elevation change
-- Heart rate (if available)
+- Average heart rate (if the Workout has heart-rate time series)
 
 Splits are calculated based on your unit preference (1km for metric, 1 mile for imperial). Hover or click a split to set Highlight on the map and charts.
 

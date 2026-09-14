@@ -66,6 +66,7 @@ public class WorkoutIntake
     private readonly HeartRateZoneService _zoneService;
     private readonly IRelativeEffortService _relativeEffortService;
     private readonly IBestEffortService _bestEffortService;
+    private readonly SplitHeartRateService _splitHeartRate;
     private readonly ILogger<WorkoutIntake> _logger;
 
     public WorkoutIntake(
@@ -77,6 +78,7 @@ public class WorkoutIntake
         HeartRateZoneService zoneService,
         IRelativeEffortService relativeEffortService,
         IBestEffortService bestEffortService,
+        SplitHeartRateService splitHeartRate,
         ILogger<WorkoutIntake> logger)
     {
         _db = db;
@@ -87,6 +89,7 @@ public class WorkoutIntake
         _zoneService = zoneService;
         _relativeEffortService = relativeEffortService;
         _bestEffortService = bestEffortService;
+        _splitHeartRate = splitHeartRate;
         _logger = logger;
     }
 
@@ -217,6 +220,7 @@ public class WorkoutIntake
             var route = geometry.Route;
             var splits = geometry.Splits.ToList();
             var timeSeries = geometry.TimeSeries.ToList();
+            _splitHeartRate.ApplyToSplits(splits, timeSeries);
             if (timeSeries.Count > 0)
             {
                 CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
@@ -451,7 +455,19 @@ public class WorkoutIntake
 
             var oldSplits = await _db.WorkoutSplits.Where(s => s.WorkoutId == existingWorkout.Id).ToListAsync();
             _db.WorkoutSplits.RemoveRange(oldSplits);
-            _db.WorkoutSplits.AddRange(geometry.Splits);
+
+            IReadOnlyList<WorkoutTimeSeries> seriesForHr = geometry.TimeSeries;
+            if (seriesForHr.Count == 0)
+            {
+                seriesForHr = await _db.WorkoutTimeSeries
+                    .Where(ts => ts.WorkoutId == existingWorkout.Id)
+                    .OrderBy(ts => ts.ElapsedSeconds)
+                    .ToListAsync();
+            }
+
+            var splits = geometry.Splits.ToList();
+            _splitHeartRate.ApplyToSplits(splits, seriesForHr);
+            _db.WorkoutSplits.AddRange(splits);
 
             if (geometry.HasRouteCoordinates &&
                 (existingWorkout.Route == null || string.IsNullOrWhiteSpace(existingWorkout.Route.RouteGeoJson)))
