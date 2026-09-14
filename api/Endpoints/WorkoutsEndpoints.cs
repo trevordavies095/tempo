@@ -922,6 +922,7 @@ public static class WorkoutsEndpoints
     /// <param name="splitRecalculationService">Split recalculation service</param>
     /// <param name="zoneService">Heart rate zone service</param>
     /// <param name="relativeEffortService">Relative effort service</param>
+    /// <param name="bestEffortService">Best effort service</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>Updated workout with all derived data recalculated</returns>
     /// <remarks>
@@ -1610,7 +1611,7 @@ public static class WorkoutsEndpoints
         {
             form = await request.ReadFormAsync();
         }
-        catch (Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
+        catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
         {
             logger.LogError(ex, "Request body was incomplete or connection was closed prematurely during bulk import");
             return Results.BadRequest(new { error = "Upload failed: The request was incomplete. This may be due to a timeout or connection issue. Please try again with a stable connection." });
@@ -1774,7 +1775,7 @@ public static class WorkoutsEndpoints
         {
             form = await request.ReadFormAsync();
         }
-        catch (Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
+        catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
         {
             logger.LogError(ex, "Request body was incomplete or connection was closed prematurely during export import");
             return Results.BadRequest(new { error = "Upload failed: The request was incomplete. This may be due to a timeout or connection issue. Please try again with a stable connection." });
@@ -2201,6 +2202,7 @@ public static class WorkoutsEndpoints
     /// <param name="id">Workout ID</param>
     /// <param name="db">Database context</param>
     /// <param name="mediaConfig">Media storage configuration</param>
+    /// <param name="bestEffortService">Best effort service</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>No content on success</returns>
     /// <remarks>

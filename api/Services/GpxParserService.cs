@@ -434,28 +434,33 @@ public class GpxParserService
             }
 
             // Calculate speed and grade between consecutive points
-            if (i > 0 && point.Time.HasValue && trackPoints[i - 1].Time.HasValue)
+            if (i > 0)
             {
-                var timeDiff = (point.Time.Value - trackPoints[i - 1].Time.Value).TotalSeconds;
-                if (timeDiff > 0)
+                var previous = trackPoints[i - 1];
+                if (point.Time.HasValue && previous.Time.HasValue)
                 {
-                    var segmentDistance = GeoUtils.HaversineDistance(
-                        trackPoints[i - 1].Latitude!.Value,
-                        trackPoints[i - 1].Longitude!.Value,
-                        point.Latitude!.Value,
-                        point.Longitude!.Value
-                    );
-                    var speed = segmentDistance / timeDiff;
-                    if (speed > maxSpeedMps) maxSpeedMps = speed;
-
-                    // Calculate grade
-                    if (point.Elevation.HasValue && trackPoints[i - 1].Elevation.HasValue && segmentDistance > 0)
+                    var timeDiff = (point.Time.Value - previous.Time.Value).TotalSeconds;
+                    if (timeDiff > 0
+                        && point.Latitude is { } lat
+                        && point.Longitude is { } lon
+                        && previous.Latitude is { } prevLat
+                        && previous.Longitude is { } prevLon)
                     {
-                        var elevDiff = point.Elevation.Value - trackPoints[i - 1].Elevation.Value;
-                        var grade = (elevDiff / segmentDistance) * 100.0;
-                        totalGrade += grade;
-                        if (grade > maxPosGrade) maxPosGrade = grade;
-                        if (grade < maxNegGrade) maxNegGrade = grade;
+                        var segmentDistance = GeoUtils.HaversineDistance(prevLat, prevLon, lat, lon);
+                        var speed = segmentDistance / timeDiff;
+                        if (speed > maxSpeedMps) maxSpeedMps = speed;
+
+                        // Calculate grade
+                        if (point.Elevation is { } elev
+                            && previous.Elevation is { } prevElev
+                            && segmentDistance > 0)
+                        {
+                            var elevDiff = elev - prevElev;
+                            var grade = (elevDiff / segmentDistance) * 100.0;
+                            totalGrade += grade;
+                            if (grade > maxPosGrade) maxPosGrade = grade;
+                            if (grade < maxNegGrade) maxNegGrade = grade;
+                        }
                     }
                 }
             }

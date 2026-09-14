@@ -29,7 +29,7 @@ public class ApiKeyService
     }
 
     /// <summary>
-    /// Creates a key; <paramref name="plaintextKey"/> is returned once to the caller — never stored.
+    /// Creates a key; the plaintext key in the return value is returned once to the caller — never stored.
     /// </summary>
     public async Task<(ApiKey Entity, string PlaintextKey)> CreateAsync(Guid userId, string? label, CancellationToken cancellationToken = default)
     {

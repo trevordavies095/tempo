@@ -60,11 +60,12 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<List<ShoeResponse>>();
         result.Should().NotBeNull();
-        result!.Should().HaveCount(2);
-        result[0].brand.Should().Be("Adidas"); // Sorted by brand
-        result[1].brand.Should().Be("Nike");
-        result[1].totalMileage.Should().BeApproximately(6.0, 0.001); // 1km initial + 5km workout = 6km
-        result.Should().OnlyContain(s => !s.isRetired);
+        var shoes = result!;
+        shoes.Should().HaveCount(2);
+        shoes[0].brand.Should().Be("Adidas"); // Sorted by brand
+        shoes[1].brand.Should().Be("Nike");
+        shoes[1].totalMileage.Should().BeApproximately(6.0, 0.001); // 1km initial + 5km workout = 6km
+        shoes.Should().OnlyContain(s => !s.isRetired);
     }
 
     [Fact]
@@ -84,8 +85,9 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<List<ShoeResponse>>();
         result.Should().NotBeNull();
-        result!.Should().HaveCount(1);
-        result[0].brand.Should().Be("Active");
+        var shoes = result!;
+        shoes.Should().HaveCount(1);
+        shoes[0].brand.Should().Be("Active");
     }
 
     [Fact]
@@ -105,9 +107,10 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<List<ShoeResponse>>();
         result.Should().NotBeNull();
-        result!.Should().HaveCount(1);
-        result[0].brand.Should().Be("Retired");
-        result[0].isRetired.Should().BeTrue();
+        var shoes = result!;
+        shoes.Should().HaveCount(1);
+        shoes[0].brand.Should().Be("Retired");
+        shoes[0].isRetired.Should().BeTrue();
     }
 
     [Fact]

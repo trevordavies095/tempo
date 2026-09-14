@@ -495,13 +495,14 @@ public class WorkoutIntakeTests : IDisposable
         var result = await _intake.PersistAsync(decoded, overlay);
 
         result.Action.Should().Be("created");
+        var workoutId = result.Workout!.Id;
         var splits = await _db.WorkoutSplits
-            .Where(s => s.WorkoutId == result.Workout!.Id)
+            .Where(s => s.WorkoutId == workoutId)
             .OrderBy(s => s.Idx)
             .ToListAsync();
         splits.Should().NotBeEmpty();
         splits.Should().Contain(s => s.AvgHeartRateBpm != null);
-        (await _db.WorkoutRoutes.CountAsync(r => r.WorkoutId == result.Workout.Id)).Should().Be(0);
+        (await _db.WorkoutRoutes.CountAsync(r => r.WorkoutId == workoutId)).Should().Be(0);
     }
 
     [Fact]

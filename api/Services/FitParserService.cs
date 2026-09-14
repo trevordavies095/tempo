@@ -312,79 +312,58 @@ public class FitParserService
         return JsonSerializer.Serialize(rawFitData, JsonUtils.DefaultOptions);
     }
 
+    private static void SetIfPresent<T>(Dictionary<string, object?> dest, string key, T? value)
+        where T : struct
+    {
+        if (value.HasValue)
+            dest[key] = value.Value;
+    }
+
+    private static void SetIfPresent<T>(Dictionary<string, object?> dest, string key, T? value, Func<T, object> map)
+        where T : struct
+    {
+        if (value.HasValue)
+            dest[key] = map(value.Value);
+    }
+
     private Dictionary<string, object?> ExtractSessionData(SessionMesg session)
     {
         var sessionData = new Dictionary<string, object?>();
 
-        // Extract all SessionMesg fields
-        if (session.GetTotalElapsedTime().HasValue)
-            sessionData["totalElapsedTime"] = session.GetTotalElapsedTime().Value;
-        if (session.GetTotalTimerTime().HasValue)
-            sessionData["totalTimerTime"] = session.GetTotalTimerTime().Value;
-        if (session.GetTotalMovingTime().HasValue)
-            sessionData["totalMovingTime"] = session.GetTotalMovingTime().Value;
-        if (session.GetTotalDistance().HasValue)
-            sessionData["totalDistance"] = session.GetTotalDistance().Value;
-        if (session.GetTotalCycles().HasValue)
-            sessionData["totalCycles"] = session.GetTotalCycles().Value;
-        if (session.GetTotalStrides().HasValue)
-            sessionData["totalStrides"] = session.GetTotalStrides().Value;
-        if (session.GetTotalStrokes().HasValue)
-            sessionData["totalStrokes"] = session.GetTotalStrokes().Value;
-        if (session.GetTotalCalories().HasValue)
-            sessionData["totalCalories"] = session.GetTotalCalories().Value;
-        if (session.GetTotalFatCalories().HasValue)
-            sessionData["totalFatCalories"] = session.GetTotalFatCalories().Value;
-        if (session.GetMaxSpeed().HasValue)
-            sessionData["maxSpeed"] = session.GetMaxSpeed().Value;
-        if (session.GetAvgSpeed().HasValue)
-            sessionData["avgSpeed"] = session.GetAvgSpeed().Value;
-        if (session.GetMaxHeartRate().HasValue)
-            sessionData["maxHeartRate"] = session.GetMaxHeartRate().Value;
-        if (session.GetAvgHeartRate().HasValue)
-            sessionData["avgHeartRate"] = session.GetAvgHeartRate().Value;
-        if (session.GetMinHeartRate().HasValue)
-            sessionData["minHeartRate"] = session.GetMinHeartRate().Value;
-        if (session.GetMaxCadence().HasValue)
-            sessionData["maxCadence"] = session.GetMaxCadence().Value;
-        if (session.GetMaxRunningCadence().HasValue)
-            sessionData["maxRunningCadence"] = session.GetMaxRunningCadence().Value;
-        if (session.GetAvgCadence().HasValue)
-            sessionData["avgCadence"] = session.GetAvgCadence().Value;
-        if (session.GetMaxPower().HasValue)
-            sessionData["maxPower"] = session.GetMaxPower().Value;
-        if (session.GetAvgPower().HasValue)
-            sessionData["avgPower"] = session.GetAvgPower().Value;
-        if (session.GetTotalAscent().HasValue)
-            sessionData["totalAscent"] = session.GetTotalAscent().Value;
-        if (session.GetTotalDescent().HasValue)
-            sessionData["totalDescent"] = session.GetTotalDescent().Value;
-        if (session.GetMaxAltitude().HasValue)
-            sessionData["maxAltitude"] = session.GetMaxAltitude().Value;
-        if (session.GetMinAltitude().HasValue)
-            sessionData["minAltitude"] = session.GetMinAltitude().Value;
-        if (session.GetMaxPosGrade().HasValue)
-            sessionData["maxPosGrade"] = session.GetMaxPosGrade().Value;
-        if (session.GetMaxNegGrade().HasValue)
-            sessionData["maxNegGrade"] = session.GetMaxNegGrade().Value;
-        if (session.GetMaxTemperature().HasValue)
-            sessionData["maxTemperature"] = session.GetMaxTemperature().Value;
-        if (session.GetMinTemperature().HasValue)
-            sessionData["minTemperature"] = session.GetMinTemperature().Value;
-        if (session.GetTotalTrainingEffect().HasValue)
-            sessionData["totalTrainingEffect"] = session.GetTotalTrainingEffect().Value;
-        if (session.GetTotalAnaerobicTrainingEffect().HasValue)
-            sessionData["totalAnaerobicTrainingEffect"] = session.GetTotalAnaerobicTrainingEffect().Value;
-        if (session.GetMaxPosVerticalSpeed().HasValue)
-            sessionData["maxPosVerticalSpeed"] = session.GetMaxPosVerticalSpeed().Value;
-        if (session.GetMaxNegVerticalSpeed().HasValue)
-            sessionData["maxNegVerticalSpeed"] = session.GetMaxNegVerticalSpeed().Value;
-        if (session.GetTotalWork().HasValue)
-            sessionData["totalWork"] = session.GetTotalWork().Value;
-        if (session.GetTotalGrit().HasValue)
-            sessionData["totalGrit"] = session.GetTotalGrit().Value;
-        if (session.GetAvgFlow().HasValue)
-            sessionData["avgFlow"] = session.GetAvgFlow().Value;
+        SetIfPresent(sessionData, "totalElapsedTime", session.GetTotalElapsedTime());
+        SetIfPresent(sessionData, "totalTimerTime", session.GetTotalTimerTime());
+        SetIfPresent(sessionData, "totalMovingTime", session.GetTotalMovingTime());
+        SetIfPresent(sessionData, "totalDistance", session.GetTotalDistance());
+        SetIfPresent(sessionData, "totalCycles", session.GetTotalCycles());
+        SetIfPresent(sessionData, "totalStrides", session.GetTotalStrides());
+        SetIfPresent(sessionData, "totalStrokes", session.GetTotalStrokes());
+        SetIfPresent(sessionData, "totalCalories", session.GetTotalCalories());
+        SetIfPresent(sessionData, "totalFatCalories", session.GetTotalFatCalories());
+        SetIfPresent(sessionData, "maxSpeed", session.GetMaxSpeed());
+        SetIfPresent(sessionData, "avgSpeed", session.GetAvgSpeed());
+        SetIfPresent(sessionData, "maxHeartRate", session.GetMaxHeartRate());
+        SetIfPresent(sessionData, "avgHeartRate", session.GetAvgHeartRate());
+        SetIfPresent(sessionData, "minHeartRate", session.GetMinHeartRate());
+        SetIfPresent(sessionData, "maxCadence", session.GetMaxCadence());
+        SetIfPresent(sessionData, "maxRunningCadence", session.GetMaxRunningCadence());
+        SetIfPresent(sessionData, "avgCadence", session.GetAvgCadence());
+        SetIfPresent(sessionData, "maxPower", session.GetMaxPower());
+        SetIfPresent(sessionData, "avgPower", session.GetAvgPower());
+        SetIfPresent(sessionData, "totalAscent", session.GetTotalAscent());
+        SetIfPresent(sessionData, "totalDescent", session.GetTotalDescent());
+        SetIfPresent(sessionData, "maxAltitude", session.GetMaxAltitude());
+        SetIfPresent(sessionData, "minAltitude", session.GetMinAltitude());
+        SetIfPresent(sessionData, "maxPosGrade", session.GetMaxPosGrade());
+        SetIfPresent(sessionData, "maxNegGrade", session.GetMaxNegGrade());
+        SetIfPresent(sessionData, "maxTemperature", session.GetMaxTemperature());
+        SetIfPresent(sessionData, "minTemperature", session.GetMinTemperature());
+        SetIfPresent(sessionData, "totalTrainingEffect", session.GetTotalTrainingEffect());
+        SetIfPresent(sessionData, "totalAnaerobicTrainingEffect", session.GetTotalAnaerobicTrainingEffect());
+        SetIfPresent(sessionData, "maxPosVerticalSpeed", session.GetMaxPosVerticalSpeed());
+        SetIfPresent(sessionData, "maxNegVerticalSpeed", session.GetMaxNegVerticalSpeed());
+        SetIfPresent(sessionData, "totalWork", session.GetTotalWork());
+        SetIfPresent(sessionData, "totalGrit", session.GetTotalGrit());
+        SetIfPresent(sessionData, "avgFlow", session.GetAvgFlow());
 
         return sessionData;
     }
@@ -392,32 +371,18 @@ public class FitParserService
     private Dictionary<string, object?> ExtractDeviceData(ReadOnlyCollection<DeviceInfoMesg> deviceInfos)
     {
         var deviceData = new Dictionary<string, object?>();
-        
+
         // Prefer device with SourceType = Local (5) as that's the recording device
         // According to FIT spec: Local indicates the device that recorded the activity
-        DeviceInfoMesg? deviceInfo = null;
-        
-        // First, try to find device with SourceType = Local (recording device)
-        var localDevice = deviceInfos.FirstOrDefault(d => d.GetSourceType() == SourceType.Local);
-        if (localDevice != null)
-        {
-            deviceInfo = localDevice;
-        }
-        else
-        {
-            // Fallback to first device if no Local device found
-            deviceInfo = deviceInfos.FirstOrDefault();
-        }
-        
+        DeviceInfoMesg? deviceInfo = deviceInfos.FirstOrDefault(d => d.GetSourceType() == SourceType.Local)
+            ?? deviceInfos.FirstOrDefault();
+
         if (deviceInfo != null)
         {
-            if (deviceInfo.GetManufacturer().HasValue)
-                deviceData["manufacturer"] = deviceInfo.GetManufacturer().Value;
-            if (deviceInfo.GetProduct().HasValue)
-                deviceData["product"] = deviceInfo.GetProduct().Value;
-            if (deviceInfo.GetSerialNumber().HasValue)
-                deviceData["serialNumber"] = deviceInfo.GetSerialNumber().Value;
-            
+            SetIfPresent(deviceData, "manufacturer", deviceInfo.GetManufacturer());
+            SetIfPresent(deviceData, "product", deviceInfo.GetProduct());
+            SetIfPresent(deviceData, "serialNumber", deviceInfo.GetSerialNumber());
+
             // Extract ProductName field if available (most reliable device name)
             try
             {
@@ -445,23 +410,15 @@ public class FitParserService
         }
 
         var weatherData = new Dictionary<string, object?>();
-        
-        if (weatherCondition.GetWeatherReport().HasValue)
-            weatherData["weatherReport"] = weatherCondition.GetWeatherReport().Value.ToString();
-        if (weatherCondition.GetTemperature().HasValue)
-            weatherData["temperature"] = weatherCondition.GetTemperature().Value;
-        if (weatherCondition.GetCondition().HasValue)
-            weatherData["condition"] = weatherCondition.GetCondition().Value.ToString();
-        if (weatherCondition.GetWindDirection().HasValue)
-            weatherData["windDirection"] = weatherCondition.GetWindDirection().Value;
-        if (weatherCondition.GetWindSpeed().HasValue)
-            weatherData["windSpeed"] = weatherCondition.GetWindSpeed().Value;
-        if (weatherCondition.GetPrecipitationProbability().HasValue)
-            weatherData["precipitationProbability"] = weatherCondition.GetPrecipitationProbability().Value;
-        if (weatherCondition.GetTemperatureFeelsLike().HasValue)
-            weatherData["temperatureFeelsLike"] = weatherCondition.GetTemperatureFeelsLike().Value;
-        if (weatherCondition.GetRelativeHumidity().HasValue)
-            weatherData["relativeHumidity"] = weatherCondition.GetRelativeHumidity().Value;
+
+        SetIfPresent(weatherData, "weatherReport", weatherCondition.GetWeatherReport(), v => v.ToString());
+        SetIfPresent(weatherData, "temperature", weatherCondition.GetTemperature());
+        SetIfPresent(weatherData, "condition", weatherCondition.GetCondition(), v => v.ToString());
+        SetIfPresent(weatherData, "windDirection", weatherCondition.GetWindDirection());
+        SetIfPresent(weatherData, "windSpeed", weatherCondition.GetWindSpeed());
+        SetIfPresent(weatherData, "precipitationProbability", weatherCondition.GetPrecipitationProbability());
+        SetIfPresent(weatherData, "temperatureFeelsLike", weatherCondition.GetTemperatureFeelsLike());
+        SetIfPresent(weatherData, "relativeHumidity", weatherCondition.GetRelativeHumidity());
         var locationStr = weatherCondition.GetLocationAsString();
         if (!string.IsNullOrEmpty(locationStr))
             weatherData["location"] = locationStr;
@@ -476,16 +433,11 @@ public class FitParserService
         {
             // ObservedAtTime may be null/invalid - skip it
         }
-        if (weatherCondition.GetObservedLocationLat().HasValue)
-            weatherData["observedLocationLat"] = weatherCondition.GetObservedLocationLat().Value;
-        if (weatherCondition.GetObservedLocationLong().HasValue)
-            weatherData["observedLocationLong"] = weatherCondition.GetObservedLocationLong().Value;
-        if (weatherCondition.GetDayOfWeek().HasValue)
-            weatherData["dayOfWeek"] = weatherCondition.GetDayOfWeek().Value.ToString();
-        if (weatherCondition.GetHighTemperature().HasValue)
-            weatherData["highTemperature"] = weatherCondition.GetHighTemperature().Value;
-        if (weatherCondition.GetLowTemperature().HasValue)
-            weatherData["lowTemperature"] = weatherCondition.GetLowTemperature().Value;
+        SetIfPresent(weatherData, "observedLocationLat", weatherCondition.GetObservedLocationLat());
+        SetIfPresent(weatherData, "observedLocationLong", weatherCondition.GetObservedLocationLong());
+        SetIfPresent(weatherData, "dayOfWeek", weatherCondition.GetDayOfWeek(), v => v.ToString());
+        SetIfPresent(weatherData, "highTemperature", weatherCondition.GetHighTemperature());
+        SetIfPresent(weatherData, "lowTemperature", weatherCondition.GetLowTemperature());
 
         return weatherData;
     }

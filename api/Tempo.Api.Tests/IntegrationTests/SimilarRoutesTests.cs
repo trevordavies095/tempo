@@ -137,7 +137,8 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
         result!.Should().HaveCountGreaterThan(0);
 
         // Verify response structure
-        var firstMatch = result[0];
+        var matches = result!;
+        var firstMatch = matches[0];
         firstMatch.Should().NotBeNull();
         firstMatch.WorkoutId.Should().NotBeEmpty();
         firstMatch.StartedAt.Should().BeBefore(DateTime.UtcNow);
@@ -151,7 +152,7 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
         // Verify time/pace differences are calculated correctly
         // For similarWorkout1: 1900 - 1800 = 100 (slower, positive)
         // For similarWorkout2: 1700 - 1800 = -100 (faster, negative)
-        var match1 = result.FirstOrDefault(r => r.WorkoutId == similarWorkout1.Id);
+        var match1 = matches.FirstOrDefault(r => r.WorkoutId == similarWorkout1.Id);
         if (match1 != null)
         {
             match1.TimeDifferenceS.Should().Be(100); // Slower
@@ -160,7 +161,7 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
             match1.ElevGainM.Should().Be(150.0);
         }
 
-        var match2 = result.FirstOrDefault(r => r.WorkoutId == similarWorkout2.Id);
+        var match2 = matches.FirstOrDefault(r => r.WorkoutId == similarWorkout2.Id);
         if (match2 != null)
         {
             match2.TimeDifferenceS.Should().Be(-100); // Faster
@@ -424,10 +425,11 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<List<SimilarRouteResponse>>();
         result.Should().NotBeNull();
-        result!.Should().HaveCountGreaterThan(0);
+        var matches = result!;
+        matches.Should().HaveCountGreaterThan(0);
 
         // Verify faster workout differences (negative = faster)
-        var fasterMatch = result.FirstOrDefault(r => r.WorkoutId == fasterWorkout.Id);
+        var fasterMatch = matches.FirstOrDefault(r => r.WorkoutId == fasterWorkout.Id);
         if (fasterMatch != null)
         {
             fasterMatch.TimeDifferenceS.Should().Be(-100); // 1700 - 1800 = -100 (faster)
@@ -435,7 +437,7 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
         }
 
         // Verify slower workout differences (positive = slower)
-        var slowerMatch = result.FirstOrDefault(r => r.WorkoutId == slowerWorkout.Id);
+        var slowerMatch = matches.FirstOrDefault(r => r.WorkoutId == slowerWorkout.Id);
         if (slowerMatch != null)
         {
             slowerMatch.TimeDifferenceS.Should().Be(100); // 1900 - 1800 = 100 (slower)
@@ -497,9 +499,10 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<List<SimilarRouteResponse>>();
         result.Should().NotBeNull();
-        result!.Should().HaveCountGreaterThan(0);
+        var matches = result!;
+        matches.Should().HaveCountGreaterThan(0);
 
-        var match = result.FirstOrDefault(r => r.WorkoutId == similarWorkout.Id);
+        var match = matches.FirstOrDefault(r => r.WorkoutId == similarWorkout.Id);
         match.Should().NotBeNull();
         match!.WorkoutId.Should().Be(similarWorkout.Id);
         match.StartedAt.Should().Be(similarWorkout.StartedAt);
