@@ -142,15 +142,13 @@ public class RouteMatchingService
                 
                 if (isPostgres)
                 {
-                    // PostgreSQL: use raw SQL with ::text cast
-                    var guidStrings = candidateWorkoutIds.Select(id => $"'{id}'").ToList();
-                    var inClause = string.Join(", ", guidStrings);
-                    
+                    // PostgreSQL: parameterized ANY avoids EF1002 / SQL injection from interpolated IN lists
                     var allRouteData = await _db.Database
                         .SqlQueryRaw<RouteData>(
-                            $@"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
+                            @"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
                               FROM ""WorkoutRoutes"" 
-                              WHERE ""WorkoutId"" IN ({inClause})")
+                              WHERE ""WorkoutId"" = ANY({0})",
+                            candidateWorkoutIds.ToArray())
                         .ToListAsync();
                     
                     foreach (var routeData in allRouteData)

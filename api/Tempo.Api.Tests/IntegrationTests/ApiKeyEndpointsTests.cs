@@ -88,8 +88,9 @@ public class ApiKeyEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         listResp.EnsureSuccessStatusCode();
         var list = await listResp.Content.ReadFromJsonAsync<List<ApiKeyListItemResponse>>();
         list.Should().NotBeNull();
-        list!.Should().ContainSingle();
-        list[0].RevokedAt.Should().NotBeNull();
+        var keys = list!;
+        keys.Should().ContainSingle();
+        keys[0].RevokedAt.Should().NotBeNull();
     }
 
     [Fact]

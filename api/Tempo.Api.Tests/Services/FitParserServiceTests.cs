@@ -159,7 +159,7 @@ public class FitParserServiceTests
         using (var fileStream = File.OpenRead(fitFilePath))
         {
             fitData = new byte[fileStream.Length];
-            fileStream.Read(fitData, 0, fitData.Length);
+            fileStream.ReadExactly(fitData);
         }
 
         // Create a gzipped version in memory

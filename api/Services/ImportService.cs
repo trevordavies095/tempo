@@ -271,6 +271,9 @@ public class ImportService
         }
     }
 
+    private static ExportDataFormat RequireDataFormat(ExportManifest manifest) =>
+        manifest.DataFormat ?? throw new InvalidOperationException("DataFormat is missing in export manifest");
+
     private void ValidateZipStructure(string tempDir, ExportManifest manifest)
     {
         var dataDir = Path.Combine(tempDir, "data");
@@ -279,12 +282,14 @@ public class ImportService
             throw new InvalidOperationException("data/ directory not found in export ZIP");
         }
 
+        var dataFormat = RequireDataFormat(manifest);
+
         // Validate required file paths are present (Shoes and Workouts are mandatory)
-        if (string.IsNullOrEmpty(manifest.DataFormat.Shoes))
+        if (string.IsNullOrEmpty(dataFormat.Shoes))
         {
             throw new InvalidOperationException("Shoes file path is missing in export manifest");
         }
-        if (string.IsNullOrEmpty(manifest.DataFormat.Workouts))
+        if (string.IsNullOrEmpty(dataFormat.Workouts))
         {
             throw new InvalidOperationException("Workouts file path is missing in export manifest");
         }
@@ -292,13 +297,13 @@ public class ImportService
         // Validate required JSON files exist
         var requiredFiles = new[]
         {
-            manifest.DataFormat.Shoes,
-            manifest.DataFormat.Workouts,
-            manifest.DataFormat.Routes,
-            manifest.DataFormat.Splits,
-            manifest.DataFormat.TimeSeries,
-            manifest.DataFormat.MediaMetadata,
-            manifest.DataFormat.BestEfforts
+            dataFormat.Shoes,
+            dataFormat.Workouts,
+            dataFormat.Routes,
+            dataFormat.Splits,
+            dataFormat.TimeSeries,
+            dataFormat.MediaMetadata,
+            dataFormat.BestEfforts
         };
 
         foreach (var file in requiredFiles)
@@ -319,13 +324,14 @@ public class ImportService
 
     private async Task ImportUserSettingsAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
-        if (string.IsNullOrEmpty(manifest.DataFormat.Settings))
+        var dataFormat = RequireDataFormat(manifest);
+        if (string.IsNullOrEmpty(dataFormat.Settings))
         {
             _logger.LogInformation("No settings file in export, skipping");
             return;
         }
 
-        var settingsPath = ValidateManifestPath(tempDir, manifest.DataFormat.Settings);
+        var settingsPath = ValidateManifestPath(tempDir, dataFormat.Settings);
         if (!File.Exists(settingsPath))
         {
             result.Warnings.Add("Settings file not found in export");
@@ -414,7 +420,7 @@ public class ImportService
                     await progress.ReportAsync(result);
                     _logger.LogInformation("Updated existing user settings");
                 }
-                catch (Exception saveEx)
+                catch (Exception)
                 {
                     // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
                     _db.ChangeTracker.Clear();
@@ -452,7 +458,7 @@ public class ImportService
                     await progress.ReportAsync(result);
                     _logger.LogInformation("Imported user settings");
                 }
-                catch (Exception saveEx)
+                catch (Exception)
                 {
                     // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
                     _db.ChangeTracker.Clear();
@@ -470,13 +476,14 @@ public class ImportService
 
     private async Task ImportShoesAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
-        if (string.IsNullOrEmpty(manifest.DataFormat.Shoes))
+        var dataFormat = RequireDataFormat(manifest);
+        if (string.IsNullOrEmpty(dataFormat.Shoes))
         {
             result.Errors.Add("Shoes file path is missing in export manifest");
             return;
         }
 
-        var shoesPath = ValidateManifestPath(tempDir, manifest.DataFormat.Shoes);
+        var shoesPath = ValidateManifestPath(tempDir, dataFormat.Shoes);
         if (!File.Exists(shoesPath))
         {
             result.Errors.Add("Shoes file not found in export");
@@ -618,13 +625,14 @@ public class ImportService
     {
         var importedWorkoutIds = new HashSet<Guid>();
 
-        if (string.IsNullOrEmpty(manifest.DataFormat.Workouts))
+        var dataFormat = RequireDataFormat(manifest);
+        if (string.IsNullOrEmpty(dataFormat.Workouts))
         {
             result.Errors.Add("Workouts file path is missing in export manifest");
             return importedWorkoutIds;
         }
 
-        var workoutsPath = ValidateManifestPath(tempDir, manifest.DataFormat.Workouts);
+        var workoutsPath = ValidateManifestPath(tempDir, dataFormat.Workouts);
         if (!File.Exists(workoutsPath))
         {
             result.Errors.Add("Workouts file not found in export");
@@ -787,13 +795,14 @@ public class ImportService
 
     private async Task ImportRoutesAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
-        if (string.IsNullOrEmpty(manifest.DataFormat.Routes))
+        var dataFormat = RequireDataFormat(manifest);
+        if (string.IsNullOrEmpty(dataFormat.Routes))
         {
             result.Warnings.Add("Routes file path is missing in export manifest");
             return;
         }
 
-        var routesPath = ValidateManifestPath(tempDir, manifest.DataFormat.Routes);
+        var routesPath = ValidateManifestPath(tempDir, dataFormat.Routes);
         if (!File.Exists(routesPath))
         {
             result.Warnings.Add("Routes file not found in export");
@@ -947,13 +956,14 @@ public class ImportService
 
     private async Task ImportSplitsAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
-        if (string.IsNullOrEmpty(manifest.DataFormat.Splits))
+        var dataFormat = RequireDataFormat(manifest);
+        if (string.IsNullOrEmpty(dataFormat.Splits))
         {
             result.Warnings.Add("Splits file path is missing in export manifest");
             return;
         }
 
-        var splitsPath = ValidateManifestPath(tempDir, manifest.DataFormat.Splits);
+        var splitsPath = ValidateManifestPath(tempDir, dataFormat.Splits);
         if (!File.Exists(splitsPath))
         {
             result.Warnings.Add("Splits file not found in export");
@@ -1071,13 +1081,14 @@ public class ImportService
 
     private async Task ImportTimeSeriesAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
-        if (string.IsNullOrEmpty(manifest.DataFormat.TimeSeries))
+        var dataFormat = RequireDataFormat(manifest);
+        if (string.IsNullOrEmpty(dataFormat.TimeSeries))
         {
             result.Warnings.Add("Time series file path is missing in export manifest");
             return;
         }
 
-        var timeSeriesPath = ValidateManifestPath(tempDir, manifest.DataFormat.TimeSeries);
+        var timeSeriesPath = ValidateManifestPath(tempDir, dataFormat.TimeSeries);
         if (!File.Exists(timeSeriesPath))
         {
             result.Warnings.Add("Time series file not found in export");
@@ -1195,13 +1206,14 @@ public class ImportService
 
     private async Task ImportBestEffortsAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
-        if (string.IsNullOrEmpty(manifest.DataFormat.BestEfforts))
+        var dataFormat = RequireDataFormat(manifest);
+        if (string.IsNullOrEmpty(dataFormat.BestEfforts))
         {
             result.Warnings.Add("Best efforts file path is missing in export manifest");
             return;
         }
 
-        var bestEffortsPath = ValidateManifestPath(tempDir, manifest.DataFormat.BestEfforts);
+        var bestEffortsPath = ValidateManifestPath(tempDir, dataFormat.BestEfforts);
         if (!File.Exists(bestEffortsPath))
         {
             result.Warnings.Add("Best efforts file not found in export");
@@ -1347,13 +1359,14 @@ public class ImportService
 
     private async Task ImportMediaFilesAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
-        if (string.IsNullOrEmpty(manifest.DataFormat.MediaMetadata))
+        var dataFormat = RequireDataFormat(manifest);
+        if (string.IsNullOrEmpty(dataFormat.MediaMetadata))
         {
             result.Warnings.Add("Media metadata file path is missing in export manifest");
             return;
         }
 
-        var mediaMetadataPath = ValidateManifestPath(tempDir, manifest.DataFormat.MediaMetadata);
+        var mediaMetadataPath = ValidateManifestPath(tempDir, dataFormat.MediaMetadata);
         if (!File.Exists(mediaMetadataPath))
         {
             result.Warnings.Add("Media metadata file not found in export");
