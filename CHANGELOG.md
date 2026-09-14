@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [2.8.1] - 2026-09-14
+
+### Added
+- **Per-split average heart rate** - `WorkoutSplit.AvgHeartRateBpm` (nullable); time-weighted from `WorkoutTimeSeries` heart rate (by distance when present, else elapsed). Not derived from the workout-level average. Written on import/intake, crop, and split recalculation.
+- **`avgHeartRateBpm` on workout split payloads** - included on `GET /workouts/{id}` and crop responses (`null` when that split window has no HR samples).
+- **Startup backfill** - `SplitHeartRateBackfillWorker` / `SplitHeartRateBackfillService` fills existing splits that have HR series and no split avg yet (idempotent; processes one workout at a time to avoid OOM on dense series).
+- **Command center splits table** - Workout overview shows **Avg HR (bpm)** when any split has a value (`—` for nulls).
+
+### Fixed
+- **Split ordering** - workout detail and crop split arrays (and query loading) order by `idx` so km/mile splits stay in stable order.
+
 ### Security
 - **Frontend: Next.js 16.3.4**
   - Raised `next` and `eslint-config-next` to **>=16.3.4** (lockfile resolves 16.3.4)
@@ -16,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Frontend:** set `agentRules: false` in `next.config.ts` so Next.js 16.3+ does not auto-write `AGENTS.md` / `CLAUDE.md`
+
+### Migration
+- **Database:** applies `AddAvgHeartRateToWorkoutSplit` (nullable `AvgHeartRateBpm` on `WorkoutSplits`). Run migrations or rely on automatic migration on startup; `SplitHeartRateBackfillWorker` stamps historical rows in the background.
 
 ## [2.8.0] - 2026-08-31
 
