@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **API:** replace vendored FIT SDK source under `api/Libraries/FitSDK/` with the official `Garmin.FIT.Sdk` NuGet package (21.214.0).
 
 ## [2.8.1] - 2026-09-14
 

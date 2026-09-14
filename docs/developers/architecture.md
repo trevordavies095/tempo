@@ -53,7 +53,7 @@ Each extension method:
 
 ### 2. Service Layer
 
-- `GpxParserService` / `FitParserService` — decode adapters: `TrackPoint`s, raw JSON, optional device summary (and GPX name). They do not expose `CalculateSplits` and do not hand FIT `RecordMesg` to callers. The FIT SDK is compiled from `api/Libraries/FitSDK/` (not a NuGet package).
+- `GpxParserService` / `FitParserService` — decode adapters: `TrackPoint`s, raw JSON, optional device summary (and GPX name). They do not expose `CalculateSplits` and do not hand FIT `RecordMesg` to callers. The FIT SDK comes from the `Garmin.FIT.Sdk` NuGet package (`Dynastream.Fit` namespace).
 - `StravaCsvParserService` — parses Strava export CSV metadata for bulk ZIP import.
 - `TrackGeometry` — in-process: `TrackPoint`s in; elevation gain, `WorkoutRoute` (empty when no GPS), `WorkoutSplit`s (Haversine or cumulative `DistanceM` stream), `WorkoutTimeSeries` out. No `DbContext`.
 - `WorkoutIntake` — decode adapters (GPX/FIT file → `DecodedWorkout`; HealthKit JSON via `HealthKitWorkoutDecoder`) feed `PersistAsync` (geometry, duplicate policy, default shoe, weather, relative effort, incremental best efforts). Persist is the single pipeline; HTTP import is a thin adapter. Bulk calls intake per activity file.

@@ -58,7 +58,7 @@ jobs:
             -targetdir:"coverage-report" \
             -reporttypes:"Html;Badges" \
             -classfilters:"-*Dynastream*" \
-            -assemblyfilters:"-*Dynastream*"
+            -assemblyfilters:"-*Garmin.FIT.Sdk*"
 
       - name: Check coverage threshold
         run: |
