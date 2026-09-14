@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Frontend: Next.js 16.3.4**
+  - Raised `next` and `eslint-config-next` to **>=16.3.4** (lockfile resolves 16.3.4)
+  - Addresses [GHSA-p293-qw3h-jr36](https://github.com/vercel/next.js/security/advisories/GHSA-p293-qw3h-jr36) (Windows-hosted unauthenticated RCE / CVE-2026-75604) and [GHSA-2xp9-vwfh-vxw4](https://github.com/vercel/next.js/security/advisories/GHSA-2xp9-vwfh-vxw4) (AVIF image optimization RCE)
+- **Frontend: `@humanfs/node` override**
+  - Pins `@humanfs/node` >= 0.16.8 (ESLint transitive; [GHSA-p498-v437-472g](https://github.com/advisories/GHSA-p498-v437-472g))
+
+### Changed
+- **Frontend:** set `agentRules: false` in `next.config.ts` so Next.js 16.3+ does not auto-write `AGENTS.md` / `CLAUDE.md`
+
 ## [2.8.0] - 2026-08-31
 
 ### Added
