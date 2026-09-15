@@ -44,6 +44,10 @@ public sealed class DecodedWorkout
     /// Null = GPX-style time series from TrackPoints; non-null = FIT series path.
     /// </summary>
     public IReadOnlyList<TrackPoint>? SeriesPoints { get; init; }
+    /// <summary>
+    /// Device lap candidates from FIT (or later HealthKit). Persist may drop via keep / 2+.
+    /// </summary>
+    public IReadOnlyList<DeviceLapSummary> Laps { get; init; } = Array.Empty<DeviceLapSummary>();
     public string? Name { get; init; }
     public string? RawGpxDataJson { get; init; }
     public string? RawFitDataJson { get; init; }
@@ -216,9 +220,13 @@ public class WorkoutIntake
             workout.ElevGainM = geometry.ElevGainM;
 
             var route = geometry.Route;
-            var splits = geometry.Splits.ToList();
             var timeSeries = geometry.TimeSeries.ToList();
-            _splitHeartRate.ApplyToSplits(splits, timeSeries);
+            var splits = BuildSplitsWithHeartRate(
+                geometry.Splits,
+                decoded.Laps,
+                startedAtUtc,
+                workout.Id,
+                timeSeries);
             if (timeSeries.Count > 0)
             {
                 CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
@@ -284,7 +292,7 @@ public class WorkoutIntake
             {
                 Action = "created",
                 Workout = workout,
-                SplitsCount = splits.Count
+                SplitsCount = WorkoutSplitDisplay.SelectDisplayList(splits).Count
             };
         }
         catch (InvalidOperationException ex)
@@ -469,8 +477,12 @@ public class WorkoutIntake
                     .ToListAsync();
             }
 
-            var splits = geometry.Splits.ToList();
-            _splitHeartRate.ApplyToSplits(splits, seriesForHr);
+            var splits = BuildSplitsWithHeartRate(
+                geometry.Splits,
+                decoded.Laps,
+                startedAtUtc,
+                existingWorkout.Id,
+                seriesForHr);
             _db.WorkoutSplits.AddRange(splits);
 
             if (geometry.HasRouteCoordinates &&
@@ -579,6 +591,7 @@ public class WorkoutIntake
                 DistanceM = parseResult.DistanceMeters,
                 TrackPoints = parseResult.TrackPoints,
                 SeriesPoints = null,
+                Laps = Array.Empty<DeviceLapSummary>(),
                 Name = parseResult.Name,
                 RawGpxDataJson = parseResult.RawGpxDataJson,
                 RawFitDataJson = null,
@@ -597,6 +610,7 @@ public class WorkoutIntake
                 DistanceM = fitResult.DistanceMeters,
                 TrackPoints = fitResult.TrackPoints,
                 SeriesPoints = fitResult.SeriesPoints,
+                Laps = fitResult.Laps,
                 Name = null,
                 RawGpxDataJson = null,
                 RawFitDataJson = fitResult.RawFitDataJson,
@@ -950,6 +964,34 @@ public class WorkoutIntake
         {
             _logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
         }
+    }
+
+    private List<WorkoutSplit> BuildSplitsWithHeartRate(
+        IReadOnlyList<WorkoutSplit> distanceSplits,
+        IReadOnlyList<DeviceLapSummary> lapCandidates,
+        DateTime startedAtUtc,
+        Guid workoutId,
+        IReadOnlyList<WorkoutTimeSeries> series)
+    {
+        var distance = distanceSplits.ToList();
+        var deviceLaps = DeviceLapMapper.ToDeviceLapSplits(lapCandidates, startedAtUtc, workoutId);
+
+        _splitHeartRate.ApplyToSplits(distance, series);
+        if (deviceLaps.Count > 0)
+        {
+            _splitHeartRate.ApplyToSplits(deviceLaps, series);
+            DeviceLapMapper.OverlayDeviceAvgHeartRate(deviceLaps, lapCandidates);
+        }
+
+        if (deviceLaps.Count == 0)
+        {
+            return distance;
+        }
+
+        var combined = new List<WorkoutSplit>(distance.Count + deviceLaps.Count);
+        combined.AddRange(distance);
+        combined.AddRange(deviceLaps);
+        return combined;
     }
 
     private async Task<double> GetSplitDistanceMetersAsync()

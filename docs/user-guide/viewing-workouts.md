@@ -71,14 +71,17 @@ You can also edit notes, RPE, run type, and shoe assignment on this screen.
 
 ### Splits
 
-Distance-based splits showing:
+The Splits table on Workout overview shows:
+
 - Split number
 - Distance
 - Time
 - Pace
-- Average heart rate (if the Workout has heart-rate time series)
+- Average heart rate (when available)
 
-Splits are calculated based on your unit preference (1km for metric, 1 mile for imperial). Hover or click a split to set Highlight on the map and charts.
+When the Workout has device laps (from a FIT file with 2+ kept lap messages), overview shows those laps — including a leftover fraction of a mile or kilometre — and lap times are timer time (pauses excluded). The heading stays **Splits**. Unit-preference still rebuilds distance-based km/mile rows only; device laps are preserved until crop or a fuller re-import.
+
+Without device laps, splits are calculated from your unit preference (1 km metric, 1 mile imperial). Hover or click a split to set Highlight on the map and charts.
 
 ### Time Series Charts
 

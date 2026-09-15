@@ -375,6 +375,44 @@ public class FitParserServiceTests
             .Should().BeApproximately(1000, 0.01);
     }
 
+    [Fact]
+    public void ParseFit_WithLapMessages_MapsSummariesAndRawJson_DurationStaysElapsed()
+    {
+        var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var fitBytes = CreateFitWithClocks(
+            elapsedSeconds: 1326f,
+            timerSeconds: 1205f,
+            laps: new[]
+            {
+                new SyntheticLap(start, 600f, 600f, 1609f, 150, LapTrigger.Distance),
+                new SyntheticLap(start.AddSeconds(600), 721f, 600f, 1609f, 155, LapTrigger.Manual),
+                new SyntheticLap(start.AddSeconds(1321), 5f, 5f, 13f, null, LapTrigger.SessionEnd),
+            });
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = _parser.ParseFit(stream);
+
+        result.DurationSeconds.Should().Be(1326);
+        result.Laps.Should().HaveCount(3);
+        result.Laps[0].DistanceM.Should().BeApproximately(1609, 0.1);
+        result.Laps[0].TimerS.Should().BeApproximately(600, 0.01);
+        result.Laps[0].ElapsedS.Should().BeApproximately(600, 0.01);
+        result.Laps[0].AvgHeartRateBpm.Should().Be(150);
+        result.Laps[0].LapTrigger.Should().Be("Distance");
+        result.Laps[1].TimerS.Should().BeApproximately(600, 0.01);
+        result.Laps[1].ElapsedS.Should().BeApproximately(721, 0.01);
+        result.Laps[1].LapTrigger.Should().Be("Manual");
+        result.Laps[2].DistanceM.Should().BeApproximately(13, 0.1);
+        result.Laps[2].LapTrigger.Should().Be("SessionEnd");
+
+        using var doc = JsonDocument.Parse(result.RawFitDataJson!);
+        var lapsJson = doc.RootElement.GetProperty("laps");
+        lapsJson.GetArrayLength().Should().Be(3);
+        lapsJson[1].GetProperty("timer").GetDouble().Should().BeApproximately(600, 0.01);
+        lapsJson[1].GetProperty("elapsed").GetDouble().Should().BeApproximately(721, 0.01);
+        lapsJson[2].GetProperty("trigger").GetString().Should().Be("SessionEnd");
+    }
+
     private static byte[] CreateIndoorFitWithCadence(
         byte strideCadence,
         byte avgCadence,
@@ -388,12 +426,21 @@ public class FitParserServiceTests
             maxCadence: maxCadence);
     }
 
+    private sealed record SyntheticLap(
+        System.DateTime Start,
+        float ElapsedSeconds,
+        float TimerSeconds,
+        float DistanceMeters,
+        byte? AvgHeartRate,
+        LapTrigger Trigger);
+
     private static byte[] CreateFitWithClocks(
         float elapsedSeconds,
         float timerSeconds,
         byte? strideCadence = null,
         byte? avgCadence = null,
-        byte? maxCadence = null)
+        byte? maxCadence = null,
+        IReadOnlyList<SyntheticLap>? laps = null)
     {
         var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
         var fitStart = new FitDateTime(start);
@@ -416,6 +463,25 @@ public class FitParserServiceTests
                 record.SetCadence(strideCadence.Value);
             }
             encode.Write(record);
+        }
+
+        if (laps != null)
+        {
+            foreach (var lapDef in laps)
+            {
+                var lap = new LapMesg();
+                lap.SetStartTime(new FitDateTime(lapDef.Start));
+                lap.SetTimestamp(new FitDateTime(lapDef.Start.AddSeconds(lapDef.ElapsedSeconds)));
+                lap.SetTotalElapsedTime(lapDef.ElapsedSeconds);
+                lap.SetTotalTimerTime(lapDef.TimerSeconds);
+                lap.SetTotalDistance(lapDef.DistanceMeters);
+                if (lapDef.AvgHeartRate.HasValue)
+                {
+                    lap.SetAvgHeartRate(lapDef.AvgHeartRate.Value);
+                }
+                lap.SetLapTrigger(lapDef.Trigger);
+                encode.Write(lap);
+            }
         }
 
         var session = new SessionMesg();

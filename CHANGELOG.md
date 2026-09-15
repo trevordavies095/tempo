@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Workout timer clock (`TimerTimeS`)** - nullable FIT `total_timer_time` column alongside elapsed `DurationS` and moving `MovingTimeS`. New FIT intake copies timer into `TimerTimeS` (not into `DurationS`). Stored `AvgPaceS` uses timer → moving → elapsed (seconds/km). GET list/detail include `timerTimeS`. Command center: when timer differs from elapsed, overview/cards/activities table show timer as Duration; overview keeps an elapsed subtitle and shows Moving Time in Additional Details only when it differs from the hero. Startup `TimerTimeBackfillWorker` fills existing FIT rows from session JSON (else reparses file bytes) and rewrites moving-only pace; crop nulls timer/moving and paces from remaining elapsed. Tempo export/import round-trips `timerTimeS` as a copy (old ZIPs missing the field restore null; next boot’s worker repairs FIT-backed rows).
 - **Cadence chart on Workout overview** - elapsed-time cadence from WorkoutTimeSeries (tooltip **spm**); omitted when no samples; stored zeros are not plotted so stops do not pin the Y axis.
 - **Power chart on Workout overview** - elapsed-time power from WorkoutTimeSeries (tooltip **W**); omitted when no samples; stored zeros are not plotted so stops do not pin the Y axis.
-- **WorkoutSplit kinds and elapsed bounds** - `Kind` (`distance` | `device_lap`), wall `StartElapsedS` / `EndElapsedS`, and optional `StartDistanceM`; unique `(WorkoutId, Kind, Idx)`. GET detail / crop / list `splitsCount` use the display list (`device_lap` if any, else `distance`). Tempo export dumps all kinds; restore copies rows (old ZIPs fill kind/bounds like migrate). FIT lap ingest remains out of scope.
+- **WorkoutSplit kinds and elapsed bounds** - `Kind` (`distance` | `device_lap`), wall `StartElapsedS` / `EndElapsedS`, and optional `StartDistanceM`; unique `(WorkoutId, Kind, Idx)`. GET detail / crop / list `splitsCount` use the display list (`device_lap` if any, else `distance`). Tempo export dumps all kinds; restore copies rows (old ZIPs fill kind/bounds like migrate).
+- **FIT device laps on import** - FIT `LapMesg` (any manufacturer) copied into `device_lap` when 2+ kept laps exist (distance > 0 or timer > 0); leftover metres stay their own row; lap `durationS` is timer time; Highlight uses wall elapsed bounds. One session wrapper does not replace km/mile splits. Stored FIT JSON includes a `laps` array for later backfill.
 
 ### Fixed
 - **FIT cadence startup backfill on Postgres** - candidate selection no longer runs text `LIKE`/`Contains` on `RawFitData` (`jsonb`), which caused `22P02` and aborted the worker before any rewrite. Postgres now scans the marker via `::text`; SQLite tests keep the string filter.
@@ -19,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **API:** replace vendored FIT SDK source under `api/Libraries/FitSDK/` with the official `Garmin.FIT.Sdk` NuGet package (21.214.0).
-- **Split write paths** - unit-preference recalc replaces `distance` rows only (`device_lap` preserved); crop deletes all kinds then writes new `distance` for the remaining slice; intake duplicate update still wipes all kinds before rewriting `distance`.
+- **Split write paths** - unit-preference recalc replaces `distance` rows only (`device_lap` preserved); crop deletes all kinds then writes new `distance` for the remaining slice; intake duplicate update still wipes all kinds before rewriting `distance` and FIT `device_lap` when present.
 - **Local `dotnet-ef` tool** - pinned to 10.0.0 in `.config/dotnet-tools.json` to match EF Core 10; run `dotnet tool restore` before `dotnet ef`.
 
 
