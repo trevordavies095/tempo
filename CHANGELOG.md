@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-09-15
+
 ### Added
 - **Time in HR zones on Workout overview** - live `heartRateZoneTimes` on detail GET (and crop’s detail-shaped payload): five `{ zone, timeS }` or JSON null from HR `WorkoutTimeSeries` + current Settings zones (same buckets as Relative Effort). Command center Additional Details shows a stacked bar and five Zone rows with duration and % under Heart Rate. Not on list GET; not stored; no avg-HR fallback.
 - **Workout timer clock (`TimerTimeS`)** - nullable FIT `total_timer_time` column alongside elapsed `DurationS` and moving `MovingTimeS`. New FIT intake copies timer into `TimerTimeS` (not into `DurationS`). Stored `AvgPaceS` uses timer → moving → elapsed (seconds/km). GET list/detail include `timerTimeS`. Command center: when timer differs from elapsed, overview/cards/activities table show timer as Duration; overview keeps an elapsed subtitle and shows Moving Time in Additional Details only when it differs from the hero. Startup `TimerTimeBackfillWorker` fills existing FIT rows from session JSON (else reparses file bytes) and rewrites moving-only pace; crop nulls timer/moving and paces from remaining elapsed. Tempo export/import round-trips `timerTimeS` as a copy (old ZIPs missing the field restore null; next boot’s worker repairs FIT-backed rows).
@@ -26,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Split write paths** - unit-preference recalc replaces `distance` rows only (`device_lap` preserved); crop deletes all kinds then writes new `distance` for the remaining slice; intake duplicate update still wipes all kinds before rewriting `distance` and FIT `device_lap` when present.
 - **Local `dotnet-ef` tool** - pinned to 10.0.0 in `.config/dotnet-tools.json` to match EF Core 10; run `dotnet tool restore` before `dotnet ef`.
 
+### Security
+- **API: `SQLitePCLRaw.bundle_e_sqlite3` 2.1.12** - test/SQLite host package pin from the build-cleanup pass.
 
 ## [2.8.1] - 2026-09-14
 
