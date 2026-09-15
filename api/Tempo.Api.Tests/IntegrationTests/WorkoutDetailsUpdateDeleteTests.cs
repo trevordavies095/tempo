@@ -493,6 +493,230 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
             $"default payload ({defaultBytes} bytes) should be ≥ 90% smaller than includeRaw ({includeRawBytes} bytes)");
     }
 
+    [Fact]
+    public async Task GetWorkout_ReturnsHeartRateZoneTimes_WhenSeriesAndSettingsExist()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30);
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Zoned Run", durationS: 600, distanceM: 2000);
+            // age 30 → Z1 95–114, Z3 133–152, Z5 171–190
+            db.WorkoutTimeSeries.AddRange(
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 0, HeartRateBpm = 110 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 10, HeartRateBpm = 110 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 20, HeartRateBpm = 140 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 30, HeartRateBpm = 140 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 40, HeartRateBpm = 180 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 50, HeartRateBpm = 180 });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var response = await client.GetAsync($"/workouts/{workoutId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        root.TryGetProperty("heartRateZoneTimes", out var zonesEl).Should().BeTrue();
+        zonesEl.ValueKind.Should().Be(JsonValueKind.Array);
+        zonesEl.GetArrayLength().Should().Be(5);
+        for (var i = 0; i < 5; i++)
+        {
+            var item = zonesEl[i];
+            item.GetProperty("zone").GetInt32().Should().Be(i + 1);
+            item.TryGetProperty("timeS", out _).Should().BeTrue();
+            item.TryGetProperty("percent", out _).Should().BeFalse();
+            item.TryGetProperty("minBpm", out _).Should().BeFalse();
+        }
+
+        var result = JsonSerializer.Deserialize<WorkoutDetailResponse>(json, JsonSerializerOptions.Web);
+        result!.HeartRateZoneTimes.Should().NotBeNull();
+        result.HeartRateZoneTimes!.Should().HaveCount(5);
+        result.HeartRateZoneTimes[0].TimeS.Should().BeGreaterThan(0);
+        result.HeartRateZoneTimes[2].TimeS.Should().BeGreaterThan(0);
+        result.HeartRateZoneTimes[4].TimeS.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task GetWorkout_ReturnsNullHeartRateZoneTimes_WhenAvgHrOnlyNoSeries()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30);
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Avg Only");
+            workout.AvgHeartRateBpm = 150;
+            workout.RelativeEffort = 45;
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var response = await client.GetAsync($"/workouts/{workoutId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result!.RelativeEffort.Should().Be(45);
+        result.HeartRateZoneTimes.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetWorkout_ReturnsNullHeartRateZoneTimes_WhenNoHr()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30);
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "No HR");
+            workoutId = workout.Id;
+        }
+
+        var response = await client.GetAsync($"/workouts/{workoutId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result!.HeartRateZoneTimes.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetWorkout_ReturnsNullHeartRateZoneTimes_WhenAllSamplesUnzoned()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30); // Z1 min 95
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Below Zones", durationS: 60);
+            db.WorkoutTimeSeries.AddRange(
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 0, HeartRateBpm = 50 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 10, HeartRateBpm = 55 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 20, HeartRateBpm = 60 });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var response = await client.GetAsync($"/workouts/{workoutId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result!.HeartRateZoneTimes.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetWorkout_ReturnsNullHeartRateZoneTimes_WhenNoUserSettings()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            // No SeedUserSettingsAsync
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "No Settings", durationS: 60);
+            db.WorkoutTimeSeries.AddRange(
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 0, HeartRateBpm = 140 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 10, HeartRateBpm = 145 });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var response = await client.GetAsync($"/workouts/{workoutId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result!.HeartRateZoneTimes.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ListWorkouts_DoesNotIncludeHeartRateZoneTimes()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30);
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "List Item", durationS: 60);
+            db.WorkoutTimeSeries.Add(new WorkoutTimeSeries
+            {
+                WorkoutId = workout.Id,
+                ElapsedSeconds = 0,
+                HeartRateBpm = 140
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync("/workouts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        var items = document.RootElement.GetProperty("items");
+        items.GetArrayLength().Should().BeGreaterThan(0);
+        items[0].TryGetProperty("heartRateZoneTimes", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CropWorkout_IncludesHeartRateZoneTimes_WhenRemainingSeriesIsZoned()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30);
+            var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db,
+                name: "Crop Zones",
+                durationS: 1800,
+                distanceM: 5000,
+                includeTimeSeries: true);
+            // Ensure HR samples land in zones for age-30 settings
+            var series = await db.WorkoutTimeSeries.Where(ts => ts.WorkoutId == workout.Id).ToListAsync();
+            foreach (var point in series)
+            {
+                point.HeartRateBpm = 140; // Z3
+            }
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var cropBody = new StringContent(
+            JsonSerializer.Serialize(new { startTrimSeconds = 60, endTrimSeconds = 60 }),
+            Encoding.UTF8,
+            "application/json");
+        var response = await client.PostAsync($"/workouts/{workoutId}/crop", cropBody);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        var zonesEl = document.RootElement.GetProperty("heartRateZoneTimes");
+        zonesEl.ValueKind.Should().Be(JsonValueKind.Array);
+        zonesEl.GetArrayLength().Should().Be(5);
+        var totalTimeS = 0;
+        foreach (var item in zonesEl.EnumerateArray())
+        {
+            totalTimeS += item.GetProperty("timeS").GetInt32();
+        }
+        totalTimeS.Should().BeGreaterThan(0);
+        zonesEl[2].GetProperty("timeS").GetInt32().Should().BeGreaterThan(0);
+    }
+
     #endregion
 
     #region UpdateWorkout Tests
@@ -1419,6 +1643,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public ushort? AvgPowerWatts { get; set; }
         public ushort? Calories { get; set; }
         public int? RelativeEffort { get; set; }
+        public List<HeartRateZoneTimeResponse>? HeartRateZoneTimes { get; set; }
         public byte? Rpe { get; set; }
         public string? RunType { get; set; }
         public string? Notes { get; set; }
@@ -1435,6 +1660,12 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public DateTime CreatedAt { get; set; }
         public object? Route { get; set; }
         public List<SplitResponse> Splits { get; set; } = new();
+    }
+
+    private class HeartRateZoneTimeResponse
+    {
+        public int Zone { get; set; }
+        public int TimeS { get; set; }
     }
 
     private class SplitResponse

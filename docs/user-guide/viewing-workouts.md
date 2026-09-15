@@ -61,7 +61,7 @@ Detailed metrics including:
 - **Time** - On Workout overview, when FIT timer time differs from elapsed, the primary Duration is timer time with elapsed shown underneath; Moving Time appears under Additional Details only when it differs from that hero clock. Without timer, Moving Time still promotes over elapsed when they differ (same as before). Workout cards and the activities table show a single duration number (timer when it differs from elapsed; they do not promote moving). Analytics Duration sums remain elapsed.
 - **Pace** - Average, best, and current pace
 - **Elevation** - Gain, loss, min, and max elevation
-- **Heart Rate** - Average, max, and zones
+- **Heart Rate** - Average and max; when an HR series exists, Additional Details also shows time in zones 1–5 (with % of time that landed in a zone). Omit the zone block when there is no HR series
 - **Cadence** - Average and max cadence in steps per minute (spm), if available from FIT or GPX TrackPointExtension
 - **Power** - Average and max power (if available from FIT or GPX TrackPointExtension)
 - **Relative Effort** - Calculated intensity score

@@ -413,6 +413,7 @@ GET /workouts/{id}
 
 Detail includes top-level `healthKitUuid` when the workout was imported (or stamped) from HealthKit.
 Detail also includes nullable `timerTimeS` next to `movingTimeS`. `durationS` is always elapsed.
+Detail also includes `heartRateZoneTimes`: five `{ zone, timeS }` objects (zones 1–5) or JSON `null`, computed live from HR time series and current Settings zones (same buckets as Relative Effort). Not present on list GET.
 ### Update Workout
 
 Update workout details (e.g., activity name, shoe assignment):
