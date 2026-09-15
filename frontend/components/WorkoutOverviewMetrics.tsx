@@ -4,12 +4,12 @@ import type { UnitPreference } from '@/lib/settings';
 import { overviewDurationDisplay } from '@/lib/workoutClocks';
 import { WeatherDisplay } from '@/components/WeatherDisplay';
 
-const ZONE_BAR_CLASSES = [
-  'h-full bg-danger/20',
-  'h-full bg-danger/40',
-  'h-full bg-danger/60',
-  'h-full bg-danger/80',
-  'h-full bg-danger',
+const ZONE_FILL_CLASSES = [
+  'bg-hr-zone-1',
+  'bg-hr-zone-2',
+  'bg-hr-zone-3',
+  'bg-hr-zone-4',
+  'bg-hr-zone-5',
 ] as const;
 
 /** Integer percents of sum(timeS) via largest remainder; timeS === 0 always gets 0%. */
@@ -184,7 +184,7 @@ export function WorkoutOverviewMetrics({
                         return (
                           <div
                             key={z.zone}
-                            className={ZONE_BAR_CLASSES[i]}
+                            className={`h-full ${ZONE_FILL_CLASSES[i]}`}
                             style={{ width: `${pct}%` }}
                             title={`Zone ${z.zone}`}
                           />
@@ -193,7 +193,13 @@ export function WorkoutOverviewMetrics({
                     </div>
                     {zoneTimes.map((z, i) => (
                       <div key={z.zone} className="flex justify-between items-center gap-2">
-                        <span className="text-xs text-muted">Zone {z.zone}</span>
+                        <span className="text-xs text-muted inline-flex items-center gap-1.5">
+                          <span
+                            className={`size-2 shrink-0 rounded-sm ${ZONE_FILL_CLASSES[i]}`}
+                            aria-hidden
+                          />
+                          Zone {z.zone}
+                        </span>
                         <span className="text-sm font-semibold text-ink tabular-nums">
                           {formatDuration(z.timeS)}
                           <span className="text-muted font-normal ml-2">{zonePercents[i]}%</span>
