@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **FIT cadence as steps/min** - FIT record and session avg/max cadence are stored as steps/min (both feet; ×2 from FIT strides/min). Workout overview labels cadence **spm**. API JSON keys stay `cadenceRpm` / `avgCadenceRpm` / `maxCadenceRpm`; the number is steps/min. GPX and HealthKit cadence are unchanged. On upgrade, a startup backfill re-parses FIT workouts that still have raw file bytes and unmarked FIT JSON; FIT rows with JSON only (no file) may keep the old strides/min scale.
+
 ### Changed
 - **API:** replace vendored FIT SDK source under `api/Libraries/FitSDK/` with the official `Garmin.FIT.Sdk` NuGet package (21.214.0).
 

@@ -129,10 +129,10 @@ export function WorkoutOverviewMetrics({
                     <span className="text-xs text-muted">Cadence</span>
                     <span className="text-sm font-semibold text-ink">
                       {workout.maxCadenceRpm !== null && workout.avgCadenceRpm !== null
-                        ? `${workout.maxCadenceRpm} / ${workout.avgCadenceRpm} rpm`
+                        ? `${workout.maxCadenceRpm} / ${workout.avgCadenceRpm} spm`
                         : workout.maxCadenceRpm !== null
-                          ? `${workout.maxCadenceRpm} rpm`
-                          : `${workout.avgCadenceRpm} rpm`}
+                          ? `${workout.maxCadenceRpm} spm`
+                          : `${workout.avgCadenceRpm} spm`}
                     </span>
                   </div>
                 )}

@@ -64,7 +64,7 @@ Detailed metrics including:
 - **Pace** - Average, best, and current pace
 - **Elevation** - Gain, loss, min, and max elevation
 - **Heart Rate** - Average, max, and zones
-- **Cadence** - Average and max cadence (if available from FIT or GPX TrackPointExtension)
+- **Cadence** - Average and max cadence in steps per minute (spm), if available from FIT or GPX TrackPointExtension
 - **Power** - Average and max power (if available from FIT or GPX TrackPointExtension)
 - **Relative Effort** - Calculated intensity score
 - **Shoe** - Assigned running shoe (if any), showing brand, model, and current total mileage

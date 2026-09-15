@@ -31,4 +31,10 @@
     <ProjectReference Include="..\Tempo.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\running-cadence-80.fit">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

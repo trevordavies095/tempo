@@ -118,7 +118,7 @@ public class FitParserService
                         Time = timestamp.Value,
                         Elevation = altitude,
                         HeartRateBpm = record.GetHeartRate(),
-                        CadenceRpm = record.GetCadence(),
+                        CadenceRpm = Cadence.StepsPerMinuteFromFit(record.GetCadence()),
                         PowerWatts = record.GetPower(),
                         TemperatureC = record.GetTemperature()
                     };
@@ -270,7 +270,7 @@ public class FitParserService
             Time = timestamp,
             Elevation = elevation,
             HeartRateBpm = record.GetHeartRate(),
-            CadenceRpm = record.GetCadence(),
+            CadenceRpm = Cadence.StepsPerMinuteFromFit(record.GetCadence()),
             PowerWatts = record.GetPower(),
             TemperatureC = record.GetTemperature(),
             SpeedMps = validatedSpeed,
@@ -289,6 +289,7 @@ public class FitParserService
 
         var rawFitData = new
         {
+            cadenceUnit = "spm",
             session = sessionData?.Count > 0 ? sessionData : null,
             device = deviceData.Count > 0 ? deviceData : null,
             weather = weatherData?.Count > 0 ? weatherData : null,
@@ -344,9 +345,9 @@ public class FitParserService
         SetIfPresent(sessionData, "maxHeartRate", session.GetMaxHeartRate());
         SetIfPresent(sessionData, "avgHeartRate", session.GetAvgHeartRate());
         SetIfPresent(sessionData, "minHeartRate", session.GetMinHeartRate());
-        SetIfPresent(sessionData, "maxCadence", session.GetMaxCadence());
+        SetIfPresent(sessionData, "maxCadence", Cadence.StepsPerMinuteFromFit(session.GetMaxCadence()));
         SetIfPresent(sessionData, "maxRunningCadence", session.GetMaxRunningCadence());
-        SetIfPresent(sessionData, "avgCadence", session.GetAvgCadence());
+        SetIfPresent(sessionData, "avgCadence", Cadence.StepsPerMinuteFromFit(session.GetAvgCadence()));
         SetIfPresent(sessionData, "maxPower", session.GetMaxPower());
         SetIfPresent(sessionData, "avgPower", session.GetAvgPower());
         SetIfPresent(sessionData, "totalAscent", session.GetTotalAscent());
