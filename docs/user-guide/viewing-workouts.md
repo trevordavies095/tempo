@@ -40,8 +40,6 @@ You can filter and sort activities by:
 
 ## Workout Overview
 
-![Workout overview](./screenshots/workout-overview.png)
-
 Click any workout to open **Workout overview** — the command-center screen for one Workout (map, splits, time series, weather, media, comparison). Use the Overview and Route comparison tabs when similar routes exist.
 
 ### Highlight
@@ -84,9 +82,11 @@ Splits are calculated based on your unit preference (1km for metric, 1 mile for 
 
 ### Time Series Charts
 
-When sensor samples exist, Workout overview charts heart rate, pace (from speed), and elevation over elapsed time. A series with no samples is omitted. A Workout with no time series shows **No sensor data** instead of empty chart frames.
+When sensor samples exist, Workout overview charts heart rate, pace (from speed), elevation, cadence, and power over elapsed time. A series with no samples is omitted. A Workout with no time series shows **No sensor data** instead of empty chart frames.
 
-Cadence, power, temperature, speed, grade, and vertical speed remain in stored WorkoutTimeSeries when the file provided them; they are not charted on this screen.
+Cadence tooltips use **spm** (steps per minute). Power tooltips use **W**. Stored cadence or power of `0` (for example at a stop) is not plotted so the axis stays in the running band.
+
+Temperature, speed, grade, and vertical speed remain in stored WorkoutTimeSeries when the file provided them; they are not charted on this screen.
 
 For very long Workouts, the command center loads up to 20,000 samples (paged from `GET /workouts/{id}/time-series`) and still renders what it loaded.
 

@@ -20,9 +20,6 @@
 ![My Activities](./docs/assets/screenshots/activities.png)
 *Activities list — search, filters, and sortable columns*
 
-![Workout overview](./docs/assets/screenshots/workout-overview.png)
-*Workout overview — splits, route map, and time-series charts*
-
 ## Quick Start
 
 Get Tempo running in minutes with Docker Compose:
@@ -47,7 +44,7 @@ That's it! The database migrations run automatically on first startup. For detai
 - **First-run onboarding** - Guided setup after registration (optional Tempo restore, essentials, optional Strava)
 - **Multi-Format Support** - Import GPX, FIT (.fit, .fit.gz), and Strava CSV files from Garmin, Apple Watch, and other devices
 - **Workout Analytics** - Track distance, pace, elevation, splits, and time series data
-- **Workout Overview** - Map, splits, and HR/pace/elevation charts sharing one Highlight
+- **Workout Overview** - Map, splits, and HR/pace/elevation/cadence/power charts sharing one Highlight
 - **Appearance** - System, Dark, or Light on the command center (this browser only)
 - **Interactive Maps** - Themed route maps (dark/light tiles) with tokenized polylines
 - **Media Support** - Attach photos and videos to workouts
