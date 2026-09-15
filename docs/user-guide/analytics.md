@@ -16,7 +16,7 @@ Tempo provides comprehensive analytics to help you understand and improve your r
 
 ### Time Metrics
 
-- **Duration** - Total elapsed time from start to finish
+- **Duration** - Total elapsed time from start to finish (wall clock, including pauses). Dashboard and weekly analytics sum this clock; it is not FIT timer time from Workout overview.
 - **Moving Time** - Time spent actually moving (excludes pauses)
 - **Average Pace** - Average speed throughout the workout
 - **Best Pace** - Fastest pace achieved during the workout

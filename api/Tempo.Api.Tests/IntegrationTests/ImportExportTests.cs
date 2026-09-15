@@ -757,6 +757,82 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ImportExport_RoundTrip_PreservesTimerTimeSAndAvgPaceS()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId = Guid.Empty;
+        const int timerTimeS = 1500;
+        const double avgPaceS = 300.0; // timer / (5000/1000)
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db);
+
+            var workout = await TestDataSeeder.SeedWorkoutAsync(
+                db, distanceM: 5000, durationS: 1800, name: "Paused FIT clocks");
+            workout.TimerTimeS = timerTimeS;
+            workout.MovingTimeS = 1600;
+            workout.AvgPaceS = avgPaceS;
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var exportZip = await ImportTestHelper.CreateExportZipWithDataAsync(client);
+        await EnsureCleanDatabaseAsync();
+
+        exportZip.Position = 0;
+        var formContent = new MultipartFormDataContent();
+        var streamContent = new StreamContent(exportZip);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        formContent.Add(streamContent, "file", "export.zip");
+
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
+        importResult.Success.Should().BeTrue();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var restored = await db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workoutId);
+            restored.DurationS.Should().Be(1800);
+            restored.TimerTimeS.Should().Be(timerTimeS);
+            restored.MovingTimeS.Should().Be(1600);
+            restored.AvgPaceS.Should().Be(avgPaceS);
+        }
+    }
+
+    [Fact]
+    public async Task ImportExport_OldZipMissingTimerTimeS_RestoresNull()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var workoutId = Guid.NewGuid();
+        var startedAt = DateTime.UtcNow.AddHours(-2);
+        var zip = CreateExportZipWithWorkoutJsonOmittingTimerTimeS(
+            workoutId, startedAt, durationS: 1800, distanceM: 5000, avgPaceS: 360);
+
+        var formContent = new MultipartFormDataContent();
+        var streamContent = new StreamContent(zip);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        formContent.Add(streamContent, "file", "export-old.zip");
+
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
+        importResult.Success.Should().BeTrue();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var restored = await db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workoutId);
+            restored.TimerTimeS.Should().BeNull();
+            restored.DurationS.Should().Be(1800);
+            restored.AvgPaceS.Should().Be(360);
+        }
+    }
+
+    [Fact]
     public async Task ImportExport_InvalidZip_CleansUpTempDirectory()
     {
         // Arrange
@@ -910,6 +986,82 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             // Create data directory
             CreateJsonFile(archive, "data/shoes.json", Array.Empty<object>());
             CreateJsonFile(archive, "data/workouts.json", workouts);
+            CreateJsonFile(archive, "data/routes.json", Array.Empty<object>());
+            CreateJsonFile(archive, "data/splits.json", Array.Empty<object>());
+            CreateJsonFile(archive, "data/time-series.json", Array.Empty<object>());
+            CreateJsonFile(archive, "data/media-metadata.json", Array.Empty<object>());
+            CreateJsonFile(archive, "data/best-efforts.json", Array.Empty<object>());
+        }
+
+        zipStream.Position = 0;
+        return zipStream;
+    }
+
+    /// <summary>
+    /// Old Tempo export shape: workout scalars without <c>timerTimeS</c> (property omitted, not null).
+    /// </summary>
+    private MemoryStream CreateExportZipWithWorkoutJsonOmittingTimerTimeS(
+        Guid workoutId,
+        DateTime startedAt,
+        int durationS,
+        double distanceM,
+        double avgPaceS)
+    {
+        var workoutWithoutTimer = new
+        {
+            id = workoutId,
+            startedAt,
+            durationS,
+            distanceM,
+            avgPaceS,
+            createdAt = DateTime.UtcNow,
+            runType = "Easy Run",
+            source = "fit_import"
+        };
+
+        var zipStream = new MemoryStream();
+        using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var manifest = new
+            {
+                version = "1.0.0",
+                tempoVersion = "1.0.0",
+                exportDate = DateTime.UtcNow,
+                exportedBy = "test",
+                statistics = new
+                {
+                    settings = 0,
+                    shoes = 0,
+                    workouts = 1,
+                    routes = 0,
+                    splits = 0,
+                    timeSeries = 0,
+                    mediaFiles = 0,
+                    bestEfforts = 0,
+                    totalSizeBytes = 0L
+                },
+                dataFormat = new
+                {
+                    settings = (string?)null,
+                    shoes = "data/shoes.json",
+                    workouts = "data/workouts.json",
+                    routes = "data/routes.json",
+                    splits = "data/splits.json",
+                    timeSeries = "data/time-series.json",
+                    mediaMetadata = "data/media-metadata.json",
+                    bestEfforts = "data/best-efforts.json"
+                }
+            };
+
+            var manifestJson = JsonSerializer.Serialize(manifest, JsonOptions);
+            var manifestEntry = archive.CreateEntry("manifest.json");
+            using (var writer = new StreamWriter(manifestEntry.Open(), Encoding.UTF8))
+            {
+                writer.Write(manifestJson);
+            }
+
+            CreateJsonFile(archive, "data/shoes.json", Array.Empty<object>());
+            CreateJsonFile(archive, "data/workouts.json", new[] { workoutWithoutTimer });
             CreateJsonFile(archive, "data/routes.json", Array.Empty<object>());
             CreateJsonFile(archive, "data/splits.json", Array.Empty<object>());
             CreateJsonFile(archive, "data/time-series.json", Array.Empty<object>());
