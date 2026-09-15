@@ -471,6 +471,35 @@ public class WorkoutCropServiceTests : IDisposable
         croppedSplits.Should().OnlyContain(s => s.AvgHeartRateBpm != 50);
     }
 
+    [Fact]
+    public async Task CropWorkoutAsync_DeletesDeviceLaps_AndRebuildsDistance()
+    {
+        var originalDuration = 1800;
+        var startTrim = 300;
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: originalDuration);
+        var coordinates = new List<double[]>();
+        for (var i = 0; i < 80; i++)
+        {
+            coordinates.Add(new[] { 0.0 + (i * 0.0004), 0.0 + (i * 0.0004) });
+        }
+
+        await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout, coordinates);
+        await TestDataSeeder.SeedWorkoutWithTimeSeriesAsync(_db, workout, totalDurationS: originalDuration);
+        await TestDataSeeder.SeedWorkoutWithSplitsAsync(_db, workout);
+        await TestDataSeeder.SeedDeviceLapsAsync(
+            _db,
+            workout,
+            (0, 1600, 600, 0, 650),
+            (1, 1700, 620, 650, 1300));
+
+        await _service.CropWorkoutAsync(workout, startTrim, 0);
+
+        var remaining = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        remaining.Should().NotBeEmpty();
+        remaining.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        remaining.Should().NotContain(s => s.Kind == WorkoutSplitKinds.DeviceLap);
+    }
+
     private async Task SeedHeartRateSeriesAsync(Workout workout, int durationS, int lowHrUntilSeconds)
     {
         var series = new List<WorkoutTimeSeries>();

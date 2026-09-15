@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Cadence chart on Workout overview** - elapsed-time cadence from WorkoutTimeSeries (tooltip **spm**); omitted when no samples; stored zeros are not plotted so stops do not pin the Y axis.
 - **Power chart on Workout overview** - elapsed-time power from WorkoutTimeSeries (tooltip **W**); omitted when no samples; stored zeros are not plotted so stops do not pin the Y axis.
+- **WorkoutSplit kinds and elapsed bounds** - `Kind` (`distance` | `device_lap`), wall `StartElapsedS` / `EndElapsedS`, and optional `StartDistanceM`; unique `(WorkoutId, Kind, Idx)`. GET detail / crop / list `splitsCount` use the display list (`device_lap` if any, else `distance`). Tempo export dumps all kinds; restore copies rows (old ZIPs fill kind/bounds like migrate). FIT lap ingest remains out of scope.
 
 ### Fixed
 - **FIT cadence startup backfill on Postgres** - candidate selection no longer runs text `LIKE`/`Contains` on `RawFitData` (`jsonb`), which caused `22P02` and aborted the worker before any rewrite. Postgres now scans the marker via `::text`; SQLite tests keep the string filter.
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **API:** replace vendored FIT SDK source under `api/Libraries/FitSDK/` with the official `Garmin.FIT.Sdk` NuGet package (21.214.0).
+- **Split write paths** - unit-preference recalc replaces `distance` rows only (`device_lap` preserved); crop deletes all kinds then writes new `distance` for the remaining slice; intake duplicate update still wipes all kinds before rewriting `distance`.
 
 ## [2.8.1] - 2026-09-14
 

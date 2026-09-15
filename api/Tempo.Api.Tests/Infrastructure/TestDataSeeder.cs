@@ -231,6 +231,7 @@ public static class TestDataSeeder
             splits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
+                Kind = WorkoutSplitKinds.Distance,
                 Idx = i,
                 DistanceM = splitDistance,
                 DurationS = splitDuration,
@@ -248,6 +249,7 @@ public static class TestDataSeeder
             splits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
+                Kind = WorkoutSplitKinds.Distance,
                 Idx = numSplits,
                 DistanceM = remainingDistance,
                 DurationS = remainingDuration,
@@ -255,9 +257,41 @@ public static class TestDataSeeder
             });
         }
 
+        WorkoutSplitElapsed.FillFromCumulativeDuration(splits);
         db.WorkoutSplits.AddRange(splits);
         await db.SaveChangesAsync();
         return splits;
+    }
+
+    /// <summary>
+    /// Seeds hand-written device_lap rows (no FIT parser). Idx may collide with distance miles.
+    /// </summary>
+    public static async Task<List<WorkoutSplit>> SeedDeviceLapsAsync(
+        TempoDbContext db,
+        Workout workout,
+        params (int Idx, double DistanceM, int DurationS, int StartElapsedS, int EndElapsedS)[] laps)
+    {
+        var rows = new List<WorkoutSplit>();
+        foreach (var lap in laps)
+        {
+            rows.Add(new WorkoutSplit
+            {
+                WorkoutId = workout.Id,
+                Kind = WorkoutSplitKinds.DeviceLap,
+                Idx = lap.Idx,
+                DistanceM = lap.DistanceM,
+                DurationS = lap.DurationS,
+                PaceS = lap.DurationS > 0 && lap.DistanceM > 0
+                    ? lap.DurationS / (lap.DistanceM / 1000.0)
+                    : 0,
+                StartElapsedS = lap.StartElapsedS,
+                EndElapsedS = lap.EndElapsedS
+            });
+        }
+
+        db.WorkoutSplits.AddRange(rows);
+        await db.SaveChangesAsync();
+        return rows;
     }
 
     /// <summary>

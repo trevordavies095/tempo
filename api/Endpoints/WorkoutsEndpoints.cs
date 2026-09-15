@@ -1159,14 +1159,18 @@ public static class WorkoutsEndpoints
                 }
             }
 
-            // Map splits
-            var splits = workout.Splits.OrderBy(s => s.Idx).Select(s => new
+            // Map splits (device_lap if any, else distance)
+            var splits = WorkoutSplitDisplay.SelectDisplayList(workout.Splits).Select(s => new
             {
                 idx = s.Idx,
+                kind = s.Kind,
                 distanceM = s.DistanceM,
                 durationS = s.DurationS,
                 paceS = s.PaceS,
-                avgHeartRateBpm = s.AvgHeartRateBpm
+                avgHeartRateBpm = s.AvgHeartRateBpm,
+                startElapsedS = s.StartElapsedS,
+                endElapsedS = s.EndElapsedS,
+                startDistanceM = s.StartDistanceM
             }).ToList();
 
             return Results.Ok(new
@@ -1229,7 +1233,8 @@ public static class WorkoutsEndpoints
     /// <returns>Complete workout data including route, splits, weather, and optional raw data</returns>
     /// <remarks>
     /// Retrieves complete workout data including route (as GeoJSON), splits, and weather information.
-    /// Each split includes idx, distanceM, durationS, paceS, and avgHeartRateBpm (number or null).
+    /// Each split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),
+    /// startElapsedS, endElapsedS, and startDistanceM (number or null).
     /// Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values
     /// are normalized for consistency.
     /// </remarks>
@@ -1304,14 +1309,18 @@ public static class WorkoutsEndpoints
             }
         }
 
-        // Map splits
-        var splits = workout.Splits.OrderBy(s => s.Idx).Select(s => new
+        // Map splits (device_lap if any, else distance)
+        var splits = WorkoutSplitDisplay.SelectDisplayList(workout.Splits).Select(s => new
         {
             idx = s.Idx,
+            kind = s.Kind,
             distanceM = s.DistanceM,
             durationS = s.DurationS,
             paceS = s.PaceS,
-            avgHeartRateBpm = s.AvgHeartRateBpm
+            avgHeartRateBpm = s.AvgHeartRateBpm,
+            startElapsedS = s.StartElapsedS,
+            endElapsedS = s.EndElapsedS,
+            startDistanceM = s.StartDistanceM
         }).ToList();
 
         // Raw JSONB blobs are opt-in: default query projects them out, so skip deserialize too.
@@ -2470,7 +2479,8 @@ public static class WorkoutsEndpoints
         .WithSummary("Get workout details")
         .WithDescription(
             "Retrieves complete workout data including route (as GeoJSON), splits, and weather information. " +
-            "Each split includes idx, distanceM, durationS, paceS, and avgHeartRateBpm (number or null). " +
+            "Each split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null), " +
+            "startElapsedS, endElapsedS, and startDistanceM (number or null). " +
             "Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values " +
             "are normalized for consistency.");
 

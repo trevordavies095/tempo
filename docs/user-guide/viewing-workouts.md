@@ -156,7 +156,7 @@ To delete a workout:
 
 You can recalculate:
 - **Relative Effort** - Recalculate based on current heart rate zone settings
-- **Splits** - Recalculate splits if you've changed unit preferences (replaces `WorkoutSplit` rows only; stored distance, duration, and elevation stay)
+- **Splits** - Recalculate splits if you've changed unit preferences (replaces distance `WorkoutSplit` rows only; device laps are preserved when present; stored workout distance, duration, and elevation stay)
 
 ## Statistics and Analytics
 

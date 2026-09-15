@@ -278,9 +278,9 @@ public class SplitRecalculationServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RecalculateSplitsForWorkoutAsync_DeletesExistingSplits_BeforeRecalculating()
+    public async Task RecalculateSplitsForWorkoutAsync_DeletesExistingDistanceSplits_BeforeRecalculating()
     {
-        // Arrange
+        // Arrange — replaces distance rows only (device_lap preservation is a separate test)
         var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: 1800);
         await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout);
         await TestDataSeeder.SeedWorkoutWithSplitsAsync(_db, workout, splitDistanceM: 500.0); // Old splits with 500m
@@ -289,17 +289,61 @@ public class SplitRecalculationServiceTests : IDisposable
         workout.RawGpxData = CreateRawGpxDataJson(trackPoints);
         await _db.SaveChangesAsync();
 
-        var oldSplitsCount = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).CountAsync();
-
         // Act
         var result = await _service.RecalculateSplitsForWorkoutAsync(workout, "metric");
 
         // Assert
         result.Should().BeTrue();
-        var newSplits = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        var newSplits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.Distance)
+            .ToListAsync();
         newSplits.Should().HaveCountGreaterThan(0);
         // New splits should be approximately 1000m (not 500m)
         newSplits[0].DistanceM.Should().BeApproximately(1000.0, 100.0);
+    }
+
+    [Fact]
+    public async Task RecalculateSplitsForWorkoutAsync_PreservesDeviceLaps()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: 1800);
+        await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout);
+        await TestDataSeeder.SeedWorkoutWithSplitsAsync(_db, workout, splitDistanceM: 500.0);
+        var laps = await TestDataSeeder.SeedDeviceLapsAsync(
+            _db,
+            workout,
+            (0, 1600, 600, 0, 650),
+            (1, 1700, 620, 650, 1300));
+        var lapIds = laps.Select(l => l.Id).OrderBy(id => id).ToList();
+
+        workout.RawGpxData = CreateRawGpxDataJson(CreateTestTrackPoints(5000.0, 1800));
+        await _db.SaveChangesAsync();
+
+        var result = await _service.RecalculateSplitsForWorkoutAsync(workout, "metric");
+
+        result.Should().BeTrue();
+        var remainingLaps = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.DeviceLap)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        remainingLaps.Select(l => l.Id).OrderBy(id => id).Should().Equal(lapIds);
+        remainingLaps.Should().HaveCount(2);
+        remainingLaps[0].Idx.Should().Be(0);
+        remainingLaps[0].StartElapsedS.Should().Be(0);
+        remainingLaps[0].EndElapsedS.Should().Be(650);
+        remainingLaps[0].DistanceM.Should().Be(1600);
+        remainingLaps[0].DurationS.Should().Be(600);
+        remainingLaps[1].Idx.Should().Be(1);
+        remainingLaps[1].StartElapsedS.Should().Be(650);
+        remainingLaps[1].EndElapsedS.Should().Be(1300);
+
+        var distance = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.Distance)
+            .ToListAsync();
+        distance.Should().NotBeEmpty();
+        distance[0].DistanceM.Should().BeApproximately(1000.0, 100.0);
+        // Mile 0 and lap 0 may both exist
+        distance.Should().Contain(s => s.Idx == 0);
+        remainingLaps.Should().Contain(s => s.Idx == 0);
     }
 
     [Fact]

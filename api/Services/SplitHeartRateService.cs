@@ -5,6 +5,7 @@ namespace Tempo.Api.Services;
 /// <summary>
 /// Time-weighted average heart rate per WorkoutSplit from WorkoutTimeSeries.
 /// Does not invent values from workout-level averages.
+/// Joins samples by wall elapsed: [StartElapsedS, EndElapsedS); last split inclusive of its end.
 /// </summary>
 public class SplitHeartRateService
 {
@@ -20,19 +21,7 @@ public class SplitHeartRateService
             return;
         }
 
-        var orderedSplits = splits.OrderBy(s => s.Idx).ToList();
-        var distanceEnds = new double[orderedSplits.Count];
-        var durationEnds = new double[orderedSplits.Count];
-        var distanceCum = 0.0;
-        var durationCum = 0.0;
-        for (var i = 0; i < orderedSplits.Count; i++)
-        {
-            distanceCum += orderedSplits[i].DistanceM;
-            durationCum += orderedSplits[i].DurationS;
-            distanceEnds[i] = distanceCum;
-            durationEnds[i] = durationCum;
-        }
-
+        var orderedSplits = splits.OrderBy(s => s.Idx).ThenBy(s => s.Id).ToList();
         var orderedSeries = series
             .OrderBy(s => s.ElapsedSeconds)
             .ThenBy(s => s.Id)
@@ -59,10 +48,7 @@ public class SplitHeartRateService
                 }
             }
 
-            var splitIndex = current.DistanceM.HasValue
-                ? IndexForWindow(current.DistanceM.Value, distanceEnds)
-                : IndexForWindow(current.ElapsedSeconds, durationEnds);
-
+            var splitIndex = IndexForElapsedWindow(current.ElapsedSeconds, orderedSplits);
             if (splitIndex < 0)
             {
                 continue;
@@ -85,15 +71,17 @@ public class SplitHeartRateService
     }
 
     /// <summary>
-    /// Windows are [0, e0), [e0, e1), …; the last window is inclusive of its end and any remainder past it.
+    /// Windows are [start, end) for all but the last split, which is inclusive of its end
+    /// and any remainder past it.
     /// </summary>
-    private static int IndexForWindow(double value, IReadOnlyList<double> ends)
+    private static int IndexForElapsedWindow(double elapsedSeconds, IReadOnlyList<WorkoutSplit> orderedSplits)
     {
-        for (var i = 0; i < ends.Count; i++)
+        for (var i = 0; i < orderedSplits.Count; i++)
         {
-            var start = i == 0 ? 0.0 : ends[i - 1];
-            var isLast = i == ends.Count - 1;
-            if (value >= start && (value < ends[i] || isLast))
+            var split = orderedSplits[i];
+            var isLast = i == orderedSplits.Count - 1;
+            if (elapsedSeconds >= split.StartElapsedS &&
+                (elapsedSeconds < split.EndElapsedS || isLast))
             {
                 return i;
             }

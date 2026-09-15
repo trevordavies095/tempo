@@ -6,6 +6,8 @@ export type WorkoutSplit = {
   idx: number;
   distanceM: number;
   durationS: number;
+  startElapsedS: number;
+  endElapsedS: number;
 };
 
 export type WorkoutHighlight = {
@@ -17,25 +19,16 @@ function sortedSplits(splits: WorkoutSplit[]): WorkoutSplit[] {
   return [...splits].sort((a, b) => a.idx - b.idx);
 }
 
-/** End-of-split elapsed time: sum of durations through `splitIdx`. */
+/** End-of-split elapsed time from stored StartElapsedS / EndElapsedS bounds. */
 export function highlightFromSplit(
   splits: WorkoutSplit[],
   splitIdx: number
 ): WorkoutHighlight {
   const ordered = sortedSplits(splits);
-  let elapsed = 0;
-  let found = false;
-  for (const split of ordered) {
-    elapsed += split.durationS;
-    if (split.idx === splitIdx) {
-      found = true;
-      break;
-    }
-  }
-
+  const split = ordered.find((s) => s.idx === splitIdx);
   return {
     splitIdx,
-    elapsedSeconds: found ? elapsed : null,
+    elapsedSeconds: split ? split.endElapsedS : null,
   };
 }
 
@@ -48,10 +41,13 @@ export function highlightFromElapsed(
   }
 
   const ordered = sortedSplits(splits);
-  let cumulative = 0;
-  for (const split of ordered) {
-    cumulative += split.durationS;
-    if (elapsedSeconds <= cumulative) {
+  for (let i = 0; i < ordered.length; i++) {
+    const split = ordered[i];
+    const isLast = i === ordered.length - 1;
+    if (
+      elapsedSeconds >= split.startElapsedS &&
+      (elapsedSeconds < split.endElapsedS || isLast)
+    ) {
       return { splitIdx: split.idx, elapsedSeconds };
     }
   }
@@ -85,12 +81,12 @@ export function highlightFromRouteDistance(
 
   const ordered = sortedSplits(splits);
   let distCum = 0;
-  let timeCum = 0;
 
   for (let i = 0; i < ordered.length; i++) {
     const split = ordered[i];
     const isLast = i === ordered.length - 1;
     const nextDist = distCum + split.distanceM;
+    const window = Math.max(0, split.endElapsedS - split.startElapsedS);
 
     if (distanceM <= nextDist || isLast) {
       const frac =
@@ -99,12 +95,11 @@ export function highlightFromRouteDistance(
           : 1;
       return {
         splitIdx: split.idx,
-        elapsedSeconds: timeCum + frac * split.durationS,
+        elapsedSeconds: split.startElapsedS + frac * window,
       };
     }
 
     distCum = nextDist;
-    timeCum += split.durationS;
   }
 
   return { splitIdx: null, elapsedSeconds: null };
@@ -133,26 +128,24 @@ export function routeDistanceFromElapsed(
 
   const ordered = sortedSplits(splits);
   let distCum = 0;
-  let timeCum = 0;
 
   for (let i = 0; i < ordered.length; i++) {
     const split = ordered[i];
     const isLast = i === ordered.length - 1;
-    const nextTime = timeCum + split.durationS;
+    const window = Math.max(0, split.endElapsedS - split.startElapsedS);
 
-    if (elapsedSeconds <= nextTime || isLast) {
+    if (elapsedSeconds <= split.endElapsedS || isLast) {
       const frac =
-        split.durationS > 0
+        window > 0
           ? Math.min(
               1,
-              Math.max(0, (elapsedSeconds - timeCum) / split.durationS)
+              Math.max(0, (elapsedSeconds - split.startElapsedS) / window)
             )
           : 1;
       return distCum + frac * split.distanceM;
     }
 
     distCum += split.distanceM;
-    timeCum = nextTime;
   }
 
   return distCum;

@@ -97,6 +97,7 @@ public class WorkoutCropService
 
         ApplySeriesAggregates(workout, geometry.TimeSeries);
 
+        // Replace distance and delete other kinds (crop rewrites the elapsed origin).
         var oldSplits = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
         if (oldSplits.Count > 0)
         {

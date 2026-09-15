@@ -10,24 +10,24 @@ public class SplitHeartRateServiceTests
     private readonly SplitHeartRateService _service = new();
 
     [Fact]
-    public void ApplyToSplits_DistanceWindows_WritesTimeWeightedAverage()
+    public void ApplyToSplits_ElapsedWindows_WritesTimeWeightedAverage()
     {
         var splits = CreateSplits(
             (0, 1000, 300),
             (1, 1000, 300));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: 140, distanceM: 0),
-            Sample(elapsed: 1, hr: 160, distanceM: 500),
-            Sample(elapsed: 2, hr: 180, distanceM: 1000),
-            Sample(elapsed: 3, hr: 150, distanceM: 1500)
+            Sample(elapsed: 0, hr: 140),
+            Sample(elapsed: 1, hr: 160),
+            Sample(elapsed: 300, hr: 180),
+            Sample(elapsed: 301, hr: 150)
         };
 
         _service.ApplyToSplits(splits, series);
 
-        // Split 0: 140*1 + 160*1 = 300 / 2 = 150 (1000m sample is start of split 1)
+        // Split 0 [0, 300): 140*1 + 160*1 = 150 (300 is start of split 1)
         splits[0].AvgHeartRateBpm.Should().Be(150);
-        // Split 1: 180*1 + 150*1 = 330 / 2 = 165
+        // Split 1 [300, 600]: 180*1 + 150*1 = 165
         splits[1].AvgHeartRateBpm.Should().Be(165);
     }
 
@@ -47,8 +47,8 @@ public class SplitHeartRateServiceTests
         var splits = CreateSplits((0, 1000, 300), (1, 1000, 300));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: null, distanceM: 100),
-            Sample(elapsed: 1, hr: null, distanceM: 1500)
+            Sample(elapsed: 0, hr: null),
+            Sample(elapsed: 1, hr: null)
         };
 
         _service.ApplyToSplits(splits, series);
@@ -62,9 +62,9 @@ public class SplitHeartRateServiceTests
         var splits = CreateSplits((0, 1000, 300));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: 140, distanceM: 100),
-            Sample(elapsed: 1, hr: null, distanceM: 200),
-            Sample(elapsed: 2, hr: 160, distanceM: 300)
+            Sample(elapsed: 0, hr: 140),
+            Sample(elapsed: 1, hr: null),
+            Sample(elapsed: 2, hr: 160)
         };
 
         _service.ApplyToSplits(splits, series);
@@ -82,10 +82,10 @@ public class SplitHeartRateServiceTests
             (2, 1000, 300));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: null, distanceM: 100),
-            Sample(elapsed: 250, hr: null, distanceM: 800),
-            Sample(elapsed: 650, hr: 158, distanceM: 2200),
-            Sample(elapsed: 700, hr: 162, distanceM: 2500)
+            Sample(elapsed: 0, hr: null),
+            Sample(elapsed: 250, hr: null),
+            Sample(elapsed: 650, hr: 158),
+            Sample(elapsed: 700, hr: 162)
         };
 
         _service.ApplyToSplits(splits, series);
@@ -97,42 +97,24 @@ public class SplitHeartRateServiceTests
     }
 
     [Fact]
-    public void ApplyToSplits_SamplesWithoutDistance_AssignByElapsed()
+    public void ApplyToSplits_AssignByElapsed_IgnoresSampleDistance()
     {
         var splits = CreateSplits(
             (0, 1000, 300),
             (1, 1000, 300));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: 140, distanceM: null),
-            Sample(elapsed: 1, hr: 160, distanceM: null),
-            Sample(elapsed: 301, hr: 180, distanceM: null)
+            // Distance would put both in split 0; elapsed puts second in split 1.
+            Sample(elapsed: 0, hr: 140, distanceM: 100),
+            Sample(elapsed: 1, hr: 160, distanceM: 200),
+            Sample(elapsed: 301, hr: 180, distanceM: 250),
+            Sample(elapsed: 302, hr: 200, distanceM: 300)
         };
 
         _service.ApplyToSplits(splits, series);
 
         splits[0].AvgHeartRateBpm.Should().Be(150);
-        splits[1].AvgHeartRateBpm.Should().Be(180);
-    }
-
-    [Fact]
-    public void ApplyToSplits_MixedDistanceAndElapsed_AssignsEachSampleOnce()
-    {
-        var splits = CreateSplits(
-            (0, 1000, 300),
-            (1, 1000, 300));
-        var series = new List<WorkoutTimeSeries>
-        {
-            Sample(elapsed: 10, hr: 140, distanceM: 100),
-            Sample(elapsed: 11, hr: 160, distanceM: 200),
-            Sample(elapsed: 350, hr: 170, distanceM: null),
-            Sample(elapsed: 351, hr: 190, distanceM: null)
-        };
-
-        _service.ApplyToSplits(splits, series);
-
-        splits[0].AvgHeartRateBpm.Should().Be(150);
-        splits[1].AvgHeartRateBpm.Should().Be(180);
+        splits[1].AvgHeartRateBpm.Should().Be(190);
     }
 
     [Fact]
@@ -141,8 +123,8 @@ public class SplitHeartRateServiceTests
         var splits = CreateSplits((0, 1000, 300));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: 100, distanceM: 0),
-            Sample(elapsed: 50, hr: 200, distanceM: 100)
+            Sample(elapsed: 0, hr: 100),
+            Sample(elapsed: 50, hr: 200)
         };
 
         _service.ApplyToSplits(splits, series);
@@ -157,8 +139,8 @@ public class SplitHeartRateServiceTests
         var splits = CreateSplits((0, 1000, 300));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: 100, distanceM: 0),
-            Sample(elapsed: 2, hr: 200, distanceM: 10)
+            Sample(elapsed: 0, hr: 100),
+            Sample(elapsed: 2, hr: 200)
         };
 
         _service.ApplyToSplits(splits, series);
@@ -176,10 +158,10 @@ public class SplitHeartRateServiceTests
             (2, 200, 60));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: 140, distanceM: 100),
-            Sample(elapsed: 1, hr: 160, distanceM: 500),
-            Sample(elapsed: 300, hr: 170, distanceM: 1100),
-            Sample(elapsed: 301, hr: 190, distanceM: 1500)
+            Sample(elapsed: 0, hr: 140),
+            Sample(elapsed: 1, hr: 160),
+            Sample(elapsed: 300, hr: 170),
+            Sample(elapsed: 301, hr: 190)
         };
 
         _service.ApplyToSplits(splits, series);
@@ -198,9 +180,9 @@ public class SplitHeartRateServiceTests
             (1, 200, 60));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: 140, distanceM: 100),
-            Sample(elapsed: 1, hr: 160, distanceM: 200),
-            Sample(elapsed: 301, hr: 200, distanceM: 1100)
+            Sample(elapsed: 0, hr: 140),
+            Sample(elapsed: 1, hr: 160),
+            Sample(elapsed: 301, hr: 200)
         };
 
         _service.ApplyToSplits(splits, series);
@@ -210,17 +192,17 @@ public class SplitHeartRateServiceTests
     }
 
     [Fact]
-    public void ApplyToSplits_IndoorDistMWindows_WritesAverage()
+    public void ApplyToSplits_IndoorElapsedWindows_WritesAverage()
     {
         var splits = CreateSplits(
             (0, 1000, 360),
             (1, 1000, 360));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: 130, distanceM: 0),
-            Sample(elapsed: 1, hr: 150, distanceM: 400),
-            Sample(elapsed: 360, hr: 160, distanceM: 1000),
-            Sample(elapsed: 361, hr: 180, distanceM: 1600)
+            Sample(elapsed: 0, hr: 130),
+            Sample(elapsed: 1, hr: 150),
+            Sample(elapsed: 360, hr: 160),
+            Sample(elapsed: 361, hr: 180)
         };
 
         _service.ApplyToSplits(splits, series);
@@ -235,8 +217,8 @@ public class SplitHeartRateServiceTests
         var splits = CreateSplits((0, 1000, 300), (1, 1000, 300));
         var series = new List<WorkoutTimeSeries>
         {
-            Sample(elapsed: 0, hr: null, distanceM: 100),
-            Sample(elapsed: 400, hr: null, distanceM: 1500)
+            Sample(elapsed: 0, hr: null),
+            Sample(elapsed: 400, hr: null)
         };
 
         _service.ApplyToSplits(splits, series);
@@ -246,16 +228,21 @@ public class SplitHeartRateServiceTests
 
     private static List<WorkoutSplit> CreateSplits(params (int Idx, double DistanceM, int DurationS)[] rows)
     {
-        return rows.Select(r => new WorkoutSplit
+        var splits = rows.Select(r => new WorkoutSplit
         {
+            Id = Guid.NewGuid(),
+            Kind = WorkoutSplitKinds.Distance,
             Idx = r.Idx,
             DistanceM = r.DistanceM,
             DurationS = r.DurationS,
             PaceS = r.DurationS / (r.DistanceM / 1000.0)
         }).ToList();
+
+        WorkoutSplitElapsed.FillFromCumulativeDuration(splits);
+        return splits;
     }
 
-    private static WorkoutTimeSeries Sample(int elapsed, byte? hr, double? distanceM) => new()
+    private static WorkoutTimeSeries Sample(int elapsed, byte? hr, double? distanceM = null) => new()
     {
         Id = Guid.NewGuid(),
         ElapsedSeconds = elapsed,

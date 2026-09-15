@@ -131,6 +131,35 @@ public class WorkoutIntakeTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessAsync_Updated_WipesDeviceLaps()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var first = CreateGpxStream();
+        var created = await _intake.ProcessAsync(first, "morning.gpx");
+        created.Action.Should().Be("created");
+
+        var workout = await _db.Workouts.SingleAsync();
+        await TestDataSeeder.SeedDeviceLapsAsync(
+            _db,
+            workout,
+            (0, 1600, 600, 0, 650));
+        (await _db.WorkoutSplits.CountAsync(s =>
+            s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.DeviceLap)).Should().Be(1);
+
+        workout.RawFileData = null;
+        await _db.SaveChangesAsync();
+
+        using var second = CreateGpxStream();
+        var result = await _intake.ProcessAsync(second, "morning.gpx");
+
+        result.Action.Should().Be("updated");
+        var remaining = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        remaining.Should().NotBeEmpty();
+        remaining.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        remaining.Should().NotContain(s => s.Kind == WorkoutSplitKinds.DeviceLap);
+    }
+
+    [Fact]
     public async Task ProcessAsync_Updated_WhenFitJsonMissingTrackPoints()
     {
         await TestDataSeeder.SeedUserSettingsAsync(_db);
@@ -433,9 +462,16 @@ public class WorkoutIntakeTests : IDisposable
         result.Action.Should().Be("created");
         var splits = await _db.WorkoutSplits
             .Where(s => s.WorkoutId == result.Workout!.Id)
+            .OrderBy(s => s.Idx)
             .ToListAsync();
         splits.Should().NotBeEmpty();
         splits.Should().Contain(s => s.AvgHeartRateBpm != null);
+        splits.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        splits.Should().OnlyContain(s => s.EndElapsedS >= s.StartElapsedS);
+        for (var i = 1; i < splits.Count; i++)
+        {
+            splits[i].StartElapsedS.Should().Be(splits[i - 1].EndElapsedS);
+        }
     }
 
     [Fact]
@@ -470,6 +506,44 @@ public class WorkoutIntakeTests : IDisposable
             .ToListAsync();
         splits.Should().NotBeEmpty();
         splits.Should().OnlyContain(s => s.AvgHeartRateBpm == null);
+        // GPS present → Haversine path; StartDistanceM stays null even when DistM is on points
+        splits.Should().OnlyContain(s => s.StartDistanceM == null);
+    }
+
+    [Fact]
+    public async Task PersistAsync_HaversineGps_LeavesStartDistanceMNull()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        // GPS points without DistM → Haversine path
+        var degreeIncrement = 5000.0 / (111000.0 * 49);
+        var points = new List<TrackPoint>();
+        for (var i = 0; i < 50; i++)
+        {
+            points.Add(new TrackPoint
+            {
+                Time = start.AddSeconds(i * 36),
+                Latitude = 37.7749 + i * degreeIncrement,
+                Longitude = -122.4194 + i * degreeIncrement
+            });
+        }
+
+        var result = await _intake.PersistAsync(new DecodedWorkout
+        {
+            StartedAt = start,
+            DurationS = 1800,
+            DistanceM = 5000,
+            TrackPoints = points,
+            RawGpxDataJson = "{}"
+        });
+
+        result.Action.Should().Be("created");
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == result.Workout!.Id)
+            .ToListAsync();
+        splits.Should().NotBeEmpty();
+        splits.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        splits.Should().OnlyContain(s => s.StartDistanceM == null);
     }
 
     [Fact]
@@ -503,6 +577,7 @@ public class WorkoutIntakeTests : IDisposable
         splits.Should().NotBeEmpty();
         splits.Should().Contain(s => s.AvgHeartRateBpm != null);
         (await _db.WorkoutRoutes.CountAsync(r => r.WorkoutId == workoutId)).Should().Be(0);
+        splits.Should().OnlyContain(s => s.StartDistanceM.HasValue);
     }
 
     [Fact]

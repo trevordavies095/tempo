@@ -32,15 +32,17 @@ public static class WorkoutQueryService
     }
 
     /// <summary>
-    /// Projects a <c>GET /workouts</c> page with <c>splitsCount</c> as a SQL <c>COUNT</c>.
-    /// Does not load <see cref="WorkoutSplit"/> rows.
+    /// Projects a <c>GET /workouts</c> page with <c>splitsCount</c> as a SQL <c>COUNT</c>
+    /// of the display list (device_lap if any, else distance). Does not load split rows.
     /// </summary>
     public static IQueryable<WorkoutListPageRow> QueryListPage(IQueryable<Workout> workouts)
     {
         return workouts.Select(w => new WorkoutListPageRow
         {
             Workout = w,
-            SplitsCount = w.Splits.Count()
+            SplitsCount = w.Splits.Any(s => s.Kind == WorkoutSplitKinds.DeviceLap)
+                ? w.Splits.Count(s => s.Kind == WorkoutSplitKinds.DeviceLap)
+                : w.Splits.Count(s => s.Kind == WorkoutSplitKinds.Distance)
         });
     }
 

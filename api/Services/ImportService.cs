@@ -975,6 +975,24 @@ public class ImportService
             var json = await File.ReadAllTextAsync(splitsPath);
             var splits = JsonSerializer.Deserialize<List<WorkoutSplit>>(json, JsonOptions) ?? new List<WorkoutSplit>();
 
+            // Old Tempo ZIPs omit kind/elapsed; fill like the migration (no TrackGeometry).
+            foreach (var group in splits.Where(s => s != null).GroupBy(s => s.WorkoutId))
+            {
+                var rows = group.ToList();
+                foreach (var split in rows)
+                {
+                    if (string.IsNullOrWhiteSpace(split.Kind))
+                    {
+                        split.Kind = WorkoutSplitKinds.Distance;
+                    }
+                }
+
+                if (WorkoutSplitElapsed.NeedsCumulativeFill(rows))
+                {
+                    WorkoutSplitElapsed.FillFromCumulativeDuration(rows);
+                }
+            }
+
             var workoutIds = await _db.Workouts.AsNoTracking().Select(w => w.Id).ToHashSetAsync(progress.CancellationToken);
             var existingSplitIds = await _db.WorkoutSplits.AsNoTracking().Select(s => s.Id).ToHashSetAsync(progress.CancellationToken);
             var pending = 0;

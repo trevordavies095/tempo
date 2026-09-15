@@ -666,6 +666,97 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ImportExport_RoundTrip_PreservesDistanceAndDeviceLapKinds()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId = Guid.Empty;
+        List<(Guid Id, string Kind, int Idx, int StartElapsedS, int EndElapsedS, double? StartDistanceM)> expected = [];
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db);
+
+            var workout = await TestDataSeeder.SeedWorkoutAsync(
+                db, distanceM: 5000, durationS: 1800, name: "Kind coexistence");
+            workoutId = workout.Id;
+
+            var distance = await TestDataSeeder.SeedWorkoutWithSplitsAsync(db, workout, splitDistanceM: 1609.34);
+            // DistM-path marker on first distance row so StartDistanceM round-trips
+            distance[0].StartDistanceM = 0;
+            if (distance.Count > 1)
+            {
+                distance[1].StartDistanceM = 1609.34;
+            }
+
+            await TestDataSeeder.SeedDeviceLapsAsync(
+                db,
+                workout,
+                (0, 1600, 650, 0, 650),
+                (1, 3400, 1150, 650, 1800));
+
+            await db.SaveChangesAsync();
+
+            expected = await db.WorkoutSplits
+                .AsNoTracking()
+                .Where(s => s.WorkoutId == workoutId)
+                .OrderBy(s => s.Kind)
+                .ThenBy(s => s.Idx)
+                .Select(s => new ValueTuple<Guid, string, int, int, int, double?>(
+                    s.Id, s.Kind, s.Idx, s.StartElapsedS, s.EndElapsedS, s.StartDistanceM))
+                .ToListAsync();
+        }
+
+        expected.Should().Contain(s => s.Kind == WorkoutSplitKinds.Distance);
+        expected.Should().Contain(s => s.Kind == WorkoutSplitKinds.DeviceLap);
+        expected.Should().OnlyContain(s =>
+            s.Kind == WorkoutSplitKinds.Distance || s.Kind == WorkoutSplitKinds.DeviceLap);
+
+        var exportZip = await ImportTestHelper.CreateExportZipWithDataAsync(client);
+        await EnsureCleanDatabaseAsync();
+
+        exportZip.Position = 0;
+        var formContent = new MultipartFormDataContent();
+        var streamContent = new StreamContent(exportZip);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        formContent.Add(streamContent, "file", "export.zip");
+
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
+        importResult.Success.Should().BeTrue();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var restored = await db.WorkoutSplits
+                .AsNoTracking()
+                .Where(s => s.WorkoutId == workoutId)
+                .OrderBy(s => s.Kind)
+                .ThenBy(s => s.Idx)
+                .ToListAsync();
+
+            restored.Should().HaveCount(expected.Count);
+            restored.Should().OnlyContain(s =>
+                s.Kind == WorkoutSplitKinds.Distance || s.Kind == WorkoutSplitKinds.DeviceLap);
+            restored.Should().NotContain(s => s.Kind == "workout_step");
+
+            for (var i = 0; i < expected.Count; i++)
+            {
+                restored[i].Id.Should().Be(expected[i].Id);
+                restored[i].Kind.Should().Be(expected[i].Kind);
+                restored[i].Idx.Should().Be(expected[i].Idx);
+                restored[i].StartElapsedS.Should().Be(expected[i].StartElapsedS);
+                restored[i].EndElapsedS.Should().Be(expected[i].EndElapsedS);
+                restored[i].StartDistanceM.Should().Be(expected[i].StartDistanceM);
+            }
+
+            restored.Count(s => s.Kind == WorkoutSplitKinds.DeviceLap).Should().Be(2);
+            restored.Count(s => s.Kind == WorkoutSplitKinds.Distance).Should().BeGreaterThan(0);
+        }
+    }
+
+    [Fact]
     public async Task ImportExport_InvalidZip_CleansUpTempDirectory()
     {
         // Arrange

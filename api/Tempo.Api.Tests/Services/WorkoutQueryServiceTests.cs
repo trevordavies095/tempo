@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
 namespace Tempo.Api.Tests.Services;
@@ -383,10 +384,10 @@ public class WorkoutQueryServiceTests : IDisposable
         _db.Workouts.Add(workout);
         await _db.SaveChangesAsync();
 
-        // Insert out of Idx order so heap/insertion order would fail the assertion
+        var splits = new List<WorkoutSplit>();
         foreach (var idx in new[] { 2, 0, 1 })
         {
-            _db.WorkoutSplits.Add(new WorkoutSplit
+            splits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
                 Idx = idx,
@@ -395,6 +396,8 @@ public class WorkoutQueryServiceTests : IDisposable
                 PaceS = 360
             });
         }
+        WorkoutSplitElapsed.FillFromCumulativeDuration(splits);
+        _db.WorkoutSplits.AddRange(splits);
         await _db.SaveChangesAsync();
 
         var result = await WorkoutQueryService.QueryDetail(_db, workout.Id, includeRaw)
@@ -420,9 +423,10 @@ public class WorkoutQueryServiceTests : IDisposable
         _db.Workouts.Add(workout);
         await _db.SaveChangesAsync();
 
+        var listSplits = new List<WorkoutSplit>();
         for (var i = 0; i < 4; i++)
         {
-            _db.WorkoutSplits.Add(new WorkoutSplit
+            listSplits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
                 Idx = i,
@@ -431,6 +435,8 @@ public class WorkoutQueryServiceTests : IDisposable
                 PaceS = 360
             });
         }
+        WorkoutSplitElapsed.FillFromCumulativeDuration(listSplits);
+        _db.WorkoutSplits.AddRange(listSplits);
         await _db.SaveChangesAsync();
 
         var sql = WorkoutQueryService.QueryListPage(_db.Workouts.AsNoTracking()).ToQueryString();
@@ -452,6 +458,37 @@ public class WorkoutQueryServiceTests : IDisposable
             .ToList();
         splitCommands.Should().NotBeEmpty();
         splitCommands.Should().OnlyContain(c => c.Contains("COUNT", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task QueryListPage_SplitsCount_UsesDeviceLapWhenPresent()
+    {
+        var workout = new Workout
+        {
+            StartedAt = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc),
+            DistanceM = 5000,
+            DurationS = 1800,
+            AvgPaceS = 360,
+            Source = "test",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Workouts.Add(workout);
+        await _db.SaveChangesAsync();
+
+        await TestDataSeeder.SeedWorkoutWithSplitsAsync(_db, workout, splitDistanceM: 1000.0);
+        await TestDataSeeder.SeedDeviceLapsAsync(
+            _db,
+            workout,
+            (0, 1600, 600, 0, 650),
+            (1, 1700, 620, 650, 1300));
+
+        var distanceCount = await _db.WorkoutSplits.CountAsync(s =>
+            s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.Distance);
+        distanceCount.Should().BeGreaterThan(2);
+
+        var rows = await WorkoutQueryService.QueryListPage(_db.Workouts.AsNoTracking()).ToListAsync();
+        rows.Should().ContainSingle();
+        rows[0].SplitsCount.Should().Be(2);
     }
 
     [Fact]
