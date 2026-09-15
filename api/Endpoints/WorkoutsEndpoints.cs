@@ -2457,7 +2457,7 @@ public static class WorkoutsEndpoints
         .Produces(404)
         .WithSummary("Get workout time series")
         .WithDescription(
-            "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm, powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. " +
+            "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm (steps/min), powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. " +
             "Null fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second is present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. " +
             "The server does not interpolate missing seconds; clients may interpolate if needed. " +
             "Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. " +

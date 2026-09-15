@@ -52,7 +52,7 @@ public class Workout
     public byte? AvgHeartRateBpm { get; set; }
     public byte? MinHeartRateBpm { get; set; }
 
-    // Cadence (if available)
+    // Cadence in steps/min (both feet). Property names *CadenceRpm are historical.
     public byte? MaxCadenceRpm { get; set; }
     public byte? AvgCadenceRpm { get; set; }
 

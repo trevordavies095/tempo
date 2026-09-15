@@ -10,7 +10,12 @@ public class TrackPoint
     public double? Elevation { get; set; }
     public DateTime? Time { get; set; }
     public byte? HeartRateBpm { get; set; }
+
+    /// <summary>
+    /// Cadence at this point in steps/min (both feet). Property name CadenceRpm is historical.
+    /// </summary>
     public byte? CadenceRpm { get; set; }
+
     public ushort? PowerWatts { get; set; }
     public sbyte? TemperatureC { get; set; }
     public double? SpeedMps { get; set; }
