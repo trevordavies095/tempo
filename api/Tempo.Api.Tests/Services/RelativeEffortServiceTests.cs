@@ -328,6 +328,169 @@ public class RelativeEffortServiceTests : IDisposable
 
     #endregion
 
+    #region TryGetTimeInZones Tests
+
+    [Fact]
+    public void TryGetTimeInZones_WithMixedZones_ReturnsFiveDurations()
+    {
+        // Arrange — 10 min Z1, 10 min Z3, 10 min Z5 at 10s intervals
+        var zones = CreateValidZones();
+        var timeSeries = new List<WorkoutTimeSeries>();
+
+        for (int i = 0; i < 60; i++)
+        {
+            timeSeries.Add(new WorkoutTimeSeries { ElapsedSeconds = i * 10, HeartRateBpm = 110 });
+        }
+
+        for (int i = 60; i < 120; i++)
+        {
+            timeSeries.Add(new WorkoutTimeSeries { ElapsedSeconds = i * 10, HeartRateBpm = 140 });
+        }
+
+        for (int i = 120; i < 180; i++)
+        {
+            timeSeries.Add(new WorkoutTimeSeries { ElapsedSeconds = i * 10, HeartRateBpm = 180 });
+        }
+
+        // Act
+        var result = _service.TryGetTimeInZones(timeSeries, zones);
+
+        // Assert
+        result.Should().NotBeNull();
+        var times = result!;
+        times.Should().HaveCount(5);
+        times[0].Should().Be(600); // Z1: 60 points × 10s (last of block has next in Z3)
+        times[1].Should().Be(0);
+        times[2].Should().Be(600);
+        times[3].Should().Be(0);
+        // Z5: 59 × 10s + last-point 1s
+        times[4].Should().Be(591);
+        _service.CalculateFromTimeSeries(timeSeries, zones).Should().BeInRange(85, 95);
+    }
+
+    [Fact]
+    public void TryGetTimeInZones_WithAllTimeInZone1_LeavesOtherZonesZero()
+    {
+        // Arrange
+        var zones = CreateValidZones();
+        var timeSeries = CreateTimeSeriesWithConstantHr(durationSeconds: 1800, heartRate: 110);
+
+        // Act
+        var result = _service.TryGetTimeInZones(timeSeries, zones);
+
+        // Assert
+        result.Should().NotBeNull();
+        var times = result!;
+        times[0].Should().BeGreaterThan(0);
+        times[1].Should().Be(0);
+        times[2].Should().Be(0);
+        times[3].Should().Be(0);
+        times[4].Should().Be(0);
+        _service.CalculateFromTimeSeries(timeSeries, zones).Should().BeInRange(25, 35);
+    }
+
+    [Fact]
+    public void TryGetTimeInZones_WithFifteenSecondGap_ClampsFirstIntervalTo1Second()
+    {
+        // Arrange
+        var zones = CreateValidZones();
+        var timeSeries = new List<WorkoutTimeSeries>
+        {
+            new() { ElapsedSeconds = 0, HeartRateBpm = 150 },
+            new() { ElapsedSeconds = 15, HeartRateBpm = 155 }
+        };
+
+        // Act
+        var result = _service.TryGetTimeInZones(timeSeries, zones);
+
+        // Assert — first interval clamped to 1s; last point 1s; 150 → Z3, 155 → Z4
+        result.Should().NotBeNull();
+        var times = result!;
+        times.Sum().Should().Be(2);
+        times[2].Should().Be(1); // 150 BPM → Z3, clamped 1s
+        times[3].Should().Be(1); // 155 BPM → Z4, last point 1s
+    }
+
+    [Fact]
+    public void TryGetTimeInZones_WithAllSamplesOutsideZones_ReturnsNull()
+    {
+        // Arrange — below zone 1 min (95)
+        var zones = CreateValidZones();
+        var timeSeries = CreateTimeSeriesWithConstantHr(durationSeconds: 600, heartRate: 50);
+
+        // Act
+        var result = _service.TryGetTimeInZones(timeSeries, zones);
+
+        // Assert
+        result.Should().BeNull();
+        _service.CalculateFromTimeSeries(timeSeries, zones).Should().Be(0);
+    }
+
+    [Fact]
+    public void TryGetTimeInZones_WithNullZones_ReturnsNull()
+    {
+        var timeSeries = CreateTimeSeriesWithConstantHr(durationSeconds: 600, heartRate: 150);
+
+        _service.TryGetTimeInZones(timeSeries, null).Should().BeNull();
+        _service.CalculateFromTimeSeries(timeSeries, null!).Should().Be(0);
+    }
+
+    [Fact]
+    public void TryGetTimeInZones_WithWrongZoneCount_ReturnsNull()
+    {
+        var zones = new List<HeartRateZone> { new() { MinBpm = 95, MaxBpm = 114 } };
+        var timeSeries = CreateTimeSeriesWithConstantHr(durationSeconds: 600, heartRate: 150);
+
+        _service.TryGetTimeInZones(timeSeries, zones).Should().BeNull();
+        _service.CalculateFromTimeSeries(timeSeries, zones).Should().Be(0);
+    }
+
+    [Fact]
+    public void TryGetTimeInZones_WithNullSeries_ReturnsNull()
+    {
+        var zones = CreateValidZones();
+
+        _service.TryGetTimeInZones(null, zones).Should().BeNull();
+        _service.CalculateFromTimeSeries(null!, zones).Should().Be(0);
+    }
+
+    [Fact]
+    public void TryGetTimeInZones_WithEmptySeries_ReturnsNull()
+    {
+        var zones = CreateValidZones();
+
+        _service.TryGetTimeInZones(new List<WorkoutTimeSeries>(), zones).Should().BeNull();
+        _service.CalculateFromTimeSeries(new List<WorkoutTimeSeries>(), zones).Should().Be(0);
+    }
+
+    [Fact]
+    public void TryGetTimeInZones_WithNullHrInterleaved_OnlyZonedSamplesContribute()
+    {
+        // Arrange
+        var zones = CreateValidZones();
+        var timeSeries = new List<WorkoutTimeSeries>
+        {
+            new() { ElapsedSeconds = 0, HeartRateBpm = 150 },  // Z3
+            new() { ElapsedSeconds = 10, HeartRateBpm = null },
+            new() { ElapsedSeconds = 20, HeartRateBpm = 155 }, // Z4
+            new() { ElapsedSeconds = 30, HeartRateBpm = null }
+        };
+
+        // Act
+        var result = _service.TryGetTimeInZones(timeSeries, zones);
+
+        // Assert — only points with HR: 150→10s (to next), 155→10s (to next null point)
+        result.Should().NotBeNull();
+        var times = result!;
+        times[2].Should().Be(10);
+        times[3].Should().Be(10);
+        times[0].Should().Be(0);
+        times[1].Should().Be(0);
+        times[4].Should().Be(0);
+    }
+
+    #endregion
+
     #region CalculateFromRawData Tests
 
     [Fact]
