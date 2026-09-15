@@ -187,6 +187,8 @@ public static class WorkoutsEndpoints
     /// Item <c>route</c> is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.
     /// Item <c>media</c> is <c>{ id, mimeType }</c> ordered by createdAt (empty array when none).
     /// <c>splitsCount</c> is a SQL COUNT; split rows are not loaded.
+    /// <c>timerTimeS</c> is FIT total timer time when known (null for non-FIT or missing Session); distinct from
+    /// <c>durationS</c> (elapsed) and <c>movingTimeS</c>.
     /// </remarks>
     private static async Task<IResult> ListWorkouts(
         TempoDbContext db,
@@ -1237,6 +1239,8 @@ public static class WorkoutsEndpoints
     /// Retrieves complete workout data including route (as GeoJSON), splits, and weather information.
     /// Each split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),
     /// startElapsedS, endElapsedS, and startDistanceM (number or null).
+    /// <c>timerTimeS</c> is FIT total timer time when known (null for non-FIT or missing Session); distinct from
+    /// <c>durationS</c> (elapsed) and <c>movingTimeS</c>.
     /// Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values
     /// are normalized for consistency.
     /// </remarks>

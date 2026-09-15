@@ -1092,7 +1092,7 @@
           "Workouts"
         ],
         "summary": "List workouts with pagination and filtering",
-        "description": "Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,\nand run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.\nItem `route` is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.\nItem `media` is `{ id, mimeType }` ordered by createdAt (empty array when none).\n`splitsCount` is a SQL COUNT; split rows are not loaded.\nEach item includes `durationS` (elapsed) and nullable `timerTimeS` / `movingTimeS`.",
+        "description": "Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,\nand run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.\nItem `route` is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.\nItem `media` is `{ id, mimeType }` ordered by createdAt (empty array when none).\n`splitsCount` is a SQL COUNT; split rows are not loaded.\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.",
         "operationId": "ListWorkouts",
         "parameters": [
           {
@@ -1589,7 +1589,7 @@
           "Workouts"
         ],
         "summary": "Get workout details",
-        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),\nstartElapsedS, endElapsedS, and startDistanceM (number or null).\nWorkout clocks: durationS is elapsed (wall clock); timerTimeS is nullable FIT timer time; movingTimeS is nullable moving time.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
+        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),\nstartElapsedS, endElapsedS, and startDistanceM (number or null).\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
         "operationId": "GetWorkout",
         "parameters": [
           {
