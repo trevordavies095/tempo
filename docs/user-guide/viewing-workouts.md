@@ -84,9 +84,11 @@ Splits are calculated based on your unit preference (1km for metric, 1 mile for 
 
 ### Time Series Charts
 
-When sensor samples exist, Workout overview charts heart rate, pace (from speed), and elevation over elapsed time. A series with no samples is omitted. A Workout with no time series shows **No sensor data** instead of empty chart frames.
+When sensor samples exist, Workout overview charts heart rate, pace (from speed), elevation, and cadence over elapsed time. A series with no samples is omitted. A Workout with no time series shows **No sensor data** instead of empty chart frames.
 
-Cadence, power, temperature, speed, grade, and vertical speed remain in stored WorkoutTimeSeries when the file provided them; they are not charted on this screen.
+Cadence tooltips use **spm** (steps per minute). Stored cadence of `0` (for example at a stop) is not plotted so the axis stays in the running band.
+
+Power, temperature, speed, grade, and vertical speed remain in stored WorkoutTimeSeries when the file provided them; they are not charted on this screen.
 
 For very long Workouts, the command center loads up to 20,000 samples (paged from `GET /workouts/{id}/time-series`) and still renders what it loaded.
 

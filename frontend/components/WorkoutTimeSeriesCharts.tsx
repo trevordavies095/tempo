@@ -38,11 +38,14 @@ type ChartTokens = {
   isDark: boolean;
 };
 
+type SeriesKey = 'heartRateBpm' | 'paceSeconds' | 'elevation' | 'cadenceRpm';
+
 type ChartPoint = {
   elapsedSeconds: number;
   heartRateBpm: number | null;
   paceSeconds: number | null;
   elevation: number | null;
+  cadenceRpm: number | null;
 };
 
 function readChartTokens(): ChartTokens {
@@ -159,14 +162,16 @@ function buildChartPoints(
         sample.elevationM != null
           ? toDisplayElevation(sample.elevationM, unit)
           : null,
+      // Chart-layer only: stored 0 (stop) would pin auto Y to zero.
+      cadenceRpm:
+        sample.cadenceRpm != null && sample.cadenceRpm !== 0
+          ? sample.cadenceRpm
+          : null,
     };
   });
 }
 
-function hasSeries(
-  points: ChartPoint[],
-  key: 'heartRateBpm' | 'paceSeconds' | 'elevation'
-): boolean {
+function hasSeries(points: ChartPoint[], key: SeriesKey): boolean {
   return points.some((point) => point[key] != null);
 }
 
@@ -179,7 +184,7 @@ function ChartTooltip({
   active?: boolean;
   payload?: Array<{ payload: ChartPoint }>;
   unitPreference: UnitPreference;
-  series: 'heartRateBpm' | 'paceSeconds' | 'elevation';
+  series: SeriesKey;
 }) {
   if (!active || !payload?.[0]) {
     return null;
@@ -199,6 +204,8 @@ function ChartTooltip({
     const meters =
       unitPreference === 'imperial' ? point.elevation / 3.28084 : point.elevation;
     valueLabel = formatElevation(meters, unitPreference);
+  } else if (series === 'cadenceRpm' && point.cadenceRpm != null) {
+    valueLabel = `${Math.round(point.cadenceRpm)} spm`;
   }
 
   return (
@@ -255,7 +262,7 @@ function SensorLineChart({
   reversed = false,
 }: {
   data: ChartPoint[];
-  dataKey: 'heartRateBpm' | 'paceSeconds' | 'elevation';
+  dataKey: SeriesKey;
   color: string;
   cursorColor: string;
   unitPreference: UnitPreference;
@@ -366,6 +373,7 @@ export function WorkoutTimeSeriesCharts({
   const showHr = hasSeries(points, 'heartRateBpm');
   const showPace = hasSeries(points, 'paceSeconds');
   const showElev = hasSeries(points, 'elevation');
+  const showCadence = hasSeries(points, 'cadenceRpm');
   const highlightElapsed = highlight?.elapsedSeconds ?? null;
   const cursorColor = tokens.danger;
 
@@ -390,7 +398,7 @@ export function WorkoutTimeSeriesCharts({
     );
   }
 
-  if (!showHr && !showPace && !showElev) {
+  if (!showHr && !showPace && !showElev && !showCadence) {
     return (
       <Card>
         <EmptyState title="No sensor data" />
@@ -454,6 +462,22 @@ export function WorkoutTimeSeriesCharts({
                 unitPreference
               )
             }
+          />
+        </section>
+      ) : null}
+
+      {showCadence ? (
+        <section>
+          <h2 className="text-lg font-semibold text-ink mb-2">Cadence</h2>
+          <SensorLineChart
+            data={points}
+            dataKey="cadenceRpm"
+            color={primary}
+            cursorColor={cursorColor}
+            unitPreference={unitPreference}
+            highlightElapsedSeconds={highlightElapsed}
+            onElapsedChange={onElapsedChange}
+            yTickFormatter={(value) => `${Math.round(value)}`}
           />
         </section>
       ) : null}
