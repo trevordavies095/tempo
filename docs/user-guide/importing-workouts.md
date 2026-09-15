@@ -94,8 +94,8 @@ For each workout, Tempo imports:
 - **Metadata** - Activity name, date, time, device information
 
 **Sensor Data Support:**
-- FIT files: Extracts heart rate, cadence, power, temperature, speed, grade, and vertical speed from RecordMesg messages
-- GPX files: Extracts heart rate, cadence, power, and temperature from TrackPointExtension elements (Garmin format)
+- FIT files: Extracts heart rate, cadence, power, temperature, speed, grade, and vertical speed from RecordMesg messages. Running cadence is stored as steps per minute (both feet); FIT strides/min are converted on import. On upgrade, existing FIT workouts that still have the original file are rewritten the same way; FIT rows that only have JSON (no file) may keep the older strides/min values.
+- GPX files: Extracts heart rate, cadence, power, and temperature from TrackPointExtension elements (Garmin format). Cadence is already steps/min and is stored as given.
 - Backward compatible: Files without sensor data are imported successfully with available metrics
 
 ## Duplicates
