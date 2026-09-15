@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Cadence chart on Workout overview** - elapsed-time cadence from WorkoutTimeSeries (tooltip **spm**); omitted when no samples; stored zeros are not plotted so stops do not pin the Y axis.
+- **Power chart on Workout overview** - elapsed-time power from WorkoutTimeSeries (tooltip **W**); omitted when no samples; stored zeros are not plotted so stops do not pin the Y axis.
 
 ### Fixed
 - **FIT cadence startup backfill on Postgres** - candidate selection no longer runs text `LIKE`/`Contains` on `RawFitData` (`jsonb`), which caused `22P02` and aborted the worker before any rewrite. Postgres now scans the marker via `::text`; SQLite tests keep the string filter.

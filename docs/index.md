@@ -20,9 +20,6 @@ Tempo is a self-hostable running tracker that gives you complete control over yo
 ![My Activities](./assets/screenshots/activities.png)
 *Activities list — search, filters, and sortable columns*
 
-![Workout overview](./assets/screenshots/workout-overview.png)
-*Workout overview — splits, route map, and time-series charts*
-
 ![Settings](./assets/screenshots/settings.png)
 *Settings — appearance and unit preferences*
 
@@ -30,7 +27,7 @@ Tempo is a self-hostable running tracker that gives you complete control over yo
 
 - **Multi-Format Support** - Import GPX, FIT (.fit, .fit.gz), and Strava CSV files from Garmin, Apple Watch, and other devices
 - **Workout Analytics** - Track distance, pace, elevation, splits, and time series data
-- **Workout Overview** - Map, splits, and HR/pace/elevation charts sharing one Highlight
+- **Workout Overview** - Map, splits, and HR/pace/elevation/cadence/power charts sharing one Highlight
 - **Appearance** - System, Dark, or Light on the command center (this browser only)
 - **Interactive Maps** - Themed route maps (dark/light tiles) with tokenized polylines
 - **Media Support** - Attach photos and videos to workouts

@@ -48,6 +48,7 @@ Tempo provides comprehensive analytics to help you understand and improve your r
 
 - **Average Power** - Mean power output (watts) throughout the workout
 - **Max Power** - Highest power output recorded
+- **Power Chart** - Time-series visualization on Workout overview (shares Highlight with map and splits; tooltip **W**)
 - Available when imported from FIT files or GPX files with TrackPointExtension data
 - Useful for analyzing effort and performance, especially for cycling or power-based training
 
@@ -136,9 +137,9 @@ Track workout intensity over time:
 
 ## Time-Series Data
 
-Heart rate, pace, elevation, and cadence charts live on **Workout overview**. They share **Highlight** with the map and splits: hover or click a chart point, split, or the route and the others follow.
+Heart rate, pace, elevation, cadence, and power charts live on **Workout overview**. They share **Highlight** with the map and splits: hover or click a chart point, split, or the route and the others follow.
 
-A series with no samples is omitted. Workouts without time series show an empty state instead of blank charts. Power, temperature, and related FIT/GPX sensors may still be stored even when they are not charted here.
+A series with no samples is omitted. Workouts without time series show an empty state instead of blank charts. Temperature, speed, grade, vertical speed, and related FIT/GPX sensors may still be stored even when they are not charted here.
 
 ### Heart Rate Chart
 
@@ -166,6 +167,14 @@ Visual representation of elevation changes:
 Running cadence over elapsed time:
 - Steps per minute (both feet); tooltip **spm**
 - Omitted when the Workout has no cadence samples
+- Stored zeros (for example at a stop) are not plotted so the axis stays in the running band
+- Shares Highlight with map, splits, and the other overview charts
+
+### Power Chart
+
+Running power over elapsed time:
+- Watts; tooltip **W**
+- Omitted when the Workout has no power samples
 - Stored zeros (for example at a stop) are not plotted so the axis stays in the running band
 - Shares Highlight with map, splits, and the other overview charts
 

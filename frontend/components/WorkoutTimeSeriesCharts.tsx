@@ -38,7 +38,12 @@ type ChartTokens = {
   isDark: boolean;
 };
 
-type SeriesKey = 'heartRateBpm' | 'paceSeconds' | 'elevation' | 'cadenceRpm';
+type SeriesKey =
+  | 'heartRateBpm'
+  | 'paceSeconds'
+  | 'elevation'
+  | 'cadenceRpm'
+  | 'powerWatts';
 
 type ChartPoint = {
   elapsedSeconds: number;
@@ -46,6 +51,7 @@ type ChartPoint = {
   paceSeconds: number | null;
   elevation: number | null;
   cadenceRpm: number | null;
+  powerWatts: number | null;
 };
 
 function readChartTokens(): ChartTokens {
@@ -167,6 +173,10 @@ function buildChartPoints(
         sample.cadenceRpm != null && sample.cadenceRpm !== 0
           ? sample.cadenceRpm
           : null,
+      powerWatts:
+        sample.powerWatts != null && sample.powerWatts !== 0
+          ? sample.powerWatts
+          : null,
     };
   });
 }
@@ -206,6 +216,8 @@ function ChartTooltip({
     valueLabel = formatElevation(meters, unitPreference);
   } else if (series === 'cadenceRpm' && point.cadenceRpm != null) {
     valueLabel = `${Math.round(point.cadenceRpm)} spm`;
+  } else if (series === 'powerWatts' && point.powerWatts != null) {
+    valueLabel = `${Math.round(point.powerWatts)} W`;
   }
 
   return (
@@ -374,6 +386,7 @@ export function WorkoutTimeSeriesCharts({
   const showPace = hasSeries(points, 'paceSeconds');
   const showElev = hasSeries(points, 'elevation');
   const showCadence = hasSeries(points, 'cadenceRpm');
+  const showPower = hasSeries(points, 'powerWatts');
   const highlightElapsed = highlight?.elapsedSeconds ?? null;
   const cursorColor = tokens.danger;
 
@@ -398,7 +411,7 @@ export function WorkoutTimeSeriesCharts({
     );
   }
 
-  if (!showHr && !showPace && !showElev && !showCadence) {
+  if (!showHr && !showPace && !showElev && !showCadence && !showPower) {
     return (
       <Card>
         <EmptyState title="No sensor data" />
@@ -473,6 +486,22 @@ export function WorkoutTimeSeriesCharts({
             data={points}
             dataKey="cadenceRpm"
             color={primary}
+            cursorColor={cursorColor}
+            unitPreference={unitPreference}
+            highlightElapsedSeconds={highlightElapsed}
+            onElapsedChange={onElapsedChange}
+            yTickFormatter={(value) => `${Math.round(value)}`}
+          />
+        </section>
+      ) : null}
+
+      {showPower ? (
+        <section>
+          <h2 className="text-lg font-semibold text-ink mb-2">Power</h2>
+          <SensorLineChart
+            data={points}
+            dataKey="powerWatts"
+            color={tokens.danger}
             cursorColor={cursorColor}
             unitPreference={unitPreference}
             highlightElapsedSeconds={highlightElapsed}
