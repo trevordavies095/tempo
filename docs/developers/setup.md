@@ -46,7 +46,10 @@ Update `api/appsettings.json` with your database connection string:
 
 ### 4. Run Database Migrations
 
+Restore local .NET tools at the repo root (pins `dotnet-ef` to match EF Core 10), then apply migrations:
+
 ```bash
+dotnet tool restore
 cd api
 dotnet ef database update
 ```
@@ -79,6 +82,9 @@ The frontend runs at `http://localhost:3000`. API requests are proxied via Next.
 ### Backend (API)
 
 ```bash
+# Restore local tools once (repo root; includes dotnet-ef)
+dotnet tool restore
+
 cd api
 
 # Run development server with hot reload
@@ -193,7 +199,7 @@ Test data files are available in `test_data/` directory for development and test
 ### Migration Errors
 
 - Migrations run automatically on startup
-- For manual migration: `cd api && dotnet ef database update`
+- For manual migration: `dotnet tool restore` at the repo root, then `cd api && dotnet ef database update`
 - Migrations are idempotent and handle existing tables gracefully
 
 ## Next Steps

@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **API:** replace vendored FIT SDK source under `api/Libraries/FitSDK/` with the official `Garmin.FIT.Sdk` NuGet package (21.214.0).
 - **Split write paths** - unit-preference recalc replaces `distance` rows only (`device_lap` preserved); crop deletes all kinds then writes new `distance` for the remaining slice; intake duplicate update still wipes all kinds before rewriting `distance`.
+- **Local `dotnet-ef` tool** - pinned to 10.0.0 in `.config/dotnet-tools.json` to match EF Core 10; run `dotnet tool restore` before `dotnet ef`.
+
 
 ## [2.8.1] - 2026-09-14
 

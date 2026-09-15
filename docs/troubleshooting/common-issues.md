@@ -220,7 +220,7 @@ Detailed solutions for common Tempo problems.
 
 **Solutions:**
 1. Migrations run automatically on startup
-2. For manual migration: `cd api && dotnet ef database update`
+2. For manual migration: `dotnet tool restore` at the repo root, then `cd api && dotnet ef database update`
 3. Migrations are idempotent (safe to run multiple times)
 4. Check database connection
 5. Verify PostgreSQL version (16 required)
