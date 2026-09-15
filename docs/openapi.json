@@ -2293,10 +2293,43 @@
               "$ref": "#/components/schemas/HealthKitTrackPointDto"
             },
             "nullable": true
+          },
+          "laps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthKitLapDto"
+            },
+            "description": "Optional device lap summaries (schema v1 additive). Omit on older clients.",
+            "nullable": true
           }
         },
         "additionalProperties": false,
         "description": "Versioned HealthKit import document from tempo-ios."
+      },
+      "HealthKitLapDto": {
+        "type": "object",
+        "properties": {
+          "endedAt": {
+            "type": "string",
+            "description": "ISO UTC end of the lap.",
+            "nullable": true
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "durationS": {
+            "type": "integer",
+            "description": "Timer seconds (pauses excluded).",
+            "format": "int32"
+          },
+          "avgHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "HealthKitSourceAppDto": {
         "type": "object",

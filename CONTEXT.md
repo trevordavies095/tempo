@@ -61,7 +61,7 @@ Segment row for a Workout with `Kind` (`distance` | `device_lap`). `distance` ro
 _Avoid_: lap table, mile split (as the type name)
 
 **Device lap**:
-Product term for a `WorkoutSplit` with `Kind = device_lap` — a range the recording device wrote (FIT `lap` message, or HealthKit `laps` summaries from tempo-ios), usually auto-distance plus leftover. Authoritative for overview display when any exist. Survives unit-preference split recalc; crop deletes them. Not a separate table.
+Product term for a `WorkoutSplit` with `Kind = device_lap` — a range the recording device wrote (FIT `lap` message, or HealthKit `laps` summaries from tempo-ios), usually auto-distance plus leftover. Authoritative for overview display when any exist. Survives unit-preference split recalc; crop deletes them. Not a separate table. Library FIT rows without `device_lap` yet are filled on startup by `DeviceLapBackfillWorker` (copies stored/reparsed FIT laps; skips cropped sessions). Not rebuilt from DistM.
 _Avoid_: second entity/table, auto-split (when meaning the FIT lap)
 
 **WorkoutTimeSeries**:

@@ -59,7 +59,7 @@ One-to-one relationship storing route coordinates as GeoJSON LineString.
 
 ### WorkoutSplit
 
-Segment rows for a Workout (`Kind`: `distance` or `device_lap`). Distance rows are km/mile per UserSettings; device_lap rows are device ranges when present (FIT lap ingest is separate / future).
+Segment rows for a Workout (`Kind`: `distance` or `device_lap`). Distance rows are km/mile per UserSettings; device_lap rows are device ranges when present (FIT import copies LapMesg into `device_lap` when 2+ kept; startup `DeviceLapBackfillWorker` fills older FIT library rows from `RawFitData.laps` or reparsed bytes, stamped with `lapsBackfill`).
 
 **Columns:**
 - `Id` (Guid, Primary Key)
