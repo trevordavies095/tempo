@@ -213,9 +213,12 @@ ImportJob (standalone; no FK to Workout)
 
 Database migrations are managed using Entity Framework Core migrations:
 
+Restore local .NET tools at the repo root first (`dotnet tool restore`) so `dotnet-ef` matches EF Core 10.
+
 ### Creating Migrations
 
 ```bash
+dotnet tool restore
 cd api
 dotnet ef migrations add MigrationName
 ```
@@ -225,6 +228,7 @@ dotnet ef migrations add MigrationName
 Migrations run automatically on API startup. To manually apply:
 
 ```bash
+dotnet tool restore
 cd api
 dotnet ef database update
 ```

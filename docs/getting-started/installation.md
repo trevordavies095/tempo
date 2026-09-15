@@ -46,7 +46,10 @@ Update `api/appsettings.json` with your database connection string:
 
 #### Step 3: Run Database Migrations
 
+Restore local .NET tools at the repo root (pins `dotnet-ef` to match EF Core 10), then apply migrations:
+
 ```bash
+dotnet tool restore
 cd api
 dotnet ef database update
 ```
