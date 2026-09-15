@@ -164,11 +164,18 @@ public class WorkoutIntake
             var calculated = ExtractCalculatedMetrics(decoded.RawGpxDataJson);
 
             // HealthKit UUID identity check first — short-circuit before geometry/enrichment.
+            // Exception: attach device_lap rows when the existing workout has none and the body has 2+ kept laps.
             if (overlay?.HealthKitUuid is Guid healthKitUuid)
             {
                 var byUuid = await WorkoutQueryService.FindByHealthKitUuidAsync(_db, healthKitUuid);
                 if (byUuid != null)
                 {
+                    var attached = await TryAttachHealthKitDeviceLapsAsync(byUuid, decoded, overlay);
+                    if (attached != null)
+                    {
+                        return attached;
+                    }
+
                     _logger.LogInformation(
                         "Skipped duplicate workout (HealthKit UUID match): {HealthKitUuid}",
                         healthKitUuid);
@@ -964,6 +971,59 @@ public class WorkoutIntake
         {
             _logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
         }
+    }
+
+    /// <summary>
+    /// When a HealthKit UUID already exists with no device_lap rows and the payload has 2+ kept laps,
+    /// attach those rows and refresh RawHealthKitData without re-running geometry/enrichment.
+    /// Returns null when attach does not apply (caller should skip).
+    /// </summary>
+    private async Task<WorkoutIntakeResult?> TryAttachHealthKitDeviceLapsAsync(
+        Workout existingWorkout,
+        DecodedWorkout decoded,
+        WorkoutIntakeOverlay? overlay)
+    {
+        var hasDeviceLaps = await _db.WorkoutSplits.AnyAsync(s =>
+            s.WorkoutId == existingWorkout.Id && s.Kind == WorkoutSplitKinds.DeviceLap);
+        if (hasDeviceLaps)
+        {
+            return null;
+        }
+
+        var startedAtUtc = ToUtc(existingWorkout.StartedAt);
+        var deviceLaps = DeviceLapMapper.ToDeviceLapSplits(
+            decoded.Laps, startedAtUtc, existingWorkout.Id);
+        if (deviceLaps.Count == 0)
+        {
+            return null;
+        }
+
+        var series = await _db.WorkoutTimeSeries
+            .Where(ts => ts.WorkoutId == existingWorkout.Id)
+            .OrderBy(ts => ts.ElapsedSeconds)
+            .ToListAsync();
+        _splitHeartRate.ApplyToSplits(deviceLaps, series);
+        DeviceLapMapper.OverlayDeviceAvgHeartRate(deviceLaps, decoded.Laps);
+
+        _db.WorkoutSplits.AddRange(deviceLaps);
+
+        if (!string.IsNullOrWhiteSpace(overlay?.RawHealthKitDataJson))
+        {
+            existingWorkout.RawHealthKitData = overlay.RawHealthKitDataJson;
+        }
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Attached {LapCount} device laps to HealthKit workout {WorkoutId} without geometry rewrite",
+            deviceLaps.Count, existingWorkout.Id);
+
+        return new WorkoutIntakeResult
+        {
+            Action = "updated",
+            Workout = existingWorkout,
+            SplitsCount = deviceLaps.Count
+        };
     }
 
     private List<WorkoutSplit> BuildSplitsWithHeartRate(

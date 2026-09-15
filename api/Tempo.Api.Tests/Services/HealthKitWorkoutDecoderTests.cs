@@ -193,6 +193,7 @@ public class HealthKitWorkoutDecoderTests
         result.Decoded!.DistanceM.Should().Be(5000);
         result.Decoded.DurationS.Should().Be(1800);
         result.Decoded.SeriesPoints.Should().BeNull();
+        result.Decoded.Laps.Should().BeEmpty();
         result.Overlay!.Source.Should().Be("healthkit");
         result.Overlay.HealthKitUuid.Should().Be(Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890"));
         result.Overlay.RawHealthKitDataJson.Should().NotBeNullOrEmpty();
@@ -202,6 +203,106 @@ public class HealthKitWorkoutDecoderTests
         result.Decoded.TrackPoints.Should().HaveCount(3);
         result.Decoded.TrackPoints[0].HeartRateBpm.Should().Be(140);
         result.Decoded.TrackPoints[0].PowerWatts.Should().Be(250);
+    }
+
+    [Fact]
+    public void Decode_WithTwoLaps_MapsSummariesWithoutElapsed()
+    {
+        var request = ValidOutdoorRequest();
+        request.Laps = new List<HealthKitLapDto>
+        {
+            new()
+            {
+                EndedAt = "2024-06-15T10:10:00Z",
+                DistanceM = 1609,
+                DurationS = 600,
+                AvgHeartRateBpm = 148
+            },
+            new()
+            {
+                EndedAt = "2024-06-15T10:22:01Z",
+                DistanceM = 1609,
+                DurationS = 600,
+                AvgHeartRateBpm = 152
+            },
+            new()
+            {
+                EndedAt = "2024-06-15T10:22:06Z",
+                DistanceM = 13,
+                DurationS = 5
+            }
+        };
+
+        var result = _decoder.Decode(request);
+
+        result.Success.Should().BeTrue();
+        result.Decoded!.Laps.Should().HaveCount(3);
+        result.Decoded.Laps[0].Timestamp.Should().Be(new DateTime(2024, 6, 15, 10, 10, 0, DateTimeKind.Utc));
+        result.Decoded.Laps[0].StartTime.Should().BeNull();
+        result.Decoded.Laps[0].TimerS.Should().Be(600);
+        result.Decoded.Laps[0].ElapsedS.Should().BeNull();
+        result.Decoded.Laps[0].AvgHeartRateBpm.Should().Be(148);
+        result.Decoded.Laps[2].DistanceM.Should().Be(13);
+        result.Overlay!.RawHealthKitDataJson.Should().Contain("\"laps\"");
+    }
+
+    [Fact]
+    public void Decode_WithEmptyLaps_LeavesLapsEmpty()
+    {
+        var request = ValidOutdoorRequest();
+        request.Laps = new List<HealthKitLapDto>();
+
+        var result = _decoder.Decode(request);
+
+        result.Success.Should().BeTrue();
+        result.Decoded!.Laps.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Decode_WithOneLap_KeepsSingleCandidate()
+    {
+        var request = ValidOutdoorRequest();
+        request.Laps = new List<HealthKitLapDto>
+        {
+            new() { EndedAt = "2024-06-15T10:30:00Z", DistanceM = 5000, DurationS = 1800 }
+        };
+
+        var result = _decoder.Decode(request);
+
+        result.Success.Should().BeTrue();
+        result.Decoded!.Laps.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Decode_RejectsInvalidLapEndedAt()
+    {
+        var request = ValidOutdoorRequest();
+        request.Laps = new List<HealthKitLapDto>
+        {
+            new() { EndedAt = "not-a-date", DistanceM = 1609, DurationS = 600 },
+            new() { EndedAt = "2024-06-15T10:20:00Z", DistanceM = 1609, DurationS = 600 }
+        };
+
+        var result = _decoder.Decode(request);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("endedAt");
+    }
+
+    [Fact]
+    public void Decode_RejectsDecreasingLapEndedAt()
+    {
+        var request = ValidOutdoorRequest();
+        request.Laps = new List<HealthKitLapDto>
+        {
+            new() { EndedAt = "2024-06-15T10:20:00Z", DistanceM = 1609, DurationS = 600 },
+            new() { EndedAt = "2024-06-15T10:10:00Z", DistanceM = 1609, DurationS = 600 }
+        };
+
+        var result = _decoder.Decode(request);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("non-decreasing");
     }
 
     private static HealthKitImportRequest ValidOutdoorRequest(int schemaVersion = 1) => new()
