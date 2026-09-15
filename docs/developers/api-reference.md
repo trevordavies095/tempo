@@ -376,6 +376,7 @@ Query parameters:
 - `pageSize` - Items per page (default: 20)
 
 List and detail responses include nullable `healthKitUuid` for tempo-ios already-imported badging.
+List and detail also include nullable `timerTimeS` (FIT timer seconds when present). `durationS` remains elapsed (wall clock); do not treat it as timer time.
 
 ### List HealthKit UUIDs
 
@@ -407,6 +408,7 @@ GET /workouts/{id}
 ```
 
 Detail includes top-level `healthKitUuid` when the workout was imported (or stamped) from HealthKit.
+Detail also includes nullable `timerTimeS` next to `movingTimeS`. `durationS` is always elapsed.
 ### Update Workout
 
 Update workout details (e.g., activity name, shoe assignment):

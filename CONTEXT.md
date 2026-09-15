@@ -29,7 +29,7 @@ Wall-clock duration of a Workout from start to finish, including pauses. Stored 
 _Avoid_: duration (when the clock is unspecified), timer time, moving time
 
 **Timer time**:
-Time the recording device was running, pauses excluded. Garmin Connect’s primary duration (`total_timer_time` in FIT). Not the same as elapsed or moving.
+Time the recording device was running, pauses excluded. Garmin Connect’s primary duration (`total_timer_time` in FIT). Stored as `Workout.TimerTimeS`. Not the same as elapsed or moving.
 _Avoid_: elapsed time, moving time, DurationS (as this clock)
 
 **Moving time**:

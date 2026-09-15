@@ -1,6 +1,7 @@
 import { formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
 import type { WorkoutDetail } from '@/lib/api';
 import type { UnitPreference } from '@/lib/settings';
+import { overviewDurationDisplay } from '@/lib/workoutClocks';
 import { WeatherDisplay } from '@/components/WeatherDisplay';
 
 export function WorkoutOverviewMetrics({
@@ -10,6 +11,7 @@ export function WorkoutOverviewMetrics({
   workout: WorkoutDetail;
   unitPreference: UnitPreference;
 }) {
+  const durationDisplay = overviewDurationDisplay(workout);
   const hasAdditionalDetails =
     workout.elevGainM !== null ||
     workout.calories !== null ||
@@ -19,11 +21,11 @@ export function WorkoutOverviewMetrics({
     workout.maxCadenceRpm !== null ||
     workout.avgCadenceRpm !== null ||
     workout.maxPowerWatts !== null ||
-    workout.avgPowerWatts !== null;
+    workout.avgPowerWatts !== null ||
+    durationDisplay.showElapsedSubtitle ||
+    durationDisplay.showMovingInAdditionalDetails;
   const hasWeather = !!workout.weather;
   const bothExist = hasAdditionalDetails && hasWeather;
-  const showMovingTime =
-    workout.movingTimeS !== null && workout.movingTimeS !== workout.durationS;
 
   return (
     <div className="space-y-2.5">
@@ -45,15 +47,11 @@ export function WorkoutOverviewMetrics({
             </div>
           </div>
           <div className="min-w-0">
-            <div className="text-xs text-muted mb-1">
-              {showMovingTime ? 'Moving Time' : 'Duration'}
-            </div>
+            <div className="text-xs text-muted mb-1">{durationDisplay.heroLabel}</div>
             <div className="text-2xl font-bold text-ink">
-              {showMovingTime
-                ? formatDuration(workout.movingTimeS!)
-                : formatDuration(workout.durationS)}
+              {formatDuration(durationDisplay.heroSeconds)}
             </div>
-            {showMovingTime && (
+            {durationDisplay.showElapsedSubtitle && (
               <div className="text-xs text-muted mt-1">
                 Elapsed: {formatDuration(workout.durationS)}
               </div>
@@ -90,11 +88,19 @@ export function WorkoutOverviewMetrics({
                     </span>
                   </div>
                 )}
-                {showMovingTime && (
+                {durationDisplay.showElapsedSubtitle && (
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-muted">Elapsed Time</span>
                     <span className="text-sm font-semibold text-ink">
                       {formatDuration(workout.durationS)}
+                    </span>
+                  </div>
+                )}
+                {durationDisplay.showMovingInAdditionalDetails && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-muted">Moving Time</span>
+                    <span className="text-sm font-semibold text-ink">
+                      {formatDuration(workout.movingTimeS!)}
                     </span>
                   </div>
                 )}

@@ -97,6 +97,7 @@ public static class WorkoutQueryService
             MaxSpeedMps = w.MaxSpeedMps,
             AvgSpeedMps = w.AvgSpeedMps,
             MovingTimeS = w.MovingTimeS,
+            TimerTimeS = w.TimerTimeS,
             MaxHeartRateBpm = w.MaxHeartRateBpm,
             AvgHeartRateBpm = w.AvgHeartRateBpm,
             MinHeartRateBpm = w.MinHeartRateBpm,

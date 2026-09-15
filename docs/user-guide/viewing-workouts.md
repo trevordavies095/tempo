@@ -58,7 +58,7 @@ Map, splits, and time-series charts share one **Highlight**: a split index and/o
 
 Detailed metrics including:
 - **Distance** - Total distance in your preferred units
-- **Time** - Duration, moving time, and elapsed time
+- **Time** - On Workout overview, when FIT timer time differs from elapsed, the primary Duration is timer time with elapsed shown underneath; Moving Time appears under Additional Details only when it differs from that hero clock. Without timer, Moving Time still promotes over elapsed when they differ (same as before). Workout cards and the activities table show a single duration number (timer when it differs from elapsed; they do not promote moving). Analytics Duration sums remain elapsed.
 - **Pace** - Average, best, and current pace
 - **Elevation** - Gain, loss, min, and max elevation
 - **Heart Rate** - Average, max, and zones

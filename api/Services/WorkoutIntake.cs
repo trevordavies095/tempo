@@ -156,9 +156,6 @@ public class WorkoutIntake
             var distanceMeters = decoded.DistanceM;
             var durationSeconds = decoded.DurationS;
             var trackPoints = decoded.TrackPoints;
-            var avgPaceS = distanceMeters > 0 && durationSeconds > 0
-                ? durationSeconds / (distanceMeters / 1000.0)
-                : 0;
 
             var calculated = ExtractCalculatedMetrics(decoded.RawGpxDataJson);
 
@@ -199,11 +196,12 @@ public class WorkoutIntake
                 return await HandleDuplicateAsync(existingWorkout, decoded, overlay, startedAtUtc);
             }
 
-            var workout = CreateWorkoutEntity(decoded, startedAtUtc, avgPaceS, overlay);
+            var workout = CreateWorkoutEntity(decoded, startedAtUtc, overlay);
 
             PopulateWorkoutMetrics(workout, calculated, decoded.RawFitDataJson);
             PopulateMetricsFromStrava(workout, overlay?.RawStravaDataJson);
             PopulateMetricsFromHealthKitOverlay(workout, overlay);
+            WorkoutClocks.ApplyAvgPace(workout);
 
             var splitDistanceMeters = await GetSplitDistanceMetersAsync();
             var geometry = _trackGeometry.Derive(
@@ -423,6 +421,12 @@ public class WorkoutIntake
         if (fileType == "fit" && rawFitDataJson != null)
         {
             existingWorkout.RawFitData = rawFitDataJson;
+            PopulateWorkoutMetrics(
+                existingWorkout,
+                ExtractCalculatedMetrics(null),
+                rawFitDataJson);
+            PopulateMetricsFromStrava(existingWorkout, overlay?.RawStravaDataJson);
+            WorkoutClocks.ApplyAvgPace(existingWorkout);
         }
 
         if (fileType == "gpx" && rawGpxDataJson != null)
@@ -635,7 +639,6 @@ public class WorkoutIntake
     private static Workout CreateWorkoutEntity(
         DecodedWorkout decoded,
         DateTime startedAtUtc,
-        double avgPaceS,
         WorkoutIntakeOverlay? overlay)
     {
         var fileType = decoded.RawFileType ?? string.Empty;
@@ -647,7 +650,7 @@ public class WorkoutIntake
             StartedAt = startedAtUtc,
             DurationS = decoded.DurationS,
             DistanceM = decoded.DistanceM,
-            AvgPaceS = avgPaceS,
+            AvgPaceS = 0,
             RawFileData = decoded.RawFileData,
             RawFileName = decoded.RawFileName,
             RawFileType = decoded.RawFileType,
@@ -741,8 +744,10 @@ public class WorkoutIntake
                 var rawFit = JsonSerializer.Deserialize<JsonElement>(rawFitDataJson);
                 if (rawFit.TryGetProperty("session", out var sessionElement))
                 {
-                    if (sessionElement.TryGetProperty("totalMovingTime", out var movingTime) && movingTime.ValueKind == JsonValueKind.Number)
-                        workout.MovingTimeS = (int)Math.Round(movingTime.GetDouble());
+                    if (sessionElement.TryGetProperty("totalMovingTime", out var movingTime))
+                        workout.MovingTimeS = WorkoutClocks.SecondsFromJsonNumber(movingTime);
+                    if (sessionElement.TryGetProperty("totalTimerTime", out var timerTime))
+                        workout.TimerTimeS = WorkoutClocks.SecondsFromJsonNumber(timerTime);
                     if (sessionElement.TryGetProperty("maxHeartRate", out var maxHr) && maxHr.ValueKind == JsonValueKind.Number)
                         workout.MaxHeartRateBpm = (byte)maxHr.GetInt32();
                     if (sessionElement.TryGetProperty("avgHeartRate", out var avgHr) && avgHr.ValueKind == JsonValueKind.Number)
@@ -807,8 +812,8 @@ public class WorkoutIntake
             return;
         }
 
-        if (stravaData.TryGetValue("movingTime", out var stravaMovingTime) && stravaMovingTime is JsonElement stravaMovingTimeElem && stravaMovingTimeElem.ValueKind == JsonValueKind.Number)
-            workout.MovingTimeS = (int)Math.Round(stravaMovingTimeElem.GetDouble());
+        if (stravaData.TryGetValue("movingTime", out var stravaMovingTime) && stravaMovingTime is JsonElement stravaMovingTimeElem)
+            workout.MovingTimeS = WorkoutClocks.SecondsFromJsonNumber(stravaMovingTimeElem);
         if (stravaData.TryGetValue("maxHeartRate", out var stravaMaxHr) && stravaMaxHr is JsonElement stravaMaxHrElem && stravaMaxHrElem.ValueKind == JsonValueKind.Number)
             workout.MaxHeartRateBpm = (byte)stravaMaxHrElem.GetInt32();
         if (stravaData.TryGetValue("avgHeartRate", out var stravaAvgHr) && stravaAvgHr is JsonElement stravaAvgHrElem && stravaAvgHrElem.ValueKind == JsonValueKind.Number)

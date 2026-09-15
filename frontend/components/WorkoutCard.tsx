@@ -4,6 +4,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { type WorkoutListItem } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDateTime, getWorkoutDisplayName } from '@/lib/format';
+import { listDisplayDurationS } from '@/lib/workoutClocks';
 import { useSettings } from '@/lib/settings';
 import { Card } from '@/components/ui/Card';
 
@@ -78,7 +79,7 @@ export default function WorkoutCard({ workout }: WorkoutCardProps) {
           </div>
           <div>
             <div className="text-2xl font-bold text-ink">
-              {formatDuration(workout.durationS)}
+              {formatDuration(listDisplayDurationS(workout))}
             </div>
             <div className="text-xs text-muted uppercase tracking-wide mt-1">
               Time

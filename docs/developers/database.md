@@ -16,7 +16,8 @@ Core workout entity with statistics and metadata.
 - `Id` (Guid, Primary Key)
 - `ActivityName` (string, nullable)
 - `StartedAt` (DateTime)
-- `DurationS` (double)
+- `DurationS` (int) - Total elapsed time (wall clock, including pauses)
+- `TimerTimeS` (int, nullable) - FIT timer time (`total_timer_time`); Garmin’s primary duration when present
 - `DistanceM` (double)
 - `ElevationGainM` (double, nullable)
 - `ElevationLossM` (double, nullable)
