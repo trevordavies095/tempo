@@ -161,6 +161,8 @@ builder.Services.AddScoped<SplitHeartRateBackfillService>();
 builder.Services.AddHostedService<SplitHeartRateBackfillWorker>();
 builder.Services.AddScoped<CadenceBackfillService>();
 builder.Services.AddHostedService<CadenceBackfillWorker>();
+builder.Services.AddScoped<TimerTimeBackfillService>();
+builder.Services.AddHostedService<TimerTimeBackfillWorker>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();

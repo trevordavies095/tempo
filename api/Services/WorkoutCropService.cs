@@ -88,9 +88,10 @@ public class WorkoutCropService
         workout.StartedAt = newStartedAt;
         workout.DistanceM = geometry.DistanceM;
         workout.ElevGainM = geometry.ElevGainM;
-        workout.AvgPaceS = newDurationS > 0 && workout.DistanceM > 0
-            ? newDurationS / (workout.DistanceM / 1000.0)
-            : 0;
+        // Watch session clocks are invalid for a sliced activity; pace from remaining elapsed.
+        workout.TimerTimeS = null;
+        workout.MovingTimeS = null;
+        WorkoutClocks.ApplyAvgPace(workout);
 
         workout.Route.RouteGeoJson = geometry.Route.RouteGeoJson;
         workout.Route.PreviewGeoJson = geometry.Route.PreviewGeoJson;
