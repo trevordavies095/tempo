@@ -359,10 +359,41 @@ public class FitParserServiceTests
         act.Should().Throw<Exception>();
     }
 
+    [Fact]
+    public void ParseFit_DurationSeconds_UsesElapsedNotTimer()
+    {
+        var fitBytes = CreateFitWithClocks(elapsedSeconds: 1200f, timerSeconds: 1000f);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = _parser.ParseFit(stream);
+
+        result.DurationSeconds.Should().Be(1200);
+        using var doc = JsonDocument.Parse(result.RawFitDataJson!);
+        doc.RootElement.GetProperty("session").GetProperty("totalElapsedTime").GetDouble()
+            .Should().BeApproximately(1200, 0.01);
+        doc.RootElement.GetProperty("session").GetProperty("totalTimerTime").GetDouble()
+            .Should().BeApproximately(1000, 0.01);
+    }
+
     private static byte[] CreateIndoorFitWithCadence(
         byte strideCadence,
         byte avgCadence,
         byte maxCadence)
+    {
+        return CreateFitWithClocks(
+            elapsedSeconds: 1200f,
+            timerSeconds: 1200f,
+            strideCadence: strideCadence,
+            avgCadence: avgCadence,
+            maxCadence: maxCadence);
+    }
+
+    private static byte[] CreateFitWithClocks(
+        float elapsedSeconds,
+        float timerSeconds,
+        byte? strideCadence = null,
+        byte? avgCadence = null,
+        byte? maxCadence = null)
     {
         var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
         var fitStart = new FitDateTime(start);
@@ -380,19 +411,28 @@ public class FitParserServiceTests
             var record = new RecordMesg();
             record.SetTimestamp(new FitDateTime(start.AddMinutes(i * 10)));
             record.SetDistance(i * 1200f);
-            record.SetCadence(strideCadence);
+            if (strideCadence.HasValue)
+            {
+                record.SetCadence(strideCadence.Value);
+            }
             encode.Write(record);
         }
 
         var session = new SessionMesg();
         session.SetStartTime(fitStart);
         session.SetTimestamp(new FitDateTime(start.AddMinutes(20)));
-        session.SetTotalElapsedTime(1200f);
-        session.SetTotalTimerTime(1200f);
+        session.SetTotalElapsedTime(elapsedSeconds);
+        session.SetTotalTimerTime(timerSeconds);
         session.SetTotalDistance(2400f);
         session.SetSport(Sport.Running);
-        session.SetAvgCadence(avgCadence);
-        session.SetMaxCadence(maxCadence);
+        if (avgCadence.HasValue)
+        {
+            session.SetAvgCadence(avgCadence.Value);
+        }
+        if (maxCadence.HasValue)
+        {
+            session.SetMaxCadence(maxCadence.Value);
+        }
         encode.Write(session);
         encode.Close();
 

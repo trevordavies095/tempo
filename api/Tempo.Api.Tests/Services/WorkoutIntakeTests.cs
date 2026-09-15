@@ -252,6 +252,127 @@ public class WorkoutIntakeTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessAsync_Created_Fit_StoresTimerAndPaceFromTimer()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(elapsedSeconds: 1200f, timerSeconds: 1000f);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "paused.fit");
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.DurationS.Should().Be(1200);
+        stored.TimerTimeS.Should().Be(1000);
+        stored.AvgPaceS.Should().BeApproximately(1000 / (stored.DistanceM / 1000.0), 0.01);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Created_Gpx_LeavesTimerNull()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var stream = CreateGpxStream();
+
+        var result = await _intake.ProcessAsync(stream, "morning.gpx");
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.TimerTimeS.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKit_LeavesTimerNull()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded();
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.TimerTimeS.Should().BeNull();
+        stored.AvgPaceS.Should().BeApproximately(stored.DurationS / (stored.DistanceM / 1000.0), 0.01);
+    }
+
+    [Fact]
+    public async Task PersistAsync_StravaMoving_NoTimer_PaceFromMoving()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var decoded = new DecodedWorkout
+        {
+            StartedAt = start,
+            DurationS = 1800,
+            DistanceM = 5000,
+            TrackPoints = new List<TrackPoint>
+            {
+                new() { Latitude = 37.7749, Longitude = -122.4194, Time = start },
+                new()
+                {
+                    Latitude = 37.7849,
+                    Longitude = -122.4094,
+                    Time = start.AddSeconds(1800)
+                }
+            },
+            RawFileType = "gpx",
+            RawFileName = "strava.gpx",
+            RawFileData = new byte[] { 1 },
+            RawGpxDataJson = "{}"
+        };
+        var overlay = new WorkoutIntakeOverlay
+        {
+            Source = "strava_import",
+            RawStravaDataJson = """{"movingTime":1500}"""
+        };
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.TimerTimeS.Should().BeNull();
+        stored.MovingTimeS.Should().Be(1500);
+        stored.AvgPaceS.Should().BeApproximately(1500 / 5.0, 0.01);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Updated_Fit_FillsTimerAndPaceWithoutChangingDuration()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(elapsedSeconds: 1200f, timerSeconds: 1000f);
+        using (var parseStream = new MemoryStream(fitBytes))
+        {
+            var parsed = _fitParser.ParseFit(parseStream);
+            var existing = new Workout
+            {
+                StartedAt = parsed.StartTime,
+                DurationS = parsed.DurationSeconds,
+                DistanceM = parsed.DistanceMeters,
+                AvgPaceS = parsed.DurationSeconds / (parsed.DistanceMeters / 1000.0),
+                ElevGainM = 42,
+                RawFileData = new byte[] { 1, 2, 3 },
+                RawFileName = "old.fit",
+                RawFileType = "fit",
+                RawFitData = """{"session":{}}""",
+                Source = "fit_import",
+                RunType = "Easy Run",
+                CreatedAt = System.DateTime.UtcNow
+            };
+            _db.Workouts.Add(existing);
+            await _db.SaveChangesAsync();
+
+            var originalDuration = existing.DurationS;
+            using var stream = new MemoryStream(fitBytes);
+            var result = await _intake.ProcessAsync(stream, "run.fit");
+
+            result.Action.Should().Be("updated");
+            var updated = await _db.Workouts.SingleAsync();
+            updated.DurationS.Should().Be(originalDuration);
+            updated.TimerTimeS.Should().Be(1000);
+            updated.AvgPaceS.Should().BeApproximately(1000 / (updated.DistanceM / 1000.0), 0.01);
+        }
+    }
+
+    [Fact]
     public async Task ProcessAsync_Skipped_WhenRawDataComplete()
     {
         await TestDataSeeder.SeedUserSettingsAsync(_db);
@@ -852,7 +973,10 @@ public class WorkoutIntakeTests : IDisposable
         return new MemoryStream(Encoding.UTF8.GetBytes(xml));
     }
 
-    private static byte[] CreateMinimalFitBytes()
+    private static byte[] CreateMinimalFitBytes(
+        float elapsedSeconds = 1200f,
+        float timerSeconds = 1200f,
+        float? movingSeconds = null)
     {
         var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
         var fitStart = new FitDateTime(start);
@@ -881,8 +1005,12 @@ public class WorkoutIntakeTests : IDisposable
         var session = new SessionMesg();
         session.SetStartTime(fitStart);
         session.SetTimestamp(new FitDateTime(start.AddMinutes(20)));
-        session.SetTotalElapsedTime(1200f);
-        session.SetTotalTimerTime(1200f);
+        session.SetTotalElapsedTime(elapsedSeconds);
+        session.SetTotalTimerTime(timerSeconds);
+        if (movingSeconds.HasValue)
+        {
+            session.SetTotalMovingTime(movingSeconds.Value);
+        }
         session.SetTotalDistance(2400f);
         session.SetSport(Sport.Running);
         encode.Write(session);

@@ -60,7 +60,8 @@ public static class DatabaseMigrationHelper
         { ("WorkoutSplits", "Kind"), "20260915164417_AddWorkoutSplitKindAndElapsedBounds" },
         { ("WorkoutSplits", "StartElapsedS"), "20260915164417_AddWorkoutSplitKindAndElapsedBounds" },
         { ("WorkoutSplits", "EndElapsedS"), "20260915164417_AddWorkoutSplitKindAndElapsedBounds" },
-        { ("WorkoutSplits", "StartDistanceM"), "20260915164417_AddWorkoutSplitKindAndElapsedBounds" }
+        { ("WorkoutSplits", "StartDistanceM"), "20260915164417_AddWorkoutSplitKindAndElapsedBounds" },
+        { ("Workouts", "TimerTimeS"), "20260915174809_AddWorkoutTimerTimeS" }
     };
 
     private const string ProductVersion = "10.0.0";

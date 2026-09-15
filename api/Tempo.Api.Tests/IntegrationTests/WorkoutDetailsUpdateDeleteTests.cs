@@ -353,6 +353,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
             workout.MaxSpeedMps = 5.5;
             workout.AvgSpeedMps = 2.78;
             workout.MovingTimeS = 3500;
+            workout.TimerTimeS = 3400;
             workout.MaxHeartRateBpm = 180;
             workout.AvgHeartRateBpm = 150;
             workout.MinHeartRateBpm = 120;
@@ -387,6 +388,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         result.MaxSpeedMps.Should().Be(5.5);
         result.AvgSpeedMps.Should().Be(2.78);
         result.MovingTimeS.Should().Be(3500);
+        result.TimerTimeS.Should().Be(3400);
         result.MaxHeartRateBpm.Should().Be(180);
         result.AvgHeartRateBpm.Should().Be(150);
         result.MinHeartRateBpm.Should().Be(120);
@@ -1407,6 +1409,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public double? MaxSpeedMps { get; set; }
         public double? AvgSpeedMps { get; set; }
         public int? MovingTimeS { get; set; }
+        public int? TimerTimeS { get; set; }
         public byte? MaxHeartRateBpm { get; set; }
         public byte? AvgHeartRateBpm { get; set; }
         public byte? MinHeartRateBpm { get; set; }

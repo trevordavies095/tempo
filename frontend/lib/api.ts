@@ -118,6 +118,7 @@ export interface WorkoutListItem {
   maxSpeedMps: number | null;
   avgSpeedMps: number | null;
   movingTimeS: number | null;
+  timerTimeS: number | null;
   maxHeartRateBpm: number | null;
   avgHeartRateBpm: number | null;
   minHeartRateBpm: number | null;
@@ -175,6 +176,7 @@ export interface WorkoutDetail {
   maxSpeedMps: number | null;
   avgSpeedMps: number | null;
   movingTimeS: number | null;
+  timerTimeS: number | null;
   maxHeartRateBpm: number | null;
   avgHeartRateBpm: number | null;
   minHeartRateBpm: number | null;
