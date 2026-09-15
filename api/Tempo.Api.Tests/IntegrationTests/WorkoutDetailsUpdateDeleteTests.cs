@@ -152,9 +152,10 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
             workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Out-of-order Splits");
 
             // Insert out of Idx order so heap/insertion order would fail the assertion
+            var orderedSplits = new List<WorkoutSplit>();
             foreach (var idx in new[] { 2, 0, 1 })
             {
-                db.WorkoutSplits.Add(new WorkoutSplit
+                orderedSplits.Add(new WorkoutSplit
                 {
                     WorkoutId = workout.Id,
                     Idx = idx,
@@ -164,6 +165,8 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
                     AvgHeartRateBpm = idx == 1 ? (byte?)150 : null
                 });
             }
+            WorkoutSplitElapsed.FillFromCumulativeDuration(orderedSplits);
+            db.WorkoutSplits.AddRange(orderedSplits);
             await db.SaveChangesAsync();
         }
 
@@ -175,6 +178,14 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         result!.Splits.Should().HaveCount(3);
         result.Splits.Select(s => s.Idx).Should().Equal(0, 1, 2);
         result.Splits.Select(s => s.AvgHeartRateBpm).Should().Equal(null, (byte?)150, null);
+        result.Splits.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        result.Splits[0].StartElapsedS.Should().Be(0);
+        result.Splits[0].EndElapsedS.Should().Be(360);
+        result.Splits[1].StartElapsedS.Should().Be(360);
+        result.Splits[1].EndElapsedS.Should().Be(721);
+        result.Splits[2].StartElapsedS.Should().Be(721);
+        result.Splits[2].EndElapsedS.Should().Be(1083);
+        result.Splits.Should().OnlyContain(s => s.StartDistanceM == null);
     }
 
     [Fact]
@@ -189,9 +200,10 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Strap Mid-run", distanceM: 3000, durationS: 900);
             workout.AvgHeartRateBpm = 155;
+            var midRunSplits = new List<WorkoutSplit>();
             for (var idx = 0; idx < 3; idx++)
             {
-                db.WorkoutSplits.Add(new WorkoutSplit
+                midRunSplits.Add(new WorkoutSplit
                 {
                     WorkoutId = workout.Id,
                     Idx = idx,
@@ -200,6 +212,8 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
                     PaceS = 300
                 });
             }
+            WorkoutSplitElapsed.FillFromCumulativeDuration(midRunSplits);
+            db.WorkoutSplits.AddRange(midRunSplits);
 
             db.WorkoutTimeSeries.AddRange(
                 new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 0, DistanceM = 100, HeartRateBpm = null },
@@ -1389,10 +1403,14 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
     private class SplitResponse
     {
         public int Idx { get; set; }
+        public string Kind { get; set; } = string.Empty;
         public double DistanceM { get; set; }
         public int DurationS { get; set; }
         public int PaceS { get; set; }
         public byte? AvgHeartRateBpm { get; set; }
+        public int StartElapsedS { get; set; }
+        public int EndElapsedS { get; set; }
+        public double? StartDistanceM { get; set; }
     }
 
     private class ShoeResponse

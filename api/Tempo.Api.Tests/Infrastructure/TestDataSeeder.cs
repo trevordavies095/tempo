@@ -231,6 +231,7 @@ public static class TestDataSeeder
             splits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
+                Kind = WorkoutSplitKinds.Distance,
                 Idx = i,
                 DistanceM = splitDistance,
                 DurationS = splitDuration,
@@ -248,6 +249,7 @@ public static class TestDataSeeder
             splits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
+                Kind = WorkoutSplitKinds.Distance,
                 Idx = numSplits,
                 DistanceM = remainingDistance,
                 DurationS = remainingDuration,
@@ -255,6 +257,7 @@ public static class TestDataSeeder
             });
         }
 
+        WorkoutSplitElapsed.FillFromCumulativeDuration(splits);
         db.WorkoutSplits.AddRange(splits);
         await db.SaveChangesAsync();
         return splits;

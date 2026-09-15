@@ -383,10 +383,10 @@ public class WorkoutQueryServiceTests : IDisposable
         _db.Workouts.Add(workout);
         await _db.SaveChangesAsync();
 
-        // Insert out of Idx order so heap/insertion order would fail the assertion
+        var splits = new List<WorkoutSplit>();
         foreach (var idx in new[] { 2, 0, 1 })
         {
-            _db.WorkoutSplits.Add(new WorkoutSplit
+            splits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
                 Idx = idx,
@@ -395,6 +395,8 @@ public class WorkoutQueryServiceTests : IDisposable
                 PaceS = 360
             });
         }
+        WorkoutSplitElapsed.FillFromCumulativeDuration(splits);
+        _db.WorkoutSplits.AddRange(splits);
         await _db.SaveChangesAsync();
 
         var result = await WorkoutQueryService.QueryDetail(_db, workout.Id, includeRaw)
@@ -420,9 +422,10 @@ public class WorkoutQueryServiceTests : IDisposable
         _db.Workouts.Add(workout);
         await _db.SaveChangesAsync();
 
+        var listSplits = new List<WorkoutSplit>();
         for (var i = 0; i < 4; i++)
         {
-            _db.WorkoutSplits.Add(new WorkoutSplit
+            listSplits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
                 Idx = i,
@@ -431,6 +434,8 @@ public class WorkoutQueryServiceTests : IDisposable
                 PaceS = 360
             });
         }
+        WorkoutSplitElapsed.FillFromCumulativeDuration(listSplits);
+        _db.WorkoutSplits.AddRange(listSplits);
         await _db.SaveChangesAsync();
 
         var sql = WorkoutQueryService.QueryListPage(_db.Workouts.AsNoTracking()).ToQueryString();

@@ -209,10 +209,14 @@ export interface WorkoutDetail {
   } | null;
   splits: Array<{
     idx: number;
+    kind: string;
     distanceM: number;
     durationS: number;
     paceS: number;
     avgHeartRateBpm: number | null;
+    startElapsedS: number;
+    endElapsedS: number;
+    startDistanceM: number | null;
   }>;
 }
 

@@ -57,9 +57,11 @@ public class TrackGeometry
     {
         var positioned = points.Where(p => p.HasPosition).ToList();
         var splits = positioned.Count >= 2
-            ? CalculateSplitsFromHaversine(positioned, distanceMeters, durationSeconds, splitDistanceMeters, workoutId)
+            ? CalculateSplitsFromHaversine(
+                positioned, startedAt, distanceMeters, durationSeconds, splitDistanceMeters, workoutId)
             : CalculateSplitsFromDistanceStream(
                 ResolveDistanceStream(points, seriesPoints),
+                startedAt,
                 distanceMeters,
                 durationSeconds,
                 splitDistanceMeters,
@@ -407,6 +409,7 @@ public class TrackGeometry
 
     private static List<WorkoutSplit> CalculateSplitsFromHaversine(
         List<TrackPoint> trackPoints,
+        DateTime startedAt,
         double distanceMeters,
         int durationSeconds,
         double splitDistanceMeters,
@@ -429,13 +432,15 @@ public class TrackGeometry
                 EmitSplit(
                     splits,
                     trackPoints,
+                    startedAt,
                     workoutId,
                     ref splitIndex,
                     splitStartIndex,
                     i,
                     accumulatedDistance - splitStartDistance,
                     distanceMeters,
-                    durationSeconds);
+                    durationSeconds,
+                    startDistanceM: null);
 
                 splitStartDistance = accumulatedDistance;
                 lastSplitStartIndex = splitStartIndex;
@@ -446,6 +451,7 @@ public class TrackGeometry
         FinalizeRemainder(
             splits,
             trackPoints,
+            startedAt,
             workoutId,
             splitIndex,
             splitStartIndex,
@@ -453,13 +459,16 @@ public class TrackGeometry
             accumulatedDistance - splitStartDistance,
             splitDistanceMeters,
             distanceMeters,
-            durationSeconds);
+            durationSeconds,
+            setStartDistanceM: false);
 
+        AbutElapsedWindows(splits);
         return splits;
     }
 
     private static List<WorkoutSplit> CalculateSplitsFromDistanceStream(
         List<TrackPoint> distancePoints,
+        DateTime startedAt,
         double distanceMeters,
         int durationSeconds,
         double splitDistanceMeters,
@@ -486,13 +495,15 @@ public class TrackGeometry
                 EmitSplit(
                     splits,
                     distancePoints,
+                    startedAt,
                     workoutId,
                     ref splitIndex,
                     splitStartIndex,
                     i,
                     accumulatedDistance - splitStartDistance,
                     distanceMeters,
-                    durationSeconds);
+                    durationSeconds,
+                    startDistanceM: distancePoints[splitStartIndex].DistanceM);
 
                 splitStartDistance = accumulatedDistance;
                 lastSplitStartIndex = splitStartIndex;
@@ -503,6 +514,7 @@ public class TrackGeometry
         FinalizeRemainder(
             splits,
             distancePoints,
+            startedAt,
             workoutId,
             splitIndex,
             splitStartIndex,
@@ -510,40 +522,52 @@ public class TrackGeometry
             accumulatedDistance - splitStartDistance,
             splitDistanceMeters,
             distanceMeters,
-            durationSeconds);
+            durationSeconds,
+            setStartDistanceM: true);
 
+        AbutElapsedWindows(splits);
         return splits;
     }
 
     private static void EmitSplit(
         List<WorkoutSplit> splits,
         List<TrackPoint> trackPoints,
+        DateTime startedAt,
         Guid workoutId,
         ref int splitIndex,
         int splitStartIndex,
         int endIndex,
         double splitDistance,
         double distanceMeters,
-        int durationSeconds)
+        int durationSeconds,
+        double? startDistanceM)
     {
         var splitDuration = SplitDuration(
             trackPoints, splitStartIndex, endIndex, splitDistance, distanceMeters, durationSeconds);
         var splitPace = splitDuration > 0 ? splitDuration / (splitDistance / 1000.0) : 0;
+        var previousEnd = splits.Count > 0 ? splits[^1].EndElapsedS : 0;
+        var (startElapsed, endElapsed) = SplitElapsedBounds(
+            trackPoints, startedAt, splitStartIndex, endIndex, previousEnd, splitDuration);
 
         splits.Add(new WorkoutSplit
         {
             Id = Guid.NewGuid(),
             WorkoutId = workoutId,
+            Kind = WorkoutSplitKinds.Distance,
             Idx = splitIndex++,
             DistanceM = splitDistance,
             DurationS = splitDuration,
-            PaceS = splitPace
+            PaceS = splitPace,
+            StartElapsedS = startElapsed,
+            EndElapsedS = endElapsed,
+            StartDistanceM = startDistanceM
         });
     }
 
     private static void FinalizeRemainder(
         List<WorkoutSplit> splits,
         List<TrackPoint> trackPoints,
+        DateTime startedAt,
         Guid workoutId,
         int splitIndex,
         int splitStartIndex,
@@ -551,7 +575,8 @@ public class TrackGeometry
         double remainingDistance,
         double splitDistanceMeters,
         double distanceMeters,
-        int durationSeconds)
+        int durationSeconds,
+        bool setStartDistanceM)
     {
         if (remainingDistance <= 0)
         {
@@ -563,13 +588,15 @@ public class TrackGeometry
             EmitSplit(
                 splits,
                 trackPoints,
+                startedAt,
                 workoutId,
                 ref splitIndex,
                 splitStartIndex,
                 trackPoints.Count - 1,
                 remainingDistance,
                 distanceMeters,
-                durationSeconds);
+                durationSeconds,
+                startDistanceM: setStartDistanceM ? trackPoints[splitStartIndex].DistanceM : null);
         }
         else if (splits.Count > 0)
         {
@@ -593,6 +620,46 @@ public class TrackGeometry
             lastSplit.DistanceM = totalLastSplitDistance;
             lastSplit.DurationS = mergedDuration;
             lastSplit.PaceS = mergedDuration > 0 ? mergedDuration / (totalLastSplitDistance / 1000.0) : lastSplit.PaceS;
+
+            if (trackPoints[^1].Time.HasValue)
+            {
+                lastSplit.EndElapsedS = ElapsedFromStart(trackPoints[^1].Time!.Value, startedAt);
+            }
+            else
+            {
+                lastSplit.EndElapsedS = lastSplit.StartElapsedS + mergedDuration;
+            }
+        }
+    }
+
+    private static (int StartElapsedS, int EndElapsedS) SplitElapsedBounds(
+        List<TrackPoint> trackPoints,
+        DateTime startedAt,
+        int startIndex,
+        int endIndex,
+        int previousEndElapsedS,
+        int splitDurationS)
+    {
+        var startHasTime = trackPoints[startIndex].Time.HasValue;
+        var endHasTime = trackPoints[endIndex].Time.HasValue;
+        if (startHasTime && endHasTime)
+        {
+            return (
+                ElapsedFromStart(trackPoints[startIndex].Time!.Value, startedAt),
+                ElapsedFromStart(trackPoints[endIndex].Time!.Value, startedAt));
+        }
+
+        return (previousEndElapsedS, previousEndElapsedS + splitDurationS);
+    }
+
+    private static int ElapsedFromStart(DateTime pointTime, DateTime startedAt) =>
+        (int)(pointTime - startedAt).TotalSeconds;
+
+    private static void AbutElapsedWindows(List<WorkoutSplit> splits)
+    {
+        for (var i = 1; i < splits.Count; i++)
+        {
+            splits[i].StartElapsedS = splits[i - 1].EndElapsedS;
         }
     }
 

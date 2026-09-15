@@ -69,7 +69,10 @@ public class TempoDbContext : DbContext
                 .HasForeignKey(e => e.WorkoutId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasIndex(e => new { e.WorkoutId, e.Idx });
+            entity.HasIndex(e => new { e.WorkoutId, e.Kind, e.Idx }).IsUnique();
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_WorkoutSplits_Kind",
+                "\"Kind\" IN ('distance', 'device_lap')"));
         });
 
         modelBuilder.Entity<WorkoutMedia>(entity =>
