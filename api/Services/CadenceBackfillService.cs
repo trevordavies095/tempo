@@ -37,10 +37,7 @@ public class CadenceBackfillService
     /// </summary>
     public async Task<int> RunAsync(CancellationToken cancellationToken = default)
     {
-        var candidateIds = await CandidateQuery()
-            .OrderBy(w => w.Id)
-            .Select(w => w.Id)
-            .ToListAsync(cancellationToken);
+        var candidateIds = await LoadCandidateIdsAsync(cancellationToken);
 
         var total = candidateIds.Count;
         if (total == 0)
@@ -285,13 +282,37 @@ public class CadenceBackfillService
         return root.ToJsonString(JsonUtils.DefaultOptions);
     }
 
-    private IQueryable<Workout> CandidateQuery()
+    private async Task<List<Guid>> LoadCandidateIdsAsync(CancellationToken cancellationToken)
     {
         // Length > 0 is checked in FillWorkoutAsync — EF cannot translate byte[].Length on SQLite.
-        return _db.Workouts.Where(w =>
-            w.RawFileData != null &&
-            w.RawFitData != null &&
-            w.RawFitData != "" &&
-            !w.RawFitData.Contains(CadenceUnitSpmMarker));
+        var isPostgres = _db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+
+        if (isPostgres)
+        {
+            // jsonb rejects text LIKE/Contains (22P02). Cast to text for the marker scan.
+            return await _db.Database
+                .SqlQueryRaw<Guid>(
+                    """
+                    SELECT w."Id" AS "Value"
+                    FROM "Workouts" AS w
+                    WHERE w."RawFileData" IS NOT NULL
+                      AND w."RawFitData" IS NOT NULL
+                      AND w."RawFitData"::text <> ''
+                      AND w."RawFitData"::text NOT LIKE {0}
+                    ORDER BY w."Id"
+                    """,
+                    "%" + CadenceUnitSpmMarker + "%")
+                .ToListAsync(cancellationToken);
+        }
+
+        return await _db.Workouts
+            .Where(w =>
+                w.RawFileData != null &&
+                w.RawFitData != null &&
+                w.RawFitData != "" &&
+                !w.RawFitData.Contains(CadenceUnitSpmMarker))
+            .OrderBy(w => w.Id)
+            .Select(w => w.Id)
+            .ToListAsync(cancellationToken);
     }
 }
