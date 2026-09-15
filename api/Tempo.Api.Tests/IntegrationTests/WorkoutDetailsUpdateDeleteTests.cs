@@ -189,6 +189,40 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
     }
 
     [Fact]
+    public async Task GetWorkout_ReturnsDeviceLapsOnly_WhenBothKindsExist()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Laps And Miles", distanceM: 5000, durationS: 1800);
+            await TestDataSeeder.SeedWorkoutWithSplitsAsync(db, workout, splitDistanceM: 1000.0);
+            await TestDataSeeder.SeedDeviceLapsAsync(
+                db,
+                workout,
+                (0, 1600, 600, 0, 650),
+                (1, 1700, 620, 650, 1300));
+            workoutId = workout.Id;
+        }
+
+        var response = await client.GetAsync($"/workouts/{workoutId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result.Should().NotBeNull();
+        result!.Splits.Should().HaveCount(2);
+        result.Splits.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.DeviceLap);
+        result.Splits.Select(s => s.Idx).Should().Equal(0, 1);
+        result.Splits[0].StartElapsedS.Should().Be(0);
+        result.Splits[0].EndElapsedS.Should().Be(650);
+        result.Splits[1].StartElapsedS.Should().Be(650);
+        result.Splits[1].EndElapsedS.Should().Be(1300);
+    }
+
+    [Fact]
     public async Task GetWorkout_ReturnsSparseSplitHeartRate_WhenSeriesStartsMidRun()
     {
         await EnsureCleanDatabaseAsync();
@@ -1406,7 +1440,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public string Kind { get; set; } = string.Empty;
         public double DistanceM { get; set; }
         public int DurationS { get; set; }
-        public int PaceS { get; set; }
+        public double PaceS { get; set; }
         public byte? AvgHeartRateBpm { get; set; }
         public int StartElapsedS { get; set; }
         public int EndElapsedS { get; set; }

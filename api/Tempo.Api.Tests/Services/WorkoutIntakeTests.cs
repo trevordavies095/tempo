@@ -131,6 +131,35 @@ public class WorkoutIntakeTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessAsync_Updated_WipesDeviceLaps()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var first = CreateGpxStream();
+        var created = await _intake.ProcessAsync(first, "morning.gpx");
+        created.Action.Should().Be("created");
+
+        var workout = await _db.Workouts.SingleAsync();
+        await TestDataSeeder.SeedDeviceLapsAsync(
+            _db,
+            workout,
+            (0, 1600, 600, 0, 650));
+        (await _db.WorkoutSplits.CountAsync(s =>
+            s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.DeviceLap)).Should().Be(1);
+
+        workout.RawFileData = null;
+        await _db.SaveChangesAsync();
+
+        using var second = CreateGpxStream();
+        var result = await _intake.ProcessAsync(second, "morning.gpx");
+
+        result.Action.Should().Be("updated");
+        var remaining = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        remaining.Should().NotBeEmpty();
+        remaining.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        remaining.Should().NotContain(s => s.Kind == WorkoutSplitKinds.DeviceLap);
+    }
+
+    [Fact]
     public async Task ProcessAsync_Updated_WhenFitJsonMissingTrackPoints()
     {
         await TestDataSeeder.SeedUserSettingsAsync(_db);

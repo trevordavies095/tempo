@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
 namespace Tempo.Api.Tests.Services;
@@ -457,6 +458,37 @@ public class WorkoutQueryServiceTests : IDisposable
             .ToList();
         splitCommands.Should().NotBeEmpty();
         splitCommands.Should().OnlyContain(c => c.Contains("COUNT", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task QueryListPage_SplitsCount_UsesDeviceLapWhenPresent()
+    {
+        var workout = new Workout
+        {
+            StartedAt = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc),
+            DistanceM = 5000,
+            DurationS = 1800,
+            AvgPaceS = 360,
+            Source = "test",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Workouts.Add(workout);
+        await _db.SaveChangesAsync();
+
+        await TestDataSeeder.SeedWorkoutWithSplitsAsync(_db, workout, splitDistanceM: 1000.0);
+        await TestDataSeeder.SeedDeviceLapsAsync(
+            _db,
+            workout,
+            (0, 1600, 600, 0, 650),
+            (1, 1700, 620, 650, 1300));
+
+        var distanceCount = await _db.WorkoutSplits.CountAsync(s =>
+            s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.Distance);
+        distanceCount.Should().BeGreaterThan(2);
+
+        var rows = await WorkoutQueryService.QueryListPage(_db.Workouts.AsNoTracking()).ToListAsync();
+        rows.Should().ContainSingle();
+        rows[0].SplitsCount.Should().Be(2);
     }
 
     [Fact]

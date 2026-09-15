@@ -1159,8 +1159,8 @@ public static class WorkoutsEndpoints
                 }
             }
 
-            // Map splits
-            var splits = workout.Splits.OrderBy(s => s.Idx).Select(s => new
+            // Map splits (device_lap if any, else distance)
+            var splits = WorkoutSplitDisplay.SelectDisplayList(workout.Splits).Select(s => new
             {
                 idx = s.Idx,
                 kind = s.Kind,
@@ -1309,8 +1309,8 @@ public static class WorkoutsEndpoints
             }
         }
 
-        // Map splits
-        var splits = workout.Splits.OrderBy(s => s.Idx).Select(s => new
+        // Map splits (device_lap if any, else distance)
+        var splits = WorkoutSplitDisplay.SelectDisplayList(workout.Splits).Select(s => new
         {
             idx = s.Idx,
             kind = s.Kind,

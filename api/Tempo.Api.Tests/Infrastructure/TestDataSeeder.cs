@@ -264,6 +264,37 @@ public static class TestDataSeeder
     }
 
     /// <summary>
+    /// Seeds hand-written device_lap rows (no FIT parser). Idx may collide with distance miles.
+    /// </summary>
+    public static async Task<List<WorkoutSplit>> SeedDeviceLapsAsync(
+        TempoDbContext db,
+        Workout workout,
+        params (int Idx, double DistanceM, int DurationS, int StartElapsedS, int EndElapsedS)[] laps)
+    {
+        var rows = new List<WorkoutSplit>();
+        foreach (var lap in laps)
+        {
+            rows.Add(new WorkoutSplit
+            {
+                WorkoutId = workout.Id,
+                Kind = WorkoutSplitKinds.DeviceLap,
+                Idx = lap.Idx,
+                DistanceM = lap.DistanceM,
+                DurationS = lap.DurationS,
+                PaceS = lap.DurationS > 0 && lap.DistanceM > 0
+                    ? lap.DurationS / (lap.DistanceM / 1000.0)
+                    : 0,
+                StartElapsedS = lap.StartElapsedS,
+                EndElapsedS = lap.EndElapsedS
+            });
+        }
+
+        db.WorkoutSplits.AddRange(rows);
+        await db.SaveChangesAsync();
+        return rows;
+    }
+
+    /// <summary>
     /// Seeds a workout with time-series data
     /// </summary>
     /// <param name="db">Database context</param>

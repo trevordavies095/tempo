@@ -52,7 +52,7 @@ public class SplitRecalculationService
         }
 
         var existingSplits = await _db.WorkoutSplits
-            .Where(s => s.WorkoutId == workout.Id)
+            .Where(s => s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.Distance)
             .ToListAsync();
 
         if (existingSplits.Count > 0)
@@ -84,7 +84,8 @@ public class SplitRecalculationService
         _db.WorkoutSplits.AddRange(splits);
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Recalculated splits for workout {WorkoutId}: {OldCount} -> {NewCount} splits",
+        _logger.LogInformation(
+            "Recalculated distance splits for workout {WorkoutId}: {OldCount} -> {NewCount} distance splits",
             workout.Id, existingSplits.Count, derived.Splits.Count);
 
         return true;
