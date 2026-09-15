@@ -58,19 +58,30 @@ One-to-one relationship storing route coordinates as GeoJSON LineString.
 
 ### WorkoutSplit
 
-Distance-based splits (km or mile).
+Segment rows for a Workout (`Kind`: `distance` or `device_lap`). Distance rows are km/mile per UserSettings; device_lap rows are device ranges when present (FIT lap ingest is separate / future).
 
 **Columns:**
 - `Id` (Guid, Primary Key)
 - `WorkoutId` (Guid, Foreign Key to Workout)
-- `Idx` (int) - Split index (0-based)
+- `Kind` (string, max 32) - `distance` | `device_lap` (check constraint; default `distance`)
+- `Idx` (int) - Index within kind (0-based; same Idx may exist on both kinds)
 - `DistanceM` (double)
 - `DurationS` (int)
 - `PaceS` (double) - seconds per kilometer
+- `StartElapsedS` (int) - wall elapsed from Workout.StartedAt at segment start
+- `EndElapsedS` (int) - wall elapsed at segment end; windows are `[Start, End)` (last inclusive)
+- `StartDistanceM` (double, nullable) - device-distance cursor at start when DistM stream exists; null for Haversine distance splits
 - `AvgHeartRateBpm` (byte, nullable) - time-weighted average from WorkoutTimeSeries; null when the split has no HR samples
 
 **Indexes:**
-- Composite index on `(WorkoutId, Idx)` for efficient split queries
+- Unique composite index on `(WorkoutId, Kind, Idx)`
+
+**API / write paths:**
+- `GET /workouts/{id}` and crop responses return the **display list**: all `device_lap` rows if any exist, otherwise all `distance` rows (ordered by `Idx`)
+- List `splitsCount` matches that display-list rule
+- Unit-preference **recalc** deletes and rewrites `distance` only; `device_lap` rows are preserved
+- **Crop** deletes all kinds for the workout, then writes new `distance` rows for the remaining slice
+- Tempo **export** dumps every split row (both kinds) with the new columns; restore copies rows and does not rebuild splits via track geometry
 
 **Relationship:**
 - Many-to-one with `Workout`

@@ -57,12 +57,12 @@ GeoJSON LineString for one Workout.
 _Avoid_: GPS track, polyline (as the domain name)
 
 **WorkoutSplit**:
-Distance-based split for a Workout (km or mile per UserSettings). Derived; recalculated when units change. Not a device lap.
-_Avoid_: lap, mile split (as the type name)
+Segment row for a Workout with `Kind` (`distance` | `device_lap`). `distance` rows are unit-derived (km or mile per UserSettings) and replaced on unit-preference recalc; `device_lap` rows are device ranges when present. One table; Idx is unique per kind.
+_Avoid_: lap table, mile split (as the type name)
 
 **Device lap**:
-A range the recording device wrote (FIT `lap` message), usually auto-distance plus leftover. Authoritative when present. Survives unit-preference split recalc.
-_Avoid_: WorkoutSplit, auto-split (when meaning the FIT lap)
+Product term for a `WorkoutSplit` with `Kind = device_lap` — a range the recording device wrote (FIT `lap` message), usually auto-distance plus leftover. Authoritative for overview display when any exist. Survives unit-preference split recalc; crop deletes them. Not a separate table.
+_Avoid_: second entity/table, auto-split (when meaning the FIT lap)
 
 **WorkoutTimeSeries**:
 Per-elapsed-second (or per-point) samples for a Workout: heart rate, pace/speed, elevation, and related sensors.

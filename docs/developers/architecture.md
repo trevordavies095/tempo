@@ -101,7 +101,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 - **Workout**: Core entity with stats (distance, pace, elevation, heart rate, etc.) and JSONB fields for raw GPX/FIT/Strava data
 - **TrackPoint**: In-memory sample on a path (not a table). Geometry and parsers use it; see `CONTEXT.md`.
 - **WorkoutRoute**: One-to-one relationship storing GeoJSON LineString coordinates
-- **WorkoutSplit**: One-to-many relationship for distance-based splits (km or mile)
+- **WorkoutSplit**: One-to-many segment rows with `Kind` (`distance` | `device_lap`); Idx unique per kind
 - **WorkoutTimeSeries**: One-to-many relationship for time-series data (heart rate, pace, elevation over time)
 - **WorkoutMedia**: One-to-many relationship for photos/videos attached to workouts
 - **Shoe**: Running shoe entity for tracking shoe mileage and assignments
@@ -149,7 +149,7 @@ The `TempoDbContext` configures several important indexes:
 - **Workout indexes**: `StartedAt`, composite index on `(StartedAt, DistanceM, DurationS)` for duplicate detection
 - **JSONB GIN indexes**: On `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, and `Weather` fields
 - **HealthKit UUID**: Unique index on `HealthKitUuid` for import idempotency
-- **WorkoutSplit**: Composite index on `(WorkoutId, Idx)`
+- **WorkoutSplit**: Unique composite index on `(WorkoutId, Kind, Idx)`
 - **WorkoutTimeSeries**: Composite index on `(WorkoutId, ElapsedSeconds)`
 - **User**: Unique index on `Username`
 
