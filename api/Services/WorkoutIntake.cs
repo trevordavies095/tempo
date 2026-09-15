@@ -44,6 +44,10 @@ public sealed class DecodedWorkout
     /// Null = GPX-style time series from TrackPoints; non-null = FIT series path.
     /// </summary>
     public IReadOnlyList<TrackPoint>? SeriesPoints { get; init; }
+    /// <summary>
+    /// Device lap candidates from FIT (or later HealthKit). Persist may drop via keep / 2+.
+    /// </summary>
+    public IReadOnlyList<DeviceLapSummary> Laps { get; init; } = Array.Empty<DeviceLapSummary>();
     public string? Name { get; init; }
     public string? RawGpxDataJson { get; init; }
     public string? RawFitDataJson { get; init; }
@@ -160,11 +164,18 @@ public class WorkoutIntake
             var calculated = ExtractCalculatedMetrics(decoded.RawGpxDataJson);
 
             // HealthKit UUID identity check first — short-circuit before geometry/enrichment.
+            // Exception: attach device_lap rows when the existing workout has none and the body has 2+ kept laps.
             if (overlay?.HealthKitUuid is Guid healthKitUuid)
             {
                 var byUuid = await WorkoutQueryService.FindByHealthKitUuidAsync(_db, healthKitUuid);
                 if (byUuid != null)
                 {
+                    var attached = await TryAttachHealthKitDeviceLapsAsync(byUuid, decoded, overlay);
+                    if (attached != null)
+                    {
+                        return attached;
+                    }
+
                     _logger.LogInformation(
                         "Skipped duplicate workout (HealthKit UUID match): {HealthKitUuid}",
                         healthKitUuid);
@@ -216,9 +227,13 @@ public class WorkoutIntake
             workout.ElevGainM = geometry.ElevGainM;
 
             var route = geometry.Route;
-            var splits = geometry.Splits.ToList();
             var timeSeries = geometry.TimeSeries.ToList();
-            _splitHeartRate.ApplyToSplits(splits, timeSeries);
+            var splits = BuildSplitsWithHeartRate(
+                geometry.Splits,
+                decoded.Laps,
+                startedAtUtc,
+                workout.Id,
+                timeSeries);
             if (timeSeries.Count > 0)
             {
                 CalculateAggregateMetricsFromTimeSeries(workout, timeSeries);
@@ -284,7 +299,7 @@ public class WorkoutIntake
             {
                 Action = "created",
                 Workout = workout,
-                SplitsCount = splits.Count
+                SplitsCount = WorkoutSplitDisplay.SelectDisplayList(splits).Count
             };
         }
         catch (InvalidOperationException ex)
@@ -469,8 +484,12 @@ public class WorkoutIntake
                     .ToListAsync();
             }
 
-            var splits = geometry.Splits.ToList();
-            _splitHeartRate.ApplyToSplits(splits, seriesForHr);
+            var splits = BuildSplitsWithHeartRate(
+                geometry.Splits,
+                decoded.Laps,
+                startedAtUtc,
+                existingWorkout.Id,
+                seriesForHr);
             _db.WorkoutSplits.AddRange(splits);
 
             if (geometry.HasRouteCoordinates &&
@@ -579,6 +598,7 @@ public class WorkoutIntake
                 DistanceM = parseResult.DistanceMeters,
                 TrackPoints = parseResult.TrackPoints,
                 SeriesPoints = null,
+                Laps = Array.Empty<DeviceLapSummary>(),
                 Name = parseResult.Name,
                 RawGpxDataJson = parseResult.RawGpxDataJson,
                 RawFitDataJson = null,
@@ -597,6 +617,7 @@ public class WorkoutIntake
                 DistanceM = fitResult.DistanceMeters,
                 TrackPoints = fitResult.TrackPoints,
                 SeriesPoints = fitResult.SeriesPoints,
+                Laps = fitResult.Laps,
                 Name = null,
                 RawGpxDataJson = null,
                 RawFitDataJson = fitResult.RawFitDataJson,
@@ -950,6 +971,87 @@ public class WorkoutIntake
         {
             _logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
         }
+    }
+
+    /// <summary>
+    /// When a HealthKit UUID already exists with no device_lap rows and the payload has 2+ kept laps,
+    /// attach those rows and refresh RawHealthKitData without re-running geometry/enrichment.
+    /// Returns null when attach does not apply (caller should skip).
+    /// </summary>
+    private async Task<WorkoutIntakeResult?> TryAttachHealthKitDeviceLapsAsync(
+        Workout existingWorkout,
+        DecodedWorkout decoded,
+        WorkoutIntakeOverlay? overlay)
+    {
+        var hasDeviceLaps = await _db.WorkoutSplits.AnyAsync(s =>
+            s.WorkoutId == existingWorkout.Id && s.Kind == WorkoutSplitKinds.DeviceLap);
+        if (hasDeviceLaps)
+        {
+            return null;
+        }
+
+        var startedAtUtc = ToUtc(existingWorkout.StartedAt);
+        var deviceLaps = DeviceLapMapper.ToDeviceLapSplits(
+            decoded.Laps, startedAtUtc, existingWorkout.Id);
+        if (deviceLaps.Count == 0)
+        {
+            return null;
+        }
+
+        var series = await _db.WorkoutTimeSeries
+            .Where(ts => ts.WorkoutId == existingWorkout.Id)
+            .OrderBy(ts => ts.ElapsedSeconds)
+            .ToListAsync();
+        _splitHeartRate.ApplyToSplits(deviceLaps, series);
+        DeviceLapMapper.OverlayDeviceAvgHeartRate(deviceLaps, decoded.Laps);
+
+        _db.WorkoutSplits.AddRange(deviceLaps);
+
+        if (!string.IsNullOrWhiteSpace(overlay?.RawHealthKitDataJson))
+        {
+            existingWorkout.RawHealthKitData = overlay.RawHealthKitDataJson;
+        }
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Attached {LapCount} device laps to HealthKit workout {WorkoutId} without geometry rewrite",
+            deviceLaps.Count, existingWorkout.Id);
+
+        return new WorkoutIntakeResult
+        {
+            Action = "updated",
+            Workout = existingWorkout,
+            SplitsCount = deviceLaps.Count
+        };
+    }
+
+    private List<WorkoutSplit> BuildSplitsWithHeartRate(
+        IReadOnlyList<WorkoutSplit> distanceSplits,
+        IReadOnlyList<DeviceLapSummary> lapCandidates,
+        DateTime startedAtUtc,
+        Guid workoutId,
+        IReadOnlyList<WorkoutTimeSeries> series)
+    {
+        var distance = distanceSplits.ToList();
+        var deviceLaps = DeviceLapMapper.ToDeviceLapSplits(lapCandidates, startedAtUtc, workoutId);
+
+        _splitHeartRate.ApplyToSplits(distance, series);
+        if (deviceLaps.Count > 0)
+        {
+            _splitHeartRate.ApplyToSplits(deviceLaps, series);
+            DeviceLapMapper.OverlayDeviceAvgHeartRate(deviceLaps, lapCandidates);
+        }
+
+        if (deviceLaps.Count == 0)
+        {
+            return distance;
+        }
+
+        var combined = new List<WorkoutSplit>(distance.Count + deviceLaps.Count);
+        combined.AddRange(distance);
+        combined.AddRange(deviceLaps);
+        return combined;
     }
 
     private async Task<double> GetSplitDistanceMetersAsync()

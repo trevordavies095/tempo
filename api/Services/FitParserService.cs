@@ -20,6 +20,7 @@ public class FitParserService
         public double DistanceMeters { get; set; }
         public List<TrackPoint> TrackPoints { get; set; } = new();
         public List<TrackPoint> SeriesPoints { get; set; } = new();
+        public List<DeviceLapSummary> Laps { get; set; } = new();
         public string? RawFitDataJson { get; set; }
     }
 
@@ -47,6 +48,7 @@ public class FitParserService
             FitMessages messages = fitListener.FitMessages;
             var records = messages.RecordMesgs;
             var sessions = messages.SessionMesgs;
+            var lapMesgs = messages.LapMesgs;
             var deviceInfos = messages.DeviceInfoMesgs;
             var weatherConditions = messages.WeatherConditionsMesgs;
 
@@ -169,7 +171,9 @@ public class FitParserService
                 throw new InvalidOperationException("FIT file contains no GPS data and no distance information");
             }
 
-            var rawFitData = BuildRawFitData(session, deviceInfos, records.Count, weatherConditions, trackPoints);
+            var laps = MapLapSummaries(lapMesgs);
+            var rawFitData = BuildRawFitData(
+                session, deviceInfos, records.Count, weatherConditions, trackPoints, laps);
 
             return new FitParseResult
             {
@@ -178,6 +182,7 @@ public class FitParserService
                 DistanceMeters = totalDistance,
                 TrackPoints = trackPoints,
                 SeriesPoints = seriesPoints,
+                Laps = laps,
                 RawFitDataJson = rawFitData
             };
         }
@@ -280,7 +285,67 @@ public class FitParserService
         };
     }
 
-    private string? BuildRawFitData(SessionMesg? session, ReadOnlyCollection<DeviceInfoMesg> deviceInfos, int recordCount, ReadOnlyCollection<WeatherConditionsMesg> weatherConditions, List<TrackPoint> trackPoints)
+    private static List<DeviceLapSummary> MapLapSummaries(ReadOnlyCollection<LapMesg> lapMesgs)
+    {
+        var laps = new List<DeviceLapSummary>(lapMesgs.Count);
+        foreach (var lap in lapMesgs)
+        {
+            System.DateTime? start = null;
+            try
+            {
+                start = lap.GetStartTime()?.GetDateTime().ToUniversalTime();
+            }
+            catch
+            {
+                // StartTime may be unset
+            }
+
+            System.DateTime? timestamp = null;
+            try
+            {
+                timestamp = lap.GetTimestamp()?.GetDateTime().ToUniversalTime();
+            }
+            catch
+            {
+                // Timestamp may be unset
+            }
+
+            string? trigger = null;
+            try
+            {
+                var lapTrigger = lap.GetLapTrigger();
+                if (lapTrigger.HasValue && lapTrigger.Value != LapTrigger.Invalid)
+                {
+                    trigger = lapTrigger.Value.ToString();
+                }
+            }
+            catch
+            {
+                // LapTrigger may be unset
+            }
+
+            laps.Add(new DeviceLapSummary
+            {
+                StartTime = start,
+                Timestamp = timestamp,
+                DistanceM = lap.GetTotalDistance() ?? 0.0,
+                TimerS = lap.GetTotalTimerTime(),
+                ElapsedS = lap.GetTotalElapsedTime(),
+                AvgHeartRateBpm = lap.GetAvgHeartRate(),
+                LapTrigger = trigger
+            });
+        }
+
+        return laps;
+    }
+
+    private string? BuildRawFitData(
+        SessionMesg? session,
+        ReadOnlyCollection<DeviceInfoMesg> deviceInfos,
+        int recordCount,
+        ReadOnlyCollection<WeatherConditionsMesg> weatherConditions,
+        List<TrackPoint> trackPoints,
+        IReadOnlyList<DeviceLapSummary> laps)
     {
         // Extract session data if available (nullable to handle FIT files without session messages)
         var sessionData = session != null ? ExtractSessionData(session) : null;
@@ -293,6 +358,16 @@ public class FitParserService
             session = sessionData?.Count > 0 ? sessionData : null,
             device = deviceData.Count > 0 ? deviceData : null,
             weather = weatherData?.Count > 0 ? weatherData : null,
+            laps = laps.Select(l => new
+            {
+                start = l.StartTime?.ToString("O"),
+                timestamp = l.Timestamp?.ToString("O"),
+                elapsed = l.ElapsedS,
+                timer = l.TimerS,
+                distance = l.DistanceM,
+                avgHeartRate = l.AvgHeartRateBpm,
+                trigger = l.LapTrigger
+            }).ToList(),
             trackPoints = trackPoints.Select(p => new
             {
                 lat = p.Latitude,

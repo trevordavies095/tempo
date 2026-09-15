@@ -117,6 +117,12 @@ public class HealthKitWorkoutDecoder
             }
         }
 
+        var lapsResult = MapLaps(request.Laps);
+        if (lapsResult.ErrorMessage != null)
+        {
+            return Fail(lapsResult.ErrorMessage);
+        }
+
         var serializeOptions = new JsonSerializerOptions(JsonUtils.DefaultOptions)
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -133,6 +139,7 @@ public class HealthKitWorkoutDecoder
                 DistanceM = distanceM,
                 TrackPoints = trackPoints,
                 SeriesPoints = null,
+                Laps = lapsResult.Laps,
                 Name = null,
                 RawFileData = null,
                 RawFileName = null,
@@ -149,6 +156,64 @@ public class HealthKitWorkoutDecoder
                 EnergyKcal = summary.EnergyKcal
             }
         };
+    }
+
+    private static (IReadOnlyList<DeviceLapSummary> Laps, string? ErrorMessage) MapLaps(
+        List<HealthKitLapDto>? laps)
+    {
+        if (laps == null || laps.Count == 0)
+        {
+            return (Array.Empty<DeviceLapSummary>(), null);
+        }
+
+        var mapped = new List<DeviceLapSummary>(laps.Count);
+        DateTime? previousEndedAt = null;
+        for (var i = 0; i < laps.Count; i++)
+        {
+            var lap = laps[i];
+            if (string.IsNullOrWhiteSpace(lap.EndedAt) ||
+                !DateTime.TryParse(
+                    lap.EndedAt,
+                    null,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out var endedAt))
+            {
+                return (Array.Empty<DeviceLapSummary>(),
+                    $"laps[{i}].endedAt is required and must be a valid UTC timestamp");
+            }
+
+            endedAt = DateTime.SpecifyKind(endedAt, DateTimeKind.Utc);
+
+            if (lap.DistanceM < 0)
+            {
+                return (Array.Empty<DeviceLapSummary>(), $"laps[{i}].distanceM must be >= 0");
+            }
+
+            if (lap.DurationS < 0)
+            {
+                return (Array.Empty<DeviceLapSummary>(), $"laps[{i}].durationS must be >= 0");
+            }
+
+            if (previousEndedAt.HasValue && endedAt < previousEndedAt.Value)
+            {
+                return (Array.Empty<DeviceLapSummary>(),
+                    $"laps[{i}].endedAt must be non-decreasing");
+            }
+
+            previousEndedAt = endedAt;
+            mapped.Add(new DeviceLapSummary
+            {
+                StartTime = null,
+                Timestamp = endedAt,
+                DistanceM = lap.DistanceM,
+                TimerS = lap.DurationS,
+                ElapsedS = null,
+                AvgHeartRateBpm = lap.AvgHeartRateBpm,
+                LapTrigger = null
+            });
+        }
+
+        return (mapped, null);
     }
 
     private static TrackPoint? MapTrackPoint(HealthKitTrackPointDto dto)
@@ -185,6 +250,8 @@ public class HealthKitImportRequest
     public HealthKitSourceAppDto? SourceApp { get; set; }
     public HealthKitSummaryDto? Summary { get; set; }
     public List<HealthKitTrackPointDto>? TrackPoints { get; set; }
+    /// <summary>Optional device lap summaries (schema v1 additive). Omit on older clients.</summary>
+    public List<HealthKitLapDto>? Laps { get; set; }
 }
 
 public class HealthKitSourceAppDto
@@ -202,6 +269,16 @@ public class HealthKitSummaryDto
     public ushort? EnergyKcal { get; set; }
     public byte? AvgHeartRateBpm { get; set; }
     public byte? MaxHeartRateBpm { get; set; }
+}
+
+public class HealthKitLapDto
+{
+    /// <summary>ISO UTC end of the lap.</summary>
+    public string? EndedAt { get; set; }
+    public double DistanceM { get; set; }
+    /// <summary>Timer seconds (pauses excluded).</summary>
+    public int DurationS { get; set; }
+    public byte? AvgHeartRateBpm { get; set; }
 }
 
 public class HealthKitTrackPointDto

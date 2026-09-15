@@ -268,6 +268,204 @@ public class WorkoutIntakeTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessAsync_Created_Fit_WithThreeLaps_WritesDeviceLapsWithTimerAndLeftover()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var fitBytes = CreateMinimalFitBytes(
+            elapsedSeconds: 1326f,
+            timerSeconds: 1205f,
+            totalDistanceMeters: 3231f,
+            laps: new[]
+            {
+                new SyntheticLap(start, 600f, 600f, 1609f, 150, LapTrigger.Distance),
+                new SyntheticLap(start.AddSeconds(600), 721f, 600f, 1609f, 155, LapTrigger.Manual),
+                new SyntheticLap(start.AddSeconds(1321), 5f, 5f, 13f, null, LapTrigger.SessionEnd),
+            });
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "long-run.fit");
+
+        result.Action.Should().Be("created");
+        result.SplitsCount.Should().Be(3);
+
+        var all = await _db.WorkoutSplits.Where(s => s.WorkoutId == result.Workout!.Id).ToListAsync();
+        all.Should().Contain(s => s.Kind == WorkoutSplitKinds.Distance);
+        var laps = all.Where(s => s.Kind == WorkoutSplitKinds.DeviceLap).OrderBy(s => s.Idx).ToList();
+        laps.Should().HaveCount(3);
+
+        laps[0].DurationS.Should().Be(600);
+        laps[0].DistanceM.Should().BeApproximately(1609, 0.1);
+        laps[0].AvgHeartRateBpm.Should().Be(150);
+        laps[0].StartElapsedS.Should().Be(0);
+        laps[0].EndElapsedS.Should().Be(600);
+        laps[0].StartDistanceM.Should().Be(0);
+
+        laps[1].DurationS.Should().Be(600);
+        laps[1].EndElapsedS.Should().Be(1321);
+        (laps[1].EndElapsedS - laps[1].StartElapsedS).Should().BeGreaterThan(laps[1].DurationS);
+        laps[1].AvgHeartRateBpm.Should().Be(155);
+        laps[1].StartDistanceM.Should().BeApproximately(1609, 0.1);
+
+        laps[2].DistanceM.Should().BeApproximately(13, 0.1);
+        laps[2].DurationS.Should().Be(5);
+        laps[2].StartDistanceM.Should().BeApproximately(3218, 0.1);
+
+        var display = WorkoutSplitDisplay.SelectDisplayList(all);
+        display.Should().HaveCount(3);
+        display.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.DeviceLap);
+
+        var stored = await _db.Workouts.SingleAsync();
+        stored.DurationS.Should().Be(1326);
+        stored.RawFitData.Should().Contain("\"laps\"");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Created_Fit_WithOneLap_WritesDistanceOnly()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var fitBytes = CreateMinimalFitBytes(
+            elapsedSeconds: 1200f,
+            timerSeconds: 1200f,
+            laps: new[]
+            {
+                new SyntheticLap(start, 1200f, 1200f, 2400f, null, LapTrigger.SessionEnd),
+            });
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "no-autolap.fit");
+
+        result.Action.Should().Be("created");
+        var all = await _db.WorkoutSplits.Where(s => s.WorkoutId == result.Workout!.Id).ToListAsync();
+        all.Should().NotBeEmpty();
+        all.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        result.SplitsCount.Should().Be(all.Count);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Created_Fit_EmptyLapPlusWrapper_WritesDistanceOnly()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var fitBytes = CreateMinimalFitBytes(
+            elapsedSeconds: 1200f,
+            timerSeconds: 1200f,
+            laps: new[]
+            {
+                new SyntheticLap(start, 0f, 0f, 0f, null, LapTrigger.Manual),
+                new SyntheticLap(start, 1200f, 1200f, 2400f, null, LapTrigger.SessionEnd),
+            });
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "junk-wrapper.fit");
+
+        result.Action.Should().Be("created");
+        var all = await _db.WorkoutSplits.Where(s => s.WorkoutId == result.Workout!.Id).ToListAsync();
+        all.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Created_Fit_KeepsTimeAndSessionEndTriggers()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var fitBytes = CreateMinimalFitBytes(
+            elapsedSeconds: 900f,
+            timerSeconds: 900f,
+            totalDistanceMeters: 2500f,
+            laps: new[]
+            {
+                new SyntheticLap(start, 300f, 300f, 800f, null, LapTrigger.Time),
+                new SyntheticLap(start.AddSeconds(300), 300f, 300f, 800f, null, LapTrigger.Time),
+                new SyntheticLap(start.AddSeconds(600), 300f, 300f, 900f, null, LapTrigger.SessionEnd),
+            });
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "time-laps.fit");
+
+        result.Action.Should().Be("created");
+        var laps = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == result.Workout!.Id && s.Kind == WorkoutSplitKinds.DeviceLap)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        laps.Should().HaveCount(3);
+        laps.Select(l => l.DistanceM).Should().Equal(800d, 800d, 900d);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Created_Gpx_WritesNoDeviceLaps()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var stream = CreateGpxStream();
+
+        var result = await _intake.ProcessAsync(stream, "morning.gpx");
+
+        result.Action.Should().Be("created");
+        var all = await _db.WorkoutSplits.Where(s => s.WorkoutId == result.Workout!.Id).ToListAsync();
+        all.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Updated_Fit_RewritesDeviceLapsFromNewFile()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var fitBytes = CreateMinimalFitBytes(
+            elapsedSeconds: 1326f,
+            timerSeconds: 1205f,
+            totalDistanceMeters: 3231f,
+            laps: new[]
+            {
+                new SyntheticLap(start, 600f, 600f, 1609f, 150, LapTrigger.Distance),
+                new SyntheticLap(start.AddSeconds(600), 721f, 600f, 1609f, 155, LapTrigger.Manual),
+                new SyntheticLap(start.AddSeconds(1321), 5f, 5f, 13f, null, LapTrigger.SessionEnd),
+            });
+
+        using (var parseStream = new MemoryStream(fitBytes))
+        {
+            var parsed = _fitParser.ParseFit(parseStream);
+            var existing = new Workout
+            {
+                StartedAt = parsed.StartTime,
+                DurationS = parsed.DurationSeconds,
+                DistanceM = parsed.DistanceMeters,
+                AvgPaceS = parsed.DurationSeconds / (parsed.DistanceMeters / 1000.0),
+                ElevGainM = 42,
+                RawFileData = new byte[] { 1, 2, 3 },
+                RawFileName = "old.fit",
+                RawFileType = "fit",
+                RawFitData = """{"session":{}}""",
+                Source = "fit_import",
+                RunType = "Easy Run",
+                CreatedAt = System.DateTime.UtcNow
+            };
+            _db.Workouts.Add(existing);
+            await _db.SaveChangesAsync();
+            await TestDataSeeder.SeedDeviceLapsAsync(
+                _db,
+                existing,
+                (0, 100, 60, 0, 60));
+
+            using var stream = new MemoryStream(fitBytes);
+            var result = await _intake.ProcessAsync(stream, "run.fit");
+
+            result.Action.Should().Be("updated");
+            var laps = await _db.WorkoutSplits
+                .Where(s => s.WorkoutId == existing.Id && s.Kind == WorkoutSplitKinds.DeviceLap)
+                .OrderBy(s => s.Idx)
+                .ToListAsync();
+            laps.Should().HaveCount(3);
+            laps[0].DistanceM.Should().BeApproximately(1609, 0.1);
+            laps[2].DistanceM.Should().BeApproximately(13, 0.1);
+            laps.Should().NotContain(l => l.DistanceM == 100);
+            (await _db.WorkoutSplits.CountAsync(s =>
+                s.WorkoutId == existing.Id && s.Kind == WorkoutSplitKinds.Distance))
+                .Should().BeGreaterThan(0);
+        }
+    }
+
+    [Fact]
     public async Task ProcessAsync_Created_Gpx_LeavesTimerNull()
     {
         await TestDataSeeder.SeedUserSettingsAsync(_db);
@@ -814,11 +1012,194 @@ public class WorkoutIntakeTests : IDisposable
         _weather.CallCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task PersistAsync_HealthKit_WithThreeLaps_WritesDeviceLaps()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded(
+            startedAt: start,
+            durationS: 1326,
+            distanceM: 3231,
+            laps: new[]
+            {
+                new DeviceLapSummary
+                {
+                    Timestamp = start.AddSeconds(600),
+                    DistanceM = 1609,
+                    TimerS = 600,
+                    AvgHeartRateBpm = 150
+                },
+                new DeviceLapSummary
+                {
+                    Timestamp = start.AddSeconds(1321),
+                    DistanceM = 1609,
+                    TimerS = 600,
+                    AvgHeartRateBpm = 155
+                },
+                new DeviceLapSummary
+                {
+                    Timestamp = start.AddSeconds(1326),
+                    DistanceM = 13,
+                    TimerS = 5
+                }
+            });
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        result.SplitsCount.Should().Be(3);
+        var all = await _db.WorkoutSplits.Where(s => s.WorkoutId == result.Workout!.Id).ToListAsync();
+        all.Should().Contain(s => s.Kind == WorkoutSplitKinds.Distance);
+        var laps = all.Where(s => s.Kind == WorkoutSplitKinds.DeviceLap).OrderBy(s => s.Idx).ToList();
+        laps.Should().HaveCount(3);
+        laps[0].DurationS.Should().Be(600);
+        laps[0].EndElapsedS.Should().Be(600);
+        laps[0].AvgHeartRateBpm.Should().Be(150);
+        laps[1].DurationS.Should().Be(600);
+        (laps[1].EndElapsedS - laps[1].StartElapsedS).Should().BeGreaterThan(laps[1].DurationS);
+        laps[2].DistanceM.Should().BeApproximately(13, 0.1);
+        WorkoutSplitDisplay.SelectDisplayList(all).Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.DeviceLap);
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKit_WithOneLap_WritesDistanceOnly()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded(
+            startedAt: start,
+            laps: new[]
+            {
+                new DeviceLapSummary
+                {
+                    Timestamp = start.AddSeconds(1800),
+                    DistanceM = 5000,
+                    TimerS = 1800
+                }
+            });
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        var all = await _db.WorkoutSplits.Where(s => s.WorkoutId == result.Workout!.Id).ToListAsync();
+        all.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKit_UuidRepost_AttachesLapsWithoutGeometryRewrite()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var uuid = Guid.NewGuid();
+        var start = new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded(startedAt: start, healthKitUuid: uuid);
+
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+        var workoutId = first.Workout!.Id;
+        var distanceCountBefore = await _db.WorkoutSplits.CountAsync(s =>
+            s.WorkoutId == workoutId && s.Kind == WorkoutSplitKinds.Distance);
+        var routeBefore = await _db.WorkoutRoutes.SingleAsync(r => r.WorkoutId == workoutId);
+        var seriesCountBefore = await _db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId);
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        var (decoded2, overlay2) = CreateHealthKitOutdoorDecoded(
+            startedAt: start,
+            healthKitUuid: uuid,
+            rawHealthKitJson: """{"schemaVersion":1,"laps":[{"endedAt":"2024-06-15T10:10:00Z"}]}""",
+            laps: new[]
+            {
+                new DeviceLapSummary
+                {
+                    Timestamp = start.AddSeconds(600),
+                    DistanceM = 1609,
+                    TimerS = 600,
+                    AvgHeartRateBpm = 150
+                },
+                new DeviceLapSummary
+                {
+                    Timestamp = start.AddSeconds(1200),
+                    DistanceM = 1609,
+                    TimerS = 600
+                },
+                new DeviceLapSummary
+                {
+                    Timestamp = start.AddSeconds(1800),
+                    DistanceM = 782,
+                    TimerS = 600
+                }
+            });
+
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("updated");
+        second.Workout!.Id.Should().Be(workoutId);
+        var laps = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workoutId && s.Kind == WorkoutSplitKinds.DeviceLap)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        laps.Should().HaveCount(3);
+        laps[0].AvgHeartRateBpm.Should().Be(150);
+        (await _db.WorkoutSplits.CountAsync(s =>
+            s.WorkoutId == workoutId && s.Kind == WorkoutSplitKinds.Distance))
+            .Should().Be(distanceCountBefore);
+        var routeAfter = await _db.WorkoutRoutes.SingleAsync(r => r.WorkoutId == workoutId);
+        routeAfter.RouteGeoJson.Should().Be(routeBefore.RouteGeoJson);
+        (await _db.WorkoutTimeSeries.CountAsync(ts => ts.WorkoutId == workoutId))
+            .Should().Be(seriesCountBefore);
+        var stored = await _db.Workouts.SingleAsync(w => w.Id == workoutId);
+        stored.RawHealthKitData.Should().Contain("laps");
+        _weather.CallCount.Should().Be(0);
+        _relativeEffort.CallCount.Should().Be(0);
+        _bestEfforts.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_HealthKit_UuidRepost_WhenDeviceLapsExist_IsSkipped()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var uuid = Guid.NewGuid();
+        var start = new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded(
+            startedAt: start,
+            healthKitUuid: uuid,
+            laps: new[]
+            {
+                new DeviceLapSummary { Timestamp = start.AddSeconds(600), DistanceM = 1609, TimerS = 600 },
+                new DeviceLapSummary { Timestamp = start.AddSeconds(1200), DistanceM = 1609, TimerS = 600 }
+            });
+
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+        var lapCount = await _db.WorkoutSplits.CountAsync(s =>
+            s.WorkoutId == first.Workout!.Id && s.Kind == WorkoutSplitKinds.DeviceLap);
+
+        var (decoded2, overlay2) = CreateHealthKitOutdoorDecoded(
+            startedAt: start,
+            healthKitUuid: uuid,
+            laps: new[]
+            {
+                new DeviceLapSummary { Timestamp = start.AddSeconds(300), DistanceM = 800, TimerS = 300 },
+                new DeviceLapSummary { Timestamp = start.AddSeconds(600), DistanceM = 800, TimerS = 300 },
+                new DeviceLapSummary { Timestamp = start.AddSeconds(900), DistanceM = 800, TimerS = 300 }
+            });
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        (await _db.WorkoutSplits.CountAsync(s =>
+            s.WorkoutId == first.Workout!.Id && s.Kind == WorkoutSplitKinds.DeviceLap))
+            .Should().Be(lapCount);
+    }
+
     private static (DecodedWorkout Decoded, WorkoutIntakeOverlay Overlay) CreateHealthKitOutdoorDecoded(
         System.DateTime? startedAt = null,
         int durationS = 1800,
         double distanceM = 5000,
-        Guid? healthKitUuid = null)
+        Guid? healthKitUuid = null,
+        IReadOnlyList<DeviceLapSummary>? laps = null,
+        string? rawHealthKitJson = null)
     {
         var start = startedAt ?? new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
         var uuid = healthKitUuid ?? Guid.Parse("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
@@ -865,7 +1246,8 @@ public class WorkoutIntakeTests : IDisposable
             DurationS = durationS,
             DistanceM = distanceM,
             TrackPoints = trackPoints,
-            SeriesPoints = null
+            SeriesPoints = null,
+            Laps = laps ?? Array.Empty<DeviceLapSummary>()
         };
 
         var overlay = new WorkoutIntakeOverlay
@@ -873,7 +1255,7 @@ public class WorkoutIntakeTests : IDisposable
             Source = "healthkit",
             Device = "Apple Watch",
             HealthKitUuid = uuid,
-            RawHealthKitDataJson = $$"""{"schemaVersion":1,"healthKitUuid":"{{uuid}}"}""",
+            RawHealthKitDataJson = rawHealthKitJson ?? $$"""{"schemaVersion":1,"healthKitUuid":"{{uuid}}"}""",
             AvgHeartRateBpm = 150,
             MaxHeartRateBpm = 175,
             EnergyKcal = 420
@@ -973,10 +1355,20 @@ public class WorkoutIntakeTests : IDisposable
         return new MemoryStream(Encoding.UTF8.GetBytes(xml));
     }
 
+    private sealed record SyntheticLap(
+        System.DateTime Start,
+        float ElapsedSeconds,
+        float TimerSeconds,
+        float DistanceMeters,
+        byte? AvgHeartRate,
+        LapTrigger Trigger);
+
     private static byte[] CreateMinimalFitBytes(
         float elapsedSeconds = 1200f,
         float timerSeconds = 1200f,
-        float? movingSeconds = null)
+        float? movingSeconds = null,
+        float totalDistanceMeters = 2400f,
+        IReadOnlyList<SyntheticLap>? laps = null)
     {
         var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
         var fitStart = new FitDateTime(start);
@@ -998,8 +1390,27 @@ public class WorkoutIntakeTests : IDisposable
             record.SetPositionLat((int)((37.7749 + i * 0.01) * semicirclesPerDegree));
             record.SetPositionLong((int)((-122.4194 + i * 0.01) * semicirclesPerDegree));
             record.SetAltitude(10f + i * 10f);
-            record.SetDistance(i * 1200f);
+            record.SetDistance(i * (totalDistanceMeters / 2f));
             encode.Write(record);
+        }
+
+        if (laps != null)
+        {
+            foreach (var lapDef in laps)
+            {
+                var lap = new LapMesg();
+                lap.SetStartTime(new FitDateTime(lapDef.Start));
+                lap.SetTimestamp(new FitDateTime(lapDef.Start.AddSeconds(lapDef.ElapsedSeconds)));
+                lap.SetTotalElapsedTime(lapDef.ElapsedSeconds);
+                lap.SetTotalTimerTime(lapDef.TimerSeconds);
+                lap.SetTotalDistance(lapDef.DistanceMeters);
+                if (lapDef.AvgHeartRate.HasValue)
+                {
+                    lap.SetAvgHeartRate(lapDef.AvgHeartRate.Value);
+                }
+                lap.SetLapTrigger(lapDef.Trigger);
+                encode.Write(lap);
+            }
         }
 
         var session = new SessionMesg();
@@ -1011,7 +1422,7 @@ public class WorkoutIntakeTests : IDisposable
         {
             session.SetTotalMovingTime(movingSeconds.Value);
         }
-        session.SetTotalDistance(2400f);
+        session.SetTotalDistance(totalDistanceMeters);
         session.SetSport(Sport.Running);
         encode.Write(session);
         encode.Close();
