@@ -1589,7 +1589,7 @@
           "Workouts"
         ],
         "summary": "Get workout details",
-        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),\nstartElapsedS, endElapsedS, and startDistanceM (number or null).\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
+        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),\nstartElapsedS, endElapsedS, and startDistanceM (number or null).\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.\n`heartRateZoneTimes` is five live zone buckets from HR series + current Settings, or JSON null.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
         "operationId": "GetWorkout",
         "parameters": [
           {

@@ -186,6 +186,7 @@ export interface WorkoutDetail {
   avgPowerWatts: number | null;
   calories: number | null;
   relativeEffort: number | null;
+  heartRateZoneTimes: Array<{ zone: number; timeS: number }> | null;
   rpe: number | null;
   runType: string | null;
   notes: string | null;
