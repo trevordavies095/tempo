@@ -44,16 +44,16 @@ public class RelativeEffortService : IRelativeEffortService
     }
 
     /// <summary>
-    /// Calculate Relative Effort from time series data.
+    /// Bucket time-series heart rate into five zone durations (seconds).
+    /// Returns null when series/zones are invalid or no sample lands in a zone.
     /// </summary>
-    public int CalculateFromTimeSeries(List<WorkoutTimeSeries> timeSeries, List<HeartRateZone> zones)
+    public double[]? TryGetTimeInZones(List<WorkoutTimeSeries>? timeSeries, List<HeartRateZone>? zones)
     {
         if (timeSeries == null || timeSeries.Count == 0 || zones == null || zones.Count != 5)
         {
-            return 0;
+            return null;
         }
 
-        // Track time spent in each zone (in seconds)
         var timeInZones = new double[5];
 
         for (int i = 0; i < timeSeries.Count; i++)
@@ -66,12 +66,9 @@ public class RelativeEffortService : IRelativeEffortService
 
             int heartRate = currentPoint.HeartRateBpm.Value;
 
-            // Determine which zone this heart rate falls into
             int zoneIndex = GetZoneIndex(heartRate, zones);
             if (zoneIndex >= 0)
             {
-                // Calculate time duration for this point
-                // For the first point, assume 1 second (or use next point's elapsed time)
                 double timeSeconds = 1.0;
                 if (i < timeSeries.Count - 1)
                 {
@@ -80,7 +77,7 @@ public class RelativeEffortService : IRelativeEffortService
                     // Clamp to reasonable values (avoid gaps from pauses)
                     if (timeSeconds > 10 || timeSeconds < 0)
                     {
-                        timeSeconds = 1.0; // Default to 1 second if gap is too large
+                        timeSeconds = 1.0;
                     }
                 }
 
@@ -88,7 +85,26 @@ public class RelativeEffortService : IRelativeEffortService
             }
         }
 
-        // Calculate weighted score: sum of (time_in_zone_minutes * zone_weight)
+        double sum = 0.0;
+        for (int i = 0; i < 5; i++)
+        {
+            sum += timeInZones[i];
+        }
+
+        return sum > 0 ? timeInZones : null;
+    }
+
+    /// <summary>
+    /// Calculate Relative Effort from time series data.
+    /// </summary>
+    public int CalculateFromTimeSeries(List<WorkoutTimeSeries> timeSeries, List<HeartRateZone> zones)
+    {
+        var timeInZones = TryGetTimeInZones(timeSeries, zones);
+        if (timeInZones == null)
+        {
+            return 0;
+        }
+
         double totalEffort = 0.0;
         for (int i = 0; i < 5; i++)
         {

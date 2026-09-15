@@ -30,6 +30,9 @@ public class TrackGeometryTests
         result.Splits.Should().NotBeEmpty();
         result.Splits[0].DistanceM.Should().BeApproximately(1000.0, 100.0);
         result.Splits.Should().OnlyContain(s => s.WorkoutId == _workoutId);
+        result.Splits.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        result.Splits.Should().OnlyContain(s => s.StartDistanceM == null);
+        AssertAbuttedElapsed(result.Splits);
     }
 
     [Fact]
@@ -129,6 +132,10 @@ public class TrackGeometryTests
         result.Splits.Should().NotBeEmpty();
         result.Splits[0].DistanceM.Should().BeApproximately(1000.0, 50.0);
         result.Splits.Should().OnlyContain(s => s.WorkoutId == _workoutId);
+        result.Splits.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        result.Splits.Should().OnlyContain(s => s.StartDistanceM.HasValue);
+        result.Splits[0].StartDistanceM.Should().BeApproximately(0.0, 1.0);
+        AssertAbuttedElapsed(result.Splits);
         result.TimeSeries.Should().NotBeEmpty();
         result.TimeSeries.Should().OnlyContain(ts => ts.DistanceM.HasValue);
         result.TimeSeries.Should().Contain(ts => ts.HeartRateBpm.HasValue);
@@ -167,8 +174,52 @@ public class TrackGeometryTests
         result.HasRouteCoordinates.Should().BeFalse();
         result.Splits.Should().NotBeEmpty();
         result.Splits[0].DistanceM.Should().BeApproximately(1000.0, 50.0);
+        result.Splits.Should().OnlyContain(s => s.StartDistanceM.HasValue);
         result.TimeSeries.Should().NotBeEmpty();
         result.TimeSeries.Should().OnlyContain(ts => ts.DistanceM.HasValue);
+    }
+
+    [Fact]
+    public void Derive_MissingBoundaryTime_FallsBackToDurationWindows()
+    {
+        var points = CreateTrackPointsWithKnownDistance(2000.0, 600);
+        // Drop times on the second half so later boundaries fall back.
+        for (var i = points.Count / 2; i < points.Count; i++)
+        {
+            points[i].Time = null;
+        }
+
+        var result = _geometry.Derive(points, _start, 1000.0, _workoutId, 2000.0, 600);
+
+        result.Splits.Should().HaveCountGreaterThan(1);
+        result.Splits.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        AssertAbuttedElapsed(result.Splits);
+        result.Splits[0].StartElapsedS.Should().Be(0);
+        result.Splits[^1].EndElapsedS.Should().BeGreaterThan(result.Splits[0].EndElapsedS);
+    }
+
+    [Fact]
+    public void Derive_DistanceStream_StartDistanceM_UsesDeviceCursor()
+    {
+        var points = CreateDistanceStreamPoints(2500.0, 900);
+
+        var result = _geometry.Derive(points, _start, 1000.0, _workoutId, 2500.0, 900);
+
+        result.Splits.Should().HaveCountGreaterThanOrEqualTo(2);
+        result.Splits[0].StartDistanceM.Should().BeApproximately(0.0, 1.0);
+        result.Splits[1].StartDistanceM.Should().BeApproximately(1000.0, 50.0);
+        AssertAbuttedElapsed(result.Splits);
+    }
+
+    private static void AssertAbuttedElapsed(IReadOnlyList<WorkoutSplit> splits)
+    {
+        splits.Should().NotBeEmpty();
+        for (var i = 1; i < splits.Count; i++)
+        {
+            splits[i].StartElapsedS.Should().Be(splits[i - 1].EndElapsedS);
+        }
+
+        splits.Should().OnlyContain(s => s.EndElapsedS >= s.StartElapsedS);
     }
 
     private static List<TrackPoint> CreateTrackPointsWithKnownDistance(double totalDistanceMeters, int totalDurationSeconds)

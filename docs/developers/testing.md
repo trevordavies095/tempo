@@ -67,7 +67,7 @@ dotnet test --verbosity normal
      -targetdir:"coverage-report" \
      -reporttypes:"Html;Badges" \
      -classfilters:"-*Dynastream*" \
-     -assemblyfilters:"-*Dynastream*"
+     -assemblyfilters:"-*Garmin.FIT.Sdk*"
    ```
 
    The HTML report will be in the `coverage-report/` directory. Open `index.html` in a browser.
@@ -311,7 +311,7 @@ Some code is intentionally excluded from coverage:
 - `Program.cs` - Application startup code
 - `Migrations/**` - Database migrations
 - Generated code (via attributes)
-- Third-party libraries (FitSDK)
+- Third-party libraries (`Garmin.FIT.Sdk`)
 
 If you need to exclude additional code, update `coverlet.runsettings`.
 

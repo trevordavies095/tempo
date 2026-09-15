@@ -149,9 +149,10 @@ public class SplitHeartRateBackfillServiceTests : IDisposable
     public async Task RunAsync_FillsLongMileSplits_FromDenseHeartRateSeries()
     {
         var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 29_000, durationS: 12_000);
+        var mileSplits = new List<WorkoutSplit>();
         for (var idx = 0; idx < 18; idx++)
         {
-            _db.WorkoutSplits.Add(new WorkoutSplit
+            mileSplits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
                 Idx = idx,
@@ -160,6 +161,8 @@ public class SplitHeartRateBackfillServiceTests : IDisposable
                 PaceS = 400
             });
         }
+        WorkoutSplitElapsed.FillFromCumulativeDuration(mileSplits);
+        _db.WorkoutSplits.AddRange(mileSplits);
 
         var series = new List<WorkoutTimeSeries>(12_000);
         for (var elapsed = 0; elapsed < 12_000; elapsed++)

@@ -721,7 +721,7 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         
         // Verify previous week start is 7 days before current week start
         var currentWeekStart = DateTime.Parse(result.WeekStart);
-        var previousWeekStart = DateTime.Parse(result.PreviousWeekStart);
+        var previousWeekStart = DateTime.Parse(result.PreviousWeekStart!);
         var daysDifference = (currentWeekStart - previousWeekStart).Days;
         daysDifference.Should().Be(7);
     }

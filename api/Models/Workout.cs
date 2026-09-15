@@ -47,12 +47,17 @@ public class Workout
 
     public int? MovingTimeS { get; set; }  // Excludes pause time
 
+    /// <summary>
+    /// Garmin timer time (FIT total_timer_time): device running, pauses excluded. Not elapsed.
+    /// </summary>
+    public int? TimerTimeS { get; set; }
+
     // Heart rate (if available)
     public byte? MaxHeartRateBpm { get; set; }
     public byte? AvgHeartRateBpm { get; set; }
     public byte? MinHeartRateBpm { get; set; }
 
-    // Cadence (if available)
+    // Cadence in steps/min (both feet). Property names *CadenceRpm are historical.
     public byte? MaxCadenceRpm { get; set; }
     public byte? AvgCadenceRpm { get; set; }
 

@@ -181,11 +181,15 @@ Content-Type: application/json
   },
   "trackPoints": [
     { "t": "2024-06-15T10:00:00Z", "lat": 37.7749, "lon": -122.4194, "ele": 10, "hr": 140, "cad": 160, "pwr": 250, "distM": 0 }
+  ],
+  "laps": [
+    { "endedAt": "2024-06-15T10:10:00Z", "distanceM": 1609, "durationS": 600, "avgHeartRateBpm": 148 },
+    { "endedAt": "2024-06-15T10:20:00Z", "distanceM": 1609, "durationS": 600, "avgHeartRateBpm": 152 }
   ]
 }
 ```
 
-Requires authentication. `schemaVersion` must be `1`. Summary distance/duration are authoritative. Outdoor runs require at least two track points with `lat`, `lon`, and `t`. Indoor runs (`isIndoor: true`) may omit GPS; provide `summary.distanceM > 0` and/or a cumulative `distM` stream for splits and time series. Summary-only indoor payloads persist stats without a route. A payload with neither summary distance nor a `distM` stream returns 400. Max 20,000 track points. Response shape matches single-file import (`created` / `updated` / `skipped` plus workout id). Raw payload is stored in `RawHealthKitData`. Duplicate check: `HealthKitUuid` identity first (repeat POST → `skipped` without re-deriving geometry); then start/distance/duration as a cross-source backstop (e.g. GPX already imported). Matching HealthKit imports stamp `HealthKitUuid` onto the existing row when it was null so list/detail can badge. `GET /workouts` and `GET /workouts/{id}` expose top-level `healthKitUuid` (nullable). Indoor imports leave `route` null when there are no GPS coordinates.
+Requires authentication. `schemaVersion` must be `1`. Summary distance/duration are authoritative. Outdoor runs require at least two track points with `lat`, `lon`, and `t`. Indoor runs (`isIndoor: true`) may omit GPS; provide `summary.distanceM > 0` and/or a cumulative `distM` stream for splits and time series. Summary-only indoor payloads persist stats without a route. A payload with neither summary distance nor a `distM` stream returns 400. Max 20,000 track points. Optional `laps` (schema v1 additive; omit on older clients): ordered lap **ends** with `endedAt` (ISO UTC), `distanceM`, `durationS` (timer; pauses excluded on device), optional `avgHeartRateBpm`. Tempo persists them as `device_lap` only when 2+ rows have distance > 0 or duration > 0. Response shape matches single-file import (`created` / `updated` / `skipped` plus workout id). Raw payload is stored in `RawHealthKitData`. Duplicate check: `HealthKitUuid` identity first (repeat POST → `skipped` without re-deriving geometry, **except** when the existing Workout has no `device_lap` and the body has 2+ kept laps → attach those rows, refresh `RawHealthKitData`, return `updated`); then start/distance/duration as a cross-source backstop (e.g. GPX already imported). Matching HealthKit imports stamp `HealthKitUuid` onto the existing row when it was null so list/detail can badge. `GET /workouts` and `GET /workouts/{id}` expose top-level `healthKitUuid` (nullable). Indoor imports leave `route` null when there are no GPS coordinates.
 
 ### Bulk Import
 
@@ -376,6 +380,7 @@ Query parameters:
 - `pageSize` - Items per page (default: 20)
 
 List and detail responses include nullable `healthKitUuid` for tempo-ios already-imported badging.
+List and detail also include nullable `timerTimeS` (FIT timer seconds when present). `durationS` remains elapsed (wall clock); do not treat it as timer time.
 
 ### List HealthKit UUIDs
 
@@ -407,6 +412,8 @@ GET /workouts/{id}
 ```
 
 Detail includes top-level `healthKitUuid` when the workout was imported (or stamped) from HealthKit.
+Detail also includes nullable `timerTimeS` next to `movingTimeS`. `durationS` is always elapsed.
+Detail also includes `heartRateZoneTimes`: five `{ zone, timeS }` objects (zones 1–5) or JSON `null`, computed live from HR time series and current Settings zones (same buckets as Relative Effort). Not present on list GET.
 ### Update Workout
 
 Update workout details (e.g., activity name, shoe assignment):
@@ -503,7 +510,7 @@ Query parameters:
 - `page` - Page number (default: 1)
 - `pageSize` - Items per page (default: 1000, maximum: 5000)
 
-Each item includes `elapsedSeconds` plus optional sensors: `distanceM`, `heartRateBpm`, `cadenceRpm`, `powerWatts`, `speedMps`, `gradePercent`, `elevationM`, `temperatureC`, `verticalSpeedMps`. Null fields mean that sensor was not recorded at that sample. Samples are sparse (not every elapsed second). The server does not interpolate. Ordering is ascending by `elapsedSeconds`, then by row id.
+Each item includes `elapsedSeconds` plus optional sensors: `distanceM`, `heartRateBpm`, `cadenceRpm` (steps/min), `powerWatts`, `speedMps`, `gradePercent`, `elevationM`, `temperatureC`, `verticalSpeedMps`. Null fields mean that sensor was not recorded at that sample. Samples are sparse (not every elapsed second). The server does not interpolate. Ordering is ascending by `elapsedSeconds`, then by row id.
 
 The command-center overview client follows pages until complete or 20,000 samples and still renders what it loaded.
 

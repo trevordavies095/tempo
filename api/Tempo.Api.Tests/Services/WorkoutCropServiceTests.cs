@@ -189,6 +189,31 @@ public class WorkoutCropServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CropWorkoutAsync_NullsWatchClocks_AndPacesFromRemainingElapsed()
+    {
+        var originalDuration = 1800;
+        var startTrim = 300;
+        var endTrim = 200;
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: originalDuration);
+        workout.TimerTimeS = 1650;
+        workout.MovingTimeS = 1600;
+        // Pace as if from timer — must not survive crop
+        workout.AvgPaceS = 1650 / (workout.DistanceM / 1000.0);
+        await _db.SaveChangesAsync();
+        await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout);
+        await TestDataSeeder.SeedWorkoutWithTimeSeriesAsync(_db, workout, totalDurationS: originalDuration);
+
+        var result = await _service.CropWorkoutAsync(workout, startTrim, endTrim);
+
+        result.DurationS.Should().Be(originalDuration - startTrim - endTrim);
+        result.TimerTimeS.Should().BeNull();
+        result.MovingTimeS.Should().BeNull();
+        result.DistanceM.Should().BeGreaterThan(0);
+        var expectedPace = result.DurationS / (result.DistanceM / 1000.0);
+        result.AvgPaceS.Should().BeApproximately(expectedPace, 0.01);
+    }
+
+    [Fact]
     public async Task CropWorkoutAsync_WithCropExceedingDuration_ThrowsException()
     {
         // Arrange
@@ -469,6 +494,35 @@ public class WorkoutCropServiceTests : IDisposable
             .Should()
             .OnlyContain(s => s.AvgHeartRateBpm >= 160);
         croppedSplits.Should().OnlyContain(s => s.AvgHeartRateBpm != 50);
+    }
+
+    [Fact]
+    public async Task CropWorkoutAsync_DeletesDeviceLaps_AndRebuildsDistance()
+    {
+        var originalDuration = 1800;
+        var startTrim = 300;
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: originalDuration);
+        var coordinates = new List<double[]>();
+        for (var i = 0; i < 80; i++)
+        {
+            coordinates.Add(new[] { 0.0 + (i * 0.0004), 0.0 + (i * 0.0004) });
+        }
+
+        await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout, coordinates);
+        await TestDataSeeder.SeedWorkoutWithTimeSeriesAsync(_db, workout, totalDurationS: originalDuration);
+        await TestDataSeeder.SeedWorkoutWithSplitsAsync(_db, workout);
+        await TestDataSeeder.SeedDeviceLapsAsync(
+            _db,
+            workout,
+            (0, 1600, 600, 0, 650),
+            (1, 1700, 620, 650, 1300));
+
+        await _service.CropWorkoutAsync(workout, startTrim, 0);
+
+        var remaining = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        remaining.Should().NotBeEmpty();
+        remaining.Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.Distance);
+        remaining.Should().NotContain(s => s.Kind == WorkoutSplitKinds.DeviceLap);
     }
 
     private async Task SeedHeartRateSeriesAsync(Workout workout, int durationS, int lowHrUntilSeconds)

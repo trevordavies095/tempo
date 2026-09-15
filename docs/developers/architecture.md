@@ -14,7 +14,7 @@ Tempo is a self-hosted running tracker built as a full-stack application with a 
 - **Icons**: Tabler Icons (`@tabler/icons-react`) for UI icons. Brand marks live in `frontend/public/` (`tempo-mark-volt.png`, `tempo-mark-ink.png`).
 - **State Management**: TanStack Query for server state
 - **Maps**: Leaflet/React-Leaflet. Carto Dark Matter in Dark appearance, Voyager in Light; polyline and Highlight from tokens; OSM + CARTO attribution. Operators configure a CARTO basemaps API key via `CartoBasemaps:ApiKey` / `CartoBasemaps__ApiKey` on the API; the command center reads it from `GET /settings/carto-basemaps`.
-- **Charts**: Recharts; series colors from identity tokens. Workout overview charts HR, pace, and elevation via `getWorkoutTimeSeries` in `frontend/lib/api.ts` (pages until complete or 20,000 samples).
+- **Charts**: Recharts; series colors from identity tokens. Workout overview charts HR, pace, elevation, cadence, and power via `getWorkoutTimeSeries` in `frontend/lib/api.ts` (pages until complete or 20,000 samples).
 - **Highlight**: Shared overview focus (`splitIdx` and/or `elapsedSeconds`) in `frontend/lib/workoutHighlight.ts` — map, splits, and charts follow together.
 
 ### Backend
@@ -53,7 +53,7 @@ Each extension method:
 
 ### 2. Service Layer
 
-- `GpxParserService` / `FitParserService` — decode adapters: `TrackPoint`s, raw JSON, optional device summary (and GPX name). They do not expose `CalculateSplits` and do not hand FIT `RecordMesg` to callers. The FIT SDK is compiled from `api/Libraries/FitSDK/` (not a NuGet package).
+- `GpxParserService` / `FitParserService` — decode adapters: `TrackPoint`s, raw JSON, optional device summary (and GPX name). They do not expose `CalculateSplits` and do not hand FIT `RecordMesg` to callers. The FIT SDK comes from the `Garmin.FIT.Sdk` NuGet package (`Dynastream.Fit` namespace).
 - `StravaCsvParserService` — parses Strava export CSV metadata for bulk ZIP import.
 - `TrackGeometry` — in-process: `TrackPoint`s in; elevation gain, `WorkoutRoute` (empty when no GPS), `WorkoutSplit`s (Haversine or cumulative `DistanceM` stream), `WorkoutTimeSeries` out. No `DbContext`.
 - `WorkoutIntake` — decode adapters (GPX/FIT file → `DecodedWorkout`; HealthKit JSON via `HealthKitWorkoutDecoder`) feed `PersistAsync` (geometry, duplicate policy, default shoe, weather, relative effort, incremental best efforts). Persist is the single pipeline; HTTP import is a thin adapter. Bulk calls intake per activity file.
@@ -101,7 +101,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 - **Workout**: Core entity with stats (distance, pace, elevation, heart rate, etc.) and JSONB fields for raw GPX/FIT/Strava data
 - **TrackPoint**: In-memory sample on a path (not a table). Geometry and parsers use it; see `CONTEXT.md`.
 - **WorkoutRoute**: One-to-one relationship storing GeoJSON LineString coordinates
-- **WorkoutSplit**: One-to-many relationship for distance-based splits (km or mile)
+- **WorkoutSplit**: One-to-many segment rows with `Kind` (`distance` | `device_lap`); Idx unique per kind
 - **WorkoutTimeSeries**: One-to-many relationship for time-series data (heart rate, pace, elevation over time)
 - **WorkoutMedia**: One-to-many relationship for photos/videos attached to workouts
 - **Shoe**: Running shoe entity for tracking shoe mileage and assignments
@@ -149,7 +149,7 @@ The `TempoDbContext` configures several important indexes:
 - **Workout indexes**: `StartedAt`, composite index on `(StartedAt, DistanceM, DurationS)` for duplicate detection
 - **JSONB GIN indexes**: On `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, and `Weather` fields
 - **HealthKit UUID**: Unique index on `HealthKitUuid` for import idempotency
-- **WorkoutSplit**: Composite index on `(WorkoutId, Idx)`
+- **WorkoutSplit**: Unique composite index on `(WorkoutId, Kind, Idx)`
 - **WorkoutTimeSeries**: Composite index on `(WorkoutId, ElapsedSeconds)`
 - **User**: Unique index on `Username`
 

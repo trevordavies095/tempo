@@ -84,8 +84,9 @@ public class WorkoutMediaTests : IClassFixture<TempoWebApplicationFactory>
         // When no errors, the endpoint returns a list directly, not wrapped in an object
         var result = await response.Content.ReadFromJsonAsync<List<MediaResponse>>();
         result.Should().NotBeNull();
-        result!.Should().HaveCount(1);
-        result[0].filename.Should().Be("test.jpg");
+        var media = result!;
+        media.Should().HaveCount(1);
+        media[0].filename.Should().Be("test.jpg");
     }
 
     [Fact]
@@ -123,8 +124,9 @@ public class WorkoutMediaTests : IClassFixture<TempoWebApplicationFactory>
         // When no errors, the endpoint returns a list directly
         var result = await response.Content.ReadFromJsonAsync<List<MediaResponse>>();
         result.Should().NotBeNull();
-        result!.Should().HaveCount(2);
-        result.Select(m => m.filename).Should().Contain(new[] { "test1.jpg", "test2.png" });
+        var media = result!;
+        media.Should().HaveCount(2);
+        media.Select(m => m.filename).Should().Contain(new[] { "test1.jpg", "test2.png" });
     }
 
     [Fact]

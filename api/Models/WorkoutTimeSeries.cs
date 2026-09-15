@@ -33,7 +33,7 @@ public class WorkoutTimeSeries
     public byte? HeartRateBpm { get; set; }
 
     /// <summary>
-    /// Cadence at this point (rpm)
+    /// Cadence at this point in steps/min (both feet). Property name CadenceRpm is historical.
     /// </summary>
     public byte? CadenceRpm { get; set; }
 

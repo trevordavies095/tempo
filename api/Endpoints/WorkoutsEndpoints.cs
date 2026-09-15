@@ -187,6 +187,8 @@ public static class WorkoutsEndpoints
     /// Item <c>route</c> is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.
     /// Item <c>media</c> is <c>{ id, mimeType }</c> ordered by createdAt (empty array when none).
     /// <c>splitsCount</c> is a SQL COUNT; split rows are not loaded.
+    /// <c>timerTimeS</c> is FIT total timer time when known (null for non-FIT or missing Session); distinct from
+    /// <c>durationS</c> (elapsed) and <c>movingTimeS</c>.
     /// </remarks>
     private static async Task<IResult> ListWorkouts(
         TempoDbContext db,
@@ -392,6 +394,7 @@ public static class WorkoutsEndpoints
                 maxSpeedMps = w.MaxSpeedMps,
                 avgSpeedMps = w.AvgSpeedMps,
                 movingTimeS = w.MovingTimeS,
+                timerTimeS = w.TimerTimeS,
                 maxHeartRateBpm = w.MaxHeartRateBpm,
                 avgHeartRateBpm = w.AvgHeartRateBpm,
                 minHeartRateBpm = w.MinHeartRateBpm,
@@ -922,6 +925,7 @@ public static class WorkoutsEndpoints
     /// <param name="splitRecalculationService">Split recalculation service</param>
     /// <param name="zoneService">Heart rate zone service</param>
     /// <param name="relativeEffortService">Relative effort service</param>
+    /// <param name="bestEffortService">Best effort service</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>Updated workout with all derived data recalculated</returns>
     /// <remarks>
@@ -1158,15 +1162,22 @@ public static class WorkoutsEndpoints
                 }
             }
 
-            // Map splits
-            var splits = workout.Splits.OrderBy(s => s.Idx).Select(s => new
+            // Map splits (device_lap if any, else distance)
+            var splits = WorkoutSplitDisplay.SelectDisplayList(workout.Splits).Select(s => new
             {
                 idx = s.Idx,
+                kind = s.Kind,
                 distanceM = s.DistanceM,
                 durationS = s.DurationS,
                 paceS = s.PaceS,
-                avgHeartRateBpm = s.AvgHeartRateBpm
+                avgHeartRateBpm = s.AvgHeartRateBpm,
+                startElapsedS = s.StartElapsedS,
+                endElapsedS = s.EndElapsedS,
+                startDistanceM = s.StartDistanceM
             }).ToList();
+
+            var heartRateZoneTimes = await BuildHeartRateZoneTimesAsync(
+                workout.Id, db, zoneService, relativeEffortService);
 
             return Results.Ok(new
             {
@@ -1182,6 +1193,7 @@ public static class WorkoutsEndpoints
                 maxSpeedMps = workout.MaxSpeedMps,
                 avgSpeedMps = workout.AvgSpeedMps,
                 movingTimeS = workout.MovingTimeS,
+                timerTimeS = workout.TimerTimeS,
                 maxHeartRateBpm = workout.MaxHeartRateBpm,
                 avgHeartRateBpm = workout.AvgHeartRateBpm,
                 minHeartRateBpm = workout.MinHeartRateBpm,
@@ -1191,6 +1203,7 @@ public static class WorkoutsEndpoints
                 avgPowerWatts = workout.AvgPowerWatts,
                 calories = workout.Calories,
                 relativeEffort = workout.RelativeEffort,
+                heartRateZoneTimes,
                 rpe = workout.Rpe,
                 runType = workout.RunType,
                 notes = workout.Notes,
@@ -1220,6 +1233,8 @@ public static class WorkoutsEndpoints
     /// <param name="id">Workout ID</param>
     /// <param name="db">Database context</param>
     /// <param name="weatherService">Weather service</param>
+    /// <param name="zoneService">Heart rate zone service</param>
+    /// <param name="relativeEffortService">Relative effort service (time-in-zone extractor)</param>
     /// <param name="logger">Logger instance</param>
     /// <param name="includeRaw">
     /// When true, include raw GPX/FIT/Strava/HealthKit JSON blobs. Defaults to false: those four
@@ -1228,7 +1243,11 @@ public static class WorkoutsEndpoints
     /// <returns>Complete workout data including route, splits, weather, and optional raw data</returns>
     /// <remarks>
     /// Retrieves complete workout data including route (as GeoJSON), splits, and weather information.
-    /// Each split includes idx, distanceM, durationS, paceS, and avgHeartRateBpm (number or null).
+    /// Each split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),
+    /// startElapsedS, endElapsedS, and startDistanceM (number or null).
+    /// <c>timerTimeS</c> is FIT total timer time when known (null for non-FIT or missing Session); distinct from
+    /// <c>durationS</c> (elapsed) and <c>movingTimeS</c>.
+    /// <c>heartRateZoneTimes</c> is five live zone buckets from HR series + current Settings, or JSON null.
     /// Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values
     /// are normalized for consistency.
     /// </remarks>
@@ -1236,6 +1255,8 @@ public static class WorkoutsEndpoints
         Guid id,
         TempoDbContext db,
         WeatherService weatherService,
+        HeartRateZoneService zoneService,
+        RelativeEffortService relativeEffortService,
         ILogger<Program> logger,
         [FromQuery] bool includeRaw = false)
     {
@@ -1303,14 +1324,18 @@ public static class WorkoutsEndpoints
             }
         }
 
-        // Map splits
-        var splits = workout.Splits.OrderBy(s => s.Idx).Select(s => new
+        // Map splits (device_lap if any, else distance)
+        var splits = WorkoutSplitDisplay.SelectDisplayList(workout.Splits).Select(s => new
         {
             idx = s.Idx,
+            kind = s.Kind,
             distanceM = s.DistanceM,
             durationS = s.DurationS,
             paceS = s.PaceS,
-            avgHeartRateBpm = s.AvgHeartRateBpm
+            avgHeartRateBpm = s.AvgHeartRateBpm,
+            startElapsedS = s.StartElapsedS,
+            endElapsedS = s.EndElapsedS,
+            startDistanceM = s.StartDistanceM
         }).ToList();
 
         // Raw JSONB blobs are opt-in: default query projects them out, so skip deserialize too.
@@ -1381,6 +1406,9 @@ public static class WorkoutsEndpoints
             };
         }
 
+        var heartRateZoneTimes = await BuildHeartRateZoneTimesAsync(
+            workout.Id, db, zoneService, relativeEffortService);
+
         return Results.Ok(new
         {
             id = workout.Id,
@@ -1395,6 +1423,7 @@ public static class WorkoutsEndpoints
             maxSpeedMps = workout.MaxSpeedMps,
             avgSpeedMps = workout.AvgSpeedMps,
             movingTimeS = workout.MovingTimeS,
+            timerTimeS = workout.TimerTimeS,
             maxHeartRateBpm = workout.MaxHeartRateBpm,
             avgHeartRateBpm = workout.AvgHeartRateBpm,
             minHeartRateBpm = workout.MinHeartRateBpm,
@@ -1404,6 +1433,7 @@ public static class WorkoutsEndpoints
             avgPowerWatts = workout.AvgPowerWatts,
             calories = workout.Calories,
             relativeEffort = workout.RelativeEffort,
+            heartRateZoneTimes,
             rpe = workout.Rpe,
             runType = workout.RunType,
             notes = workout.Notes,
@@ -1610,7 +1640,7 @@ public static class WorkoutsEndpoints
         {
             form = await request.ReadFormAsync();
         }
-        catch (Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
+        catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
         {
             logger.LogError(ex, "Request body was incomplete or connection was closed prematurely during bulk import");
             return Results.BadRequest(new { error = "Upload failed: The request was incomplete. This may be due to a timeout or connection issue. Please try again with a stable connection." });
@@ -1774,7 +1804,7 @@ public static class WorkoutsEndpoints
         {
             form = await request.ReadFormAsync();
         }
-        catch (Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
+        catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex) when (ex.Message.Contains("Unexpected end of request content"))
         {
             logger.LogError(ex, "Request body was incomplete or connection was closed prematurely during export import");
             return Results.BadRequest(new { error = "Upload failed: The request was incomplete. This may be due to a timeout or connection issue. Please try again with a stable connection." });
@@ -2201,6 +2231,7 @@ public static class WorkoutsEndpoints
     /// <param name="id">Workout ID</param>
     /// <param name="db">Database context</param>
     /// <param name="mediaConfig">Media storage configuration</param>
+    /// <param name="bestEffortService">Best effort service</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>No content on success</returns>
     /// <remarks>
@@ -2455,7 +2486,7 @@ public static class WorkoutsEndpoints
         .Produces(404)
         .WithSummary("Get workout time series")
         .WithDescription(
-            "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm, powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. " +
+            "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm (steps/min), powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. " +
             "Null fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second is present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. " +
             "The server does not interpolate missing seconds; clients may interpolate if needed. " +
             "Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. " +
@@ -2468,7 +2499,8 @@ public static class WorkoutsEndpoints
         .WithSummary("Get workout details")
         .WithDescription(
             "Retrieves complete workout data including route (as GeoJSON), splits, and weather information. " +
-            "Each split includes idx, distanceM, durationS, paceS, and avgHeartRateBpm (number or null). " +
+            "Each split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null), " +
+            "startElapsedS, endElapsedS, and startDistanceM (number or null). " +
             "Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values " +
             "are normalized for consistency.");
 
@@ -2679,6 +2711,57 @@ public static class WorkoutsEndpoints
             logger.LogWarning(ex, "Failed to save unit preference to UserSettings");
             // Don't throw - this is not critical for import to succeed
         }
+    }
+
+    /// <summary>
+    /// Live time-in-zone buckets from HR series + current Settings (or null when hidden).
+    /// </summary>
+    private static async Task<object[]?> BuildHeartRateZoneTimesAsync(
+        Guid workoutId,
+        TempoDbContext db,
+        HeartRateZoneService zoneService,
+        RelativeEffortService relativeEffortService)
+    {
+        var series = await db.WorkoutTimeSeries
+            .AsNoTracking()
+            .Where(ts => ts.WorkoutId == workoutId && ts.HeartRateBpm.HasValue)
+            .OrderBy(ts => ts.ElapsedSeconds)
+            .Select(ts => new WorkoutTimeSeries
+            {
+                ElapsedSeconds = ts.ElapsedSeconds,
+                HeartRateBpm = ts.HeartRateBpm
+            })
+            .ToListAsync();
+
+        if (series.Count == 0)
+        {
+            return null;
+        }
+
+        var settings = await db.UserSettings.AsNoTracking().FirstOrDefaultAsync();
+        if (settings == null)
+        {
+            return null;
+        }
+
+        var zones = zoneService.GetZonesFromUserSettings(settings);
+        var timeInZones = relativeEffortService.TryGetTimeInZones(series, zones);
+        if (timeInZones == null)
+        {
+            return null;
+        }
+
+        var result = new object[5];
+        for (int i = 0; i < 5; i++)
+        {
+            result[i] = new
+            {
+                zone = i + 1,
+                timeS = (int)Math.Round(timeInZones[i])
+            };
+        }
+
+        return result;
     }
 
 }

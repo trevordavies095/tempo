@@ -56,7 +56,12 @@ public static class DatabaseMigrationHelper
         { ("ImportJobs", "ResultJson"), "20260816191738_AddImportJobResultJson" },
         { ("Workouts", "RawHealthKitData"), "20260830153912_AddWorkoutRawHealthKitData" },
         { ("Workouts", "HealthKitUuid"), "20260830154859_AddWorkoutHealthKitUuid" },
-        { ("WorkoutRoutes", "PreviewGeoJson"), "20260831214822_AddWorkoutRoutePreviewGeoJson" }
+        { ("WorkoutRoutes", "PreviewGeoJson"), "20260831214822_AddWorkoutRoutePreviewGeoJson" },
+        { ("WorkoutSplits", "Kind"), "20260915164417_AddWorkoutSplitKindAndElapsedBounds" },
+        { ("WorkoutSplits", "StartElapsedS"), "20260915164417_AddWorkoutSplitKindAndElapsedBounds" },
+        { ("WorkoutSplits", "EndElapsedS"), "20260915164417_AddWorkoutSplitKindAndElapsedBounds" },
+        { ("WorkoutSplits", "StartDistanceM"), "20260915164417_AddWorkoutSplitKindAndElapsedBounds" },
+        { ("Workouts", "TimerTimeS"), "20260915174809_AddWorkoutTimerTimeS" }
     };
 
     private const string ProductVersion = "10.0.0";

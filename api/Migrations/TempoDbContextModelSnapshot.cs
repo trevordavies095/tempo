@@ -440,6 +440,9 @@ namespace Tempo.Api.Migrations
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("TimerTimeS")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Weather")
                         .HasColumnType("jsonb");
 
@@ -560,20 +563,38 @@ namespace Tempo.Api.Migrations
                     b.Property<int>("DurationS")
                         .HasColumnType("integer");
 
+                    b.Property<int>("EndElapsedS")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Idx")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<double>("PaceS")
                         .HasColumnType("double precision");
+
+                    b.Property<double?>("StartDistanceM")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("StartElapsedS")
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("WorkoutId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkoutId", "Idx");
+                    b.HasIndex("WorkoutId", "Kind", "Idx")
+                        .IsUnique();
 
-                    b.ToTable("WorkoutSplits");
+                    b.ToTable("WorkoutSplits", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkoutSplits_Kind", "\"Kind\" IN ('distance', 'device_lap')");
+                        });
                 });
 
             modelBuilder.Entity("Tempo.Api.Models.WorkoutTimeSeries", b =>

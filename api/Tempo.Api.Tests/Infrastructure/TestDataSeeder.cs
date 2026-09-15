@@ -231,6 +231,7 @@ public static class TestDataSeeder
             splits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
+                Kind = WorkoutSplitKinds.Distance,
                 Idx = i,
                 DistanceM = splitDistance,
                 DurationS = splitDuration,
@@ -248,6 +249,7 @@ public static class TestDataSeeder
             splits.Add(new WorkoutSplit
             {
                 WorkoutId = workout.Id,
+                Kind = WorkoutSplitKinds.Distance,
                 Idx = numSplits,
                 DistanceM = remainingDistance,
                 DurationS = remainingDuration,
@@ -255,9 +257,41 @@ public static class TestDataSeeder
             });
         }
 
+        WorkoutSplitElapsed.FillFromCumulativeDuration(splits);
         db.WorkoutSplits.AddRange(splits);
         await db.SaveChangesAsync();
         return splits;
+    }
+
+    /// <summary>
+    /// Seeds hand-written device_lap rows (no FIT parser). Idx may collide with distance miles.
+    /// </summary>
+    public static async Task<List<WorkoutSplit>> SeedDeviceLapsAsync(
+        TempoDbContext db,
+        Workout workout,
+        params (int Idx, double DistanceM, int DurationS, int StartElapsedS, int EndElapsedS)[] laps)
+    {
+        var rows = new List<WorkoutSplit>();
+        foreach (var lap in laps)
+        {
+            rows.Add(new WorkoutSplit
+            {
+                WorkoutId = workout.Id,
+                Kind = WorkoutSplitKinds.DeviceLap,
+                Idx = lap.Idx,
+                DistanceM = lap.DistanceM,
+                DurationS = lap.DurationS,
+                PaceS = lap.DurationS > 0 && lap.DistanceM > 0
+                    ? lap.DurationS / (lap.DistanceM / 1000.0)
+                    : 0,
+                StartElapsedS = lap.StartElapsedS,
+                EndElapsedS = lap.EndElapsedS
+            });
+        }
+
+        db.WorkoutSplits.AddRange(rows);
+        await db.SaveChangesAsync();
+        return rows;
     }
 
     /// <summary>
@@ -443,7 +477,7 @@ public static class TestDataSeeder
     }
 
     /// <summary>
-    /// Safely clears all test data from the database using raw SQL, handling missing tables gracefully
+    /// Safely clears all test data from the database using ExecuteDeleteAsync, handling missing tables gracefully
     /// This is useful for cleanup in integration tests where tables might not exist yet
     /// </summary>
     /// <param name="db">Database context</param>
@@ -456,22 +490,22 @@ public static class TestDataSeeder
         {
             // Delete in order to respect foreign key constraints
             // Catch SqliteException for "no such table" errors and ignore them
-            await SafeDeleteFromTableAsync(db, "WorkoutTimeSeries");
-            await SafeDeleteFromTableAsync(db, "WorkoutSplits");
-            await SafeDeleteFromTableAsync(db, "WorkoutMedia");
-            await SafeDeleteFromTableAsync(db, "BestEfforts");
-            await SafeDeleteFromTableAsync(db, "WorkoutRoutes");
-            await SafeDeleteFromTableAsync(db, "Workouts");
-            await SafeDeleteFromTableAsync(db, "ImportJobs");
-            await SafeDeleteFromTableAsync(db, "UserSettings");
-            await SafeDeleteFromTableAsync(db, "Shoes");
-            
+            await SafeExecuteDeleteAsync(() => db.WorkoutTimeSeries.ExecuteDeleteAsync());
+            await SafeExecuteDeleteAsync(() => db.WorkoutSplits.ExecuteDeleteAsync());
+            await SafeExecuteDeleteAsync(() => db.WorkoutMedia.ExecuteDeleteAsync());
+            await SafeExecuteDeleteAsync(() => db.BestEfforts.ExecuteDeleteAsync());
+            await SafeExecuteDeleteAsync(() => db.WorkoutRoutes.ExecuteDeleteAsync());
+            await SafeExecuteDeleteAsync(() => db.Workouts.ExecuteDeleteAsync());
+            await SafeExecuteDeleteAsync(() => db.ImportJobs.ExecuteDeleteAsync());
+            await SafeExecuteDeleteAsync(() => db.UserSettings.ExecuteDeleteAsync());
+            await SafeExecuteDeleteAsync(() => db.Shoes.ExecuteDeleteAsync());
+
             if (!preserveUsers)
             {
-                await SafeDeleteFromTableAsync(db, "ApiKeys");
-                await SafeDeleteFromTableAsync(db, "Users");
+                await SafeExecuteDeleteAsync(() => db.ApiKeys.ExecuteDeleteAsync());
+                await SafeExecuteDeleteAsync(() => db.Users.ExecuteDeleteAsync());
             }
-            
+
             await transaction.CommitAsync();
         }
         catch
@@ -482,15 +516,13 @@ public static class TestDataSeeder
     }
 
     /// <summary>
-    /// Safely deletes all rows from a table, ignoring "no such table" errors
+    /// Runs an ExecuteDeleteAsync callback, ignoring SQLite "no such table" errors
     /// </summary>
-    /// <param name="db">Database context</param>
-    /// <param name="tableName">Name of the table to delete from</param>
-    private static async Task SafeDeleteFromTableAsync(TempoDbContext db, string tableName)
+    private static async Task SafeExecuteDeleteAsync(Func<Task<int>> deleteAsync)
     {
         try
         {
-            await db.Database.ExecuteSqlRawAsync($"DELETE FROM {tableName}");
+            await deleteAsync();
         }
         catch (SqliteException ex) when (ex.Message.Contains("no such table", StringComparison.OrdinalIgnoreCase))
         {

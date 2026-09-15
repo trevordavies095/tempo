@@ -40,8 +40,6 @@ You can filter and sort activities by:
 
 ## Workout Overview
 
-![Workout overview](./screenshots/workout-overview.png)
-
 Click any workout to open **Workout overview** — the command-center screen for one Workout (map, splits, time series, weather, media, comparison). Use the Overview and Route comparison tabs when similar routes exist.
 
 ### Highlight
@@ -60,11 +58,11 @@ Map, splits, and time-series charts share one **Highlight**: a split index and/o
 
 Detailed metrics including:
 - **Distance** - Total distance in your preferred units
-- **Time** - Duration, moving time, and elapsed time
+- **Time** - On Workout overview, when FIT timer time differs from elapsed, the primary Duration is timer time with elapsed shown underneath; Moving Time appears under Additional Details only when it differs from that hero clock. Without timer, Moving Time still promotes over elapsed when they differ (same as before). Workout cards and the activities table show a single duration number (timer when it differs from elapsed; they do not promote moving). Analytics Duration sums remain elapsed.
 - **Pace** - Average, best, and current pace
 - **Elevation** - Gain, loss, min, and max elevation
-- **Heart Rate** - Average, max, and zones
-- **Cadence** - Average and max cadence (if available from FIT or GPX TrackPointExtension)
+- **Heart Rate** - Average and max; when an HR series exists, Additional Details also shows time in zones 1–5 (with % of time that landed in a zone). Omit the zone block when there is no HR series
+- **Cadence** - Average and max cadence in steps per minute (spm), if available from FIT or GPX TrackPointExtension
 - **Power** - Average and max power (if available from FIT or GPX TrackPointExtension)
 - **Relative Effort** - Calculated intensity score
 - **Shoe** - Assigned running shoe (if any), showing brand, model, and current total mileage
@@ -73,20 +71,25 @@ You can also edit notes, RPE, run type, and shoe assignment on this screen.
 
 ### Splits
 
-Distance-based splits showing:
+The Splits table on Workout overview shows:
+
 - Split number
 - Distance
 - Time
 - Pace
-- Average heart rate (if the Workout has heart-rate time series)
+- Average heart rate (when available)
 
-Splits are calculated based on your unit preference (1km for metric, 1 mile for imperial). Hover or click a split to set Highlight on the map and charts.
+When the Workout has device laps (from a FIT file with 2+ kept lap messages), overview shows those laps — including a leftover fraction of a mile or kilometre — and lap times are timer time (pauses excluded). The heading stays **Splits**. Unit-preference still rebuilds distance-based km/mile rows only; device laps are preserved until crop or a fuller re-import.
+
+Without device laps, splits are calculated from your unit preference (1 km metric, 1 mile imperial). Hover or click a split to set Highlight on the map and charts.
 
 ### Time Series Charts
 
-When sensor samples exist, Workout overview charts heart rate, pace (from speed), and elevation over elapsed time. A series with no samples is omitted. A Workout with no time series shows **No sensor data** instead of empty chart frames.
+When sensor samples exist, Workout overview charts heart rate, pace (from speed), elevation, cadence, and power over elapsed time. A series with no samples is omitted. A Workout with no time series shows **No sensor data** instead of empty chart frames.
 
-Cadence, power, temperature, speed, grade, and vertical speed remain in stored WorkoutTimeSeries when the file provided them; they are not charted on this screen.
+Cadence tooltips use **spm** (steps per minute). Power tooltips use **W**. Stored cadence or power of `0` (for example at a stop) is not plotted so the axis stays in the running band.
+
+Temperature, speed, grade, and vertical speed remain in stored WorkoutTimeSeries when the file provided them; they are not charted on this screen.
 
 For very long Workouts, the command center loads up to 20,000 samples (paged from `GET /workouts/{id}/time-series`) and still renders what it loaded.
 
@@ -156,7 +159,7 @@ To delete a workout:
 
 You can recalculate:
 - **Relative Effort** - Recalculate based on current heart rate zone settings
-- **Splits** - Recalculate splits if you've changed unit preferences (replaces `WorkoutSplit` rows only; stored distance, duration, and elevation stay)
+- **Splits** - Recalculate splits if you've changed unit preferences (replaces distance `WorkoutSplit` rows only; device laps are preserved when present; stored workout distance, duration, and elevation stay)
 
 ## Statistics and Analytics
 

@@ -24,7 +24,7 @@ public static class DeviceExtractionService
     /// Maps Apple Watch identifiers to friendly device names.
     /// Based on AppleDB device information: https://appledb.dev/device-selection/Apple-Watch.html
     /// </summary>
-    public static string? MapAppleWatchIdentifier(string identifier)
+    public static string? MapAppleWatchIdentifier(string? identifier)
     {
         // Normalize identifier (remove any extra whitespace, case-insensitive)
         var normalized = identifier?.Trim();
@@ -217,8 +217,10 @@ public static class DeviceExtractionService
     /// <summary>
     /// Extracts product code from device element.
     /// </summary>
-    /// <returns>Product code as ushort, or null if not found or is a string</returns>
+    /// <param name="deviceElement">JSON device element from FIT raw data</param>
+    /// <param name="manufacturer">Manufacturer name if known</param>
     /// <param name="productString">Output parameter for product string if found</param>
+    /// <returns>Product code as ushort, or null if not found or is a string</returns>
     private static ushort? ExtractProductCode(JsonElement deviceElement, string? manufacturer, out string? productString)
     {
         productString = null;

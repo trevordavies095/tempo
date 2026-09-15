@@ -277,6 +277,7 @@ public class ExportService
         return await _db.WorkoutSplits
             .AsNoTracking()
             .OrderBy(s => s.WorkoutId)
+            .ThenBy(s => s.Kind)
             .ThenBy(s => s.Idx)
             .ToListAsync();
     }

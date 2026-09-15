@@ -50,11 +50,8 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         _exportService = new ExportService(_db, mediaConfig, httpContextAccessor, logger);
         
         // Ensure user exists for authentication (check first to avoid unique constraint violation)
-        _testUser = _db.Users.FirstOrDefault(u => u.Username == "testuser");
-        if (_testUser == null)
-        {
-            _testUser = TestDataSeeder.SeedUserAsync(_db).GetAwaiter().GetResult();
-        }
+        _testUser = _db.Users.FirstOrDefault(u => u.Username == "testuser")
+            ?? TestDataSeeder.SeedUserAsync(_db).GetAwaiter().GetResult();
         
         // Set up HTTP context with authenticated user
         var httpContext = new DefaultHttpContext();
@@ -397,10 +394,11 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         var shoesJson = await new StreamReader(shoesStream).ReadToEndAsync();
         var shoes = JsonSerializer.Deserialize<List<JsonElement>>(shoesJson);
         shoes.Should().NotBeNull();
-        shoes!.Should().HaveCount(2);
-        var retired = shoes.Single(e => e.GetProperty("brand").GetString() == "Adidas");
+        var shoesList = shoes!;
+        shoesList.Should().HaveCount(2);
+        var retired = shoesList.Single(e => e.GetProperty("brand").GetString() == "Adidas");
         retired.GetProperty("isRetired").GetBoolean().Should().BeTrue();
-        var active = shoes.Single(e => e.GetProperty("brand").GetString() == "Nike");
+        var active = shoesList.Single(e => e.GetProperty("brand").GetString() == "Nike");
         active.GetProperty("isRetired").GetBoolean().Should().BeFalse();
     }
 
@@ -424,10 +422,11 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         var routesJson = await new StreamReader(routesStream).ReadToEndAsync();
         var routes = JsonSerializer.Deserialize<List<JsonElement>>(routesJson);
         routes.Should().NotBeNull();
-        routes!.Should().HaveCount(1);
-        routes[0].TryGetProperty("previewGeoJson", out _).Should().BeFalse();
-        routes[0].TryGetProperty("PreviewGeoJson", out _).Should().BeFalse();
-        routes[0].TryGetProperty("routeGeoJson", out var geoJson).Should().BeTrue();
+        var routesList = routes!;
+        routesList.Should().HaveCount(1);
+        routesList[0].TryGetProperty("previewGeoJson", out _).Should().BeFalse();
+        routesList[0].TryGetProperty("PreviewGeoJson", out _).Should().BeFalse();
+        routesList[0].TryGetProperty("routeGeoJson", out var geoJson).Should().BeTrue();
         geoJson.GetProperty("type").GetString().Should().Be("LineString");
     }
 

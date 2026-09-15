@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { type WorkoutListItem } from '@/lib/api';
 import { formatDuration, formatDistance, formatElevation, getWorkoutDisplayName } from '@/lib/format';
+import { listDisplayDurationS } from '@/lib/workoutClocks';
 import { formatActivityDate } from '@/utils/dateUtils';
 import { type SortColumn, type SortOrder } from '@/hooks/useActivitiesFilters';
 import { IconArrowDown, IconArrowUp } from '@tabler/icons-react';
@@ -107,7 +108,7 @@ export default function ActivitiesTable({
                 </Link>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
-                {formatDuration(workout.durationS)}
+                {formatDuration(listDisplayDurationS(workout))}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                 {formatDistance(workout.distanceM, unitPreference)}

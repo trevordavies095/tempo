@@ -88,15 +88,17 @@ public class WorkoutCropService
         workout.StartedAt = newStartedAt;
         workout.DistanceM = geometry.DistanceM;
         workout.ElevGainM = geometry.ElevGainM;
-        workout.AvgPaceS = newDurationS > 0 && workout.DistanceM > 0
-            ? newDurationS / (workout.DistanceM / 1000.0)
-            : 0;
+        // Watch session clocks are invalid for a sliced activity; pace from remaining elapsed.
+        workout.TimerTimeS = null;
+        workout.MovingTimeS = null;
+        WorkoutClocks.ApplyAvgPace(workout);
 
         workout.Route.RouteGeoJson = geometry.Route.RouteGeoJson;
         workout.Route.PreviewGeoJson = geometry.Route.PreviewGeoJson;
 
         ApplySeriesAggregates(workout, geometry.TimeSeries);
 
+        // Replace distance and delete other kinds (crop rewrites the elapsed origin).
         var oldSplits = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
         if (oldSplits.Count > 0)
         {

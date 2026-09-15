@@ -24,6 +24,18 @@ _Avoid_: workout detail, activity page (when meaning this screen)
 A recorded run with stats, optional route, splits, time series, media, shoe, and weather.
 _Avoid_: activity (except the existing Activities list name), session
 
+**Elapsed time**:
+Wall-clock duration of a Workout from start to finish, including pauses. Stored as `Workout.DurationS`. Duplicate detection uses this clock.
+_Avoid_: duration (when the clock is unspecified), timer time, moving time
+
+**Timer time**:
+Time the recording device was running, pauses excluded. Garmin Connect’s primary duration (`total_timer_time` in FIT). Stored as `Workout.TimerTimeS`. Not the same as elapsed or moving.
+_Avoid_: elapsed time, moving time, DurationS (as this clock)
+
+**Moving time**:
+Time spent moving by a speed threshold, when the source provides it. Stored as `Workout.MovingTimeS`. Not timer time.
+_Avoid_: timer time, elapsed time
+
 **TrackPoint**:
 An in-memory sample on a Workout path. Latitude and longitude are optional (indoor samples). Optional elevation, time, sensors (HR, cadence, power, temperature), and motion (speed, distance, grade, vertical speed). Not a table.
 _Avoid_: GpxPoint, GPS track, polyline (as this type)
@@ -45,8 +57,12 @@ GeoJSON LineString for one Workout.
 _Avoid_: GPS track, polyline (as the domain name)
 
 **WorkoutSplit**:
-Distance-based split for a Workout (km or mile per UserSettings).
-_Avoid_: lap, mile split (as the type name)
+Segment row for a Workout with `Kind` (`distance` | `device_lap`). `distance` rows are unit-derived (km or mile per UserSettings) and replaced on unit-preference recalc; `device_lap` rows are device ranges when present. One table; Idx is unique per kind.
+_Avoid_: lap table, mile split (as the type name)
+
+**Device lap**:
+Product term for a `WorkoutSplit` with `Kind = device_lap` — a range the recording device wrote (FIT `lap` message, or HealthKit `laps` summaries from tempo-ios), usually auto-distance plus leftover. Authoritative for overview display when any exist. Survives unit-preference split recalc; crop deletes them. Not a separate table. Library FIT rows without `device_lap` yet are filled on startup by `DeviceLapBackfillWorker` (copies stored/reparsed FIT laps; skips cropped sessions). Not rebuilt from DistM.
+_Avoid_: second entity/table, auto-split (when meaning the FIT lap)
 
 **WorkoutTimeSeries**:
 Per-elapsed-second (or per-point) samples for a Workout: heart rate, pace/speed, elevation, and related sensors.
@@ -73,3 +89,7 @@ _Avoid_: tag, category (when meaning run type)
 **Highlight**:
 Shared focus on Workout overview: a split index and/or elapsed seconds that map, splits, and time series follow together.
 _Avoid_: hover state, cursor (as the domain name)
+
+**Cadence**:
+Steps per minute (both feet). Stored in `CadenceRpm` / `AvgCadenceRpm` / `MaxCadenceRpm` (historical names; the number is steps/min). FIT decode multiplies record and session avg/max cadence by 2 (strides → steps); GPX TrackPointExtension and HealthKit `cad` are stored as given. API JSON keys stay `cadenceRpm` / `avgCadenceRpm` / `maxCadenceRpm`.
+_Avoid_: rpm (for running), strides/min (as the stored unit)

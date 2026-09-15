@@ -1,8 +1,12 @@
 using System.IO.Compression;
-using System.Text;
+using System.Text.Json;
+using Dynastream.Fit;
 using FluentAssertions;
 using Tempo.Api.Services;
 using Xunit;
+using FitDateTime = Dynastream.Fit.DateTime;
+using FitFile = Dynastream.Fit.File;
+using IOFile = System.IO.File;
 
 namespace Tempo.Api.Tests.Services;
 
@@ -12,6 +16,8 @@ namespace Tempo.Api.Tests.Services;
 public class FitParserServiceTests
 {
     private readonly FitParserService _parser;
+    private static readonly string CadenceFixturePath =
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "running-cadence-80.fit");
 
     public FitParserServiceTests()
     {
@@ -23,20 +29,20 @@ public class FitParserServiceTests
     {
         // Arrange
         var fitFilePath = Path.Combine("..", "..", "..", "..", "..", "test_data", "20251110.fit");
-        if (!File.Exists(fitFilePath))
+        if (!IOFile.Exists(fitFilePath))
         {
             // Skip test if file doesn't exist (e.g., in CI)
             return;
         }
 
-        using var stream = File.OpenRead(fitFilePath);
+        using var stream = IOFile.OpenRead(fitFilePath);
 
         // Act
         var result = _parser.ParseFit(stream);
 
         // Assert
         result.Should().NotBeNull();
-        result.StartTime.Should().BeAfter(DateTime.MinValue);
+        result.StartTime.Should().BeAfter(System.DateTime.MinValue);
         result.DurationSeconds.Should().BeGreaterThan(0);
         result.DistanceMeters.Should().BeGreaterThan(0);
         result.RawFitDataJson.Should().NotBeNullOrEmpty();
@@ -77,12 +83,12 @@ public class FitParserServiceTests
     {
         // Arrange
         var fitFilePath = Path.Combine("..", "..", "..", "..", "..", "test_data", "20251110.fit");
-        if (!File.Exists(fitFilePath))
+        if (!IOFile.Exists(fitFilePath))
         {
             return;
         }
 
-        using var stream = File.OpenRead(fitFilePath);
+        using var stream = IOFile.OpenRead(fitFilePath);
 
         // Act
         var result = _parser.ParseFit(stream);
@@ -107,12 +113,12 @@ public class FitParserServiceTests
     {
         // Arrange
         var fitFilePath = Path.Combine("..", "..", "..", "..", "..", "test_data", "20251110.fit");
-        if (!File.Exists(fitFilePath))
+        if (!IOFile.Exists(fitFilePath))
         {
             return;
         }
 
-        using var stream = File.OpenRead(fitFilePath);
+        using var stream = IOFile.OpenRead(fitFilePath);
 
         // Act
         var result = _parser.ParseFit(stream);
@@ -124,16 +130,86 @@ public class FitParserServiceTests
     }
 
     [Fact]
+    public void ParseFit_ConvertsCadenceToStepsPerMinute_FromCommittedFixture()
+    {
+        IOFile.Exists(CadenceFixturePath).Should().BeTrue(
+            "running-cadence-80.fit must be copied to the test output directory");
+
+        using var stream = IOFile.OpenRead(CadenceFixturePath);
+        var result = _parser.ParseFit(stream);
+
+        result.TrackPoints.Should().NotBeEmpty();
+        result.TrackPoints.Should().OnlyContain(p => p.CadenceRpm == 160);
+        result.SeriesPoints.Should().NotBeEmpty();
+        result.SeriesPoints.Should().OnlyContain(p => p.CadenceRpm == 160);
+
+        using var doc = JsonDocument.Parse(result.RawFitDataJson!);
+        var root = doc.RootElement;
+        root.GetProperty("cadenceUnit").GetString().Should().Be("spm");
+        var session = root.GetProperty("session");
+        session.GetProperty("avgCadence").GetInt32().Should().Be(160);
+        session.GetProperty("maxCadence").GetInt32().Should().Be(176);
+        // FIT SDK aliases max_running_cadence to max_cadence on encode; we do not ×2 it.
+        session.GetProperty("maxRunningCadence").GetInt32().Should().Be(88);
+
+        foreach (var point in root.GetProperty("trackPoints").EnumerateArray())
+        {
+            point.GetProperty("cad").GetInt32().Should().Be(160);
+        }
+    }
+
+    [Fact]
+    public void ParseGzippedFit_ConvertsCadenceToStepsPerMinute_FromCommittedFixture()
+    {
+        var fitData = IOFile.ReadAllBytes(CadenceFixturePath);
+        using var gzippedStream = new MemoryStream();
+        using (var gzipStream = new GZipStream(gzippedStream, CompressionMode.Compress, leaveOpen: true))
+        {
+            gzipStream.Write(fitData, 0, fitData.Length);
+        }
+        gzippedStream.Position = 0;
+
+        var result = _parser.ParseGzippedFit(gzippedStream);
+
+        result.SeriesPoints.Should().OnlyContain(p => p.CadenceRpm == 160);
+        using var doc = JsonDocument.Parse(result.RawFitDataJson!);
+        doc.RootElement.GetProperty("cadenceUnit").GetString().Should().Be("spm");
+        doc.RootElement.GetProperty("session").GetProperty("avgCadence").GetInt32().Should().Be(160);
+    }
+
+    [Fact]
+    public void ParseFit_ConvertsIndoorSeriesCadence_WhenNoGpsTrackPoints()
+    {
+        var fitBytes = CreateIndoorFitWithCadence(strideCadence: 80, avgCadence: 80, maxCadence: 88);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = _parser.ParseFit(stream);
+
+        result.TrackPoints.Should().BeEmpty();
+        result.SeriesPoints.Should().NotBeEmpty();
+        result.SeriesPoints.Should().OnlyContain(p => p.CadenceRpm == 160);
+
+        using var doc = JsonDocument.Parse(result.RawFitDataJson!);
+        var root = doc.RootElement;
+        root.GetProperty("cadenceUnit").GetString().Should().Be("spm");
+        root.GetProperty("trackPoints").GetArrayLength().Should().Be(0);
+        var session = root.GetProperty("session");
+        session.GetProperty("avgCadence").GetInt32().Should().Be(160);
+        session.GetProperty("maxCadence").GetInt32().Should().Be(176);
+        session.GetProperty("maxRunningCadence").GetInt32().Should().Be(88);
+    }
+
+    [Fact]
     public void ParseFit_ExtractsCadence_WhenPresent()
     {
         // Arrange
         var fitFilePath = Path.Combine("..", "..", "..", "..", "..", "test_data", "20251110.fit");
-        if (!File.Exists(fitFilePath))
+        if (!IOFile.Exists(fitFilePath))
         {
             return;
         }
 
-        using var stream = File.OpenRead(fitFilePath);
+        using var stream = IOFile.OpenRead(fitFilePath);
 
         // Act
         var result = _parser.ParseFit(stream);
@@ -150,16 +226,16 @@ public class FitParserServiceTests
         // Arrange
         // First, create a gzipped FIT file from an existing FIT file
         var fitFilePath = Path.Combine("..", "..", "..", "..", "..", "test_data", "20251110.fit");
-        if (!File.Exists(fitFilePath))
+        if (!IOFile.Exists(fitFilePath))
         {
             return;
         }
 
         byte[] fitData;
-        using (var fileStream = File.OpenRead(fitFilePath))
+        using (var fileStream = IOFile.OpenRead(fitFilePath))
         {
             fitData = new byte[fileStream.Length];
-            fileStream.Read(fitData, 0, fitData.Length);
+            fileStream.ReadExactly(fitData);
         }
 
         // Create a gzipped version in memory
@@ -175,7 +251,7 @@ public class FitParserServiceTests
 
         // Assert
         result.Should().NotBeNull();
-        result.StartTime.Should().BeAfter(DateTime.MinValue);
+        result.StartTime.Should().BeAfter(System.DateTime.MinValue);
         result.DurationSeconds.Should().BeGreaterThan(0);
         result.DistanceMeters.Should().BeGreaterThan(0);
     }
@@ -220,12 +296,12 @@ public class FitParserServiceTests
     {
         // Arrange
         var fitFilePath = Path.Combine("..", "..", "..", "..", "..", "test_data", "20251110.fit");
-        if (!File.Exists(fitFilePath))
+        if (!IOFile.Exists(fitFilePath))
         {
             return;
         }
 
-        using var stream = File.OpenRead(fitFilePath);
+        using var stream = IOFile.OpenRead(fitFilePath);
 
         // Act
         var result = _parser.ParseFit(stream);
@@ -245,12 +321,12 @@ public class FitParserServiceTests
     {
         // Arrange
         var fitFilePath = Path.Combine("..", "..", "..", "..", "..", "test_data", "20251110.fit");
-        if (!File.Exists(fitFilePath))
+        if (!IOFile.Exists(fitFilePath))
         {
             return;
         }
 
-        using var stream = File.OpenRead(fitFilePath);
+        using var stream = IOFile.OpenRead(fitFilePath);
 
         // Act
         var result = _parser.ParseFit(stream);
@@ -282,5 +358,150 @@ public class FitParserServiceTests
         var act = () => _parser.ParseGzippedFit(stream);
         act.Should().Throw<Exception>();
     }
-}
 
+    [Fact]
+    public void ParseFit_DurationSeconds_UsesElapsedNotTimer()
+    {
+        var fitBytes = CreateFitWithClocks(elapsedSeconds: 1200f, timerSeconds: 1000f);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = _parser.ParseFit(stream);
+
+        result.DurationSeconds.Should().Be(1200);
+        using var doc = JsonDocument.Parse(result.RawFitDataJson!);
+        doc.RootElement.GetProperty("session").GetProperty("totalElapsedTime").GetDouble()
+            .Should().BeApproximately(1200, 0.01);
+        doc.RootElement.GetProperty("session").GetProperty("totalTimerTime").GetDouble()
+            .Should().BeApproximately(1000, 0.01);
+    }
+
+    [Fact]
+    public void ParseFit_WithLapMessages_MapsSummariesAndRawJson_DurationStaysElapsed()
+    {
+        var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var fitBytes = CreateFitWithClocks(
+            elapsedSeconds: 1326f,
+            timerSeconds: 1205f,
+            laps: new[]
+            {
+                new SyntheticLap(start, 600f, 600f, 1609f, 150, LapTrigger.Distance),
+                new SyntheticLap(start.AddSeconds(600), 721f, 600f, 1609f, 155, LapTrigger.Manual),
+                new SyntheticLap(start.AddSeconds(1321), 5f, 5f, 13f, null, LapTrigger.SessionEnd),
+            });
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = _parser.ParseFit(stream);
+
+        result.DurationSeconds.Should().Be(1326);
+        result.Laps.Should().HaveCount(3);
+        result.Laps[0].DistanceM.Should().BeApproximately(1609, 0.1);
+        result.Laps[0].TimerS.Should().BeApproximately(600, 0.01);
+        result.Laps[0].ElapsedS.Should().BeApproximately(600, 0.01);
+        result.Laps[0].AvgHeartRateBpm.Should().Be(150);
+        result.Laps[0].LapTrigger.Should().Be("Distance");
+        result.Laps[1].TimerS.Should().BeApproximately(600, 0.01);
+        result.Laps[1].ElapsedS.Should().BeApproximately(721, 0.01);
+        result.Laps[1].LapTrigger.Should().Be("Manual");
+        result.Laps[2].DistanceM.Should().BeApproximately(13, 0.1);
+        result.Laps[2].LapTrigger.Should().Be("SessionEnd");
+
+        using var doc = JsonDocument.Parse(result.RawFitDataJson!);
+        var lapsJson = doc.RootElement.GetProperty("laps");
+        lapsJson.GetArrayLength().Should().Be(3);
+        lapsJson[1].GetProperty("timer").GetDouble().Should().BeApproximately(600, 0.01);
+        lapsJson[1].GetProperty("elapsed").GetDouble().Should().BeApproximately(721, 0.01);
+        lapsJson[2].GetProperty("trigger").GetString().Should().Be("SessionEnd");
+    }
+
+    private static byte[] CreateIndoorFitWithCadence(
+        byte strideCadence,
+        byte avgCadence,
+        byte maxCadence)
+    {
+        return CreateFitWithClocks(
+            elapsedSeconds: 1200f,
+            timerSeconds: 1200f,
+            strideCadence: strideCadence,
+            avgCadence: avgCadence,
+            maxCadence: maxCadence);
+    }
+
+    private sealed record SyntheticLap(
+        System.DateTime Start,
+        float ElapsedSeconds,
+        float TimerSeconds,
+        float DistanceMeters,
+        byte? AvgHeartRate,
+        LapTrigger Trigger);
+
+    private static byte[] CreateFitWithClocks(
+        float elapsedSeconds,
+        float timerSeconds,
+        byte? strideCadence = null,
+        byte? avgCadence = null,
+        byte? maxCadence = null,
+        IReadOnlyList<SyntheticLap>? laps = null)
+    {
+        var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var fitStart = new FitDateTime(start);
+
+        using var stream = new MemoryStream();
+        var encode = new Encode(stream, ProtocolVersion.V20);
+
+        var fileId = new FileIdMesg();
+        fileId.SetType(FitFile.Activity);
+        fileId.SetTimeCreated(fitStart);
+        encode.Write(fileId);
+
+        for (var i = 0; i < 3; i++)
+        {
+            var record = new RecordMesg();
+            record.SetTimestamp(new FitDateTime(start.AddMinutes(i * 10)));
+            record.SetDistance(i * 1200f);
+            if (strideCadence.HasValue)
+            {
+                record.SetCadence(strideCadence.Value);
+            }
+            encode.Write(record);
+        }
+
+        if (laps != null)
+        {
+            foreach (var lapDef in laps)
+            {
+                var lap = new LapMesg();
+                lap.SetStartTime(new FitDateTime(lapDef.Start));
+                lap.SetTimestamp(new FitDateTime(lapDef.Start.AddSeconds(lapDef.ElapsedSeconds)));
+                lap.SetTotalElapsedTime(lapDef.ElapsedSeconds);
+                lap.SetTotalTimerTime(lapDef.TimerSeconds);
+                lap.SetTotalDistance(lapDef.DistanceMeters);
+                if (lapDef.AvgHeartRate.HasValue)
+                {
+                    lap.SetAvgHeartRate(lapDef.AvgHeartRate.Value);
+                }
+                lap.SetLapTrigger(lapDef.Trigger);
+                encode.Write(lap);
+            }
+        }
+
+        var session = new SessionMesg();
+        session.SetStartTime(fitStart);
+        session.SetTimestamp(new FitDateTime(start.AddMinutes(20)));
+        session.SetTotalElapsedTime(elapsedSeconds);
+        session.SetTotalTimerTime(timerSeconds);
+        session.SetTotalDistance(2400f);
+        session.SetSport(Sport.Running);
+        if (avgCadence.HasValue)
+        {
+            session.SetAvgCadence(avgCadence.Value);
+        }
+        if (maxCadence.HasValue)
+        {
+            session.SetMaxCadence(maxCadence.Value);
+        }
+        encode.Write(session);
+        encode.Close();
+
+        return stream.ToArray();
+    }
+}
