@@ -539,8 +539,7 @@
                 "$ref": "#/components/schemas/PutIntervalsIcuConnectionRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -2719,6 +2718,33 @@
         },
         "additionalProperties": false
       },
+      "IntervalsIcuConnectionDocument": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "lastSuccessfulSyncAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastSyncAttemptAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "LoginRequest": {
         "type": "object",
         "properties": {
@@ -2736,6 +2762,16 @@
         },
         "additionalProperties": false,
         "description": "Request model for user login"
+      },
+      "PutIntervalsIcuConnectionRequest": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "RegisterRequest": {
         "type": "object",
@@ -2860,43 +2896,6 @@
         },
         "additionalProperties": false,
         "description": "Request model for updating heart rate zones with optional recalculation"
-      },
-      "IntervalsIcuConnectionDocument": {
-        "type": "object",
-        "properties": {
-          "connected": {
-            "type": "boolean"
-          },
-          "enabled": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "lastSuccessfulSyncAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "lastSyncAttemptAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "lastError": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "PutIntervalsIcuConnectionRequest": {
-        "type": "object",
-        "properties": {
-          "apiKey": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
       },
       "UpdateUnitPreferenceRequest": {
         "type": "object",
