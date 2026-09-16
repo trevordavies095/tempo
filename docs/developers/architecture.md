@@ -60,7 +60,7 @@ Each extension method:
 - `TrackPointRehydration` — stored Workout fields → `TrackPoint`s for crop and split recalc.
 - `ImportJobService` — create/chunk/complete/current/get/cancel, one-active-job rules, archive staging under `media/imports/{jobId}/`.
 - `ImportJobWorker` — hosted service; wakes on channel, new DI scope per job; branches on `kind` (`strava_bulk` | `tempo_export`).
-- `IntervalsIcuSyncService` — one tick: decrypt key, list recent activities (today − 2 days), fetch FIT/GPX, `WorkoutIntake.ProcessAsync` with overlay identity `intervals_icu`.
+- `IntervalsIcuSyncService` — one tick: decrypt key, list recent activities (today − 2 days), skip non-runs / junk `file_type` and existing `intervals_icu` identities before file fetch, then `WorkoutIntake.ProcessAsync` with overlay identity `intervals_icu`. Stats-key attach does not rename `Workout.Source`.
 - `IntervalsIcuSyncWorker` — hosted service (not registered in Testing); 15-minute timer (`IntervalsIcu__PollIntervalMinutes`) plus Sync now channel; new DI scope per tick. Not an ImportJob.
 - `StravaBulkImportOrchestrator` — Strava ZIP extract/CSV loop calling `BulkImportService` + Workout intake; writes job counters.
 - `BulkImportService` — ZIP safety, `activities.csv`, non-run skip, per-file intake mapping, Strava media copy.
@@ -111,7 +111,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 - **UserSettings**: Single-row table for user preferences (heart rate zones, unit preferences, default shoe). Command-center appearance is not UserSettings.
 - **ImportJob**: Background import (`strava_bulk` | `tempo_export`) with status, byte/progress counters, ErrorDetailsJson (Strava), ResultJson (Tempo), and archive path. At most one row in `receiving` | `queued` | `running`.
 - **IntervalsIcuConnection**: Optional 0-or-1 row for a BYO intervals.icu API key (encrypted). Not UserSettings.
-- **Intervals.icu sync**: `IntervalsIcuSyncWorker` (15-minute timer + Sync now channel) decrypts the key, lists recent activities, fetches FIT/GPX, and persists through `WorkoutIntake` with overlay identity `intervals_icu`. Not an ImportJob.
+- **Intervals.icu sync**: `IntervalsIcuSyncWorker` (15-minute timer + Sync now channel) decrypts the key, lists recent activities, fetches FIT/GPX, and persists through `WorkoutIntake` with overlay identity `intervals_icu`. Non-runs, junk `file_type`, and existing identities skip before file fetch; stats-key attach does not rename `Workout.Source`. Not an ImportJob.
 
 ## Data Flow
 

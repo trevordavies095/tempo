@@ -229,6 +229,98 @@ public class IntervalsIcuSettingsEndpointsTests : IClassFixture<IntervalsIcuSett
     }
 
     [Fact]
+    public async Task RunTick_SkipsNonRunsAndJunkFileTypes()
+    {
+        var client = await AuthenticatedClientAsync();
+        await ConnectAndResetFakeAsync(client);
+
+        var fitBytes = await File.ReadAllBytesAsync(FitFixturePath());
+        AddListedActivity("ride-1", "Ride", "fit", fitBytes);
+        AddListedActivity("walk-1", "Walk", "fit", fitBytes);
+        AddListedActivity("empty-type", null, "fit", fitBytes);
+        AddListedActivity("empty-file", "Run", null, fitBytes);
+        AddListedActivity("tcx-1", "Run", "tcx", fitBytes);
+        AddListedActivity("icu-run", "Run", "fit", fitBytes);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var sync = scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>();
+            await sync.RunTickAsync();
+        }
+
+        _factory.Fake.GetFileCount.Should().Be(1);
+        using var dbScope = _factory.Decorated.Services.CreateScope();
+        var db = dbScope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var workout = await db.Workouts.SingleAsync();
+        var identity = await db.WorkoutExternalIdentities.SingleAsync();
+        identity.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
+        identity.ExternalId.Should().Be("icu-run");
+        identity.WorkoutId.Should().Be(workout.Id);
+    }
+
+    [Fact]
+    public async Task RunTick_SameActivityId_DoesNotFetchFileAgain()
+    {
+        var client = await AuthenticatedClientAsync();
+        await ConnectAndResetFakeAsync(client);
+
+        var fitBytes = await File.ReadAllBytesAsync(FitFixturePath());
+        AddListedActivity("icu-42", "Run", "fit", fitBytes);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>().RunTickAsync();
+        }
+
+        _factory.Fake.GetFileCount.Should().Be(1);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>().RunTickAsync();
+        }
+
+        _factory.Fake.GetFileCount.Should().Be(1);
+        using var dbScope = _factory.Decorated.Services.CreateScope();
+        var db = dbScope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.Workouts.CountAsync()).Should().Be(1);
+        (await db.WorkoutExternalIdentities.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RunTick_StatsKeyMatch_AttachesIdentityWithoutRenamingSource()
+    {
+        var client = await AuthenticatedClientAsync();
+        await ConnectAndResetFakeAsync(client);
+
+        var fitBytes = await File.ReadAllBytesAsync(FitFixturePath());
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var intake = scope.ServiceProvider.GetRequiredService<WorkoutIntake>();
+            await using var stream = new MemoryStream(fitBytes, writable: false);
+            var created = await intake.ProcessAsync(stream, "running-cadence-80.fit");
+            created.Action.Should().Be("created");
+            created.Workout!.Source.Should().Be("fit_import");
+        }
+
+        AddListedActivity("icu-attach", "Run", "fit", fitBytes);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>().RunTickAsync();
+        }
+
+        _factory.Fake.GetFileCount.Should().Be(1);
+        using var dbScope = _factory.Decorated.Services.CreateScope();
+        var db = dbScope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var workout = await db.Workouts.SingleAsync();
+        workout.Source.Should().Be("fit_import");
+        var identity = await db.WorkoutExternalIdentities.SingleAsync();
+        identity.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
+        identity.ExternalId.Should().Be("icu-attach");
+        identity.WorkoutId.Should().Be(workout.Id);
+    }
+
+    [Fact]
     public async Task Unauthenticated_GetPutDelete_Return401()
     {
         await EnsureCleanDatabaseAsync();
@@ -240,6 +332,30 @@ public class IntervalsIcuSettingsEndpointsTests : IClassFixture<IntervalsIcuSett
         (await client.DeleteAsync("/settings/intervals-icu")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         (await client.PostAsync("/settings/intervals-icu/sync", content: null))
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    private async Task ConnectAndResetFakeAsync(HttpClient client)
+    {
+        _factory.Fake.Result = IntervalsIcuProbeResult.Ok;
+        (await client.PutAsJsonAsync("/settings/intervals-icu", new { apiKey = "plain-icu-key" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        _factory.Fake.Reset();
+        _factory.Fake.Result = IntervalsIcuProbeResult.Ok;
+    }
+
+    private void AddListedActivity(string id, string? type, string? fileType, byte[] fitBytes)
+    {
+        _factory.Fake.Activities.Add(new IntervalsIcuActivity
+        {
+            Id = id,
+            Type = type,
+            FileType = fileType
+        });
+        _factory.Fake.Files[id] = new IntervalsIcuActivityFile
+        {
+            FileName = "activity.fit",
+            Bytes = fitBytes
+        };
     }
 
     private static string FitFixturePath()

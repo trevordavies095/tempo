@@ -62,10 +62,20 @@ public sealed class IntervalsIcuSyncService
             return;
         }
 
+        var persistFailures = 0;
         foreach (var activity in list.Activities)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!IsRunningType(activity.Type) || !IsFitOrGpx(activity.FileType))
+            {
+                continue;
+            }
+
+            var existing = await WorkoutQueryService.FindByExternalIdentityAsync(
+                _db,
+                WorkoutExternalSource.IntervalsIcu,
+                activity.Id);
+            if (existing != null)
             {
                 continue;
             }
@@ -91,6 +101,7 @@ public sealed class IntervalsIcuSyncService
             var result = await _intake.ProcessAsync(stream, fileName, overlay);
             if (result.ErrorMessage != null)
             {
+                persistFailures++;
                 _logger.LogWarning(
                     "intervals.icu activity {ActivityId} persist failed: {Error}",
                     activity.Id,
@@ -99,7 +110,9 @@ public sealed class IntervalsIcuSyncService
         }
 
         row.LastSuccessfulSyncAt = DateTime.UtcNow;
-        row.LastError = null;
+        row.LastError = persistFailures > 0
+            ? $"{persistFailures} activities failed to persist"
+            : null;
         row.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
     }
