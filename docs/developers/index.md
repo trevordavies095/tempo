@@ -4,7 +4,7 @@ Welcome to the Tempo Developer Documentation! This section provides technical in
 
 ## Overview
 
-Tempo is a full-stack application built with modern web technologies. This documentation covers architecture, development setup, API reference, database schema, and contributing guidelines.
+Tempo is a full-stack application built with modern web technologies. This documentation covers architecture, development setup, API reference, database schema, testing, and contributing guidelines.
 
 ## Topics Covered
 
@@ -12,6 +12,7 @@ Tempo is a full-stack application built with modern web technologies. This docum
 - **[Development Setup](setup.md)** - Local development environment setup
 - **[API Reference](api-reference.md)** - Complete API endpoint documentation
 - **[Database Schema](database.md)** - Database structure, relationships, and migrations
+- **[Testing](testing.md)** - API tests, coverage, and how to add new tests
 - **[Contributing](contributing.md)** - How to contribute to the project
 
 ## Technology Stack
@@ -38,7 +39,8 @@ If you're new to Tempo development:
 2. Set up your [Development Environment](setup.md)
 3. Explore the [API Reference](api-reference.md) to understand endpoints
 4. Review the [Database Schema](database.md) to understand data models
-5. Check the [Contributing Guide](contributing.md) before submitting changes
+5. Read the [Testing Guide](testing.md) before changing the API
+6. Check the [Contributing Guide](contributing.md) before submitting changes
 
 ## Development Workflow
 
