@@ -162,5 +162,6 @@ public class Workout
     public ICollection<WorkoutSplit> Splits { get; set; } = new List<WorkoutSplit>();
     public ICollection<WorkoutMedia> Media { get; set; } = new List<WorkoutMedia>();
     public ICollection<WorkoutTimeSeries> TimeSeries { get; set; } = new List<WorkoutTimeSeries>();
+    public ICollection<WorkoutExternalIdentity> ExternalIdentities { get; set; } = new List<WorkoutExternalIdentity>();
 }
 

@@ -19,6 +19,19 @@ public static class WorkoutQueryService
     }
 
     /// <summary>
+    /// Finds a Workout by Workout external identity (source, externalId).
+    /// </summary>
+    public static async Task<Workout?> FindByExternalIdentityAsync(
+        TempoDbContext db,
+        string source,
+        string externalId)
+    {
+        return await db.Workouts
+            .FirstOrDefaultAsync(w =>
+                w.ExternalIdentities.Any(i => i.Source == source && i.ExternalId == externalId));
+    }
+
+    /// <summary>
     /// Returns all non-null HealthKitUuid values stored on workouts (nulls omitted).
     /// Used by tempo-ios to badge already-imported runs without paging GET /workouts.
     /// </summary>

@@ -46,6 +46,24 @@ Core workout entity with statistics and metadata.
 - `ShoeId` - Foreign key index for efficient shoe queries
 - GIN indexes on JSONB fields: `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, `Weather`
 
+### Workout external identity
+
+A `(source, externalId)` row linking a Workout to one upstream system for intake idempotency. Not `Workout.Source` (ingest provenance such as `gpx_import` / `fit_import` / `healthkit`). HealthKit remains on `Workout.HealthKitUuid` until a later move; this table is not written with `healthkit` rows yet.
+
+**Columns:**
+- `Id` (Guid, Primary Key)
+- `WorkoutId` (Guid, Foreign Key to Workout, cascade delete)
+- `Source` (string, max 50) — upstream that minted the id (e.g. `intervals_icu`)
+- `ExternalId` (string, max 128) — opaque token, trimmed, case-sensitive
+- `CreatedAt` (DateTime UTC) — when the row was attached; not a sync cursor
+
+**Indexes:**
+- Unique composite on `(Source, ExternalId)` — one Workout owns a given upstream id
+- Unique composite on `(WorkoutId, Source)` — one id per upstream per Workout
+
+**Relationship:**
+- Many-to-one with `Workout` (cascade delete)
+
 ### WorkoutRoute
 
 One-to-one relationship storing route coordinates as GeoJSON LineString.
@@ -248,6 +266,7 @@ The `__EFMigrationsHistory` table tracks applied migrations. The `DatabaseMigrat
 - **Workout.StartedAt** - Fast date range queries
 - **Workout composite (StartedAt, DistanceM, DurationS)** - Duplicate detection
 - **Workout.HealthKitUuid** (unique) - HealthKit import idempotency
+- **WorkoutExternalIdentities** unique `(Source, ExternalId)` and unique `(WorkoutId, Source)`
 - **WorkoutSplit (WorkoutId, Idx)** - Efficient split queries
 - **WorkoutTimeSeries (WorkoutId, ElapsedSeconds)** - Time-series queries
 

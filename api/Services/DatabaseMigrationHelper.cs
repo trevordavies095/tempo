@@ -27,7 +27,8 @@ public static class DatabaseMigrationHelper
         { "BestEfforts", "20251130201906_AddBestEffortsTable" },
         // AddShoeTracking migration
         { "Shoes", "20251201120000_AddShoeTracking" },
-        { "ImportJobs", "20260816180637_AddImportJobs" }
+        { "ImportJobs", "20260816180637_AddImportJobs" },
+        { "WorkoutExternalIdentities", "20260916003924_AddWorkoutExternalIdentities" }
     };
 
     // Map of (table, column) pairs to their corresponding migration IDs

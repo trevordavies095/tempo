@@ -48,6 +48,10 @@ _Avoid_: GpxParser splits, GPS smoothing (as the module name)
 The persist pipeline behind `POST /workouts/import`, `POST /workouts/import/healthkit`, and Strava bulk per-file processing: decode adapter (GPX/FIT/HealthKit) then `PersistAsync` (geometry, duplicate policy, weather, relative effort, best efforts). Persist is the single pipeline; new formats enter via decoded input, not a second pipeline. Not the HTTP module and not Settings ZIP restore.
 _Avoid_: import endpoint (when meaning this module), bulk persist
 
+**Workout external identity**:
+A `(source, externalId)` row linking a Workout to one upstream system. Used for intake idempotency (find / persist / unique-race) before the start/distance/elapsed stats key.
+_Avoid_: `Workout.Source` (provenance of how the Workout was ingested: `fit_import`, `healthkit`, `strava_import`, …), `HealthKitUuid` (dedicated column until a later move), activity id as a Workout column
+
 **Import job**:
 A Postgres-backed background import (`kind`: `strava_bulk` or `tempo_export`) with chunked upload (or whole-ZIP adapter), worker processing, poll, cancel, and one-active-job rules. Not Workout intake and not single-file GPX/FIT import.
 _Avoid_: Hangfire job, sync bulk POST (as the product model)

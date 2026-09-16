@@ -20,6 +20,13 @@ public sealed class WorkoutIntakeOverlay
     public byte? AvgHeartRateBpm { get; init; }
     public byte? MaxHeartRateBpm { get; init; }
     public ushort? EnergyKcal { get; init; }
+    public WorkoutIntakeExternalIdentity? ExternalIdentity { get; init; }
+}
+
+public sealed class WorkoutIntakeExternalIdentity
+{
+    public string? Source { get; init; }
+    public string? ExternalId { get; init; }
 }
 
 public sealed class WorkoutIntakeResult
@@ -188,6 +195,26 @@ public class WorkoutIntake
                 }
             }
 
+            var externalIdentity = NormalizeExternalIdentity(overlay);
+            if (externalIdentity is { } identity)
+            {
+                var byIdentity = await WorkoutQueryService.FindByExternalIdentityAsync(
+                    _db, identity.Source, identity.ExternalId);
+                if (byIdentity != null)
+                {
+                    _logger.LogInformation(
+                        "Skipped duplicate workout (external identity match): {Source} {ExternalId}",
+                        identity.Source,
+                        identity.ExternalId);
+
+                    return new WorkoutIntakeResult
+                    {
+                        Action = "skipped",
+                        Workout = byIdentity
+                    };
+                }
+            }
+
             var existingWorkout = await WorkoutQueryService.FindDuplicateWorkoutAsync(
                 _db, startedAtUtc, distanceMeters, durationSeconds);
 
@@ -201,6 +228,16 @@ public class WorkoutIntake
                     {
                         Action = "skipped",
                         Workout = stampedOwner
+                    };
+                }
+
+                var identityOwner = await TryAttachExternalIdentityAsync(existingWorkout, overlay);
+                if (identityOwner != null && identityOwner.Id != existingWorkout.Id)
+                {
+                    return new WorkoutIntakeResult
+                    {
+                        Action = "skipped",
+                        Workout = identityOwner
                     };
                 }
 
@@ -258,6 +295,16 @@ public class WorkoutIntake
                 _db.WorkoutTimeSeries.AddRange(timeSeries);
             }
 
+            if (externalIdentity is { } newIdentity)
+            {
+                _db.WorkoutExternalIdentities.Add(new WorkoutExternalIdentity
+                {
+                    WorkoutId = workout.Id,
+                    Source = newIdentity.Source,
+                    ExternalId = newIdentity.ExternalId
+                });
+            }
+
             try
             {
                 await _db.SaveChangesAsync();
@@ -271,6 +318,28 @@ public class WorkoutIntake
                     _logger.LogInformation(
                         "Skipped duplicate workout (HealthKit UUID race): {HealthKitUuid}",
                         racedUuid);
+
+                    return new WorkoutIntakeResult
+                    {
+                        Action = "skipped",
+                        Workout = winner
+                    };
+                }
+
+                throw;
+            }
+            catch (DbUpdateException ex) when (
+                IsExternalIdentityUniqueViolation(ex) && externalIdentity is { } racedIdentity)
+            {
+                _db.ChangeTracker.Clear();
+                var winner = await WorkoutQueryService.FindByExternalIdentityAsync(
+                    _db, racedIdentity.Source, racedIdentity.ExternalId);
+                if (winner != null)
+                {
+                    _logger.LogInformation(
+                        "Skipped duplicate workout (external identity race): {Source} {ExternalId}",
+                        racedIdentity.Source,
+                        racedIdentity.ExternalId);
 
                     return new WorkoutIntakeResult
                     {
@@ -348,6 +417,53 @@ public class WorkoutIntake
         }
     }
 
+    /// <summary>
+    /// Attaches a Workout external identity when the stats-key match has no row for that source.
+    /// Does not change Workout.Source or overwrite a stored ExternalId.
+    /// Returns the workout that already owns the pair if attaching collides.
+    /// </summary>
+    private async Task<Workout?> TryAttachExternalIdentityAsync(Workout existingWorkout, WorkoutIntakeOverlay? overlay)
+    {
+        var identity = NormalizeExternalIdentity(overlay);
+        if (identity is not { } pair)
+        {
+            return null;
+        }
+
+        var hasSource = await _db.WorkoutExternalIdentities
+            .AnyAsync(i => i.WorkoutId == existingWorkout.Id && i.Source == pair.Source);
+        if (hasSource)
+        {
+            return null;
+        }
+
+        var row = new WorkoutExternalIdentity
+        {
+            WorkoutId = existingWorkout.Id,
+            Source = pair.Source,
+            ExternalId = pair.ExternalId
+        };
+        _db.WorkoutExternalIdentities.Add(row);
+        try
+        {
+            await _db.SaveChangesAsync();
+            _logger.LogInformation(
+                "Attached external identity {Source} {ExternalId} to workout {WorkoutId}",
+                pair.Source, pair.ExternalId, existingWorkout.Id);
+            return null;
+        }
+        catch (DbUpdateException ex) when (IsExternalIdentityUniqueViolation(ex))
+        {
+            _db.Entry(row).State = EntityState.Detached;
+            _logger.LogWarning(
+                ex,
+                "Could not attach external identity {Source} {ExternalId} to workout {WorkoutId}; pair already owned",
+                pair.Source, pair.ExternalId, existingWorkout.Id);
+
+            return await WorkoutQueryService.FindByExternalIdentityAsync(_db, pair.Source, pair.ExternalId);
+        }
+    }
+
     private static bool IsHealthKitUuidUniqueViolation(DbUpdateException ex)
     {
         for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
@@ -362,6 +478,50 @@ public class WorkoutIntake
             if (inner is SqliteException sqlite
                 && (sqlite.SqliteErrorCode == 19 || sqlite.SqliteExtendedErrorCode == 2067)
                 && sqlite.Message.Contains("HealthKitUuid", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private (string Source, string ExternalId)? NormalizeExternalIdentity(WorkoutIntakeOverlay? overlay)
+    {
+        var raw = overlay?.ExternalIdentity;
+        if (raw == null)
+        {
+            return null;
+        }
+
+        var source = raw.Source?.Trim() ?? string.Empty;
+        var externalId = raw.ExternalId?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(externalId))
+        {
+            _logger.LogWarning("Ignoring invalid Workout external identity overlay (source or externalId blank)");
+            return null;
+        }
+
+        return (source, externalId);
+    }
+
+    private static bool IsExternalIdentityUniqueViolation(DbUpdateException ex)
+    {
+        for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+        {
+            if (inner is PostgresException pg && pg.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                return pg.ConstraintName?.Contains("WorkoutExternalIdentit", StringComparison.OrdinalIgnoreCase) == true
+                    || pg.MessageText.Contains("WorkoutExternalIdentit", StringComparison.OrdinalIgnoreCase)
+                    || pg.ConstraintName?.Contains("Source_ExternalId", StringComparison.OrdinalIgnoreCase) == true
+                    || pg.MessageText.Contains("Source_ExternalId", StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (inner is SqliteException sqlite
+                && (sqlite.SqliteErrorCode == 19 || sqlite.SqliteExtendedErrorCode == 2067)
+                && (sqlite.Message.Contains("WorkoutExternalIdentit", StringComparison.OrdinalIgnoreCase)
+                    || sqlite.Message.Contains("Source_ExternalId", StringComparison.OrdinalIgnoreCase)
+                    || sqlite.Message.Contains("ExternalId", StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }
