@@ -1319,6 +1319,24 @@ export async function disconnectIntervalsIcu(): Promise<void> {
   }
 }
 
+export async function syncIntervalsIcu(): Promise<'accepted' | 'idle'> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/intervals-icu/sync`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (response.status === 202) {
+    return 'accepted';
+  }
+
+  if (response.status === 204) {
+    return 'idle';
+  }
+
+  const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+  throw new Error(error.error || `Failed to sync intervals.icu: ${response.status}`);
+}
+
 export async function getUnitPreference(): Promise<{ unitPreference: 'metric' | 'imperial' }> {
   const response = await fetchWithAuth(`${API_BASE_URL}/settings/unit-preference`, {
     method: 'GET',

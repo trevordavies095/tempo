@@ -5,6 +5,7 @@ import {
   connectIntervalsIcu,
   disconnectIntervalsIcu,
   getIntervalsIcuConnection,
+  syncIntervalsIcu,
   type IntervalsIcuConnectionStatus,
 } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -31,6 +32,7 @@ export function IntervalsIcuSection() {
   const [apiKey, setApiKey] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,6 +60,19 @@ export function IntervalsIcuSection() {
       setError(err instanceof Error ? err.message : 'Failed to connect');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSyncNow = async () => {
+    setIsSyncing(true);
+    setError(null);
+    try {
+      await syncIntervalsIcu();
+      setStatus(await getIntervalsIcuConnection());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to request sync');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -108,14 +123,23 @@ export function IntervalsIcuSection() {
               </div>
             )}
           </dl>
-          <Button
-            type="button"
-            variant="danger"
-            onClick={handleDisconnect}
-            disabled={isSaving}
-          >
-            {isSaving ? 'Disconnecting...' : 'Disconnect'}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              onClick={handleSyncNow}
+              disabled={isSaving || isSyncing || status.enabled === false}
+            >
+              {isSyncing ? 'Requested...' : 'Sync now'}
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={handleDisconnect}
+              disabled={isSaving || isSyncing}
+            >
+              {isSaving ? 'Disconnecting...' : 'Disconnect'}
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">

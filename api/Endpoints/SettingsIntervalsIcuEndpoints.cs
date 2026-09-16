@@ -36,6 +36,15 @@ public static class SettingsIntervalsIcuEndpoints
             .WithSummary("Disconnect intervals.icu")
             .WithDescription("Deletes the connection row. Workouts and external identities stay. 204 if already gone.");
 
+        group.MapPost("/intervals-icu/sync", PostIntervalsIcuSync)
+            .WithName("PostIntervalsIcuSync")
+            .Produces(202)
+            .Produces(204)
+            .WithSummary("Wake intervals.icu sync")
+            .WithDescription(
+                "Enqueues a live sync tick. Returns 202 when connected and enabled. " +
+                "Returns 204 when there is no connection or sync is disabled. Does not import on the request thread.");
+
         return group;
     }
 
@@ -103,6 +112,20 @@ public static class SettingsIntervalsIcuEndpoints
         }
 
         return Results.NoContent();
+    }
+
+    private static async Task<IResult> PostIntervalsIcuSync(
+        TempoDbContext db,
+        IntervalsIcuSyncQueue queue)
+    {
+        var row = await db.IntervalsIcuConnections.AsNoTracking().FirstOrDefaultAsync();
+        if (row == null || !row.Enabled)
+        {
+            return Results.NoContent();
+        }
+
+        queue.TryWake();
+        return Results.StatusCode(StatusCodes.Status202Accepted);
     }
 
     private static IntervalsIcuConnectionDocument ToDocument(IntervalsIcuConnection? row)

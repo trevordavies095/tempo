@@ -772,6 +772,14 @@ DELETE /settings/intervals-icu
 
 Deletes the connection row. **204** if it was already gone. Workouts and Workout external identities stay.
 
+### Sync intervals.icu now
+
+```http
+POST /settings/intervals-icu/sync
+```
+
+Wakes the live sync worker. **202** when connected and enabled (does not import on the request thread). **204** when there is no connection or sync is disabled.
+
 ## Shoes
 
 ### List Shoes

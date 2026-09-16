@@ -222,7 +222,7 @@ To remove a shoe from your collection:
 
 ### intervals.icu
 
-Optional. Tempo can store your personal intervals.icu API key so later slices can import new runs automatically. This is not part of onboarding. Privacy-minded setups can skip it and keep uploading FIT/GPX files.
+Optional. Tempo can store your personal intervals.icu API key and import new running activities automatically. This is not part of onboarding. Privacy-minded setups can skip it and keep uploading FIT/GPX files.
 
 **Setup**
 
@@ -232,6 +232,8 @@ Optional. Tempo can store your personal intervals.icu API key so later slices ca
 4. In Tempo **Settings → Integrations**, paste the key and click Connect
 
 Tempo probes intervals.icu before saving. The key is stored encrypted and is never shown again. Disconnect wipes the key; your Workouts stay.
+
+After you connect, Tempo looks for new running activities about every 15 minutes. **Sync now** on the Integrations card asks Tempo to check immediately; it does not wait on this page. New runs appear in the library as first-class Workouts. History older than a couple of days is still a manual FIT/GPX or Strava ZIP import.
 
 **Privacy:** activity files transit intervals.icu (a donation-supported third party). Tempo does not talk to Garmin unofficially.
 

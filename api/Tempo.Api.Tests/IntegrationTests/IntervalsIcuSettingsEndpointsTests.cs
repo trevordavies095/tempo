@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Tempo.Api.Data;
+using Tempo.Api.Models;
 using Tempo.Api.Services;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
@@ -152,6 +153,82 @@ public class IntervalsIcuSettingsEndpointsTests : IClassFixture<IntervalsIcuSett
     }
 
     [Fact]
+    public async Task PostSync_WithNoRow_Returns204AndDoesNotFetchFile()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var response = await client.PostAsync("/settings/intervals-icu/sync", content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Fake.GetFileCount.Should().Be(0);
+        _factory.Fake.ListCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PostSync_WhenConnected_Returns202WithoutFetchingFile()
+    {
+        var client = await AuthenticatedClientAsync();
+        _factory.Fake.Result = IntervalsIcuProbeResult.Ok;
+        (await client.PutAsJsonAsync("/settings/intervals-icu", new { apiKey = "plain-icu-key" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        _factory.Fake.Reset();
+        _factory.Fake.Result = IntervalsIcuProbeResult.Ok;
+
+        var response = await client.PostAsync("/settings/intervals-icu/sync", content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        _factory.Fake.GetFileCount.Should().Be(0);
+        _factory.Fake.ListCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RunTick_ImportsNewRunWithIdentity()
+    {
+        var client = await AuthenticatedClientAsync();
+        _factory.Fake.Result = IntervalsIcuProbeResult.Ok;
+        (await client.PutAsJsonAsync("/settings/intervals-icu", new { apiKey = "plain-icu-key" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var fitBytes = await File.ReadAllBytesAsync(FitFixturePath());
+        _factory.Fake.Activities.Add(new IntervalsIcuActivity
+        {
+            Id = "icu-42",
+            Type = "Run",
+            FileType = "fit"
+        });
+        _factory.Fake.Files["icu-42"] = new IntervalsIcuActivityFile
+        {
+            FileName = "activity.fit",
+            Bytes = fitBytes
+        };
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var sync = scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>();
+            await sync.RunTickAsync();
+        }
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await db.Workouts.SingleAsync();
+            workout.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
+            var identity = await db.WorkoutExternalIdentities.SingleAsync();
+            identity.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
+            identity.ExternalId.Should().Be("icu-42");
+            identity.WorkoutId.Should().Be(workout.Id);
+        }
+
+        var get = await client.GetAsync("/settings/intervals-icu");
+        var status = JsonSerializer.Deserialize<IntervalsIcuStatusResponse>(
+            await get.Content.ReadAsStringAsync(),
+            JsonOptions);
+        status!.LastSuccessfulSyncAt.Should().NotBeNull();
+        status.LastSyncAttemptAt.Should().NotBeNull();
+        _factory.Fake.LastOldest.Should().Be(DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-2));
+    }
+
+    [Fact]
     public async Task Unauthenticated_GetPutDelete_Return401()
     {
         await EnsureCleanDatabaseAsync();
@@ -161,6 +238,15 @@ public class IntervalsIcuSettingsEndpointsTests : IClassFixture<IntervalsIcuSett
         (await client.PutAsJsonAsync("/settings/intervals-icu", new { apiKey = "x" }))
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         (await client.DeleteAsync("/settings/intervals-icu")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await client.PostAsync("/settings/intervals-icu/sync", content: null))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    private static string FitFixturePath()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "running-cadence-80.fit");
+        File.Exists(path).Should().BeTrue("running-cadence-80.fit must be copied to the test output directory");
+        return path;
     }
 
     private sealed class IntervalsIcuStatusResponse

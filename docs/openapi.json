@@ -588,6 +588,29 @@
         ]
       }
     },
+    "/settings/intervals-icu/sync": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Wake intervals.icu sync",
+        "description": "Enqueues a live sync tick. Returns 202 when connected and enabled. Returns 204 when there is no connection or sync is disabled. Does not import on the request thread.",
+        "operationId": "PostIntervalsIcuSync",
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/shoes": {
       "get": {
         "tags": [
