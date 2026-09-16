@@ -786,7 +786,7 @@ Probes with the stored key and turns live sync back on. **404** if there is no c
 POST /settings/intervals-icu/sync
 ```
 
-Wakes the live sync worker. **202** when connected and enabled (does not import on the request thread), including coalesced wakes (in-flight or finished within about 60 seconds). **204** when there is no connection or sync is disabled.
+Wakes the live sync worker. **202** when connected and enabled (does not import on the request thread), including coalesced wakes while a tick is already in flight or pending. **204** when there is no connection or sync is disabled.
 
 ## Shoes
 

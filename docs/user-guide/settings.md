@@ -233,7 +233,7 @@ Optional. Tempo can store your personal intervals.icu API key and import new run
 
 Tempo probes intervals.icu before saving. The key is stored encrypted and is never shown again. Disconnect wipes the key; your Workouts stay. If intervals.icu rejects the key later, Tempo disables live sync and keeps the stored key — use **Re-enable** after you fix it, or **Replace key** to paste a new one without losing sync history.
 
-After you connect, Tempo looks for new running activities about every 15 minutes. **Sync now** on the Integrations card asks Tempo to check immediately; it does not wait on this page. New runs appear in the library as first-class Workouts. Already-imported runs, non-running activities, and files that are not FIT or GPX are skipped. History older than a couple of days is still a manual FIT/GPX or Strava ZIP import. Changing the server `JWT__SecretKey` means you must replace the intervals.icu key in Settings.
+After you connect, Tempo looks for new running activities about every 15 minutes. **Sync now** on the Integrations card asks Tempo to check immediately; it does not wait on this page. New runs appear in the library as first-class Workouts. Already-imported runs, non-running activities, and files that are not FIT or GPX are skipped. Deleting a run from Tempo also drops its intervals.icu identity, so the next successful sync can import it again. History older than a couple of days is still a manual FIT/GPX or Strava ZIP import. Changing the server `JWT__SecretKey` means you must replace the intervals.icu key in Settings.
 
 **Privacy:** activity files transit intervals.icu (a donation-supported third party). Tempo does not talk to Garmin unofficially.
 

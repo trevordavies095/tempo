@@ -111,7 +111,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 - **UserSettings**: Single-row table for user preferences (heart rate zones, unit preferences, default shoe). Command-center appearance is not UserSettings.
 - **ImportJob**: Background import (`strava_bulk` | `tempo_export`) with status, byte/progress counters, ErrorDetailsJson (Strava), ResultJson (Tempo), and archive path. At most one row in `receiving` | `queued` | `running`.
 - **IntervalsIcuConnection**: Optional 0-or-1 row for a BYO intervals.icu API key (encrypted). Not UserSettings.
-- **Intervals.icu sync**: `IntervalsIcuSyncWorker` (15-minute timer + Sync now channel) decrypts the key, lists recent activities, fetches FIT/GPX, and persists through `WorkoutIntake` with overlay identity `intervals_icu`. List `oldest` is max(connect−2d, lastSuccess−2d, today−14d). 401/decrypt disables (key stays); Sync now coalesces in-flight or ~60s. Non-runs, junk `file_type`, and existing identities skip before file fetch; stats-key attach does not rename `Workout.Source`. Not an ImportJob.
+- **Intervals.icu sync**: `IntervalsIcuSyncWorker` (15-minute timer + Sync now channel) decrypts the key, lists recent activities, fetches FIT/GPX, and persists through `WorkoutIntake` with overlay identity `intervals_icu`. List `oldest` is max(connect−2d, lastSuccess−2d, today−14d). 401/decrypt disables (key stays); Sync now coalesces while a tick is in flight or pending. Non-runs, junk `file_type`, and existing identities skip before file fetch; stats-key attach does not rename `Workout.Source`. Not an ImportJob.
 
 ## Data Flow
 

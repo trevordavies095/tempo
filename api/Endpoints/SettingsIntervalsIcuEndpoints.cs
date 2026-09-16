@@ -52,7 +52,7 @@ public static class SettingsIntervalsIcuEndpoints
             .Produces(204)
             .WithSummary("Wake intervals.icu sync")
             .WithDescription(
-                "Enqueues a live sync tick. Returns 202 when connected and enabled, including coalesced wakes. " +
+                "Enqueues a live sync tick. Returns 202 when connected and enabled, including coalesced wakes while a tick is in flight or pending. " +
                 "Returns 204 when there is no connection or sync is disabled. Does not import on the request thread.");
 
         return group;

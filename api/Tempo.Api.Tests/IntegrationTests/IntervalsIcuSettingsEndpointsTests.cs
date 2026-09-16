@@ -427,7 +427,45 @@ public class IntervalsIcuSettingsEndpointsTests : IClassFixture<IntervalsIcuSett
         }
 
         _factory.Fake.GetFileCount.Should().Be(0);
-        queue.TryWake().Should().BeFalse();
+        queue.TryWake().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RunTick_AfterDeletedWorkout_ReimportsSameActivity()
+    {
+        var client = await AuthenticatedClientAsync();
+        await ConnectAndResetFakeAsync(client);
+
+        var fitBytes = await File.ReadAllBytesAsync(FitFixturePath());
+        AddListedActivity("icu-42", "Run", "fit", fitBytes);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>().RunTickAsync();
+        }
+
+        Guid workoutId;
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workoutId = (await db.Workouts.SingleAsync()).Id;
+        }
+
+        (await client.DeleteAsync($"/workouts/{workoutId}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            (await db.Workouts.CountAsync()).Should().Be(0);
+            (await db.WorkoutExternalIdentities.CountAsync()).Should().Be(0);
+            await scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>().RunTickAsync();
+        }
+
+        _factory.Fake.GetFileCount.Should().Be(2);
+        using var verify = _factory.Decorated.Services.CreateScope();
+        var restored = await verify.ServiceProvider.GetRequiredService<TempoDbContext>().Workouts.SingleAsync();
+        restored.Id.Should().NotBe(workoutId);
+        restored.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
     }
 
     [Fact]

@@ -627,7 +627,7 @@
           "Settings"
         ],
         "summary": "Wake intervals.icu sync",
-        "description": "Enqueues a live sync tick. Returns 202 when connected and enabled, including coalesced wakes. Returns 204 when there is no connection or sync is disabled. Does not import on the request thread.",
+        "description": "Enqueues a live sync tick. Returns 202 when connected and enabled, including coalesced wakes while a tick is in flight or pending. Returns 204 when there is no connection or sync is disabled. Does not import on the request thread.",
         "operationId": "PostIntervalsIcuSync",
         "responses": {
           "202": {

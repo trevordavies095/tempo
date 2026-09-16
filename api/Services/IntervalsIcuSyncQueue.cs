@@ -4,25 +4,16 @@ namespace Tempo.Api.Services;
 
 public sealed class IntervalsIcuSyncQueue
 {
-    public static readonly TimeSpan CoalesceWindow = TimeSpan.FromSeconds(60);
-
     private readonly Channel<bool> _channel = Channel.CreateUnbounded<bool>();
     private readonly object _gate = new();
     private bool _pending;
     private bool _inFlight;
-    private DateTime? _lastFinishedUtc;
 
     public bool TryWake()
     {
         lock (_gate)
         {
             if (_inFlight || _pending)
-            {
-                return false;
-            }
-
-            if (_lastFinishedUtc is DateTime finished
-                && DateTime.UtcNow - finished < CoalesceWindow)
             {
                 return false;
             }
@@ -46,7 +37,6 @@ public sealed class IntervalsIcuSyncQueue
         lock (_gate)
         {
             _inFlight = false;
-            _lastFinishedUtc = DateTime.UtcNow;
         }
     }
 
@@ -59,7 +49,6 @@ public sealed class IntervalsIcuSyncQueue
         {
             _pending = false;
             _inFlight = false;
-            _lastFinishedUtc = null;
             while (_channel.Reader.TryRead(out _))
             {
             }
