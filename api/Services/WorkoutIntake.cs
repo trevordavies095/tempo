@@ -231,6 +231,8 @@ public class WorkoutIntake
                     };
                 }
 
+                await TryAttachExternalIdentityAsync(existingWorkout, overlay);
+
                 return await HandleDuplicateAsync(existingWorkout, decoded, overlay, startedAtUtc);
             }
 
@@ -404,6 +406,49 @@ public class WorkoutIntake
                 healthKitUuid, existingWorkout.Id);
 
             return await WorkoutQueryService.FindByHealthKitUuidAsync(_db, healthKitUuid);
+        }
+    }
+
+    /// <summary>
+    /// Attaches a Workout external identity when the stats-key match has no row for that source.
+    /// Does not change Workout.Source. Unique collision: undo and continue (Issue 03 will skip the owner).
+    /// </summary>
+    private async Task TryAttachExternalIdentityAsync(Workout existingWorkout, WorkoutIntakeOverlay? overlay)
+    {
+        var identity = NormalizeExternalIdentity(overlay);
+        if (identity is not { } pair)
+        {
+            return;
+        }
+
+        var hasSource = await _db.WorkoutExternalIdentities
+            .AnyAsync(i => i.WorkoutId == existingWorkout.Id && i.Source == pair.Source);
+        if (hasSource)
+        {
+            return;
+        }
+
+        var row = new WorkoutExternalIdentity
+        {
+            WorkoutId = existingWorkout.Id,
+            Source = pair.Source,
+            ExternalId = pair.ExternalId
+        };
+        _db.WorkoutExternalIdentities.Add(row);
+        try
+        {
+            await _db.SaveChangesAsync();
+            _logger.LogInformation(
+                "Attached external identity {Source} {ExternalId} to workout {WorkoutId}",
+                pair.Source, pair.ExternalId, existingWorkout.Id);
+        }
+        catch (DbUpdateException ex) when (IsExternalIdentityUniqueViolation(ex))
+        {
+            _db.Entry(row).State = EntityState.Detached;
+            _logger.LogWarning(
+                ex,
+                "Could not attach external identity {Source} {ExternalId} to workout {WorkoutId}",
+                pair.Source, pair.ExternalId, existingWorkout.Id);
         }
     }
 

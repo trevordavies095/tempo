@@ -923,6 +923,105 @@ public class WorkoutIntakeTests : IDisposable
     }
 
     [Fact]
+    public async Task PersistAsync_ExternalIdentity_AttachesOnStatsMatch_WithoutRenamingSource()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var stream = CreateGpxStream();
+        var created = await _intake.ProcessAsync(stream, "morning.gpx");
+        created.Action.Should().Be("created");
+        var gpx = created.Workout!;
+        gpx.Source.Should().Be("gpx_import");
+
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        var (decoded, _) = CreateDecodedWithExternalIdentity(
+            "icu-attach",
+            startedAt: gpx.StartedAt,
+            durationS: gpx.DurationS,
+            distanceM: gpx.DistanceM);
+        var overlay = new WorkoutIntakeOverlay
+        {
+            Source = WorkoutExternalSource.IntervalsIcu,
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = WorkoutExternalSource.IntervalsIcu,
+                ExternalId = "icu-attach"
+            }
+        };
+
+        var second = await _intake.PersistAsync(decoded, overlay);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(gpx.Id);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Source.Should().Be("gpx_import");
+        var identity = await _db.WorkoutExternalIdentities.SingleAsync();
+        identity.WorkoutId.Should().Be(gpx.Id);
+        identity.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
+        identity.ExternalId.Should().Be("icu-attach");
+        _weather.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_AttachesOnStatsMatch_WhenDuplicateUpdates()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var first = CreateGpxStream();
+        var created = await _intake.ProcessAsync(first, "morning.gpx");
+        created.Action.Should().Be("created");
+        var workout = await _db.Workouts.SingleAsync();
+        workout.Source.Should().Be("gpx_import");
+        workout.RawFileData = null;
+        await _db.SaveChangesAsync();
+
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        using var second = CreateGpxStream();
+        var rawFileData = second.ToArray();
+        second.Position = 0;
+        var parsed = _gpxParser.ParseGpx(second);
+        var decoded = new DecodedWorkout
+        {
+            StartedAt = parsed.StartTime,
+            DurationS = parsed.DurationSeconds,
+            DistanceM = parsed.DistanceMeters,
+            TrackPoints = parsed.TrackPoints,
+            SeriesPoints = null,
+            Name = parsed.Name,
+            RawGpxDataJson = parsed.RawGpxDataJson,
+            RawFileData = rawFileData,
+            RawFileName = "morning.gpx",
+            RawFileType = "gpx"
+        };
+        var overlay = new WorkoutIntakeOverlay
+        {
+            Source = WorkoutExternalSource.IntervalsIcu,
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = WorkoutExternalSource.IntervalsIcu,
+                ExternalId = "icu-update"
+            }
+        };
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("updated");
+        result.Workout!.Id.Should().Be(workout.Id);
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Source.Should().Be("gpx_import");
+        stored.RawFileData.Should().NotBeNullOrEmpty();
+        var identity = await _db.WorkoutExternalIdentities.SingleAsync();
+        identity.WorkoutId.Should().Be(workout.Id);
+        identity.ExternalId.Should().Be("icu-update");
+        _weather.CallCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task PersistAsync_HealthKitOutdoor_WithHrSeries_PersistsSplitAvgHeartRate()
     {
         await TestDataSeeder.SeedUserSettingsAsync(_db);
