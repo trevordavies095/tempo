@@ -768,6 +768,158 @@ public class WorkoutIntakeTests : IDisposable
         result.Action.Should().Be("created");
         var stored = await _db.Workouts.SingleAsync();
         stored.HealthKitUuid.Should().BeNull();
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_Created_WritesRow()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("  99  ");
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        result.Workout.Should().NotBeNull();
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Id.Should().Be(result.Workout!.Id);
+        var identity = await _db.WorkoutExternalIdentities.SingleAsync();
+        identity.WorkoutId.Should().Be(stored.Id);
+        identity.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
+        identity.ExternalId.Should().Be("99");
+        identity.CreatedAt.Should().BeCloseTo(System.DateTime.UtcNow, TimeSpan.FromSeconds(30));
+        _weather.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_Skipped_WhenSamePairPostedTwice()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("42");
+
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        var (decoded2, overlay2) = CreateDecodedWithExternalIdentity("42");
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(first.Workout!.Id);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(1);
+        _weather.CallCount.Should().Be(0);
+        _relativeEffort.CallCount.Should().Be(0);
+        _bestEfforts.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_Skipped_WhenSamePairDifferentStats()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("7", distanceM: 5000);
+
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        var (decoded2, overlay2) = CreateDecodedWithExternalIdentity(
+            "7",
+            startedAt: decoded.StartedAt.AddHours(1),
+            durationS: 2400,
+            distanceM: 10000);
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(first.Workout!.Id);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        _weather.CallCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(null, "123")]
+    [InlineData("intervals_icu", null)]
+    [InlineData("  ", "123")]
+    [InlineData("intervals_icu", "  ")]
+    [InlineData("", "123")]
+    public async Task PersistAsync_ExternalIdentity_InvalidOverlay_CreatesWorkoutWithoutRow(
+        string? source,
+        string? externalId)
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("unused");
+        overlay = new WorkoutIntakeOverlay
+        {
+            Source = overlay.Source,
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = source,
+                ExternalId = externalId
+            }
+        };
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_DeleteWorkout_CascadesIdentityRows()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("cascade");
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+        result.Action.Should().Be("created");
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(1);
+
+        _db.Workouts.Remove(result.Workout!);
+        await _db.SaveChangesAsync();
+
+        (await _db.Workouts.CountAsync()).Should().Be(0);
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_ParallelSamePair_YieldsOneWorkout()
+    {
+        await using var keepAlive = new SqliteConnection("Data Source=file:ext-id-race?mode=memory&cache=shared");
+        await keepAlive.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<TempoDbContext>()
+            .UseSqlite("Data Source=file:ext-id-race?mode=memory&cache=shared")
+            .Options;
+
+        await using var db1 = new TempoDbContext(options);
+        await db1.Database.EnsureCreatedAsync();
+        await TestDataSeeder.SeedUserSettingsAsync(db1);
+
+        await using var db2 = new TempoDbContext(options);
+
+        var intake1 = CreateIntake(db1);
+        var intake2 = CreateIntake(db2);
+        var (decoded1, overlay1) = CreateDecodedWithExternalIdentity("race-1");
+        var (decoded2, overlay2) = CreateDecodedWithExternalIdentity("race-1");
+
+        var results = await Task.WhenAll(
+            intake1.PersistAsync(decoded1, overlay1),
+            intake2.PersistAsync(decoded2, overlay2));
+
+        results.Select(r => r.Action).Should().OnlyContain(a => a == "created" || a == "skipped");
+        results.Select(r => r.Action).Should().Contain("created");
+        results.Select(r => r.Workout!.Id).Distinct().Should().HaveCount(1);
+
+        await using var verify = new TempoDbContext(options);
+        (await verify.Workouts.CountAsync()).Should().Be(1);
+        (await verify.WorkoutExternalIdentities.CountAsync()).Should().Be(1);
     }
 
     [Fact]
@@ -1191,6 +1343,48 @@ public class WorkoutIntakeTests : IDisposable
         (await _db.WorkoutSplits.CountAsync(s =>
             s.WorkoutId == first.Workout!.Id && s.Kind == WorkoutSplitKinds.DeviceLap))
             .Should().Be(lapCount);
+    }
+
+    private static WorkoutIntake CreateIntake(TempoDbContext db)
+    {
+        var elevationConfig = new ElevationCalculationConfig
+        {
+            NoiseThresholdMeters = 2.0,
+            MinDistanceMeters = 10.0
+        };
+        return new WorkoutIntake(
+            db,
+            new GpxParserService(elevationConfig),
+            new FitParserService(),
+            new TrackGeometry(elevationConfig),
+            new FakeWeatherService(),
+            new HeartRateZoneService(),
+            new FakeRelativeEffortService(),
+            new FakeBestEffortService(),
+            new SplitHeartRateService(),
+            NullLogger<WorkoutIntake>.Instance);
+    }
+
+    private static (DecodedWorkout Decoded, WorkoutIntakeOverlay Overlay) CreateDecodedWithExternalIdentity(
+        string externalId,
+        System.DateTime? startedAt = null,
+        int durationS = 1800,
+        double distanceM = 5000)
+    {
+        var (decoded, _) = CreateHealthKitOutdoorDecoded(
+            startedAt: startedAt,
+            durationS: durationS,
+            distanceM: distanceM);
+        var overlay = new WorkoutIntakeOverlay
+        {
+            Source = "fit_import",
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = WorkoutExternalSource.IntervalsIcu,
+                ExternalId = externalId
+            }
+        };
+        return (decoded, overlay);
     }
 
     private static (DecodedWorkout Decoded, WorkoutIntakeOverlay Overlay) CreateHealthKitOutdoorDecoded(

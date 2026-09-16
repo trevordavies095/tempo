@@ -270,6 +270,69 @@ public class WorkoutQueryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task FindByExternalIdentityAsync_ReturnsNull_WhenNoRowExists()
+    {
+        var result = await WorkoutQueryService.FindByExternalIdentityAsync(
+            _db, WorkoutExternalSource.IntervalsIcu, "123");
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task FindByExternalIdentityAsync_ReturnsWorkout_WhenPairMatches()
+    {
+        var workout = new Workout
+        {
+            StartedAt = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc),
+            DistanceM = 5000,
+            DurationS = 1800,
+            AvgPaceS = 360,
+            Source = "test",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Workouts.Add(workout);
+        _db.WorkoutExternalIdentities.Add(new WorkoutExternalIdentity
+        {
+            WorkoutId = workout.Id,
+            Source = WorkoutExternalSource.IntervalsIcu,
+            ExternalId = "12345"
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await WorkoutQueryService.FindByExternalIdentityAsync(
+            _db, WorkoutExternalSource.IntervalsIcu, "12345");
+
+        result.Should().NotBeNull();
+        result!.Id.Should().Be(workout.Id);
+    }
+
+    [Fact]
+    public async Task FindByExternalIdentityAsync_ReturnsNull_WhenSourceDiffers()
+    {
+        var workout = new Workout
+        {
+            StartedAt = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc),
+            DistanceM = 5000,
+            DurationS = 1800,
+            AvgPaceS = 360,
+            Source = "test",
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Workouts.Add(workout);
+        _db.WorkoutExternalIdentities.Add(new WorkoutExternalIdentity
+        {
+            WorkoutId = workout.Id,
+            Source = WorkoutExternalSource.IntervalsIcu,
+            ExternalId = "12345"
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await WorkoutQueryService.FindByExternalIdentityAsync(_db, "strava", "12345");
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ListHealthKitUuidsAsync_ReturnsEmpty_WhenNoWorkoutsExist()
     {
         var result = await WorkoutQueryService.ListHealthKitUuidsAsync(_db);
