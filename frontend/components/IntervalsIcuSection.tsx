@@ -15,6 +15,38 @@ import { Card } from '@/components/ui/Card';
 const fieldClass =
   'w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt';
 
+const SYNC_POLL_MS = 1000;
+const SYNC_POLL_TIMEOUT_MS = 20_000;
+
+function statusTickChanged(
+  previous: IntervalsIcuConnectionStatus,
+  next: IntervalsIcuConnectionStatus
+): boolean {
+  return (
+    next.lastSyncAttemptAt !== previous.lastSyncAttemptAt ||
+    next.lastSuccessfulSyncAt !== previous.lastSuccessfulSyncAt ||
+    next.lastError !== previous.lastError ||
+    next.enabled !== previous.enabled
+  );
+}
+
+async function waitForSyncTick(
+  previous: IntervalsIcuConnectionStatus
+): Promise<IntervalsIcuConnectionStatus> {
+  const deadline = Date.now() + SYNC_POLL_TIMEOUT_MS;
+  let latest = previous;
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, SYNC_POLL_MS));
+    latest = await getIntervalsIcuConnection();
+    if (statusTickChanged(previous, latest)) {
+      return latest;
+    }
+  }
+
+  return latest;
+}
+
 function formatTimestamp(value: string | null): string {
   if (!value) {
     return 'Never';
@@ -95,8 +127,14 @@ export function IntervalsIcuSection() {
     setIsSyncing(true);
     setError(null);
     try {
-      await syncIntervalsIcu();
-      setStatus(await getIntervalsIcuConnection());
+      const previous = status ?? (await getIntervalsIcuConnection());
+      const outcome = await syncIntervalsIcu();
+      if (outcome === 'idle') {
+        setStatus(await getIntervalsIcuConnection());
+        return;
+      }
+
+      setStatus(await waitForSyncTick(previous));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to request sync');
     } finally {
@@ -184,7 +222,7 @@ export function IntervalsIcuSection() {
               onClick={handleSyncNow}
               disabled={isSaving || isSyncing || isReplacing || status.enabled === false}
             >
-              {isSyncing ? 'Requested...' : 'Sync now'}
+              {isSyncing ? 'Syncing...' : 'Sync now'}
             </Button>
             <Button
               type="button"
