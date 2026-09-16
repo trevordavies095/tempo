@@ -1022,6 +1022,106 @@ public class WorkoutIntakeTests : IDisposable
     }
 
     [Fact]
+    public async Task PersistAsync_ExternalIdentity_AlreadyHasSource_DoesNotOverwrite()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var stream = CreateGpxStream();
+        var created = await _intake.ProcessAsync(stream, "morning.gpx");
+        created.Action.Should().Be("created");
+        var gpx = created.Workout!;
+
+        var (decoded1, overlay1) = CreateDecodedWithExternalIdentity(
+            "1",
+            startedAt: gpx.StartedAt,
+            durationS: gpx.DurationS,
+            distanceM: gpx.DistanceM);
+        var first = await _intake.PersistAsync(decoded1, overlay1);
+        first.Action.Should().Be("skipped");
+        (await _db.WorkoutExternalIdentities.SingleAsync()).ExternalId.Should().Be("1");
+
+        var (decoded2, _) = CreateDecodedWithExternalIdentity(
+            "2",
+            startedAt: gpx.StartedAt,
+            durationS: gpx.DurationS,
+            distanceM: gpx.DistanceM);
+        var overlay2 = new WorkoutIntakeOverlay
+        {
+            Source = WorkoutExternalSource.IntervalsIcu,
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = WorkoutExternalSource.IntervalsIcu,
+                ExternalId = "2"
+            }
+        };
+
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(gpx.Id);
+        var identity = await _db.WorkoutExternalIdentities.SingleAsync();
+        identity.ExternalId.Should().Be("1");
+        identity.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_SameIdAlreadyOnWorkout_DoesNotOverwrite()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("keep");
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+
+        var (decoded2, overlay2) = CreateDecodedWithExternalIdentity("keep");
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(first.Workout!.Id);
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(1);
+        (await _db.WorkoutExternalIdentities.SingleAsync()).ExternalId.Should().Be("keep");
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_OwnedElsewhere_SkipsOwner()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decodedA, overlayA) = CreateDecodedWithExternalIdentity("1", distanceM: 5000);
+        var first = await _intake.PersistAsync(decodedA, overlayA);
+        first.Action.Should().Be("created");
+        var ownerId = first.Workout!.Id;
+
+        using var gpx = CreateGpxStream();
+        var createdB = await _intake.ProcessAsync(gpx, "other.gpx");
+        createdB.Action.Should().Be("created");
+        var workoutB = createdB.Workout!;
+        workoutB.Id.Should().NotBe(ownerId);
+
+        var (decodedReuse, _) = CreateDecodedWithExternalIdentity(
+            "1",
+            startedAt: workoutB.StartedAt,
+            durationS: workoutB.DurationS,
+            distanceM: workoutB.DistanceM);
+        var overlayReuse = new WorkoutIntakeOverlay
+        {
+            Source = WorkoutExternalSource.IntervalsIcu,
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = WorkoutExternalSource.IntervalsIcu,
+                ExternalId = "1"
+            }
+        };
+
+        var second = await _intake.PersistAsync(decodedReuse, overlayReuse);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(ownerId);
+        (await _db.Workouts.CountAsync()).Should().Be(2);
+        var identity = await _db.WorkoutExternalIdentities.SingleAsync();
+        identity.WorkoutId.Should().Be(ownerId);
+        identity.ExternalId.Should().Be("1");
+        (await _db.WorkoutExternalIdentities.CountAsync(i => i.WorkoutId == workoutB.Id)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task PersistAsync_HealthKitOutdoor_WithHrSeries_PersistsSplitAvgHeartRate()
     {
         await TestDataSeeder.SeedUserSettingsAsync(_db);

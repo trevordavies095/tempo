@@ -231,7 +231,15 @@ public class WorkoutIntake
                     };
                 }
 
-                await TryAttachExternalIdentityAsync(existingWorkout, overlay);
+                var identityOwner = await TryAttachExternalIdentityAsync(existingWorkout, overlay);
+                if (identityOwner != null && identityOwner.Id != existingWorkout.Id)
+                {
+                    return new WorkoutIntakeResult
+                    {
+                        Action = "skipped",
+                        Workout = identityOwner
+                    };
+                }
 
                 return await HandleDuplicateAsync(existingWorkout, decoded, overlay, startedAtUtc);
             }
@@ -411,21 +419,22 @@ public class WorkoutIntake
 
     /// <summary>
     /// Attaches a Workout external identity when the stats-key match has no row for that source.
-    /// Does not change Workout.Source. Unique collision: undo and continue (Issue 03 will skip the owner).
+    /// Does not change Workout.Source or overwrite a stored ExternalId.
+    /// Returns the workout that already owns the pair if attaching collides.
     /// </summary>
-    private async Task TryAttachExternalIdentityAsync(Workout existingWorkout, WorkoutIntakeOverlay? overlay)
+    private async Task<Workout?> TryAttachExternalIdentityAsync(Workout existingWorkout, WorkoutIntakeOverlay? overlay)
     {
         var identity = NormalizeExternalIdentity(overlay);
         if (identity is not { } pair)
         {
-            return;
+            return null;
         }
 
         var hasSource = await _db.WorkoutExternalIdentities
             .AnyAsync(i => i.WorkoutId == existingWorkout.Id && i.Source == pair.Source);
         if (hasSource)
         {
-            return;
+            return null;
         }
 
         var row = new WorkoutExternalIdentity
@@ -441,14 +450,17 @@ public class WorkoutIntake
             _logger.LogInformation(
                 "Attached external identity {Source} {ExternalId} to workout {WorkoutId}",
                 pair.Source, pair.ExternalId, existingWorkout.Id);
+            return null;
         }
         catch (DbUpdateException ex) when (IsExternalIdentityUniqueViolation(ex))
         {
             _db.Entry(row).State = EntityState.Detached;
             _logger.LogWarning(
                 ex,
-                "Could not attach external identity {Source} {ExternalId} to workout {WorkoutId}",
+                "Could not attach external identity {Source} {ExternalId} to workout {WorkoutId}; pair already owned",
                 pair.Source, pair.ExternalId, existingWorkout.Id);
+
+            return await WorkoutQueryService.FindByExternalIdentityAsync(_db, pair.Source, pair.ExternalId);
         }
     }
 
