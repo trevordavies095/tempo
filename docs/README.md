@@ -61,7 +61,7 @@ docs/
 
 ## Configuration
 
-Documentation configuration is in `mkdocs.yml` at the repository root.
+Documentation configuration is in `mkdocs.yml` at the repository root. Maintainer drafts at the docs root (`PR-*.md`, `PRD-*.md`, and this README) stay in git but are excluded from the published site.
 
 ## Adding Content
 

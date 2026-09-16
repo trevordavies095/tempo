@@ -1,27 +1,29 @@
-# Cursor IDE metadata
+# Local agent / editor scratch (not product source)
 .cursor/
+.scratch/
+.vscode/
+.idea/
+CLAUDE.md
+AGENTS.md
+Tempo_Icons/
 
 # .NET
 .tools/
-api/bin/
-api/obj/
-api/*.user
-api/*.suo
-api/*.cache
-api/.vs/
-
-# .NET Test Projects
 **/bin/
 **/obj/
-**/*.Tests/bin/
-**/*.Tests/obj/
+**/.vs/
+*.user
+*.suo
+*.cache
+*.DotSettings.user
 
-# Node
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/.env*.local
-frontend/.vercel
+# Node / Next.js
+node_modules/
+.next/
+out/
+.vercel
+*.tsbuildinfo
+next-env.d.ts
 
 # Database
 *.db
@@ -29,35 +31,39 @@ frontend/.vercel
 *.db-wal
 *.sqlite
 
-# IDE
-.vscode/
-.idea/
+# Editor junk
 *.swp
 *.swo
 *~
-CLAUDE.md
+*.orig
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # Logs
 *.log
 logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
 # Environment
 .env
 .env.local
 .env.*.local
 
+# Local data (fixtures, uploaded media, private release notes)
 test_data/
 media/
 RELEASES.md
 
-# Testing
+# Testing / coverage
 TestResults/
-**/TestResults/
 coverage-report/
+coverage/
 **/coverage.cobertura.xml
 **/coverage.xml
 **/coverage.json
@@ -66,9 +72,12 @@ coverage-report/
 **/*.trx
 **/*.coverage
 
-# MkDocs build output
+# MkDocs / Python
 site/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
 
-Tempo_Icons/
-
-.scratch/*
+# Cookie jar from README API-key examples
+tempo-cookies.txt

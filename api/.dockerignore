@@ -13,4 +13,8 @@ media/
 *.db
 *.db-shm
 *.db-wal
+Tempo.Api.Tests/
+bruno/
+TestResults/
+coverage-report/
 

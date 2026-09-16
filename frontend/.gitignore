@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Next.js 16.3+ agent files (also ignored at repo root; agentRules is false)
+CLAUDE.md
+AGENTS.md
