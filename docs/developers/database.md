@@ -64,6 +64,23 @@ A `(source, externalId)` row linking a Workout to one upstream system for intake
 **Relationship:**
 - Many-to-one with `Workout` (cascade delete)
 
+### Intervals.icu connection
+
+Instance-level 0-or-1 row for a personal intervals.icu API key. Application-enforced single row (same idea as UserSettings). Not exported in a Tempo ZIP.
+
+**Columns:**
+- `Id` (Guid, Primary Key)
+- `ApiKeyCiphertext` (bytea) — AES-GCM blob (nonce + tag + ciphertext). Never returned on GET.
+- `Enabled` (bool) — live sync flag (poller is a later slice)
+- `ConnectedAt` (DateTime UTC) — sync origin floor; set on first persist
+- `LastSuccessfulSyncAt` (DateTime UTC, nullable)
+- `LastSyncAttemptAt` (DateTime UTC, nullable)
+- `LastError` (string, max 500, nullable) — safe message, no key material
+- `CreatedAt` / `UpdatedAt` (DateTime UTC)
+
+**Relationship:**
+- Standalone (no FK to Workout)
+
 ### WorkoutRoute
 
 One-to-one relationship storing route coordinates as GeoJSON LineString.
@@ -226,6 +243,7 @@ Workout (1) ── (N) WorkoutMedia
 Workout (N) ── (1) Shoe (via ShoeId, nullable)
 UserSettings (1) ── (1) Shoe (via DefaultShoeId, nullable)
 ImportJob (standalone; no FK to Workout)
+IntervalsIcuConnection (standalone; no FK)
 ```
 
 ## Migrations

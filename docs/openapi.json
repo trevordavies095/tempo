@@ -499,6 +499,95 @@
         ]
       }
     },
+    "/settings/intervals-icu": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get intervals.icu connection status",
+        "description": "Returns whether an Intervals.icu connection exists. Never returns the API key. When disconnected, connected is false.",
+        "operationId": "GetIntervalsIcuConnection",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntervalsIcuConnectionDocument"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Connect intervals.icu",
+        "description": "Probes intervals.icu as athlete 0, then stores the API key encrypted. A second connect while already connected is 409.",
+        "operationId": "PutIntervalsIcuConnection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutIntervalsIcuConnectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntervalsIcuConnectionDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "409": {
+            "description": "Conflict"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Disconnect intervals.icu",
+        "description": "Deletes the connection row. Workouts and external identities stay. 204 if already gone.",
+        "operationId": "DeleteIntervalsIcuConnection",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/shoes": {
       "get": {
         "tags": [
@@ -2715,6 +2804,43 @@
         },
         "additionalProperties": false,
         "description": "Request model for updating heart rate zones with optional recalculation"
+      },
+      "IntervalsIcuConnectionDocument": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "lastSuccessfulSyncAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastSyncAttemptAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PutIntervalsIcuConnectionRequest": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "UpdateUnitPreferenceRequest": {
         "type": "object",

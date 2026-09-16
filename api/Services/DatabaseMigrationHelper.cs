@@ -28,7 +28,8 @@ public static class DatabaseMigrationHelper
         // AddShoeTracking migration
         { "Shoes", "20251201120000_AddShoeTracking" },
         { "ImportJobs", "20260816180637_AddImportJobs" },
-        { "WorkoutExternalIdentities", "20260916003924_AddWorkoutExternalIdentities" }
+        { "WorkoutExternalIdentities", "20260916003924_AddWorkoutExternalIdentities" },
+        { "IntervalsIcuConnections", "20260916223516_AddIntervalsIcuConnection" }
     };
 
     // Map of (table, column) pairs to their corresponding migration IDs

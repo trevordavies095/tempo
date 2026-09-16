@@ -21,6 +21,7 @@ public class TempoDbContext : DbContext
     public DbSet<Shoe> Shoes { get; set; }
     public DbSet<ImportJob> ImportJobs { get; set; }
     public DbSet<WorkoutExternalIdentity> WorkoutExternalIdentities { get; set; }
+    public DbSet<IntervalsIcuConnection> IntervalsIcuConnections { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -159,6 +160,12 @@ public class TempoDbContext : DbContext
 
             entity.HasIndex(e => new { e.Source, e.ExternalId }).IsUnique();
             entity.HasIndex(e => new { e.WorkoutId, e.Source }).IsUnique();
+        });
+
+        modelBuilder.Entity<IntervalsIcuConnection>(entity =>
+        {
+            entity.Property(e => e.ApiKeyCiphertext).IsRequired();
+            entity.Property(e => e.LastError).HasMaxLength(500);
         });
     }
 }

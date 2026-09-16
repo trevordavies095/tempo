@@ -13,6 +13,7 @@ Tempo settings allow you to customize:
 - Relative effort calculation
 - Shoe tracking and management
 - **Export** (prominent under Data Management) and collapsed **Migrate / restore** (Strava archive + Tempo export restore)
+- Optional **intervals.icu** connection under Integrations (Garmin and other devices via intervals.icu)
 
 On a fresh install, units, heart rate zones, and an optional default shoe are usually set during [first-run onboarding](../getting-started/onboarding.md). You can change them anytime here.
 
@@ -217,6 +218,25 @@ To remove a shoe from your collection:
 - **Update initial mileage** - If you're adding a shoe that already has miles, enter the current mileage for accurate tracking
 - **Regular review** - Check shoe mileage regularly to know when it's time to replace them (most running shoes last 300-500 miles)
 
+## Integrations
+
+### intervals.icu
+
+Optional. Tempo can store your personal intervals.icu API key so later slices can import new runs automatically. This is not part of onboarding. Privacy-minded setups can skip it and keep uploading FIT/GPX files.
+
+**Setup**
+
+1. Create a free [intervals.icu](https://intervals.icu) account if you need one
+2. Connect Garmin (or another device) under intervals.icu settings
+3. Copy your personal API key from intervals.icu **Settings → Developer**
+4. In Tempo **Settings → Integrations**, paste the key and click Connect
+
+Tempo probes intervals.icu before saving. The key is stored encrypted and is never shown again. Disconnect wipes the key; your Workouts stay.
+
+**Privacy:** activity files transit intervals.icu (a donation-supported third party). Tempo does not talk to Garmin unofficially.
+
+The connection is **not** included in a Tempo export ZIP. After restore, connect again in Settings.
+
 ## Export / Import
 
 Tempo allows you to export all your data in a portable ZIP format for backup, migration, or data portability. Under **Migrate / restore**, you can restore a previous Tempo export or import a Strava archive after onboarding.
@@ -262,6 +282,8 @@ The export includes everything in your Tempo instance:
   - Default shoe reference
 
 - **Best Efforts** - All best effort records for standard distances
+
+The intervals.icu API key is **not** included. Reconnect under Settings → Integrations after restore.
 
 - **Manifest File** - Metadata about the export including:
   - Export format version

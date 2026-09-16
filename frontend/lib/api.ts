@@ -1269,6 +1269,56 @@ export async function getCartoBasemaps(): Promise<{ apiKey: string | null }> {
   return response.json();
 }
 
+export interface IntervalsIcuConnectionStatus {
+  connected: boolean;
+  enabled: boolean | null;
+  lastSuccessfulSyncAt: string | null;
+  lastSyncAttemptAt: string | null;
+  lastError: string | null;
+}
+
+export async function getIntervalsIcuConnection(): Promise<IntervalsIcuConnectionStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/intervals-icu`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get intervals.icu connection: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function connectIntervalsIcu(apiKey: string): Promise<IntervalsIcuConnectionStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/intervals-icu`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ apiKey }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to connect intervals.icu: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function disconnectIntervalsIcu(): Promise<void> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/intervals-icu`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+
+  if (!response.ok && response.status !== 204) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to disconnect intervals.icu: ${response.status}`);
+  }
+}
+
 export async function getUnitPreference(): Promise<{ unitPreference: 'metric' | 'imperial' }> {
   const response = await fetchWithAuth(`${API_BASE_URL}/settings/unit-preference`, {
     method: 'GET',

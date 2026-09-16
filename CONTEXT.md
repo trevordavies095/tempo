@@ -82,6 +82,10 @@ A pair of running shoes with mileage and Workout assignments.
 Single-row preferences: units, heart-rate zones, default shoe. Appearance (dark/light) is a command-center preference, not UserSettings.
 _Avoid_: config, profile
 
+**Intervals.icu connection**:
+Instance-level 0-or-1 row linking Tempo to the authenticated intervals.icu athlete (always id `0`): encrypted personal API key, enabled flag, sync origin, last-success / last-error. Command-center Settings card. Not UserSettings, not Tempo `ApiKey`, not an ImportJob.
+_Avoid_: UserSettings, Tempo API key, ImportJob (as the connection)
+
 **Onboarding**:
 Hard-gated first-run wizard on the command center after registration (optional Tempo export restore, essentials, optional Strava bulk). Driven by `User.OnboardingCompleted` (account flag, not UserSettings). Day-to-day Import stays GPX/FIT; late ZIPs use Settings → Migrate / restore.
 _Avoid_: setup wizard as UserSettings, re-run setup from Settings

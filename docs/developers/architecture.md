@@ -108,6 +108,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 - **User**: User accounts for authentication
 - **UserSettings**: Single-row table for user preferences (heart rate zones, unit preferences, default shoe). Command-center appearance is not UserSettings.
 - **ImportJob**: Background import (`strava_bulk` | `tempo_export`) with status, byte/progress counters, ErrorDetailsJson (Strava), ResultJson (Tempo), and archive path. At most one row in `receiving` | `queued` | `running`.
+- **IntervalsIcuConnection**: Optional 0-or-1 row for a BYO intervals.icu API key (encrypted). Not UserSettings. Sync poller is a later slice.
 
 ## Data Flow
 
