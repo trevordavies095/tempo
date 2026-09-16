@@ -57,7 +57,11 @@ public sealed class IntervalsIcuClient : IIntervalsIcuClient
             var status = ClassifyStatus(response.StatusCode);
             if (status != IntervalsIcuProbeResult.Ok)
             {
-                return new IntervalsIcuListResult { Status = status };
+                return new IntervalsIcuListResult
+                {
+                    Status = status,
+                    RetryAfter = ReadRetryAfter(response)
+                };
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -104,6 +108,11 @@ public sealed class IntervalsIcuClient : IIntervalsIcuClient
                 _logger.LogWarning(
                     "intervals.icu file fetch returned {StatusCode}",
                     (int)response.StatusCode);
+                if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    await DelayRetryAfterAsync(ReadRetryAfter(response), cancellationToken);
+                }
+
                 return null;
             }
 
@@ -161,6 +170,43 @@ public sealed class IntervalsIcuClient : IIntervalsIcuClient
 
         _logger.LogWarning("intervals.icu returned {StatusCode}", (int)statusCode);
         return IntervalsIcuProbeResult.Transient;
+    }
+
+    internal static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+    {
+        var header = response.Headers.RetryAfter;
+        if (header == null)
+        {
+            return null;
+        }
+
+        if (header.Delta is TimeSpan delta)
+        {
+            return delta;
+        }
+
+        if (header.Date is DateTimeOffset date)
+        {
+            var remaining = date - DateTimeOffset.UtcNow;
+            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        }
+
+        return null;
+    }
+
+    internal static async Task DelayRetryAfterAsync(TimeSpan? retryAfter, CancellationToken cancellationToken)
+    {
+        if (retryAfter is not TimeSpan delay || delay <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        if (delay > TimeSpan.FromSeconds(30))
+        {
+            delay = TimeSpan.FromSeconds(30);
+        }
+
+        await Task.Delay(delay, cancellationToken);
     }
 
     private static string ReadId(JsonElement id)

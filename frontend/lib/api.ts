@@ -1307,6 +1307,20 @@ export async function connectIntervalsIcu(apiKey: string): Promise<IntervalsIcuC
   return response.json();
 }
 
+export async function enableIntervalsIcu(): Promise<IntervalsIcuConnectionStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/intervals-icu/enable`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to re-enable intervals.icu: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function disconnectIntervalsIcu(): Promise<void> {
   const response = await fetchWithAuth(`${API_BASE_URL}/settings/intervals-icu`, {
     method: 'DELETE',

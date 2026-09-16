@@ -529,8 +529,8 @@
         "tags": [
           "Settings"
         ],
-        "summary": "Connect intervals.icu",
-        "description": "Probes intervals.icu as athlete 0, then stores the API key encrypted. A second connect while already connected is 409.",
+        "summary": "Connect or replace intervals.icu key",
+        "description": "Probes intervals.icu as athlete 0, then stores the API key encrypted. A second PUT while connected replaces the ciphertext only and keeps connectedAt / lastSuccessfulSyncAt.",
         "operationId": "PutIntervalsIcuConnection",
         "requestBody": {
           "content": {
@@ -555,9 +555,6 @@
           },
           "400": {
             "description": "Bad Request"
-          },
-          "409": {
-            "description": "Conflict"
           },
           "503": {
             "description": "Service Unavailable"
@@ -588,13 +585,49 @@
         ]
       }
     },
+    "/settings/intervals-icu/enable": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Re-enable intervals.icu sync",
+        "description": "Probes with the stored key and turns live sync back on. 404 if there is no connection. 400 if decrypt or probe fails.",
+        "operationId": "PostIntervalsIcuEnable",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntervalsIcuConnectionDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/settings/intervals-icu/sync": {
       "post": {
         "tags": [
           "Settings"
         ],
         "summary": "Wake intervals.icu sync",
-        "description": "Enqueues a live sync tick. Returns 202 when connected and enabled. Returns 204 when there is no connection or sync is disabled. Does not import on the request thread.",
+        "description": "Enqueues a live sync tick. Returns 202 when connected and enabled, including coalesced wakes. Returns 204 when there is no connection or sync is disabled. Does not import on the request thread.",
         "operationId": "PostIntervalsIcuSync",
         "responses": {
           "202": {

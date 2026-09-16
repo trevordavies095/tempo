@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   connectIntervalsIcu,
   disconnectIntervalsIcu,
+  enableIntervalsIcu,
   getIntervalsIcuConnection,
   syncIntervalsIcu,
   type IntervalsIcuConnectionStatus,
@@ -33,6 +34,7 @@ export function IntervalsIcuSection() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isReplacing, setIsReplacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,6 +60,32 @@ export function IntervalsIcuSection() {
       setApiKey('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to connect');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleReplaceKey = async () => {
+    setIsReplacing(true);
+    setError(null);
+    try {
+      const next = await connectIntervalsIcu(apiKey);
+      setStatus(next);
+      setApiKey('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to replace key');
+    } finally {
+      setIsReplacing(false);
+    }
+  };
+
+  const handleReEnable = async () => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      setStatus(await enableIntervalsIcu());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to re-enable');
     } finally {
       setIsSaving(false);
     }
@@ -123,11 +151,38 @@ export function IntervalsIcuSection() {
               </div>
             )}
           </dl>
+          <label className="block">
+            <span className="sr-only">Replace intervals.icu API key</span>
+            <input
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder="Replace API key"
+              className={fieldClass}
+            />
+          </label>
           <div className="flex flex-wrap gap-2">
+            {status.enabled === false && (
+              <Button
+                type="button"
+                onClick={handleReEnable}
+                disabled={isSaving || isSyncing || isReplacing}
+              >
+                {isSaving ? 'Re-enabling...' : 'Re-enable'}
+              </Button>
+            )}
+            <Button
+              type="button"
+              onClick={handleReplaceKey}
+              disabled={isSaving || isSyncing || isReplacing || apiKey.trim().length === 0}
+            >
+              {isReplacing ? 'Replacing...' : 'Replace key'}
+            </Button>
             <Button
               type="button"
               onClick={handleSyncNow}
-              disabled={isSaving || isSyncing || status.enabled === false}
+              disabled={isSaving || isSyncing || isReplacing || status.enabled === false}
             >
               {isSyncing ? 'Requested...' : 'Sync now'}
             </Button>
@@ -135,9 +190,9 @@ export function IntervalsIcuSection() {
               type="button"
               variant="danger"
               onClick={handleDisconnect}
-              disabled={isSaving || isSyncing}
+              disabled={isSaving || isSyncing || isReplacing}
             >
-              {isSaving ? 'Disconnecting...' : 'Disconnect'}
+              {isSaving && status.enabled !== false ? 'Disconnecting...' : 'Disconnect'}
             </Button>
           </div>
         </div>

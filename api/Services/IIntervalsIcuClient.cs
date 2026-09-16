@@ -24,6 +24,7 @@ public sealed class IntervalsIcuListResult
 {
     public required IntervalsIcuProbeResult Status { get; init; }
     public IReadOnlyList<IntervalsIcuActivity> Activities { get; init; } = [];
+    public TimeSpan? RetryAfter { get; init; }
 }
 
 public interface IIntervalsIcuClient

@@ -28,6 +28,7 @@ public class IntervalsIcuSettingsEndpointsTests : IClassFixture<IntervalsIcuSett
     {
         _factory = factory;
         _factory.Fake.Reset();
+        _factory.Decorated.Services.GetRequiredService<IntervalsIcuSyncQueue>().Reset();
     }
 
     private async Task<HttpClient> AuthenticatedClientAsync()
@@ -107,17 +108,39 @@ public class IntervalsIcuSettingsEndpointsTests : IClassFixture<IntervalsIcuSett
     }
 
     [Fact]
-    public async Task Put_WhenAlreadyConnected_Returns409()
+    public async Task Put_WhenAlreadyConnected_ReplacesCiphertextOnly()
     {
         var client = await AuthenticatedClientAsync();
         _factory.Fake.Result = IntervalsIcuProbeResult.Ok;
         (await client.PutAsJsonAsync("/settings/intervals-icu", new { apiKey = "first-key" }))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
+        DateTime connectedAt;
+        DateTime lastSuccess;
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var row = await db.IntervalsIcuConnections.SingleAsync();
+            connectedAt = row.ConnectedAt;
+            lastSuccess = DateTime.UtcNow.AddDays(-3);
+            row.LastSuccessfulSyncAt = lastSuccess;
+            await db.SaveChangesAsync();
+        }
+
+        _factory.Fake.Reset();
+        _factory.Fake.Result = IntervalsIcuProbeResult.Ok;
         var second = await client.PutAsJsonAsync("/settings/intervals-icu", new { apiKey = "second-key" });
 
-        second.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        _factory.Fake.ProbeCount.Should().Be(1);
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        _factory.Fake.LastApiKey.Should().Be("second-key");
+        using var verify = _factory.Decorated.Services.CreateScope();
+        var stored = await verify.ServiceProvider.GetRequiredService<TempoDbContext>()
+            .IntervalsIcuConnections.SingleAsync();
+        stored.ConnectedAt.Should().Be(connectedAt);
+        stored.LastSuccessfulSyncAt.Should().BeCloseTo(lastSuccess, TimeSpan.FromSeconds(1));
+        stored.Enabled.Should().BeTrue();
+        verify.ServiceProvider.GetRequiredService<IntervalsIcuSecretProtector>()
+            .Decrypt(stored.ApiKeyCiphertext).Should().Be("second-key");
     }
 
     [Fact]
@@ -321,6 +344,122 @@ public class IntervalsIcuSettingsEndpointsTests : IClassFixture<IntervalsIcuSett
     }
 
     [Fact]
+    public async Task RunTick_WhenListUnauthorized_DisablesAndSyncReturns204()
+    {
+        var client = await AuthenticatedClientAsync();
+        await ConnectAndResetFakeAsync(client);
+        _factory.Fake.ListStatus = IntervalsIcuProbeResult.Unauthorized;
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>().RunTickAsync();
+        }
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var row = await db.IntervalsIcuConnections.SingleAsync();
+            row.Enabled.Should().BeFalse();
+            row.LastError.Should().NotBeNullOrWhiteSpace();
+            scope.ServiceProvider.GetRequiredService<IntervalsIcuSecretProtector>()
+                .Decrypt(row.ApiKeyCiphertext).Should().Be("plain-icu-key");
+        }
+
+        (await client.PostAsync("/settings/intervals-icu/sync", content: null))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Fake.GetFileCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PostEnable_ReenablesOrRejectsWithoutRepaste()
+    {
+        var client = await AuthenticatedClientAsync();
+        (await client.PostAsync("/settings/intervals-icu/enable", content: null))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        await ConnectAndResetFakeAsync(client);
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var row = await db.IntervalsIcuConnections.SingleAsync();
+            row.Enabled = false;
+            row.LastError = "intervals.icu rejected the API key";
+            await db.SaveChangesAsync();
+        }
+
+        _factory.Fake.Result = IntervalsIcuProbeResult.Unauthorized;
+        (await client.PostAsync("/settings/intervals-icu/enable", content: null))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<TempoDbContext>()
+                .IntervalsIcuConnections.SingleAsync()).Enabled.Should().BeFalse();
+        }
+
+        _factory.Fake.Result = IntervalsIcuProbeResult.Ok;
+        var enabled = await client.PostAsync("/settings/intervals-icu/enable", content: null);
+        enabled.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonSerializer.Deserialize<IntervalsIcuStatusResponse>(
+            await enabled.Content.ReadAsStringAsync(),
+            JsonOptions);
+        body!.Enabled.Should().BeTrue();
+        body.LastError.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PostSync_WhenEnabled_CoalescesSecondWake()
+    {
+        var client = await AuthenticatedClientAsync();
+        await ConnectAndResetFakeAsync(client);
+        var queue = _factory.Decorated.Services.GetRequiredService<IntervalsIcuSyncQueue>();
+
+        var first = await client.PostAsync("/settings/intervals-icu/sync", content: null);
+        var second = await client.PostAsync("/settings/intervals-icu/sync", content: null);
+
+        first.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        second.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        queue.TryWake().Should().BeFalse();
+        _factory.Fake.GetFileCount.Should().Be(0);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>().RunTickAsync();
+        }
+
+        _factory.Fake.GetFileCount.Should().Be(0);
+        queue.TryWake().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RunTick_ListWindow_UsesConnectMinusTwoThenCapsAtFourteenDays()
+    {
+        var client = await AuthenticatedClientAsync();
+        await ConnectAndResetFakeAsync(client);
+
+        DateTime connectedAt;
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            connectedAt = (await db.IntervalsIcuConnections.SingleAsync()).ConnectedAt;
+            await scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>().RunTickAsync();
+        }
+
+        _factory.Fake.LastOldest.Should().Be(DateOnly.FromDateTime(connectedAt).AddDays(-2));
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var row = await db.IntervalsIcuConnections.SingleAsync();
+            row.ConnectedAt = DateTime.UtcNow.AddDays(-30);
+            row.LastSuccessfulSyncAt = DateTime.UtcNow.AddDays(-20);
+            await db.SaveChangesAsync();
+            await scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>().RunTickAsync();
+        }
+
+        _factory.Fake.LastOldest.Should().Be(DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-14));
+    }
+
+    [Fact]
     public async Task Unauthenticated_GetPutDelete_Return401()
     {
         await EnsureCleanDatabaseAsync();
@@ -331,6 +470,8 @@ public class IntervalsIcuSettingsEndpointsTests : IClassFixture<IntervalsIcuSett
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         (await client.DeleteAsync("/settings/intervals-icu")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         (await client.PostAsync("/settings/intervals-icu/sync", content: null))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await client.PostAsync("/settings/intervals-icu/enable", content: null))
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 

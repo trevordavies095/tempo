@@ -762,7 +762,7 @@ Content-Type: application/json
 }
 ```
 
-Probes intervals.icu as athlete `0` before persist. **400** if the key is blank or rejected (401/403). **503** if intervals.icu is unreachable. **409** if a connection already exists (disconnect first). **200** with the same status document as GET (no key).
+Probes intervals.icu as athlete `0` before persist. **400** if the key is blank or rejected (401/403). **503** if intervals.icu is unreachable. A second PUT while connected **replaces the ciphertext only** (`connectedAt` / `lastSuccessfulSyncAt` stay). **200** with the same status document as GET (no key).
 
 ### Disconnect intervals.icu
 
@@ -772,13 +772,21 @@ DELETE /settings/intervals-icu
 
 Deletes the connection row. **204** if it was already gone. Workouts and Workout external identities stay.
 
+### Re-enable intervals.icu
+
+```http
+POST /settings/intervals-icu/enable
+```
+
+Probes with the stored key and turns live sync back on. **404** if there is no connection. **400** if decrypt or probe fails. **503** if intervals.icu is unreachable. **200** with the status document.
+
 ### Sync intervals.icu now
 
 ```http
 POST /settings/intervals-icu/sync
 ```
 
-Wakes the live sync worker. **202** when connected and enabled (does not import on the request thread). **204** when there is no connection or sync is disabled.
+Wakes the live sync worker. **202** when connected and enabled (does not import on the request thread), including coalesced wakes (in-flight or finished within about 60 seconds). **204** when there is no connection or sync is disabled.
 
 ## Shoes
 

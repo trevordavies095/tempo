@@ -10,6 +10,7 @@ public sealed class IntervalsIcuSyncService
     private readonly IIntervalsIcuClient _client;
     private readonly IntervalsIcuSecretProtector _protector;
     private readonly WorkoutIntake _intake;
+    private readonly IntervalsIcuSyncQueue _queue;
     private readonly ILogger<IntervalsIcuSyncService> _logger;
 
     public IntervalsIcuSyncService(
@@ -17,12 +18,14 @@ public sealed class IntervalsIcuSyncService
         IIntervalsIcuClient client,
         IntervalsIcuSecretProtector protector,
         WorkoutIntake intake,
+        IntervalsIcuSyncQueue queue,
         ILogger<IntervalsIcuSyncService> logger)
     {
         _db = db;
         _client = client;
         _protector = protector;
         _intake = intake;
+        _queue = queue;
         _logger = logger;
     }
 
@@ -34,6 +37,19 @@ public sealed class IntervalsIcuSyncService
             return;
         }
 
+        _queue.BeginTick();
+        try
+        {
+            await RunTickCoreAsync(row, cancellationToken);
+        }
+        finally
+        {
+            _queue.EndTick();
+        }
+    }
+
+    private async Task RunTickCoreAsync(IntervalsIcuConnection row, CancellationToken cancellationToken)
+    {
         var now = DateTime.UtcNow;
         row.LastSyncAttemptAt = now;
         row.UpdatedAt = now;
@@ -46,18 +62,27 @@ public sealed class IntervalsIcuSyncService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Could not decrypt intervals.icu API key");
+            row.Enabled = false;
             row.LastError = "Could not decrypt the stored API key.";
             await _db.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        var oldest = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-2);
+        var oldest = ComputeOldest(now, row.ConnectedAt, row.LastSuccessfulSyncAt);
         var list = await _client.ListActivitiesAsync(apiKey, oldest, cancellationToken);
         if (list.Status != IntervalsIcuProbeResult.Ok)
         {
-            row.LastError = list.Status == IntervalsIcuProbeResult.Unauthorized
-                ? "intervals.icu rejected the API key"
-                : "Could not list intervals.icu activities.";
+            if (list.Status == IntervalsIcuProbeResult.Unauthorized)
+            {
+                row.Enabled = false;
+                row.LastError = "intervals.icu rejected the API key";
+            }
+            else
+            {
+                row.LastError = "Could not list intervals.icu activities.";
+                await IntervalsIcuClient.DelayRetryAfterAsync(list.RetryAfter, cancellationToken);
+            }
+
             await _db.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -115,6 +140,30 @@ public sealed class IntervalsIcuSyncService
             : null;
         row.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    internal static DateOnly ComputeOldest(
+        DateTime utcNow,
+        DateTime connectedAt,
+        DateTime? lastSuccessfulSyncAt)
+    {
+        var today = DateOnly.FromDateTime(utcNow);
+        var floor = DateOnly.FromDateTime(connectedAt).AddDays(-2);
+        var fromLast = DateOnly.FromDateTime(lastSuccessfulSyncAt ?? connectedAt).AddDays(-2);
+        var cap = today.AddDays(-14);
+
+        var oldest = floor;
+        if (fromLast > oldest)
+        {
+            oldest = fromLast;
+        }
+
+        if (cap > oldest)
+        {
+            oldest = cap;
+        }
+
+        return oldest;
     }
 
     internal static bool IsRunningType(string? type)
