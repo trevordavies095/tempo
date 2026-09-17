@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **API:** rejects SQLite connection strings (`Data Source=`) and a missing or empty `ConnectionStrings:DefaultConnection` at startup. Tests and OpenAPI generation require PostgreSQL 16.
+
 ## [2.9.0] - 2026-09-15
 
 ### Added

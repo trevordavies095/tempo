@@ -246,42 +246,24 @@ public class TimerTimeBackfillService
 
     private async Task<List<Guid>> LoadCandidateIdsAsync(CancellationToken cancellationToken)
     {
-        var isPostgres = _db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
-
-        if (isPostgres)
-        {
-            // jsonb rejects text LIKE/Contains (22P02). Cast to text for the marker scan.
-            return await _db.Database
-                .SqlQueryRaw<Guid>(
-                    """
-                    SELECT w."Id" AS "Value"
-                    FROM "Workouts" AS w
-                    WHERE w."TimerTimeS" IS NULL
-                      AND (
-                        (
-                          w."RawFitData" IS NOT NULL
-                          AND w."RawFitData"::text <> ''
-                          AND w."RawFitData"::text NOT LIKE {0}
-                        )
-                        OR w."MovingTimeS" IS NOT NULL
-                      )
-                    ORDER BY w."Id"
-                    """,
-                    "%" + TimerTimeAbsentMarker + "%")
-                .ToListAsync(cancellationToken);
-        }
-
-        return await _db.Workouts
-            .Where(w =>
-                w.TimerTimeS == null &&
-                (
-                    (w.RawFitData != null &&
-                     w.RawFitData != "" &&
-                     !w.RawFitData.Contains(TimerTimeAbsentMarker)) ||
-                    w.MovingTimeS != null
-                ))
-            .OrderBy(w => w.Id)
-            .Select(w => w.Id)
+        // jsonb rejects text LIKE/Contains (22P02). Cast to text for the marker scan.
+        return await _db.Database
+            .SqlQueryRaw<Guid>(
+                """
+                SELECT w."Id" AS "Value"
+                FROM "Workouts" AS w
+                WHERE w."TimerTimeS" IS NULL
+                  AND (
+                    (
+                      w."RawFitData" IS NOT NULL
+                      AND w."RawFitData"::text <> ''
+                      AND w."RawFitData"::text NOT LIKE {0}
+                    )
+                    OR w."MovingTimeS" IS NOT NULL
+                  )
+                ORDER BY w."Id"
+                """,
+                "%" + TimerTimeAbsentMarker + "%")
             .ToListAsync(cancellationToken);
     }
 }

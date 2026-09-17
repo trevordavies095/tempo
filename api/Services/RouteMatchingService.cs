@@ -50,37 +50,17 @@ public class RouteMatchingService
             return new List<SimilarRouteMatch>();
         }
 
-        // Load route - use EF Core for SQLite, raw SQL for PostgreSQL (to handle JSONB)
+        // Load route with ::text cast to avoid JSONB validation errors
         RouteData? currentRouteData = null;
         try
         {
-            var isPostgres = _db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
-            
-            if (isPostgres)
-            {
-                // PostgreSQL: use raw SQL with ::text cast to avoid JSONB validation errors
-                currentRouteData = await _db.Database
-                    .SqlQueryRaw<RouteData>(
-                        @"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
-                          FROM ""WorkoutRoutes"" 
-                          WHERE ""WorkoutId"" = {0}",
-                        workoutId)
-                    .FirstOrDefaultAsync();
-            }
-            else
-            {
-                // SQLite: use EF Core query (no JSONB issues)
-                var route = await _db.WorkoutRoutes
-                    .Where(r => r.WorkoutId == workoutId)
-                    .Select(r => new RouteData
-                    {
-                        Id = r.Id,
-                        WorkoutId = r.WorkoutId,
-                        RouteGeoJson = r.RouteGeoJson ?? string.Empty
-                    })
-                    .FirstOrDefaultAsync();
-                currentRouteData = route;
-            }
+            currentRouteData = await _db.Database
+                .SqlQueryRaw<RouteData>(
+                    @"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
+                      FROM ""WorkoutRoutes"" 
+                      WHERE ""WorkoutId"" = {0}",
+                    workoutId)
+                .FirstOrDefaultAsync();
         }
         catch (Exception ex)
         {
@@ -138,41 +118,18 @@ public class RouteMatchingService
         {
             try
             {
-                var isPostgres = _db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
-                
-                if (isPostgres)
+                // parameterized ANY avoids EF1002 / SQL injection from interpolated IN lists
+                var allRouteData = await _db.Database
+                    .SqlQueryRaw<RouteData>(
+                        @"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
+                          FROM ""WorkoutRoutes"" 
+                          WHERE ""WorkoutId"" = ANY({0})",
+                        candidateWorkoutIds.ToArray())
+                    .ToListAsync();
+
+                foreach (var routeData in allRouteData)
                 {
-                    // PostgreSQL: parameterized ANY avoids EF1002 / SQL injection from interpolated IN lists
-                    var allRouteData = await _db.Database
-                        .SqlQueryRaw<RouteData>(
-                            @"SELECT ""Id"", ""WorkoutId"", ""RouteGeoJson""::text as ""RouteGeoJson""
-                              FROM ""WorkoutRoutes"" 
-                              WHERE ""WorkoutId"" = ANY({0})",
-                            candidateWorkoutIds.ToArray())
-                        .ToListAsync();
-                    
-                    foreach (var routeData in allRouteData)
-                    {
-                        routeDataMap[routeData.WorkoutId] = routeData;
-                    }
-                }
-                else
-                {
-                    // SQLite: use EF Core query
-                    var allRouteData = await _db.WorkoutRoutes
-                        .Where(r => candidateWorkoutIds.Contains(r.WorkoutId))
-                        .Select(r => new RouteData
-                        {
-                            Id = r.Id,
-                            WorkoutId = r.WorkoutId,
-                            RouteGeoJson = r.RouteGeoJson ?? string.Empty
-                        })
-                        .ToListAsync();
-                    
-                    foreach (var routeData in allRouteData)
-                    {
-                        routeDataMap[routeData.WorkoutId] = routeData;
-                    }
+                    routeDataMap[routeData.WorkoutId] = routeData;
                 }
             }
             catch (Exception ex)

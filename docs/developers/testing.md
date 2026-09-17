@@ -4,16 +4,21 @@ This guide covers how to run tests, generate coverage reports, and add new tests
 
 ## Overview
 
-The Tempo API uses **xUnit** for testing with **coverlet** for code coverage collection. Tests are organized into:
+The Tempo API uses **xUnit** for testing with **coverlet** for code coverage collection. EF-backed tests run against **PostgreSQL 16** (`postgres:16-alpine`, same image as compose) via Testcontainers. Docker must be running for those tests; they fail loudly if the container cannot start. Parser, track-geometry, and HealthKit decoder tests do **not** start Postgres and do not need Docker.
+
+Tests are organized into:
 
 - **Unit Tests**: Test individual services in isolation (located in `api/Tempo.Api.Tests/Services/`)
-  - Parser tests (`GpxParserServiceTests`, `FitParserServiceTests`) assert decode: fixture file → `TrackPoint`s and optional device summary, not split counts or elevation-gain algorithm details
-  - `TrackGeometryTests` assert elevation, split boundaries, GeoJSON, and series elapsed-seconds from fixture `TrackPoint` lists (no `DbContext`)
-  - `WorkoutIntakeTests` cover `created` / `updated` / `skipped` / `error` with faked weather, relative effort, and best efforts; persist and duplicate stay real. Includes a `PersistAsync` seam test that builds `DecodedWorkout` without the file adapter, plus HealthKit outdoor and indoor persist/skip cases (UUID identity, DistM splits without route, summary-only). `HealthKitWorkoutDecoderTests` and `ImportHealthKitWorkoutTests` cover the JSON import path (outdoor GPS, indoor DistM stream / summary-only, empty-distance reject), including parallel same-UUID posts. `TrackGeometryTests` cover DistM-based splits when GPS is absent.
+  - Parser tests (`GpxParserServiceTests`, `FitParserServiceTests`) assert decode: fixture file → `TrackPoint`s and optional device summary, not split counts or elevation-gain algorithm details. No Docker.
+  - `TrackGeometryTests` assert elevation, split boundaries, GeoJSON, and series elapsed-seconds from fixture `TrackPoint` lists (no `DbContext`). No Docker.
+  - `HealthKitWorkoutDecoderTests` decode HealthKit JSON without a database. No Docker.
+  - `WorkoutIntakeTests` cover `created` / `updated` / `skipped` / `error` with faked weather, relative effort, and best efforts; persist and duplicate stay real on a Postgres clone. Includes a `PersistAsync` seam test that builds `DecodedWorkout` without the file adapter, plus HealthKit outdoor and indoor persist/skip cases (UUID identity, DistM splits without route, summary-only). `ImportHealthKitWorkoutTests` cover the JSON import path (outdoor GPS, indoor DistM stream / summary-only, empty-distance reject), including parallel same-UUID posts. `TrackGeometryTests` cover DistM-based splits when GPS is absent.
 - **Integration Tests**: Test endpoints and full request/response cycles (located in `api/Tempo.Api.Tests/IntegrationTests/`)
   - Import-job and Tempo export-import tests (`ImportJobTests`, `ImportExportTests`) poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Do not expect a blocking **200** summary from `POST /workouts/import/bulk` or `POST /workouts/import/export` (those adapters return **202**).
 
 ## Running Tests
+
+EF-backed tests start one process-wide Testcontainers Postgres (`postgres:16-alpine`), migrate a template database once, and clone a fresh database per service-test method or integration factory. Tests run **sequentially** (`DisableTestParallelization`). There is no in-memory SQLite mode and no `TEST_CONNECTION_STRING` override.
 
 ### Run All Tests
 
@@ -21,6 +26,8 @@ The Tempo API uses **xUnit** for testing with **coverlet** for code coverage col
 cd api
 dotnet test
 ```
+
+Start Docker first if you will run EF-backed tests. Parser-only filters (below) do not need it.
 
 ### Run Tests with Coverage
 
@@ -207,31 +214,35 @@ public class MyEndpointsTests : IClassFixture<TempoWebApplicationFactory>
    var user = await TestDataSeeder.SeedUserAsync(_db, "testuser", TestPasswords.Default);
    ```
 
-5. **Database**: Use in-memory SQLite for unit tests
+5. **Database**: EF-backed service tests clone from the migrated template (`UseNpgsql`). Parser/geometry/decoder tests skip this.
    ```csharp
-   private readonly SqliteConnection _connection;
-   private readonly TempoDbContext _db;
-   
-   public MyServiceTests()
+   public class MyServiceTests : IAsyncLifetime
    {
-       _connection = new SqliteConnection("Data Source=:memory:");
-       _connection.Open();
-       var options = new DbContextOptionsBuilder<TempoDbContext>()
-           .UseSqlite(_connection)
-           .Options;
-       _db = new TempoDbContext(options);
-       _db.Database.EnsureCreated();
+       private string _cloneConnectionString = null!;
+       private TempoDbContext _db = null!;
+
+       public async Task InitializeAsync()
+       {
+           _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+           _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
+       }
+
+       public async Task DisposeAsync()
+       {
+           if (_db is not null)
+           {
+               await _db.DisposeAsync();
+           }
+
+           if (_cloneConnectionString is not null)
+           {
+               await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+           }
+       }
    }
    ```
 
-6. **Cleanup**: Implement `IDisposable` for test cleanup
-   ```csharp
-   public void Dispose()
-   {
-       _db.Dispose();
-       _connection.Dispose();
-   }
-   ```
+6. **Cleanup**: Drop the clone in `DisposeAsync` (see above). Do not `EnsureCreated`.
 
 ### Test Collections
 
@@ -245,9 +256,20 @@ public class MyIntegrationTests : IClassFixture<TempoWebApplicationFactory>
 }
 ```
 
-This ensures tests run sequentially and don't interfere with each other.
+This ensures tests run sequentially and don't interfere with each other. Assembly-level `CollectionBehavior(DisableTestParallelization = true)` keeps one container and shared factory state sane. Do not re-enable parallelization.
 
 ## Test Infrastructure
+
+### PostgresTestFixture
+
+Process-wide lazy Postgres 16 container. First EF-backed use starts `postgres:16-alpine`, migrates `tempo_test_template` with `DatabaseMigrationHelper.ApplyMigrations`, then `CREATE DATABASE … TEMPLATE` for each clone. Parser tests must not call this type.
+
+```csharp
+var connectionString = await PostgresTestFixture.CreateCloneAsync();
+var db = PostgresTestFixture.CreateContext(connectionString);
+// UseNpgsql — not in-memory SQLite
+await PostgresTestFixture.DropCloneAsync(connectionString);
+```
 
 ### TestHttpClientFactory
 
@@ -282,9 +304,10 @@ var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(_db, distanceM: 1000
 ### TempoWebApplicationFactory
 
 Factory for creating test web applications. Automatically handles:
-- Database setup (in-memory SQLite)
-- Service configuration
+- One Postgres clone per factory instance (connection string set before the host builds; host uses `UseNpgsql`)
+- Service configuration (JWT, media, elevation). Does not replace DbContext registration
 - Authentication setup
+- Schema comes from the migrated template; Testing skips host migrations
 
 ## CI Coverage Gate
 
@@ -324,7 +347,7 @@ If you need to exclude additional code, update `coverlet.runsettings`.
 5. **Test One Thing**: Each test should verify one specific behavior
 6. **Avoid Test Interdependence**: Don't rely on test execution order
 7. **Mock External Dependencies**: Use Moq for external services (HTTP clients, file system, etc.)
-8. **Fast Tests**: Keep tests fast - use in-memory databases, avoid I/O when possible
+8. **Keep parser tests Docker-free**: GPX/FIT decode, track geometry, and HealthKit JSON decode must not construct `TempoDbContext` or call `PostgresTestFixture`
 
 ## Troubleshooting
 

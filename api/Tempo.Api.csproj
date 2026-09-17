@@ -14,9 +14,6 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
-    <!-- EF Core 10.0.0 pulls SQLitePCLRaw 2.1.11 (GHSA-2m69-gcr7-jv3q). 2.1.12 is the patched 2.x line. -->
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <!-- Pin 2.x: Swashbuckle.AspNetCore 10.x targets Microsoft.OpenApi 2.x (OpenAPI.NET 3.x breaks Swashbuckle at runtime). -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />

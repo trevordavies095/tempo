@@ -10,8 +10,8 @@ namespace Tempo.Api.Services;
 /// <summary>
 /// Rewrites FIT cadence from strides/min to steps/min for workouts that still have
 /// raw file bytes and unmarked RawFitData. Idempotent via <c>cadenceUnit</c> = <c>spm</c>
-/// or a set <c>cadenceBackfill</c> (jsonb path on Postgres; JSON parse in-process;
-/// compact and spaced Contains on SQLite). Cadence only — no Track geometry Derive.
+/// or a set <c>cadenceBackfill</c> (jsonb path on Postgres; JSON parse in-process).
+/// Cadence only — no Track geometry Derive.
 /// </summary>
 public class CadenceBackfillService
 {
@@ -386,27 +386,8 @@ public class CadenceBackfillService
 
     private async Task<List<Guid>> LoadCandidateIdsAsync(CancellationToken cancellationToken)
     {
-        // Length > 0 is checked in FillWorkoutAsync — EF cannot translate byte[].Length on SQLite.
-        var isPostgres = _db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
-
-        if (isPostgres)
-        {
-            return await _db.Database
-                .SqlQueryRaw<Guid>(PostgresCandidateSql)
-                .ToListAsync(cancellationToken);
-        }
-
-        return await _db.Workouts
-            .Where(w =>
-                w.RawFileData != null &&
-                w.RawFitData != null &&
-                w.RawFitData != "" &&
-                !w.RawFitData.Contains(CadenceUnitSpmMarker) &&
-                !w.RawFitData.Contains(CadenceUnitSpmMarkerSpaced) &&
-                !w.RawFitData.Contains(CadenceBackfillMarker) &&
-                !w.RawFitData.Contains(CadenceBackfillMarkerSpaced))
-            .OrderBy(w => w.Id)
-            .Select(w => w.Id)
+        return await _db.Database
+            .SqlQueryRaw<Guid>(PostgresCandidateSql)
             .ToListAsync(cancellationToken);
     }
 }

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Tempo.Api.Data;
@@ -473,14 +472,6 @@ public class WorkoutIntake
                 return pg.ConstraintName?.Contains("HealthKitUuid", StringComparison.OrdinalIgnoreCase) == true
                     || pg.MessageText.Contains("HealthKitUuid", StringComparison.OrdinalIgnoreCase);
             }
-
-            // SQLite (unit/integration tests): UNIQUE constraint on HealthKitUuid
-            if (inner is SqliteException sqlite
-                && (sqlite.SqliteErrorCode == 19 || sqlite.SqliteExtendedErrorCode == 2067)
-                && sqlite.Message.Contains("HealthKitUuid", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
         }
 
         return false;
@@ -515,15 +506,6 @@ public class WorkoutIntake
                     || pg.MessageText.Contains("WorkoutExternalIdentit", StringComparison.OrdinalIgnoreCase)
                     || pg.ConstraintName?.Contains("Source_ExternalId", StringComparison.OrdinalIgnoreCase) == true
                     || pg.MessageText.Contains("Source_ExternalId", StringComparison.OrdinalIgnoreCase);
-            }
-
-            if (inner is SqliteException sqlite
-                && (sqlite.SqliteErrorCode == 19 || sqlite.SqliteExtendedErrorCode == 2067)
-                && (sqlite.Message.Contains("WorkoutExternalIdentit", StringComparison.OrdinalIgnoreCase)
-                    || sqlite.Message.Contains("Source_ExternalId", StringComparison.OrdinalIgnoreCase)
-                    || sqlite.Message.Contains("ExternalId", StringComparison.OrdinalIgnoreCase)))
-            {
-                return true;
             }
         }
 

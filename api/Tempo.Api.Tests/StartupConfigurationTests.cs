@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -91,5 +92,62 @@ public class StartupConfigurationTests
             Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", originalConnectionString);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
         }
+    }
+
+    [Fact]
+    public void Startup_ThrowsException_WhenConnectionStringIsSqlite()
+    {
+        var originalConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+        var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=:memory:");
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
+
+            var act = () =>
+            {
+                using var factory = new WebApplicationFactory<Program>()
+                    .WithWebHostBuilder(builder =>
+                    {
+                        builder.UseEnvironment("Testing");
+                        builder.ConfigureAppConfiguration(config =>
+                        {
+                            config.AddInMemoryCollection(new Dictionary<string, string?>
+                            {
+                                ["ConnectionStrings:DefaultConnection"] = "Data Source=:memory:"
+                            });
+                        });
+                    });
+                _ = factory.Server;
+            };
+
+            var exception = act.Should().Throw<Exception>().Which;
+            var failFast = FindPostgresRequiredException(exception);
+            failFast.Should().NotBeNull(
+                "host must refuse Data Source= before registering a database provider");
+            failFast!.Message.Should().Contain("PostgreSQL");
+            failFast.Message.Should().Contain("SQLite");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", originalConnectionString);
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
+        }
+    }
+
+    private static InvalidOperationException? FindPostgresRequiredException(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is InvalidOperationException invalid &&
+                invalid.Message.Contains("PostgreSQL", StringComparison.OrdinalIgnoreCase) &&
+                invalid.Message.Contains("SQLite", StringComparison.OrdinalIgnoreCase))
+            {
+                return invalid;
+            }
+        }
+
+        return null;
     }
 }
