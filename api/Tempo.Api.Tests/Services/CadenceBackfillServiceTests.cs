@@ -2,6 +2,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -21,6 +22,7 @@ public class CadenceBackfillServiceTests : IDisposable
 
     private readonly TempoDbContext _db;
     private readonly SqliteConnection _connection;
+    private readonly ThrowingSaveChangesInterceptor _saveInterceptor;
     private readonly ListLogger<CadenceBackfillService> _logger;
     private readonly CadenceBackfillService _service;
 
@@ -28,9 +30,11 @@ public class CadenceBackfillServiceTests : IDisposable
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
+        _saveInterceptor = new ThrowingSaveChangesInterceptor();
 
         var options = new DbContextOptionsBuilder<TempoDbContext>()
             .UseSqlite(_connection)
+            .AddInterceptors(_saveInterceptor)
             .Options;
 
         _db = new TempoDbContext(options);
@@ -90,6 +94,38 @@ public class CadenceBackfillServiceTests : IDisposable
         var second = await _service.RunAsync();
         second.Should().Be(0);
         _logger.Messages.Should().Contain("FIT cadence backfill: 0 of 0");
+    }
+
+    [Fact]
+    public async Task RunAsync_IsNoOp_WhenSpacedCadenceUnitAlreadyPresent()
+    {
+        var workout = await SeedUnmarkedFitCandidateAsync();
+        workout.RawFitData = BuildLegacyRawFitData(includeSpacedCadenceUnit: true);
+        await _db.SaveChangesAsync();
+        var rawBefore = workout.RawFitData;
+
+        var processed = await _service.RunAsync();
+
+        processed.Should().Be(0);
+        _logger.Messages.Should().Contain("FIT cadence backfill: 0 of 0");
+
+        await _db.Entry(workout).ReloadAsync();
+        workout.AvgCadenceRpm.Should().Be(80);
+        workout.MaxCadenceRpm.Should().Be(88);
+        workout.RawFitData.Should().Be(rawBefore);
+        workout.RawFitData.Should().Contain(CadenceBackfillService.CadenceUnitSpmMarkerSpaced);
+        workout.RawFitData.Should().NotContain(CadenceBackfillService.CadenceUnitSpmMarker);
+    }
+
+    [Fact]
+    public void PostgresCandidateSql_UsesJsonbPath_AndDoesNotLikeCompactMarker()
+    {
+        var sql = CadenceBackfillService.PostgresCandidateSql;
+
+        sql.Should().Contain("->>'cadenceUnit'");
+        sql.Should().Contain("->>'cadenceBackfill'");
+        sql.Should().NotContain("LIKE");
+        sql.Should().NotContain(CadenceBackfillService.CadenceUnitSpmMarker);
     }
 
     [Fact]
@@ -159,7 +195,7 @@ public class CadenceBackfillServiceTests : IDisposable
 
         var processed = await _service.RunAsync();
 
-        processed.Should().Be(1);
+        processed.Should().Be(2);
         _logger.Messages.Should().Contain(m => m.Contains("FIT cadence backfill failed for workout"));
 
         await _db.Entry(good).ReloadAsync();
@@ -168,7 +204,61 @@ public class CadenceBackfillServiceTests : IDisposable
 
         await _db.Entry(bad).ReloadAsync();
         bad.AvgCadenceRpm.Should().Be(80);
-        bad.RawFitData.Should().NotContain(CadenceBackfillService.CadenceUnitSpmMarker);
+        bad.MaxCadenceRpm.Should().Be(88);
+        AssertUnparseableStamp(bad.RawFitData);
+
+        _logger.Messages.Clear();
+        var second = await _service.RunAsync();
+        second.Should().Be(0);
+        _logger.Messages.Should().Contain("FIT cadence backfill: 0 of 0");
+    }
+
+    [Fact]
+    public async Task RunAsync_StampsGarbageRawFitData_AndNoOpsOnSecondRun()
+    {
+        var workout = await SeedUnmarkedFitCandidateAsync();
+        workout.RawFitData = "not-json";
+        await _db.SaveChangesAsync();
+
+        var processed = await _service.RunAsync();
+
+        processed.Should().Be(1);
+        await _db.Entry(workout).ReloadAsync();
+        workout.AvgCadenceRpm.Should().Be(80);
+        workout.MaxCadenceRpm.Should().Be(88);
+        workout.RawFitData.Should().Be("""{"cadenceBackfill":"unparseable"}""");
+        AssertUnparseableStamp(workout.RawFitData);
+
+        _logger.Messages.Clear();
+        var second = await _service.RunAsync();
+        second.Should().Be(0);
+        _logger.Messages.Should().Contain("FIT cadence backfill: 0 of 0");
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotStamp_WhenSaveFails()
+    {
+        var workout = await SeedUnmarkedFitCandidateAsync();
+        var rawBefore = workout.RawFitData;
+
+        _saveInterceptor.Throw = true;
+        var processed = await _service.RunAsync();
+        _saveInterceptor.Throw = false;
+
+        processed.Should().Be(0);
+        await _db.Entry(workout).ReloadAsync();
+        workout.RawFitData.Should().Be(rawBefore);
+        workout.RawFitData.Should().NotContain(CadenceBackfillService.CadenceBackfillKey);
+        workout.RawFitData.Should().NotContain(CadenceBackfillService.CadenceUnitSpmMarker);
+        workout.AvgCadenceRpm.Should().Be(80);
+
+        _logger.Messages.Clear();
+        var second = await _service.RunAsync();
+        second.Should().Be(1);
+
+        await _db.Entry(workout).ReloadAsync();
+        workout.AvgCadenceRpm.Should().Be(160);
+        workout.RawFitData.Should().Contain(CadenceBackfillService.CadenceUnitSpmMarker);
     }
 
     private async Task<Workout> SeedUnmarkedFitCandidateAsync(bool includeUnmatchedSeries = false)
@@ -216,11 +306,17 @@ public class CadenceBackfillServiceTests : IDisposable
         return workout;
     }
 
-    private static string BuildLegacyRawFitData()
+    private static string BuildLegacyRawFitData(bool includeSpacedCadenceUnit = false)
     {
-        return """
+        var cadenceUnitLine = includeSpacedCadenceUnit
+            ? """
+                  "cadenceUnit": "spm",
+              """
+            : "";
+
+        return $$"""
             {
-              "session": {
+            {{cadenceUnitLine}}  "session": {
                 "avgCadence": 80,
                 "maxCadence": 88,
                 "maxRunningCadence": 88,
@@ -255,6 +351,49 @@ public class CadenceBackfillServiceTests : IDisposable
               "source": "fit_import"
             }
             """;
+    }
+
+    private static void AssertUnparseableStamp(string? rawFitData)
+    {
+        rawFitData.Should().NotBeNull();
+        using var doc = JsonDocument.Parse(rawFitData!);
+        doc.RootElement.GetProperty(CadenceBackfillService.CadenceBackfillKey)
+            .GetString()
+            .Should()
+            .Be(CadenceBackfillService.CadenceBackfillUnparseable);
+        doc.RootElement.TryGetProperty("cadenceUnit", out _).Should().BeFalse();
+        rawFitData.Should().NotContain(CadenceBackfillService.CadenceUnitSpmMarker);
+        rawFitData.Should().NotContain(CadenceBackfillService.CadenceUnitSpmMarkerSpaced);
+    }
+
+    private sealed class ThrowingSaveChangesInterceptor : SaveChangesInterceptor
+    {
+        public bool Throw { get; set; }
+
+        public override InterceptionResult<int> SavingChanges(
+            DbContextEventData eventData,
+            InterceptionResult<int> result)
+        {
+            if (Throw)
+            {
+                throw new InvalidOperationException("simulated save failure");
+            }
+
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Throw)
+            {
+                throw new InvalidOperationException("simulated save failure");
+            }
+
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class ListLogger<T> : ILogger<T>
