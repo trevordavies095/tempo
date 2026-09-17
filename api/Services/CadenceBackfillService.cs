@@ -9,13 +9,35 @@ namespace Tempo.Api.Services;
 
 /// <summary>
 /// Rewrites FIT cadence from strides/min to steps/min for workouts that still have
-/// raw file bytes and unmarked RawFitData. Idempotent via <c>cadenceUnit: "spm"</c>.
-/// Cadence only — no Track geometry Derive.
+/// raw file bytes and unmarked RawFitData. Idempotent via <c>cadenceUnit</c> = <c>spm</c>
+/// or a set <c>cadenceBackfill</c> (jsonb path on Postgres; JSON parse in-process;
+/// compact and spaced Contains on SQLite). Cadence only — no Track geometry Derive.
 /// </summary>
 public class CadenceBackfillService
 {
     public const int BatchSize = 200;
     public const string CadenceUnitSpmMarker = "\"cadenceUnit\":\"spm\"";
+    public const string CadenceUnitSpmMarkerSpaced = "\"cadenceUnit\": \"spm\"";
+    public const string CadenceBackfillKey = "cadenceBackfill";
+    public const string CadenceBackfillUnparseable = "unparseable";
+    public const string CadenceBackfillMarker = "\"cadenceBackfill\":";
+    public const string CadenceBackfillMarkerSpaced = "\"cadenceBackfill\": ";
+    private const string UnparseableStampJson = """{"cadenceBackfill":"unparseable"}""";
+
+    /// <summary>
+    /// Production candidate scan. jsonb path — do not LIKE compact <c>"cadenceUnit":"spm"</c>.
+    /// </summary>
+    public const string PostgresCandidateSql =
+        """
+        SELECT w."Id" AS "Value"
+        FROM "Workouts" AS w
+        WHERE w."RawFileData" IS NOT NULL
+          AND w."RawFitData" IS NOT NULL
+          AND w."RawFitData"::text <> ''
+          AND (w."RawFitData"->>'cadenceUnit' IS DISTINCT FROM 'spm')
+          AND w."RawFitData"->>'cadenceBackfill' IS NULL
+        ORDER BY w."Id"
+        """;
 
     private readonly TempoDbContext _db;
     private readonly FitParserService _fitParser;
@@ -97,20 +119,42 @@ public class CadenceBackfillService
 
         if (workout.RawFileData == null || workout.RawFileData.Length == 0 ||
             string.IsNullOrEmpty(workout.RawFitData) ||
-            workout.RawFitData.Contains(CadenceUnitSpmMarker, StringComparison.Ordinal))
+            IsCadenceBackfillComplete(workout.RawFitData))
         {
             return false;
+        }
+
+        if (!TryGetPatchableObject(workout.RawFitData, out _))
+        {
+            _logger.LogError(
+                new InvalidOperationException("RawFitData is not a JSON object"),
+                "FIT cadence backfill failed for workout {WorkoutId}",
+                workoutId);
+            workout.RawFitData = UnparseableStampJson;
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        FitParserService.FitParseResult parseResult;
+        try
+        {
+            using var stream = new MemoryStream(workout.RawFileData);
+            var isGzipped = workout.RawFileName?.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase) == true;
+            parseResult = isGzipped
+                ? _fitParser.ParseGzippedFit(stream)
+                : _fitParser.ParseFit(stream);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "FIT cadence backfill failed for workout {WorkoutId}", workoutId);
+            workout.RawFitData = StampExistingObject(workout.RawFitData);
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
         }
 
         var series = await _db.WorkoutTimeSeries
             .Where(ts => ts.WorkoutId == workoutId)
             .ToListAsync(cancellationToken);
-
-        using var stream = new MemoryStream(workout.RawFileData);
-        var isGzipped = workout.RawFileName?.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase) == true;
-        var parseResult = isGzipped
-            ? _fitParser.ParseGzippedFit(stream)
-            : _fitParser.ParseFit(stream);
 
         var cadenceByElapsed = BuildCadenceByElapsed(parseResult.SeriesPoints, workout.StartedAt);
         foreach (var row in series)
@@ -282,6 +326,64 @@ public class CadenceBackfillService
         return root.ToJsonString(JsonUtils.DefaultOptions);
     }
 
+    /// <summary>
+    /// True when RawFitData is a JSON object whose <c>cadenceUnit</c> is <c>spm</c>
+    /// or whose <c>cadenceBackfill</c> is present and not JSON null.
+    /// Parses the object so spaced Npgsql readback still counts as done.
+    /// </summary>
+    internal static bool IsCadenceBackfillComplete(string? rawFitData)
+    {
+        if (string.IsNullOrEmpty(rawFitData))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawFitData);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            if (doc.RootElement.TryGetProperty("cadenceUnit", out var unit) &&
+                unit.ValueKind == JsonValueKind.String &&
+                unit.GetString() == "spm")
+            {
+                return true;
+            }
+
+            return doc.RootElement.TryGetProperty(CadenceBackfillKey, out var backfill) &&
+                   backfill.ValueKind != JsonValueKind.Null;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetPatchableObject(string rawFitData, out JsonObject? root)
+    {
+        try
+        {
+            root = JsonNode.Parse(rawFitData)?.AsObject();
+            return root != null;
+        }
+        catch (JsonException)
+        {
+            root = null;
+            return false;
+        }
+    }
+
+    private static string StampExistingObject(string existingJson)
+    {
+        var root = JsonNode.Parse(existingJson)?.AsObject()
+            ?? throw new InvalidOperationException("RawFitData is not a JSON object");
+        root[CadenceBackfillKey] = CadenceBackfillUnparseable;
+        return root.ToJsonString(JsonUtils.DefaultOptions);
+    }
+
     private async Task<List<Guid>> LoadCandidateIdsAsync(CancellationToken cancellationToken)
     {
         // Length > 0 is checked in FillWorkoutAsync — EF cannot translate byte[].Length on SQLite.
@@ -289,19 +391,8 @@ public class CadenceBackfillService
 
         if (isPostgres)
         {
-            // jsonb rejects text LIKE/Contains (22P02). Cast to text for the marker scan.
             return await _db.Database
-                .SqlQueryRaw<Guid>(
-                    """
-                    SELECT w."Id" AS "Value"
-                    FROM "Workouts" AS w
-                    WHERE w."RawFileData" IS NOT NULL
-                      AND w."RawFitData" IS NOT NULL
-                      AND w."RawFitData"::text <> ''
-                      AND w."RawFitData"::text NOT LIKE {0}
-                    ORDER BY w."Id"
-                    """,
-                    "%" + CadenceUnitSpmMarker + "%")
+                .SqlQueryRaw<Guid>(PostgresCandidateSql)
                 .ToListAsync(cancellationToken);
         }
 
@@ -310,7 +401,10 @@ public class CadenceBackfillService
                 w.RawFileData != null &&
                 w.RawFitData != null &&
                 w.RawFitData != "" &&
-                !w.RawFitData.Contains(CadenceUnitSpmMarker))
+                !w.RawFitData.Contains(CadenceUnitSpmMarker) &&
+                !w.RawFitData.Contains(CadenceUnitSpmMarkerSpaced) &&
+                !w.RawFitData.Contains(CadenceBackfillMarker) &&
+                !w.RawFitData.Contains(CadenceBackfillMarkerSpaced))
             .OrderBy(w => w.Id)
             .Select(w => w.Id)
             .ToListAsync(cancellationToken);
