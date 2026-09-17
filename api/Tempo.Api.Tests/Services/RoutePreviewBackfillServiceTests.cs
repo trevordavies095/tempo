@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
@@ -9,32 +8,32 @@ using Xunit;
 
 namespace Tempo.Api.Tests.Services;
 
-public class RoutePreviewBackfillServiceTests : IDisposable
+public class RoutePreviewBackfillServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly ListLogger<RoutePreviewBackfillService> _logger;
-    private readonly RoutePreviewBackfillService _service;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ListLogger<RoutePreviewBackfillService> _logger = null!;
+    private RoutePreviewBackfillService _service = null!;
 
-    public RoutePreviewBackfillServiceTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
         _logger = new ListLogger<RoutePreviewBackfillService>();
         _service = new RoutePreviewBackfillService(_db, _logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]
@@ -81,7 +80,7 @@ public class RoutePreviewBackfillServiceTests : IDisposable
         await SeedRouteAsync(previewGeoJson: TrackGeometry.EmptyRoutePreviewSentinel, pointCount: 8);
         await SeedRouteAsync(
             previewGeoJson: TrackGeometry.EmptyRoutePreviewSentinel,
-            routeGeoJson: "not json");
+            routeGeoJson: "{}");
 
         var processed = await _service.RunAsync();
 
@@ -95,7 +94,7 @@ public class RoutePreviewBackfillServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_WritesSentinel_ForEmptyRouteGeoJson()
     {
-        await SeedRouteAsync(previewGeoJson: null, routeGeoJson: "");
+        await SeedRouteAsync(previewGeoJson: null, routeGeoJson: "{}");
 
         var processed = await _service.RunAsync();
 

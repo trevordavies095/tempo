@@ -1,6 +1,5 @@
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
@@ -14,25 +13,17 @@ namespace Tempo.Api.Tests.Services;
 /// <summary>
 /// Unit tests for WorkoutCropService
 /// </summary>
-public class WorkoutCropServiceTests : IDisposable
+public class WorkoutCropServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly ILogger<WorkoutCropService> _logger;
-    private readonly WorkoutCropService _service;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ILogger<WorkoutCropService> _logger = null!;
+    private WorkoutCropService _service = null!;
 
-    public WorkoutCropServiceTests()
+    public async Task InitializeAsync()
     {
-        // Create in-memory SQLite database for testing
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
 
         var elevationConfig = new ElevationCalculationConfig
         {
@@ -50,10 +41,17 @@ public class WorkoutCropServiceTests : IDisposable
         _service = new WorkoutCropService(_db, rehydration, trackGeometry, new SplitHeartRateService(), _logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]

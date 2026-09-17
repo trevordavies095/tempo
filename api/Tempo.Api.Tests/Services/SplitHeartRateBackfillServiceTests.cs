@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
@@ -10,32 +9,32 @@ using Xunit;
 
 namespace Tempo.Api.Tests.Services;
 
-public class SplitHeartRateBackfillServiceTests : IDisposable
+public class SplitHeartRateBackfillServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly ListLogger<SplitHeartRateBackfillService> _logger;
-    private readonly SplitHeartRateBackfillService _service;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ListLogger<SplitHeartRateBackfillService> _logger = null!;
+    private SplitHeartRateBackfillService _service = null!;
 
-    public SplitHeartRateBackfillServiceTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
         _logger = new ListLogger<SplitHeartRateBackfillService>();
         _service = new SplitHeartRateBackfillService(_db, new SplitHeartRateService(), _logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]

@@ -1,10 +1,10 @@
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
 namespace Tempo.Api.Tests.Services;
@@ -12,31 +12,30 @@ namespace Tempo.Api.Tests.Services;
 /// <summary>
 /// Unit tests for RelativeEffortService
 /// </summary>
-public class RelativeEffortServiceTests : IDisposable
+public class RelativeEffortServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly RelativeEffortService _service;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private RelativeEffortService _service = null!;
 
-    public RelativeEffortServiceTests()
+    public async Task InitializeAsync()
     {
-        // Create in-memory SQLite database for testing
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
         _service = new RelativeEffortService();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     #region CalculateRelativeEffort Tests

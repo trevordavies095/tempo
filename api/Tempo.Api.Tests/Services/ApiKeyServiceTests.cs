@@ -1,39 +1,37 @@
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
 namespace Tempo.Api.Tests.Services;
 
-public class ApiKeyServiceTests : IDisposable
+public class ApiKeyServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly ApiKeyService _sut;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ApiKeyService _sut = null!;
 
-    public ApiKeyServiceTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
-
-        var passwordService = new PasswordService();
-        _sut = new ApiKeyService(_db, passwordService);
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
+        _sut = new ApiKeyService(_db, new PasswordService());
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]

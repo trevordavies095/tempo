@@ -1,11 +1,11 @@
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
 namespace Tempo.Api.Tests.Services;
@@ -13,37 +13,34 @@ namespace Tempo.Api.Tests.Services;
 /// <summary>
 /// Unit tests for RouteMatchingService
 /// </summary>
-public class RouteMatchingServiceTests : IDisposable
+public class RouteMatchingServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly RouteMatchingService _service;
-    private readonly ILogger<RouteMatchingService> _logger;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private RouteMatchingService _service = null!;
+    private ILogger<RouteMatchingService> _logger = null!;
 
-    public RouteMatchingServiceTests()
+    public async Task InitializeAsync()
     {
-        // Create in-memory SQLite database for testing
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
 
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
-
-        // Create logger
         var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
         _logger = loggerFactory.CreateLogger<RouteMatchingService>();
-
         _service = new RouteMatchingService(_db, _logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     #region FindSimilarRoutesAsync Tests

@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Dynastream.Fit;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
@@ -14,27 +13,20 @@ using FitFile = Dynastream.Fit.File;
 
 namespace Tempo.Api.Tests.Services;
 
-public class DeviceLapBackfillServiceTests : IDisposable
+public class DeviceLapBackfillServiceTests : IAsyncLifetime
 {
     private static readonly System.DateTime FixtureStart =
         new(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
 
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly ListLogger<DeviceLapBackfillService> _logger;
-    private readonly DeviceLapBackfillService _service;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ListLogger<DeviceLapBackfillService> _logger = null!;
+    private DeviceLapBackfillService _service = null!;
 
-    public DeviceLapBackfillServiceTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
         _logger = new ListLogger<DeviceLapBackfillService>();
         _service = new DeviceLapBackfillService(
             _db,
@@ -43,10 +35,17 @@ public class DeviceLapBackfillServiceTests : IDisposable
             _logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]

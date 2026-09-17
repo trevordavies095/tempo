@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -479,35 +478,33 @@ public static class TestDataSeeder
     }
 
     /// <summary>
-    /// Safely clears all test data from the database using ExecuteDeleteAsync, handling missing tables gracefully
-    /// This is useful for cleanup in integration tests where tables might not exist yet
+    /// Clears all test data from the database using ExecuteDeleteAsync.
+    /// A missing table is a real failure — the clone must already have schema from the template.
     /// </summary>
     /// <param name="db">Database context</param>
     /// <param name="preserveUsers">Whether to preserve users (default: true, needed for authentication)</param>
     public static async Task SafeClearAllDataAsync(TempoDbContext db, bool preserveUsers = true)
     {
-        // Use a transaction to ensure atomic cleanup
         await using var transaction = await db.Database.BeginTransactionAsync();
         try
         {
             // Delete in order to respect foreign key constraints
-            // Catch SqliteException for "no such table" errors and ignore them
-            await SafeExecuteDeleteAsync(() => db.WorkoutTimeSeries.ExecuteDeleteAsync());
-            await SafeExecuteDeleteAsync(() => db.WorkoutSplits.ExecuteDeleteAsync());
-            await SafeExecuteDeleteAsync(() => db.WorkoutMedia.ExecuteDeleteAsync());
-            await SafeExecuteDeleteAsync(() => db.BestEfforts.ExecuteDeleteAsync());
-            await SafeExecuteDeleteAsync(() => db.WorkoutRoutes.ExecuteDeleteAsync());
-            await SafeExecuteDeleteAsync(() => db.WorkoutExternalIdentities.ExecuteDeleteAsync());
-            await SafeExecuteDeleteAsync(() => db.Workouts.ExecuteDeleteAsync());
-            await SafeExecuteDeleteAsync(() => db.ImportJobs.ExecuteDeleteAsync());
-            await SafeExecuteDeleteAsync(() => db.IntervalsIcuConnections.ExecuteDeleteAsync());
-            await SafeExecuteDeleteAsync(() => db.UserSettings.ExecuteDeleteAsync());
-            await SafeExecuteDeleteAsync(() => db.Shoes.ExecuteDeleteAsync());
+            await db.WorkoutTimeSeries.ExecuteDeleteAsync();
+            await db.WorkoutSplits.ExecuteDeleteAsync();
+            await db.WorkoutMedia.ExecuteDeleteAsync();
+            await db.BestEfforts.ExecuteDeleteAsync();
+            await db.WorkoutRoutes.ExecuteDeleteAsync();
+            await db.WorkoutExternalIdentities.ExecuteDeleteAsync();
+            await db.Workouts.ExecuteDeleteAsync();
+            await db.ImportJobs.ExecuteDeleteAsync();
+            await db.IntervalsIcuConnections.ExecuteDeleteAsync();
+            await db.UserSettings.ExecuteDeleteAsync();
+            await db.Shoes.ExecuteDeleteAsync();
 
             if (!preserveUsers)
             {
-                await SafeExecuteDeleteAsync(() => db.ApiKeys.ExecuteDeleteAsync());
-                await SafeExecuteDeleteAsync(() => db.Users.ExecuteDeleteAsync());
+                await db.ApiKeys.ExecuteDeleteAsync();
+                await db.Users.ExecuteDeleteAsync();
             }
 
             await transaction.CommitAsync();
@@ -516,22 +513,6 @@ public static class TestDataSeeder
         {
             await transaction.RollbackAsync();
             throw;
-        }
-    }
-
-    /// <summary>
-    /// Runs an ExecuteDeleteAsync callback, ignoring SQLite "no such table" errors
-    /// </summary>
-    private static async Task SafeExecuteDeleteAsync(Func<Task<int>> deleteAsync)
-    {
-        try
-        {
-            await deleteAsync();
-        }
-        catch (SqliteException ex) when (ex.Message.Contains("no such table", StringComparison.OrdinalIgnoreCase))
-        {
-            // Table doesn't exist yet, nothing to clean up - this is fine
-            // This can happen when the database schema hasn't been created yet
         }
     }
 }

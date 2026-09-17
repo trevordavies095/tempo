@@ -1,6 +1,5 @@
 using System.Text;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tempo.Api.Data;
@@ -11,25 +10,18 @@ using Xunit;
 
 namespace Tempo.Api.Tests.Services;
 
-public class BulkImportServiceTests : IDisposable
+public class BulkImportServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly BulkImportService _bulk;
-    private readonly string _tempDir;
-    private readonly string _mediaDir;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private BulkImportService _bulk = null!;
+    private string _tempDir = null!;
+    private string _mediaDir = null!;
 
-    public BulkImportServiceTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
 
         _tempDir = Path.Combine(Path.GetTempPath(), $"tempo-bulk-{Guid.NewGuid()}");
         Directory.CreateDirectory(_tempDir);
@@ -68,10 +60,18 @@ public class BulkImportServiceTests : IDisposable
             NullLogger<BulkImportService>.Instance);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
+
         TryDelete(_tempDir);
         TryDelete(_mediaDir);
     }
