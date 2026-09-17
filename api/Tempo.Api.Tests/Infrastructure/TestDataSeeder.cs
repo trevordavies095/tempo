@@ -467,7 +467,9 @@ public static class TestDataSeeder
         db.WorkoutMedia.RemoveRange(db.WorkoutMedia);
         db.WorkoutRoutes.RemoveRange(db.WorkoutRoutes);
         db.BestEfforts.RemoveRange(db.BestEfforts);
+        db.WorkoutExternalIdentities.RemoveRange(db.WorkoutExternalIdentities);
         db.Workouts.RemoveRange(db.Workouts);
+        db.IntervalsIcuConnections.RemoveRange(db.IntervalsIcuConnections);
         db.UserSettings.RemoveRange(db.UserSettings);
         db.Shoes.RemoveRange(db.Shoes);
         db.ApiKeys.RemoveRange(db.ApiKeys);
@@ -495,8 +497,10 @@ public static class TestDataSeeder
             await SafeExecuteDeleteAsync(() => db.WorkoutMedia.ExecuteDeleteAsync());
             await SafeExecuteDeleteAsync(() => db.BestEfforts.ExecuteDeleteAsync());
             await SafeExecuteDeleteAsync(() => db.WorkoutRoutes.ExecuteDeleteAsync());
+            await SafeExecuteDeleteAsync(() => db.WorkoutExternalIdentities.ExecuteDeleteAsync());
             await SafeExecuteDeleteAsync(() => db.Workouts.ExecuteDeleteAsync());
             await SafeExecuteDeleteAsync(() => db.ImportJobs.ExecuteDeleteAsync());
+            await SafeExecuteDeleteAsync(() => db.IntervalsIcuConnections.ExecuteDeleteAsync());
             await SafeExecuteDeleteAsync(() => db.UserSettings.ExecuteDeleteAsync());
             await SafeExecuteDeleteAsync(() => db.Shoes.ExecuteDeleteAsync());
 

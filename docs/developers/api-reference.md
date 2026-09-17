@@ -725,6 +725,69 @@ Content-Type: application/json
 
 Set `shoeId` to `null` to remove the default shoe.
 
+### Get intervals.icu connection
+
+```http
+GET /settings/intervals-icu
+```
+
+Always **200**. Never returns the API key.
+
+Disconnected:
+
+```json
+{ "connected": false }
+```
+
+Connected:
+
+```json
+{
+  "connected": true,
+  "enabled": true,
+  "lastSuccessfulSyncAt": null,
+  "lastSyncAttemptAt": null,
+  "lastError": null
+}
+```
+
+### Connect intervals.icu
+
+```http
+PUT /settings/intervals-icu
+Content-Type: application/json
+
+{
+  "apiKey": "personal-key"
+}
+```
+
+Probes intervals.icu as athlete `0` before persist. **400** if the key is blank or rejected (401/403). **503** if intervals.icu is unreachable. A second PUT while connected **replaces the ciphertext only** (`connectedAt` / `lastSuccessfulSyncAt` stay). **200** with the same status document as GET (no key).
+
+### Disconnect intervals.icu
+
+```http
+DELETE /settings/intervals-icu
+```
+
+Deletes the connection row. **204** if it was already gone. Workouts and Workout external identities stay.
+
+### Re-enable intervals.icu
+
+```http
+POST /settings/intervals-icu/enable
+```
+
+Probes with the stored key and turns live sync back on. **404** if there is no connection. **400** if decrypt or probe fails. **503** if intervals.icu is unreachable. **200** with the status document.
+
+### Sync intervals.icu now
+
+```http
+POST /settings/intervals-icu/sync
+```
+
+Wakes the live sync worker. **202** when connected and enabled (does not import on the request thread), including coalesced wakes while a tick is already in flight or pending. **204** when there is no connection or sync is disabled.
+
 ## Shoes
 
 ### List Shoes

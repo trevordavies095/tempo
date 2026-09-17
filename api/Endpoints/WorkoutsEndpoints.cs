@@ -2248,6 +2248,7 @@ public static class WorkoutsEndpoints
         // Find workout with related media
         var workout = await db.Workouts
             .Include(w => w.Media)
+            .Include(w => w.ExternalIdentities)
             .FirstOrDefaultAsync(w => w.Id == id);
 
         if (workout == null)

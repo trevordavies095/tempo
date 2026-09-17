@@ -179,6 +179,19 @@ builder.Services.AddHttpClient<WeatherService>();
 builder.Services.AddScoped<IWeatherService>(sp => sp.GetRequiredService<WeatherService>());
 builder.Services.AddScoped<WorkoutIntake>();
 builder.Services.AddScoped<HealthKitWorkoutDecoder>();
+builder.Services.AddSingleton<IntervalsIcuSecretProtector>();
+builder.Services.AddHttpClient(IntervalsIcuClient.HttpClientName, client =>
+{
+    client.BaseAddress = new Uri("https://intervals.icu/api/v1/");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddScoped<IIntervalsIcuClient, IntervalsIcuClient>();
+builder.Services.AddSingleton<IntervalsIcuSyncQueue>();
+builder.Services.AddScoped<IntervalsIcuSyncService>();
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddHostedService<IntervalsIcuSyncWorker>();
+}
 
 // Configure media storage
 var mediaRootPath = builder.Configuration["MediaStorage:RootPath"] ?? "./media";

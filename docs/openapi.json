@@ -499,6 +499,150 @@
         ]
       }
     },
+    "/settings/intervals-icu": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get intervals.icu connection status",
+        "description": "Returns whether an Intervals.icu connection exists. Never returns the API key. When disconnected, connected is false.",
+        "operationId": "GetIntervalsIcuConnection",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntervalsIcuConnectionDocument"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Connect or replace intervals.icu key",
+        "description": "Probes intervals.icu as athlete 0, then stores the API key encrypted. A second PUT while connected replaces the ciphertext only and keeps connectedAt / lastSuccessfulSyncAt.",
+        "operationId": "PutIntervalsIcuConnection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutIntervalsIcuConnectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntervalsIcuConnectionDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Disconnect intervals.icu",
+        "description": "Deletes the connection row. Workouts and external identities stay. 204 if already gone.",
+        "operationId": "DeleteIntervalsIcuConnection",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/intervals-icu/enable": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Re-enable intervals.icu sync",
+        "description": "Probes with the stored key and turns live sync back on. 404 if there is no connection. 400 if decrypt or probe fails.",
+        "operationId": "PostIntervalsIcuEnable",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntervalsIcuConnectionDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/intervals-icu/sync": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Wake intervals.icu sync",
+        "description": "Enqueues a live sync tick. Returns 202 when connected and enabled, including coalesced wakes while a tick is in flight or pending. Returns 204 when there is no connection or sync is disabled. Does not import on the request thread.",
+        "operationId": "PostIntervalsIcuSync",
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/shoes": {
       "get": {
         "tags": [
@@ -2574,6 +2718,33 @@
         },
         "additionalProperties": false
       },
+      "IntervalsIcuConnectionDocument": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "lastSuccessfulSyncAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastSyncAttemptAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "LoginRequest": {
         "type": "object",
         "properties": {
@@ -2591,6 +2762,16 @@
         },
         "additionalProperties": false,
         "description": "Request model for user login"
+      },
+      "PutIntervalsIcuConnectionRequest": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "RegisterRequest": {
         "type": "object",

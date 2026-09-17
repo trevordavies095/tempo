@@ -81,3 +81,7 @@ venv/
 
 # Cookie jar from README API-key examples
 tempo-cookies.txt
+
+# Docker build copies of the repo VERSION file (not source)
+/api/VERSION
+/frontend/VERSION

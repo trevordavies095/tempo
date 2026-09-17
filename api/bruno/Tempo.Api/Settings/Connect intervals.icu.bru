@@ -1,0 +1,21 @@
+meta {
+  name: Connect intervals.icu
+  type: http
+  seq: 21
+}
+
+put {
+  url: {{baseUrl}}/settings/intervals-icu
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "apiKey": "your-intervals-icu-api-key"
+  }
+}
