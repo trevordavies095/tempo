@@ -21,9 +21,42 @@ public class DeviceLapBackfillService
     public const string MarkerSkippedEmpty = "skipped_empty";
     public const string MarkerSkippedCrop = "skipped_crop";
     public const string MarkerAbsent = "absent";
+    public const string MarkerUnparseable = "unparseable";
 
-    /// <summary>Substring used to exclude marked FIT JSON from candidate scans.</summary>
+    /// <summary>Substring used by tests to assert a stamp was or was not written.</summary>
     public const string LapsBackfillMarkerPrefix = "\"lapsBackfill\":";
+    private const string UnparseableStampJson = """{"lapsBackfill":"unparseable"}""";
+
+    /// <summary>
+    /// Production candidate scan. jsonb path — do not LIKE compact <c>"lapsBackfill":…</c>.
+    /// FIT bytes without JSON stay eligible until stamped.
+    /// </summary>
+    public const string PostgresCandidateSql =
+        """
+        SELECT w."Id" AS "Value"
+        FROM "Workouts" AS w
+        WHERE NOT EXISTS (
+            SELECT 1 FROM "WorkoutSplits" AS s
+            WHERE s."WorkoutId" = w."Id" AND s."Kind" = 'device_lap'
+        )
+        AND w."RawFitData"->>'lapsBackfill' IS NULL
+        AND (
+          (
+            w."RawFitData" IS NOT NULL
+            AND w."RawFitData"::text <> ''
+          )
+          OR (
+            w."RawFileData" IS NOT NULL
+            AND length(w."RawFileData") > 0
+            AND (
+              lower(coalesce(w."RawFileType", '')) = 'fit'
+              OR lower(coalesce(w."RawFileName", '')) LIKE '%.fit'
+              OR lower(coalesce(w."RawFileName", '')) LIKE '%.fit.gz'
+            )
+          )
+        )
+        ORDER BY w."Id"
+        """;
 
     private readonly TempoDbContext _db;
     private readonly FitParserService _fitParser;
@@ -113,8 +146,7 @@ public class DeviceLapBackfillService
             return false;
         }
 
-        if (!string.IsNullOrEmpty(workout.RawFitData) &&
-            workout.RawFitData.Contains(LapsBackfillMarkerPrefix, StringComparison.Ordinal))
+        if (IsLapsBackfillComplete(workout.RawFitData))
         {
             return false;
         }
@@ -124,6 +156,17 @@ public class DeviceLapBackfillService
         if (!hasFitJson && !hasFitBytes)
         {
             return false;
+        }
+
+        if (hasFitJson && !TryGetPatchableObject(workout.RawFitData!, out _))
+        {
+            _logger.LogError(
+                new InvalidOperationException("RawFitData is not a JSON object"),
+                "Device lap backfill failed for workout {WorkoutId}",
+                workoutId);
+            workout.RawFitData = UnparseableStampJson;
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
         }
 
         // Ensure we have a JSON object to stamp / patch.
@@ -138,11 +181,22 @@ public class DeviceLapBackfillService
 
         if ((!sessionElapsed.HasValue || candidates == null) && hasFitBytes)
         {
-            using var stream = new MemoryStream(workout.RawFileData!);
-            var isGzipped = workout.RawFileName?.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase) == true;
-            var parseResult = isGzipped
-                ? _fitParser.ParseGzippedFit(stream)
-                : _fitParser.ParseFit(stream);
+            FitParserService.FitParseResult parseResult;
+            try
+            {
+                using var stream = new MemoryStream(workout.RawFileData!);
+                var isGzipped = workout.RawFileName?.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase) == true;
+                parseResult = isGzipped
+                    ? _fitParser.ParseGzippedFit(stream)
+                    : _fitParser.ParseFit(stream);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Device lap backfill failed for workout {WorkoutId}", workoutId);
+                workout.RawFitData = StampMarker(workout.RawFitData!, MarkerUnparseable);
+                await _db.SaveChangesAsync(cancellationToken);
+                return true;
+            }
 
             sessionElapsed ??= TryReadSessionElapsedFromRawFitJson(parseResult.RawFitDataJson);
             if (candidates == null)
@@ -379,44 +433,52 @@ public class DeviceLapBackfillService
         return root.ToJsonString(JsonUtils.DefaultOptions);
     }
 
+    /// <summary>
+    /// True when RawFitData is a JSON object whose <c>lapsBackfill</c> is present
+    /// and not JSON null. Parses the object so spaced Npgsql readback still counts as done.
+    /// </summary>
+    internal static bool IsLapsBackfillComplete(string? rawFitData)
+    {
+        if (string.IsNullOrEmpty(rawFitData))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawFitData);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            return doc.RootElement.TryGetProperty(LapsBackfillKey, out var backfill) &&
+                   backfill.ValueKind != JsonValueKind.Null;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetPatchableObject(string rawFitData, out JsonObject? root)
+    {
+        try
+        {
+            root = JsonNode.Parse(rawFitData) as JsonObject;
+            return root != null;
+        }
+        catch (JsonException)
+        {
+            root = null;
+            return false;
+        }
+    }
+
     private async Task<List<Guid>> LoadCandidateIdsAsync(CancellationToken cancellationToken)
     {
-        var markerPattern = "%" + LapsBackfillMarkerPrefix + "%";
-
         return await _db.Database
-            .SqlQueryRaw<Guid>(
-                """
-                SELECT w."Id" AS "Value"
-                FROM "Workouts" AS w
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM "WorkoutSplits" AS s
-                    WHERE s."WorkoutId" = w."Id" AND s."Kind" = {0}
-                )
-                AND (
-                  (
-                    w."RawFitData" IS NOT NULL
-                    AND w."RawFitData"::text <> ''
-                    AND w."RawFitData"::text NOT LIKE {1}
-                  )
-                  OR (
-                    w."RawFileData" IS NOT NULL
-                    AND length(w."RawFileData") > 0
-                    AND (
-                      w."RawFitData" IS NULL
-                      OR w."RawFitData"::text = ''
-                      OR w."RawFitData"::text NOT LIKE {1}
-                    )
-                    AND (
-                      lower(coalesce(w."RawFileType", '')) = 'fit'
-                      OR lower(coalesce(w."RawFileName", '')) LIKE '%.fit'
-                      OR lower(coalesce(w."RawFileName", '')) LIKE '%.fit.gz'
-                    )
-                  )
-                )
-                ORDER BY w."Id"
-                """,
-                WorkoutSplitKinds.DeviceLap,
-                markerPattern)
+            .SqlQueryRaw<Guid>(PostgresCandidateSql)
             .ToListAsync(cancellationToken);
     }
 }

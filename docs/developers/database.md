@@ -18,6 +18,7 @@ Core workout entity with statistics and metadata.
 - `StartedAt` (DateTime)
 - `DurationS` (int) - Total elapsed time (wall clock, including pauses)
 - `TimerTimeS` (int, nullable) - FIT timer time (`total_timer_time`); Garmin’s primary duration when present
+- `SplitHeartRateBackfill` (string, nullable) - startup split-HR idle cursor (`no_overlap`); not a runner-facing metric; omitted from GET and Tempo ZIP export
 - `DistanceM` (double)
 - `ElevationGainM` (double, nullable)
 - `ElevationLossM` (double, nullable)
