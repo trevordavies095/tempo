@@ -58,23 +58,18 @@ The export includes:
 #### Using Docker
 
 ```bash
-# Backup database
-docker exec tempo-postgres pg_dump -U postgres tempo > backup-$(date +%Y%m%d-%H%M%S).sql
+# Backup database (service name postgres; password from .env)
+docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
+  pg_dump -U postgres tempo > backup-$(date +%Y%m%d-%H%M%S).sql
 
 # Or with compression
-docker exec tempo-postgres pg_dump -U postgres tempo | gzip > backup-$(date +%Y%m%d-%H%M%S).sql.gz
+docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
+  pg_dump -U postgres tempo | gzip > backup-$(date +%Y%m%d-%H%M%S).sql.gz
 ```
 
 #### Using PostgreSQL Client
 
-```bash
-# Backup database
-pg_dump -h localhost -U postgres tempo > backup-$(date +%Y%m%d-%H%M%S).sql
-
-# Or with compression
-pg_dump -h localhost -U postgres tempo | gzip > backup-$(date +%Y%m%d-%H%M%S).sql.gz
-```
-
+Postgres is not published on the host by default. Prefer the Compose `exec` path above, or uncomment a loopback publish / use `docker compose port` if you must connect from the host.
 ### Media Files Backup
 
 #### Using tar
@@ -99,12 +94,18 @@ Create a backup script that backs up both:
 #!/bin/bash
 BACKUP_DIR="/backup/tempo"
 DATE=$(date +%Y%m%d-%H%M%S)
+# Load POSTGRES_PASSWORD from the deployment .env
+set -a
+# shellcheck disable=SC1091
+source .env
+set +a
 
 # Create backup directory
 mkdir -p "$BACKUP_DIR"
 
 # Backup database
-docker exec tempo-postgres pg_dump -U postgres tempo | gzip > "$BACKUP_DIR/db-$DATE.sql.gz"
+docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
+  pg_dump -U postgres tempo | gzip > "$BACKUP_DIR/db-$DATE.sql.gz"
 
 # Backup media
 tar -czf "$BACKUP_DIR/media-$DATE.tar.gz" ./media
@@ -186,22 +187,17 @@ The import will:
 
 ```bash
 # Restore database
-docker exec -i tempo-postgres psql -U postgres tempo < backup.sql
+docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
+  psql -U postgres tempo < backup.sql
 
 # Or from compressed backup
-gunzip -c backup.sql.gz | docker exec -i tempo-postgres psql -U postgres tempo
+gunzip -c backup.sql.gz | docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
+  psql -U postgres tempo
 ```
 
 #### Using PostgreSQL Client
 
-```bash
-# Restore database
-psql -h localhost -U postgres tempo < backup.sql
-
-# Or from compressed backup
-gunzip -c backup.sql.gz | psql -h localhost -U postgres tempo
-```
-
+Prefer the Compose `exec` path above; the database is not published on the host by default.
 **Important**: Restore to an empty database or drop existing database first.
 
 ### Media Files Restore

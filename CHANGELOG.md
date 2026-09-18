@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Host-only `reset-password` command** - `dotnet Tempo.Api.dll reset-password` (Docker: `compose exec -it api …`). Optional `--username` (sole account is the default), TTY prompt or `--password-stdin`. Same password policy and BCrypt 12 as register/change-password; bumps `SessionVersion` so outstanding JWTs die. Not an HTTP route.
 
 ### Security
+- **Production Compose requires secrets from `.env`** - `JWT_SECRET_KEY` and `POSTGRES_PASSWORD` have no defaults (copy `.env.example`). Existing Postgres volumes must set the password already in the cluster; editing `.env` alone does not rotate it.
+- **Production Compose publish surface** - command center on `127.0.0.1:3004` only; Postgres and API unpublished by default (opt-in commented `127.0.0.1:5001`). CORS / LAN origins removed from the file. One reverse-proxy upstream; merge prior `/api`→`:5001` splits or uncomment loopback API. Backups use `docker compose … exec postgres` and `$POSTGRES_PASSWORD` (not `tempo-postgres` container names).
 - **Break-glass recovery is host-only** - no public reset form, email, or second-user registration. Forgotten passphrase is `reset-password` on the API process, not SQL hashing or a volume wipe.
 
 ### Fixed

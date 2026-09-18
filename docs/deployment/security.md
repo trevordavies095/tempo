@@ -10,11 +10,11 @@ This guide covers security best practices for deploying Tempo in production.
 
 ### JWT Secret Key
 
-**MUST** be configured in production. The default placeholder value will cause startup failure.
+**MUST** be set in production via `.env` as `JWT_SECRET_KEY` (production Compose fails closed if missing). The API also rejects the historical placeholder string at startup.
 
 - Generate a secure random key: `openssl rand -base64 32`
 - Minimum 32 characters
-- Store securely (environment variables, secrets manager)
+- Store in gitignored `.env` (or a secrets manager)
 - Never commit to version control
 - Rotate periodically
 
@@ -29,9 +29,9 @@ This guide covers security best practices for deploying Tempo in production.
 
 ### Database Security
 
-- Change default PostgreSQL password
-- Use strong passwords (minimum 16 characters)
-- Restrict database access to application only
+- Set `POSTGRES_PASSWORD` in `.env` (required by production Compose; no default in the file)
+- Use strong passwords (minimum 16 characters); existing volumes must match the password already in the cluster
+- Restrict database access to the application (Compose does not publish Postgres by default)
 - Use connection encryption if accessing remotely
 - Regular security updates
 
@@ -66,14 +66,17 @@ Existing credentials remain valid until the user sets a new password. BCrypt has
 
 ### Firewall Configuration
 
-- Only expose necessary ports
+- Expose the reverse proxy (80/443), not Compose service ports
+- Production Compose publishes only `127.0.0.1:3004` by default (Postgres and API stay on the Compose network)
 - Use firewall rules to restrict access
 - Consider VPN for administrative access
 - Block unnecessary network traffic
 
 ### CORS Configuration
 
-Configure allowed origins appropriately:
+The default production path does not need CORS: the command center is same-origin `/api`, and the daily driver is native. Production Compose does not set `CORS__AllowedOrigins`.
+
+Only configure CORS if you intentionally expose the API to a browser on another origin:
 
 ```yaml
 CORS__AllowedOrigins: "https://yourdomain.com"
@@ -90,6 +93,7 @@ Use a reverse proxy (Nginx, Traefik) to:
 - Hide internal service ports
 - Add security headers
 - Implement rate limiting
+- Use **one** upstream to `127.0.0.1:3004` (see [production.md](production.md#reverse-proxy-setup))
 
 ## Application Security
 
@@ -199,12 +203,13 @@ add_header Content-Security-Policy "default-src 'self'" always;
 
 ### Pre-Deployment
 
-- [ ] JWT secret key configured and secure
-- [ ] Database password changed
+- [x] JWT secret key configured via `.env` (`JWT_SECRET_KEY`) — done by production Compose
+- [x] Database password configured via `.env` (`POSTGRES_PASSWORD`) — done by production Compose
 - [ ] HTTPS configured
-- [ ] CORS origins configured
+- [x] Postgres/API unpublished; command center loopback only — done by production Compose
+- [ ] CORS only if you expose the API to a browser on another origin (not required by default)
 - [ ] Firewall rules set
-- [ ] Reverse proxy configured
+- [ ] Reverse proxy configured (one upstream to `127.0.0.1:3004`)
 - [ ] Security headers added
 
 ### Ongoing
