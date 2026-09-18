@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Startup backfill idle on Postgres** - Timer and device-lap candidate scans use jsonb paths (`->>'timerTimeBackfill'`, `->>'lapsBackfill'`) instead of compact `LIKE`/`Contains` on `RawFitData::text`, so stamped leftovers are not rewritten every API restart. Timer no longer keeps moving-time-only rows (no FIT JSON) in the candidate set. Corrupt or non-object FIT is stamped `unparseable` once (no invented timer time or device laps). Split-HR leftovers whose HR samples do not overlap any split window are stamped `no_overlap` on Workout (not a fake BPM) and leave the set. Cadence and route-preview idle behavior is unchanged. Workers still run on every boot; a converted library logs `0 of 0` for all five.
+
 ### Changed
 - **API:** rejects SQLite connection strings (`Data Source=`) and a missing or empty `ConnectionStrings:DefaultConnection` at startup. Tests and OpenAPI generation require PostgreSQL 16.
+
+### Migration
+- **Database:** applies `AddWorkoutSplitHeartRateBackfill` (nullable `SplitHeartRateBackfill` on `Workouts`). Run migrations or rely on automatic migration on startup. Tempo export omits the cursor; a restore may run one split-HR pass on no-overlap leftovers.
 
 ## [2.9.0] - 2026-09-15
 
