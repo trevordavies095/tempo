@@ -2,6 +2,7 @@ using System.Text.Json;
 using Dynastream.Fit;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -13,6 +14,20 @@ using FitFile = Dynastream.Fit.File;
 
 namespace Tempo.Api.Tests.Services;
 
+public class TimerTimeBackfillServiceTests_CandidateSql
+{
+    [Fact]
+    public void PostgresCandidateSql_UsesJsonbPath_AndDoesNotLikeCompactMarker()
+    {
+        var sql = TimerTimeBackfillService.PostgresCandidateSql;
+
+        sql.Should().Contain("->>'timerTimeBackfill'");
+        sql.Should().NotContain("LIKE");
+        sql.Should().NotContain(TimerTimeBackfillService.TimerTimeAbsentMarker);
+        sql.Should().NotContain("MovingTimeS");
+    }
+}
+
 public class TimerTimeBackfillServiceTests : IAsyncLifetime
 {
     private static readonly System.DateTime FixtureStart =
@@ -20,13 +35,15 @@ public class TimerTimeBackfillServiceTests : IAsyncLifetime
 
     private string _cloneConnectionString = null!;
     private TempoDbContext _db = null!;
+    private ThrowingSaveChangesInterceptor _saveInterceptor = null!;
     private ListLogger<TimerTimeBackfillService> _logger = null!;
     private TimerTimeBackfillService _service = null!;
 
     public async Task InitializeAsync()
     {
         _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
-        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
+        _saveInterceptor = new ThrowingSaveChangesInterceptor();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString, _saveInterceptor);
         _logger = new ListLogger<TimerTimeBackfillService>();
         _service = new TimerTimeBackfillService(_db, new FitParserService(), _logger);
     }
@@ -128,7 +145,10 @@ public class TimerTimeBackfillServiceTests : IAsyncLifetime
         workout.TimerTimeS.Should().BeNull();
         using (var doc = JsonDocument.Parse(workout.RawFitData!))
         {
-            doc.RootElement.GetProperty("timerTimeBackfill").GetString().Should().Be("absent");
+            doc.RootElement.GetProperty(TimerTimeBackfillService.TimerTimeBackfillKey)
+                .GetString()
+                .Should()
+                .Be(TimerTimeBackfillService.TimerTimeBackfillAbsent);
         }
 
         var compactLike = await _db.Database
@@ -143,13 +163,91 @@ public class TimerTimeBackfillServiceTests : IAsyncLifetime
 
         _logger.Messages.Clear();
         var second = await _service.RunAsync();
-        second.Should().Be(1);
+        second.Should().Be(0);
+        _logger.Messages.Should().Contain("Timer time backfill: 0 of 0");
 
         await _db.Entry(workout).ReloadAsync();
         using (var secondDoc = JsonDocument.Parse(workout.RawFitData!))
         {
-            secondDoc.RootElement.GetProperty("timerTimeBackfill").GetString().Should().Be("absent");
+            secondDoc.RootElement.GetProperty(TimerTimeBackfillService.TimerTimeBackfillKey)
+                .GetString()
+                .Should()
+                .Be(TimerTimeBackfillService.TimerTimeBackfillAbsent);
         }
+    }
+
+    [Fact]
+    public async Task RunAsync_IsNoOp_WhenSpacedTimerTimeBackfillAlreadyPresent()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(
+            _db,
+            startedAt: FixtureStart,
+            distanceM: 5000,
+            durationS: 1800,
+            name: "Spaced stamp");
+        workout.RawFitData = BuildRawFitData(totalTimerTime: null, includeSpacedStamp: true);
+        workout.TimerTimeS = null;
+        workout.AvgPaceS = 1800 / 5.0;
+        await _db.SaveChangesAsync();
+        await _db.Entry(workout).ReloadAsync();
+        var rawBefore = workout.RawFitData;
+
+        var processed = await _service.RunAsync();
+
+        processed.Should().Be(0);
+        _logger.Messages.Should().Contain("Timer time backfill: 0 of 0");
+
+        await _db.Entry(workout).ReloadAsync();
+        workout.TimerTimeS.Should().BeNull();
+        workout.AvgPaceS.Should().Be(1800 / 5.0);
+        workout.RawFitData.Should().Be(rawBefore);
+        using var doc = JsonDocument.Parse(workout.RawFitData!);
+        doc.RootElement.GetProperty(TimerTimeBackfillService.TimerTimeBackfillKey)
+            .GetString()
+            .Should()
+            .Be(TimerTimeBackfillService.TimerTimeBackfillAbsent);
+        workout.RawFitData.Should().NotContain(TimerTimeBackfillService.TimerTimeAbsentMarker);
+    }
+
+    [Fact]
+    public async Task RunAsync_IsNoOp_WhenCompactStampAfterJsonbWrite()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(
+            _db,
+            startedAt: FixtureStart,
+            distanceM: 5000,
+            durationS: 1800,
+            name: "Compact stamp");
+        workout.RawFitData = BuildRawFitData(totalTimerTime: null, includeCompactStamp: true);
+        workout.TimerTimeS = null;
+        await _db.SaveChangesAsync();
+
+        var candidates = await _db.Database
+            .SqlQueryRaw<Guid>(TimerTimeBackfillService.PostgresCandidateSql)
+            .ToListAsync();
+        candidates.Should().BeEmpty();
+
+        var compactLike = await _db.Database
+            .SqlQueryRaw<Guid>(
+                """
+                SELECT w."Id" AS "Value"
+                FROM "Workouts" AS w
+                WHERE w."RawFitData"::text LIKE '%"timerTimeBackfill":"absent"%'
+                """)
+            .ToListAsync();
+        compactLike.Should().BeEmpty();
+
+        var processed = await _service.RunAsync();
+        processed.Should().Be(0);
+        _logger.Messages.Should().Contain("Timer time backfill: 0 of 0");
+
+        await _db.Entry(workout).ReloadAsync();
+        workout.TimerTimeS.Should().BeNull();
+        using var doc = JsonDocument.Parse(workout.RawFitData!);
+        doc.RootElement.GetProperty(TimerTimeBackfillService.TimerTimeBackfillKey)
+            .GetString()
+            .Should()
+            .Be(TimerTimeBackfillService.TimerTimeBackfillAbsent);
     }
 
     [Fact]
@@ -176,7 +274,10 @@ public class TimerTimeBackfillServiceTests : IAsyncLifetime
         workout.TimerTimeS.Should().BeNull();
         using (var absentDoc = JsonDocument.Parse(workout.RawFitData!))
         {
-            absentDoc.RootElement.GetProperty("timerTimeBackfill").GetString().Should().Be("absent");
+            absentDoc.RootElement.GetProperty(TimerTimeBackfillService.TimerTimeBackfillKey)
+                .GetString()
+                .Should()
+                .Be(TimerTimeBackfillService.TimerTimeBackfillAbsent);
         }
 
         var compactLike = await _db.Database
@@ -191,13 +292,17 @@ public class TimerTimeBackfillServiceTests : IAsyncLifetime
 
         _logger.Messages.Clear();
         var second = await _service.RunAsync();
-        second.Should().Be(1);
+        second.Should().Be(0);
+        _logger.Messages.Should().Contain("Timer time backfill: 0 of 0");
         _logger.Messages.Should().NotContain(m => m.Contains("Timer time backfill failed for workout"));
 
         await _db.Entry(workout).ReloadAsync();
         using (var secondDoc = JsonDocument.Parse(workout.RawFitData!))
         {
-            secondDoc.RootElement.GetProperty("timerTimeBackfill").GetString().Should().Be("absent");
+            secondDoc.RootElement.GetProperty(TimerTimeBackfillService.TimerTimeBackfillKey)
+                .GetString()
+                .Should()
+                .Be(TimerTimeBackfillService.TimerTimeBackfillAbsent);
         }
     }
 
@@ -212,21 +317,19 @@ public class TimerTimeBackfillServiceTests : IAsyncLifetime
             name: "Moving pace");
         workout.TimerTimeS = null;
         workout.MovingTimeS = 1500;
-        workout.AvgPaceS = 1800 / 5.0;
+        workout.AvgPaceS = 1500 / 5.0;
         workout.RawFitData = null;
         await _db.SaveChangesAsync();
 
         var processed = await _service.RunAsync();
 
-        processed.Should().Be(1);
+        processed.Should().Be(0);
+        _logger.Messages.Should().Contain("Timer time backfill: 0 of 0");
         await _db.Entry(workout).ReloadAsync();
         workout.TimerTimeS.Should().BeNull();
         workout.MovingTimeS.Should().Be(1500);
         workout.AvgPaceS.Should().Be(1500 / 5.0);
-
-        _logger.Messages.Clear();
-        var second = await _service.RunAsync();
-        second.Should().Be(0);
+        workout.RawFitData.Should().BeNull();
     }
 
     [Fact]
@@ -302,31 +405,92 @@ public class TimerTimeBackfillServiceTests : IAsyncLifetime
         bad.RawFileType = "fit";
         bad.RawFitData = BuildRawFitData(totalTimerTime: null);
         bad.TimerTimeS = null;
+        var badAvgPace = bad.AvgPaceS;
+        var badDuration = bad.DurationS;
+        var badDistance = bad.DistanceM;
         await _db.SaveChangesAsync();
 
         var processed = await _service.RunAsync();
 
-        processed.Should().Be(1);
+        processed.Should().Be(2);
         _logger.Messages.Should().Contain(m => m.Contains("Timer time backfill failed for workout"));
 
         await _db.Entry(good).ReloadAsync();
         good.TimerTimeS.Should().Be(1500);
+        good.AvgPaceS.Should().Be(1500 / 5.0);
 
         await _db.Entry(bad).ReloadAsync();
         bad.TimerTimeS.Should().BeNull();
-        using (var badDoc = JsonDocument.Parse(bad.RawFitData!))
-        {
-            badDoc.RootElement.TryGetProperty("timerTimeBackfill", out _).Should().BeFalse();
-        }
+        bad.DurationS.Should().Be(badDuration);
+        bad.DistanceM.Should().Be(badDistance);
+        bad.AvgPaceS.Should().Be(badAvgPace);
+        AssertUnparseableStamp(bad.RawFitData);
+
+        _logger.Messages.Clear();
+        var second = await _service.RunAsync();
+        second.Should().Be(0);
+        _logger.Messages.Should().Contain("Timer time backfill: 0 of 0");
     }
 
-    private static string BuildRawFitData(double? totalTimerTime)
+    [Fact]
+    public async Task RunAsync_DoesNotStamp_WhenSaveFails()
     {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(
+            _db,
+            startedAt: FixtureStart,
+            distanceM: 5000,
+            durationS: 1800,
+            name: "Save failure");
+        workout.RawFitData = BuildRawFitData(totalTimerTime: null);
+        workout.RawFileData = null;
+        workout.TimerTimeS = null;
+        await _db.SaveChangesAsync();
+        await _db.Entry(workout).ReloadAsync();
+        var rawBefore = workout.RawFitData;
+
+        _saveInterceptor.Throw = true;
+        var processed = await _service.RunAsync();
+        _saveInterceptor.Throw = false;
+
+        processed.Should().Be(0);
+        await _db.Entry(workout).ReloadAsync();
+        workout.RawFitData.Should().Be(rawBefore);
+        workout.TimerTimeS.Should().BeNull();
+        workout.RawFitData.Should().NotContain(TimerTimeBackfillService.TimerTimeBackfillKey);
+
+        _logger.Messages.Clear();
+        var second = await _service.RunAsync();
+        second.Should().Be(1);
+
+        await _db.Entry(workout).ReloadAsync();
+        workout.TimerTimeS.Should().BeNull();
+        using var doc = JsonDocument.Parse(workout.RawFitData!);
+        doc.RootElement.GetProperty(TimerTimeBackfillService.TimerTimeBackfillKey)
+            .GetString()
+            .Should()
+            .Be(TimerTimeBackfillService.TimerTimeBackfillAbsent);
+    }
+
+    private static string BuildRawFitData(
+        double? totalTimerTime,
+        bool includeSpacedStamp = false,
+        bool includeCompactStamp = false)
+    {
+        var stampLine = includeCompactStamp
+            ? """
+                  "timerTimeBackfill":"absent",
+              """
+            : includeSpacedStamp
+                ? """
+                      "timerTimeBackfill": "absent",
+                  """
+                : "";
+
         if (totalTimerTime.HasValue)
         {
             return $$"""
                 {
-                  "session": {
+                {{stampLine}}  "session": {
                     "totalElapsedTime": 1800,
                     "totalTimerTime": {{totalTimerTime.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}},
                     "totalDistance": 5000
@@ -336,15 +500,27 @@ public class TimerTimeBackfillServiceTests : IAsyncLifetime
                 """;
         }
 
-        return """
+        return $$"""
             {
-              "session": {
+            {{stampLine}}  "session": {
                 "totalElapsedTime": 1800,
                 "totalDistance": 5000
               },
               "source": "fit_import"
             }
             """;
+    }
+
+    private static void AssertUnparseableStamp(string? rawFitData)
+    {
+        rawFitData.Should().NotBeNull();
+        using var doc = JsonDocument.Parse(rawFitData!);
+        doc.RootElement.GetProperty(TimerTimeBackfillService.TimerTimeBackfillKey)
+            .GetString()
+            .Should()
+            .Be(TimerTimeBackfillService.TimerTimeBackfillUnparseable);
+        doc.RootElement.TryGetProperty("session", out _).Should().BeTrue();
+        rawFitData.Should().NotContain(TimerTimeBackfillService.TimerTimeAbsentMarker);
     }
 
     private static byte[] CreateFitWithClocks(float elapsedSeconds, float timerSeconds)
@@ -412,6 +588,36 @@ public class TimerTimeBackfillServiceTests : IAsyncLifetime
         encode.Close();
 
         return stream.ToArray();
+    }
+
+    private sealed class ThrowingSaveChangesInterceptor : SaveChangesInterceptor
+    {
+        public bool Throw { get; set; }
+
+        public override InterceptionResult<int> SavingChanges(
+            DbContextEventData eventData,
+            InterceptionResult<int> result)
+        {
+            if (Throw)
+            {
+                throw new InvalidOperationException("simulated save failure");
+            }
+
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Throw)
+            {
+                throw new InvalidOperationException("simulated save failure");
+            }
+
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class ListLogger<T> : ILogger<T>

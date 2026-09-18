@@ -10,15 +10,34 @@ namespace Tempo.Api.Services;
 /// <summary>
 /// Backfills <see cref="Workout.TimerTimeS"/> from FIT session JSON (else reparses
 /// <see cref="Workout.RawFileData"/>) and rewrites <see cref="Workout.AvgPaceS"/>.
-/// Also rewrites elapsed-based pace to moving when timer is still null.
-/// Idempotent via column fill and top-level <c>timerTimeBackfill: "absent"</c>.
-/// Clocks and pace only — no Track geometry Derive.
+/// Moving-time pace rewrite is only a side effect while a FIT-JSON leftover is filled.
+/// Idempotent via column fill and <c>timerTimeBackfill</c> (jsonb path on Postgres;
+/// JSON parse in-process). Clocks and pace only — no Track geometry Derive.
 /// </summary>
 public class TimerTimeBackfillService
 {
     public const int BatchSize = 200;
+    public const string TimerTimeBackfillKey = "timerTimeBackfill";
+    public const string TimerTimeBackfillAbsent = "absent";
+    public const string TimerTimeBackfillUnparseable = "unparseable";
     public const string TimerTimeAbsentMarker = "\"timerTimeBackfill\":\"absent\"";
+    private const string UnparseableStampJson = """{"timerTimeBackfill":"unparseable"}""";
     private const double PaceEpsilon = 1e-6;
+
+    /// <summary>
+    /// Production candidate scan. jsonb path — do not LIKE compact
+    /// <c>"timerTimeBackfill":"absent"</c>.
+    /// </summary>
+    public const string PostgresCandidateSql =
+        """
+        SELECT w."Id" AS "Value"
+        FROM "Workouts" AS w
+        WHERE w."TimerTimeS" IS NULL
+          AND w."RawFitData" IS NOT NULL
+          AND w."RawFitData"::text <> ''
+          AND w."RawFitData"->>'timerTimeBackfill' IS NULL
+        ORDER BY w."Id"
+        """;
 
     private readonly TempoDbContext _db;
     private readonly FitParserService _fitParser;
@@ -98,36 +117,22 @@ public class TimerTimeBackfillService
         var workout = await _db.Workouts
             .FirstAsync(w => w.Id == workoutId, cancellationToken);
 
-        var changed = false;
-
-        if (!workout.TimerTimeS.HasValue)
+        if (workout.TimerTimeS.HasValue ||
+            string.IsNullOrEmpty(workout.RawFitData) ||
+            IsTimerTimeBackfillComplete(workout.RawFitData))
         {
-            changed |= TryFillTimer(workout);
+            return false;
         }
 
-        if (!workout.TimerTimeS.HasValue && workout.MovingTimeS.HasValue)
+        if (!TryGetPatchableObject(workout.RawFitData, out _))
         {
-            changed |= TryRewriteMovingPace(workout);
-        }
-
-        if (changed)
-        {
+            _logger.LogError(
+                new InvalidOperationException("RawFitData is not a JSON object"),
+                "Timer time backfill failed for workout {WorkoutId}",
+                workoutId);
+            workout.RawFitData = UnparseableStampJson;
             await _db.SaveChangesAsync(cancellationToken);
-        }
-
-        return changed;
-    }
-
-    private bool TryFillTimer(Workout workout)
-    {
-        if (string.IsNullOrEmpty(workout.RawFitData))
-        {
-            return false;
-        }
-
-        if (workout.RawFitData.Contains(TimerTimeAbsentMarker, StringComparison.Ordinal))
-        {
-            return false;
+            return true;
         }
 
         var timerFromJson = TryReadTimerFromRawFitJson(workout.RawFitData);
@@ -135,16 +140,28 @@ public class TimerTimeBackfillService
         {
             workout.TimerTimeS = timerFromJson;
             WorkoutClocks.ApplyAvgPace(workout);
+            await _db.SaveChangesAsync(cancellationToken);
             return true;
         }
 
         if (workout.RawFileData != null && workout.RawFileData.Length > 0)
         {
-            using var stream = new MemoryStream(workout.RawFileData);
-            var isGzipped = workout.RawFileName?.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase) == true;
-            var parseResult = isGzipped
-                ? _fitParser.ParseGzippedFit(stream)
-                : _fitParser.ParseFit(stream);
+            FitParserService.FitParseResult parseResult;
+            try
+            {
+                using var stream = new MemoryStream(workout.RawFileData);
+                var isGzipped = workout.RawFileName?.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase) == true;
+                parseResult = isGzipped
+                    ? _fitParser.ParseGzippedFit(stream)
+                    : _fitParser.ParseFit(stream);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Timer time backfill failed for workout {WorkoutId}", workoutId);
+                workout.RawFitData = StampExistingObject(workout.RawFitData);
+                await _db.SaveChangesAsync(cancellationToken);
+                return true;
+            }
 
             var timerFromFile = TryReadTimerFromRawFitJson(parseResult.RawFitDataJson);
             if (timerFromFile.HasValue)
@@ -154,15 +171,18 @@ public class TimerTimeBackfillService
                     workout.RawFitData,
                     parseResult.RawFitDataJson);
                 WorkoutClocks.ApplyAvgPace(workout);
+                await _db.SaveChangesAsync(cancellationToken);
                 return true;
             }
-
-            workout.RawFitData = StampAbsent(workout.RawFitData);
-            return true;
         }
 
-        // JSON-only FIT with no usable totalTimerTime and no bytes.
         workout.RawFitData = StampAbsent(workout.RawFitData);
+        if (!workout.TimerTimeS.HasValue && workout.MovingTimeS.HasValue)
+        {
+            TryRewriteMovingPace(workout);
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
         return true;
     }
 
@@ -240,30 +260,65 @@ public class TimerTimeBackfillService
         var root = JsonNode.Parse(existingJson)?.AsObject()
             ?? throw new InvalidOperationException("RawFitData is not a JSON object");
 
-        root["timerTimeBackfill"] = "absent";
+        root[TimerTimeBackfillKey] = TimerTimeBackfillAbsent;
+        return root.ToJsonString(JsonUtils.DefaultOptions);
+    }
+
+    /// <summary>
+    /// True when RawFitData is a JSON object whose <c>timerTimeBackfill</c> is
+    /// present and not JSON null. Parses the object so spaced Npgsql readback
+    /// still counts as done.
+    /// </summary>
+    internal static bool IsTimerTimeBackfillComplete(string? rawFitData)
+    {
+        if (string.IsNullOrEmpty(rawFitData))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawFitData);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            return doc.RootElement.TryGetProperty(TimerTimeBackfillKey, out var backfill) &&
+                   backfill.ValueKind != JsonValueKind.Null;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetPatchableObject(string rawFitData, out JsonObject? root)
+    {
+        try
+        {
+            root = JsonNode.Parse(rawFitData) as JsonObject;
+            return root != null;
+        }
+        catch (JsonException)
+        {
+            root = null;
+            return false;
+        }
+    }
+
+    private static string StampExistingObject(string existingJson)
+    {
+        var root = JsonNode.Parse(existingJson)?.AsObject()
+            ?? throw new InvalidOperationException("RawFitData is not a JSON object");
+        root[TimerTimeBackfillKey] = TimerTimeBackfillUnparseable;
         return root.ToJsonString(JsonUtils.DefaultOptions);
     }
 
     private async Task<List<Guid>> LoadCandidateIdsAsync(CancellationToken cancellationToken)
     {
-        // jsonb rejects text LIKE/Contains (22P02). Cast to text for the marker scan.
         return await _db.Database
-            .SqlQueryRaw<Guid>(
-                """
-                SELECT w."Id" AS "Value"
-                FROM "Workouts" AS w
-                WHERE w."TimerTimeS" IS NULL
-                  AND (
-                    (
-                      w."RawFitData" IS NOT NULL
-                      AND w."RawFitData"::text <> ''
-                      AND w."RawFitData"::text NOT LIKE {0}
-                    )
-                    OR w."MovingTimeS" IS NOT NULL
-                  )
-                ORDER BY w."Id"
-                """,
-                "%" + TimerTimeAbsentMarker + "%")
+            .SqlQueryRaw<Guid>(PostgresCandidateSql)
             .ToListAsync(cancellationToken);
     }
 }

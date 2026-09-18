@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace Tempo.Api.Models;
 
@@ -112,6 +113,14 @@ public class Workout
     public string? RawFileType { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Startup split-HR backfill cursor. Only value written: <c>no_overlap</c>.
+    /// Not a runner-facing metric; omitted from API and Tempo ZIP export.
+    /// </summary>
+    [JsonIgnore]
+    [Column(TypeName = "text")]
+    public string? SplitHeartRateBackfill { get; set; }
 
     // ============================================
     // RAW DATA (JSONB Fields)
