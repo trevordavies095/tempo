@@ -29,7 +29,16 @@ example {
     body: {
       type: text
       content: '''
-  
+{
+  "version": "2.9.0",
+  "gitCommit": "abc123",
+  "buildDate": "2026-09-16T00:00:00Z",
+  "logProfile": "standard",
+  "environment": "Production",
+  "apiImage": "ghcr.io/trevordavies095/tempo/api:v2.9.0",
+  "frontendImage": "ghcr.io/trevordavies095/tempo/frontend:v2.9.0",
+  "snapshot": "Tempo support snapshot\n\nversion: 2.9.0\ngitCommit: abc123\nbuildDate: 2026-09-16T00:00:00Z\nlogProfile: standard\nenvironment: Production\napiImage: ghcr.io/trevordavies095/tempo/api:v2.9.0\nfrontendImage: ghcr.io/trevordavies095/tempo/frontend:v2.9.0\n"
+}
       '''
     }
   }

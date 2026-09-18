@@ -1465,6 +1465,13 @@ export interface VersionResponse {
   version: string;
   buildDate: string;
   gitCommit: string;
+  /** Named logging profile; optional when talking to an older API. */
+  logProfile?: string;
+  environment?: string;
+  apiImage?: string;
+  frontendImage?: string;
+  /** Frozen copy-paste block; optional when talking to an older API. */
+  snapshot?: string;
 }
 
 export async function getVersion(): Promise<VersionResponse> {

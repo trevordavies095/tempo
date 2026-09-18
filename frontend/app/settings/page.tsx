@@ -34,6 +34,7 @@ import {
   PASSWORD_MIN_LENGTH,
   getPasswordLengthAndBytesError,
 } from '@/lib/passwordPolicy';
+import { resolveSupportSnapshot } from '@/lib/supportSnapshot';
 
 const fieldClass =
   'w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt';
@@ -71,6 +72,7 @@ function SettingsPageContent() {
   const [passwordChangeSaving, setPasswordChangeSaving] = useState(false);
   const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
   const [passwordChangeSuccess, setPasswordChangeSuccess] = useState(false);
+  const [snapshotCopied, setSnapshotCopied] = useState(false);
 
   // Fetch version information
   const { data: versionInfo } = useQuery({
@@ -79,6 +81,21 @@ function SettingsPageContent() {
     staleTime: Infinity, // Version doesn't change during session
     retry: 1, // Only retry once if it fails
   });
+
+  const supportSnapshot = versionInfo ? resolveSupportSnapshot(versionInfo) : '';
+
+  const handleCopySnapshot = async () => {
+    if (!supportSnapshot) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(supportSnapshot);
+      setSnapshotCopied(true);
+      window.setTimeout(() => setSnapshotCopied(false), 2000);
+    } catch {
+      setSnapshotCopied(false);
+    }
+  };
 
   // Load heart rate zones on mount
   useEffect(() => {
@@ -690,16 +707,27 @@ function SettingsPageContent() {
           {versionInfo && (
             <div className="space-y-4">
               <h2 className={sectionHeading}>System Information</h2>
-              <div className="pt-2">
-                <div className="text-center text-sm text-muted">
-                  <div className="font-mono">v{versionInfo.version}</div>
-                  {versionInfo.buildDate && versionInfo.buildDate !== 'unknown' && (
-                    <div className="text-xs mt-1">
-                      Built {new Date(versionInfo.buildDate).toLocaleDateString()}
-                    </div>
+              <Card>
+                <p className="text-sm text-muted mb-4">
+                  Copy this block into a bug report so maintainers can see version, commit, logging profile, and image tags.
+                </p>
+                <pre className="text-xs font-mono text-ink bg-canvas border border-border rounded-tempo p-4 overflow-x-auto whitespace-pre-wrap select-text">
+                  {supportSnapshot}
+                </pre>
+                <div className="mt-4 flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleCopySnapshot}
+                  >
+                    {snapshotCopied ? 'Copied' : 'Copy'}
+                  </Button>
+                  {snapshotCopied && (
+                    <p className="text-sm text-ink">Copied successfully.</p>
                   )}
                 </div>
-              </div>
+              </Card>
             </div>
           )}
         </div>
