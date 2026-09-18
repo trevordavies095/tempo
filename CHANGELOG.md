@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Host-only `reset-password` command** - `dotnet Tempo.Api.dll reset-password` (Docker: `compose exec -it api …`). Optional `--username` (sole account is the default), TTY prompt or `--password-stdin`. Same password policy and BCrypt 12 as register/change-password; bumps `SessionVersion` so outstanding JWTs die. Not an HTTP route.
+
+### Security
+- **Break-glass recovery is host-only** - no public reset form, email, or second-user registration. Forgotten passphrase is `reset-password` on the API process, not SQL hashing or a volume wipe.
+
 ### Fixed
 - **Startup backfill idle on Postgres** - Timer and device-lap candidate scans use jsonb paths (`->>'timerTimeBackfill'`, `->>'lapsBackfill'`) instead of compact `LIKE`/`Contains` on `RawFitData::text`, so stamped leftovers are not rewritten every API restart. Timer no longer keeps moving-time-only rows (no FIT JSON) in the candidate set. Corrupt or non-object FIT is stamped `unparseable` once (no invented timer time or device laps). Split-HR leftovers whose HR samples do not overlap any split window are stamped `no_overlap` on Workout (not a fake BPM) and leave the set. Cadence and route-preview idle behavior is unchanged. Workers still run on every boot; a converted library logs `0 of 0` for all five.
 

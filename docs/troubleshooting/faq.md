@@ -155,7 +155,23 @@ Weather data requires:
 
 ### How do I reset my password?
 
-Password reset functionality is not yet implemented. You'll need to reset it directly in the database or reinstall.
+There is no email or login-page reset. An operator with host access sets a new passphrase via the API command (same 16–64 character rules as registration). Outstanding sessions are invalidated; log in again. Registration stays locked — this is not how you add a second person.
+
+```bash
+docker compose exec -it api dotnet Tempo.Api.dll reset-password
+```
+
+Scripts (no TTY):
+
+```bash
+docker compose exec -T api dotnet Tempo.Api.dll reset-password --password-stdin
+```
+
+Production Compose file: add `-f docker-compose.prod.yml`. If the API container is not running: `docker compose run --no-deps --rm api reset-password` (the image entrypoint already prefixes `dotnet Tempo.Api.dll`). On a bare API host, run `dotnet Tempo.Api.dll reset-password` from the API working directory.
+
+Forgot the username: omit `--username` when there is exactly one account (the command prints the name it reset). Last resort: `SELECT "Username" FROM "Users";` — do not hand-write a BCrypt hash.
+
+If the session expires immediately after a successful login, that is a cookie/HTTPS issue, not a forgotten passphrase. See [Authentication Problems](common-issues.md#authentication-problems).
 
 ## Support
 

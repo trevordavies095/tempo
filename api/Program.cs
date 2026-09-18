@@ -16,11 +16,32 @@ using Tempo.Api.OpenApi;
 using Tempo.Api.Services;
 
 ResetPasswordArgs? resetCommand = null;
+string? resetPassword = null;
 if (ResetPasswordCommand.IsVerb(args))
 {
     if (!ResetPasswordCommand.TryParse(args, out resetCommand, out var parseError))
     {
         Console.Error.WriteLine(parseError);
+        Console.Error.WriteLine();
+        Console.Error.WriteLine(ResetPasswordCommand.Usage);
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    if (resetCommand.Help)
+    {
+        Console.Out.WriteLine(ResetPasswordCommand.Usage);
+        return;
+    }
+
+    if (!ResetPasswordCommand.TryReadPassword(
+            resetCommand,
+            new ConsoleResetPasswordInput(),
+            Console.Error,
+            out resetPassword,
+            out var readError))
+    {
+        Console.Error.WriteLine(readError);
         Environment.ExitCode = 1;
         return;
     }
@@ -245,13 +266,12 @@ if (resetCommand is not null)
     var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
     var passwordService = scope.ServiceProvider.GetRequiredService<PasswordService>();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(ResetPasswordCommand));
-    var password = Console.In.ReadLine() ?? string.Empty;
     Environment.ExitCode = await ResetPasswordCommand.ExecuteAsync(
         db,
         passwordService,
         logger,
         resetCommand.Username,
-        password,
+        resetPassword!,
         Console.Out,
         Console.Error);
     return;
