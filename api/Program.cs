@@ -9,12 +9,24 @@ using Serilog;
 using System.IdentityModel.Tokens.Jwt;
 using Tempo.Api.Authentication;
 using Tempo.Api.Authorization;
+using Tempo.Api.Commands;
 using Tempo.Api.Data;
 using Tempo.Api.Endpoints;
 using Tempo.Api.OpenApi;
 using Tempo.Api.Services;
 
-var builder = WebApplication.CreateBuilder(args);
+ResetPasswordArgs? resetCommand = null;
+if (ResetPasswordCommand.IsVerb(args))
+{
+    if (!ResetPasswordCommand.TryParse(args, out resetCommand, out var parseError))
+    {
+        Console.Error.WriteLine(parseError);
+        Environment.ExitCode = 1;
+        return;
+    }
+}
+
+var builder = WebApplication.CreateBuilder(resetCommand is not null ? [] : args);
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -226,6 +238,24 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 var app = builder.Build();
+
+if (resetCommand is not null)
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+    var passwordService = scope.ServiceProvider.GetRequiredService<PasswordService>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(ResetPasswordCommand));
+    var password = Console.In.ReadLine() ?? string.Empty;
+    Environment.ExitCode = await ResetPasswordCommand.ExecuteAsync(
+        db,
+        passwordService,
+        logger,
+        resetCommand.Username,
+        password,
+        Console.Out,
+        Console.Error);
+    return;
+}
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
