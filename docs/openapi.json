@@ -3,7 +3,7 @@
   "info": {
     "title": "Tempo API",
     "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
-    "version": "2.9.0"
+    "version": "2.1.0-test-file"
   },
   "paths": {
     "/auth/register": {
@@ -272,10 +272,30 @@
         "tags": [
           "Health"
         ],
-        "summary": "Health check",
+        "summary": "Liveness: the API process is accepting HTTP.",
+        "description": "Does not touch Postgres, media, or backfills. May return 200 while the database is down.",
+        "operationId": "GetHealth",
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Readiness: this instance can serve because Postgres answers.",
+        "description": "Returns 200 when CanConnectAsync succeeds within 2 seconds; otherwise 503.\nJSON names the database check; never includes connection strings or exception text.",
+        "operationId": "GetReady",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "503": {
+            "description": "Service Unavailable"
           }
         }
       }

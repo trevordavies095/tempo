@@ -63,10 +63,11 @@ To verify everything is working:
    docker-compose logs -f
    ```
 
-3. Access the health endpoint:
+3. Verify readiness (Postgres reachable):
    ```bash
-   curl http://localhost:5001/health
+   curl -f http://localhost:5001/ready
    ```
+   `GET /health` only confirms the API process is up; it can return `200` while Postgres is down.
 
 ## Data Persistence
 

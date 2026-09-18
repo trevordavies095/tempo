@@ -1,36 +1,39 @@
 meta {
-  name: get /health
+  name: get /ready
   type: http
-  seq: 1
+  seq: 2
 }
 
 get {
-  url: {{baseUrl}}/health
+  url: {{baseUrl}}/ready
   body: none
   auth: inherit
 }
 
 example {
   name: 200 Response
-  description: OK
-  
+  description: Ready (database ok)
+
   request: {
-    url: {{baseUrl}}/health
+    url: {{baseUrl}}/ready
     method: GET
     mode: none
   }
-  
+
   response: {
     status: {
       code: 200
       text: OK
     }
-  
+
     body: {
       type: json
       content: '''
 {
-  "status": "healthy"
+  "status": "ready",
+  "checks": {
+    "database": "ok"
+  }
 }
 '''
     }

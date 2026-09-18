@@ -74,7 +74,7 @@ Put a reverse proxy (Caddy, nginx, Traefik) in front of **one** upstream: `127.0
 
 - Command center: `https://your.domain`
 - Daily driver: the same origin (the app talks to `/api/...`; Next.js rewrites `/api` to the API on the Compose network)
-- Health: `https://your.domain/api/health` (or `docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001/health`)
+- Ready (verify a deploy): `https://your.domain/api/ready` (or `docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001/ready`). `/health` is liveness only and can be `200` while Postgres is down.
 
 **Upgrading from a split proxy** (`/` → `:3004`, `/api` → `:5001`): merge to a single upstream on `127.0.0.1:3004`, or uncomment the loopback API publish in `docker-compose.prod.yml` (`127.0.0.1:5001:5001`) until you migrate.
 

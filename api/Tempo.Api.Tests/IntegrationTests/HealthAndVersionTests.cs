@@ -37,6 +37,59 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetReady_ReturnsOk_WhenDatabaseIsReachable()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/ready");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ReadyResponse>();
+        result.Should().NotBeNull();
+        result!.Status.Should().Be("ready");
+        result.Checks.Should().NotBeNull();
+        result.Checks!.Database.Should().Be("ok");
+    }
+
+    [Fact]
+    public async Task GetHealth_ReturnsOk_WhenDatabaseIsUnreachable()
+    {
+        using var factory = new UnreachablePostgresWebApplicationFactory();
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/health");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<HealthResponse>();
+        result.Should().NotBeNull();
+        result!.Status.Should().Be("healthy");
+    }
+
+    [Fact]
+    public async Task GetReady_ReturnsServiceUnavailable_WhenDatabaseIsUnreachable()
+    {
+        using var factory = new UnreachablePostgresWebApplicationFactory();
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/ready");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("\"status\":\"not_ready\"");
+        body.Should().Contain("\"database\":\"fail\"");
+        body.Should().NotContain(UnreachablePostgresWebApplicationFactory.Host);
+        body.Should().NotContain(UnreachablePostgresWebApplicationFactory.Username);
+        body.Should().NotContain(UnreachablePostgresWebApplicationFactory.Password);
+
+        var result = System.Text.Json.JsonSerializer.Deserialize<ReadyResponse>(
+            body,
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        result.Should().NotBeNull();
+        result!.Status.Should().Be("not_ready");
+        result.Checks!.Database.Should().Be("fail");
+    }
+
+    [Fact]
     public async Task GetVersion_ReturnsVersionFromEnvironmentVariables_WhenSet()
     {
         // Arrange - save original environment variables
@@ -225,6 +278,17 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
     private class HealthResponse
     {
         public string Status { get; set; } = string.Empty;
+    }
+
+    private class ReadyResponse
+    {
+        public string Status { get; set; } = string.Empty;
+        public ReadyChecks? Checks { get; set; }
+    }
+
+    private class ReadyChecks
+    {
+        public string Database { get; set; } = string.Empty;
     }
 
     private class VersionResponse
