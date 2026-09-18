@@ -262,7 +262,7 @@ Or inside the Compose network:
 docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001/ready
 ```
 
-`GET /health` (or `/api/health`) is liveness only — it can return `200` while Postgres is down.
+`GET /api/health` is API liveness only — it can return `200` while Postgres is down. Public `https://your.domain/health` (no `/api`) is the **command center** process pulse; do not use it as the API check.
 ### Logging
 
 View container logs:

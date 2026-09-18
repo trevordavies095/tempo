@@ -63,11 +63,11 @@ To verify everything is working:
    docker-compose logs -f
    ```
 
-3. Verify readiness (Postgres reachable):
+3. Verify API readiness (Postgres reachable):
    ```bash
    curl -f http://localhost:5001/ready
    ```
-   `GET /health` only confirms the API process is up; it can return `200` while Postgres is down.
+   API `GET /health` (or via the rewrite `http://localhost:3000/api/health`) is liveness only and can return `200` while Postgres is down. The command center process pulse is `http://localhost:3000/health` — that is Next, not the API.
 
 ## Data Persistence
 
