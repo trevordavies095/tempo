@@ -4,6 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: tempo-postgres
+    command: ["postgres", "-c", "log_checkpoints=off"]
     environment:
       POSTGRES_DB: tempo
       POSTGRES_USER: postgres
@@ -39,6 +40,8 @@ services:
       # CORS
       CORS__AllowedOrigins: "http://localhost:3000"
       JWT__SecretKey: "UXRYmMMI1s3Wmrfeno2RKQCuA98eu3gfcq5sjNm+0w0="
+      # Named logging profile: standard (default) | debug. Restart API after changing.
+      Tempo__Logging__Profile: "${TEMPO_LOGGING_PROFILE:-standard}"
       # CARTO basemaps (optional; set CARTO_BASEMAPS_API_KEY in .env)
       CartoBasemaps__ApiKey: "${CARTO_BASEMAPS_API_KEY:-}"
     ports:

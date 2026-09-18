@@ -12,6 +12,7 @@ using Tempo.Api.Authorization;
 using Tempo.Api.Commands;
 using Tempo.Api.Data;
 using Tempo.Api.Endpoints;
+using Tempo.Api.Logging;
 using Tempo.Api.OpenApi;
 using Tempo.Api.Services;
 
@@ -49,14 +50,16 @@ if (ResetPasswordCommand.IsVerb(args))
 
 var builder = WebApplication.CreateBuilder(resetCommand is not null ? [] : args);
 
-// Configure Serilog
+// Named logging profile owns Serilog levels (not MEL Logging:LogLevel / Serilog__* overrides)
+var loggingProfile = LoggingProfile.Parse(builder.Configuration[LoggingProfile.ConfigKey]);
 Log.Logger = new LoggerConfiguration()
-    .ReadFrom.Configuration(builder.Configuration)
+    .ApplyLevels(loggingProfile)
     .Enrich.FromLogContext()
     .WriteTo.Console()
     .CreateLogger();
 
 builder.Host.UseSerilog();
+Log.Information("Logging profile: {Profile}", LoggingProfile.ToConfigName(loggingProfile));
 
 // Add services
 builder.Services.AddEndpointsApiExplorer();
@@ -291,7 +294,15 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseSerilogRequestLogging();
+app.UseSerilogRequestLogging(options =>
+{
+    options.GetLevel = (httpContext, _, exception) =>
+        LoggingProfile.GetRequestLogLevel(
+            loggingProfile,
+            httpContext.Request.Path.Value,
+            httpContext.Response.StatusCode,
+            exception);
+});
 
 // Map endpoints
 app.MapAuthEndpoints();

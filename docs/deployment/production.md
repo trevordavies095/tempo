@@ -263,7 +263,10 @@ docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001
 ```
 
 `GET /api/health` is API liveness only — it can return `200` while Postgres is down. Public `https://your.domain/health` (no `/api`) is the **command center** process pulse; do not use it as the API check.
+
 ### Logging
+
+Production Compose defaults to logging profile **`standard`**: Tempo Information (imports, backfills, auth, media) stays readable; EF SQL and per-request framework noise stay off. The API logs `Logging profile: standard` (or `debug`) once at startup. See [Logging profiles](../getting-started/configuration.md#logging-profiles) for the env key (`Tempo:Logging:Profile` / `TEMPO_LOGGING_PROFILE`).
 
 View container logs:
 
@@ -271,6 +274,19 @@ View container logs:
 docker compose -f docker-compose.prod.yml logs -f api
 docker compose -f docker-compose.prod.yml logs -f frontend
 ```
+
+#### Capturing a debug dump (Import / query bugs)
+
+1. In `.env`, set `TEMPO_LOGGING_PROFILE=debug` and restart the API.
+2. Reproduce the problem once.
+3. Attach `docker compose -f docker-compose.prod.yml logs api` (include the startup `Logging profile: debug` line).
+4. Set `TEMPO_LOGGING_PROFILE=standard` (or remove it) and restart the API.
+
+Do not tune `Logging:LogLevel` or Serilog category overrides — the named profile is the operator interface. Profile `debug` is not Serilog level Debug.
+
+#### Postgres checkpoints
+
+Official Compose runs Postgres with `log_checkpoints=off`. Setting the API profile to `debug` does **not** turn checkpoints on. For WAL debugging only, add `-c log_checkpoints=on` to the Postgres service yourself (non-Compose installs follow their own Postgres config).
 
 ### Resource Monitoring
 
