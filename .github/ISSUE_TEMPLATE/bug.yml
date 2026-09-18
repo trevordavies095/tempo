@@ -1,0 +1,87 @@
+name: Bug report
+description: Report a bug in Tempo (include version, logging profile, and API logs)
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please include **Tempo version**, **logging profile**, and **API logs** so maintainers can compare dumps.
+
+        For **Import or query** bugs: set `TEMPO_LOGGING_PROFILE=debug`, restart the API, reproduce once, attach those logs, then switch back to `standard`. See [production logging](https://github.com/trevordavies095/tempo/blob/main/docs/deployment/production.md#logging).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps that reliably reproduce the issue.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: input
+    id: tempo-version
+    attributes:
+      label: Tempo version
+      description: From Settings, `/version`, or the image tag (e.g. v2.9.0).
+      placeholder: v2.9.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: logging-profile
+    attributes:
+      label: Logging profile
+      description: Value of Tempo:Logging:Profile / TEMPO_LOGGING_PROFILE when you captured logs (see startup line "Logging profile: …").
+      options:
+        - standard
+        - debug
+        - unknown / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: api-logs
+    attributes:
+      label: API logs
+      description: |
+        Paste API stdout/stderr. Include the startup line `Logging profile: standard` (or `debug`).
+        Compose: `docker compose -f docker-compose.prod.yml logs api`
+        For Import/query bugs, prefer a `debug` capture (see help above), then switch back to `standard`.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment (optional)
+      description: How you run Tempo (production Compose, development Compose, local `dotnet run`), OS, reverse proxy if relevant.
+      placeholder: docker-compose.prod.yml on Linux, Caddy …
+    validations:
+      required: false

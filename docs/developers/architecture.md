@@ -23,7 +23,7 @@ Tempo is a self-hosted running tracker built as a full-stack application with a 
 - **Language**: C#
 - **Database**: PostgreSQL 16 with JSONB fields for raw workout data
 - **ORM**: Entity Framework Core
-- **Logging**: Serilog
+- **Logging**: Serilog with named profiles (`standard` | `debug`) via `Tempo:Logging:Profile`
 
 ### Database
 
@@ -92,9 +92,12 @@ This ensures migrations can be safely applied even when database state doesn't m
 
 ### 6. Logging
 
-- Serilog configured for structured logging
-- Console output in development
-- Request logging enabled via `UseSerilogRequestLogging()`
+- Serilog console output; levels owned by named profile `Tempo:Logging:Profile` (`standard` | `debug`), not MEL `Logging:LogLevel`
+- Startup logs `Logging profile: …` once so pasted dumps declare the mode
+- `standard` (default): Tempo Information; Microsoft / System Warning (hosting lifetime Information); request middleware logs 5xx / unhandled exceptions only
+- `debug`: Information including EF SQL and non-probe request traces (not Serilog level Debug)
+- Successful `/health` and `/ready` request lines omitted on both profiles
+- Official Compose Postgres uses `log_checkpoints=off` (not driven by the API profile)
 
 ## Data Model
 
