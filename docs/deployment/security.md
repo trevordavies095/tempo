@@ -60,6 +60,7 @@ Existing credentials remain valid until the user sets a new password. BCrypt has
 - Registration is automatically locked after first user
 - Prevents unauthorized account creation
 - Single-user deployment pattern
+- Forgotten passphrase: host-only `reset-password` on the API process (Docker `exec` or `dotnet Tempo.Api.dll reset-password`). Not a public HTTP route, not email, and not a way to add a second account. See [How do I reset my password?](../troubleshooting/faq.md#how-do-i-reset-my-password).
 
 ## Network Security
 

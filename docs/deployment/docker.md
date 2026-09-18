@@ -118,6 +118,28 @@ To remove volumes (clears database):
 docker-compose -f docker-compose.prod.yml down -v
 ```
 
+## Password recovery
+
+Forgot the only Tempo passphrase: do not delete volumes and do not hand-edit BCrypt in Postgres. From the directory with your Compose file:
+
+```bash
+docker compose exec -it api dotnet Tempo.Api.dll reset-password
+```
+
+Scripts (no TTY):
+
+```bash
+docker compose exec -T api dotnet Tempo.Api.dll reset-password --password-stdin
+```
+
+With the production file, add `-f docker-compose.prod.yml` (service name is still `api`). If the API container is not running:
+
+```bash
+docker compose run --no-deps --rm api reset-password
+```
+
+The image `ENTRYPOINT` is already `dotnet Tempo.Api.dll`, so `reset-password` is passed as the verb. On a bare API host: `dotnet Tempo.Api.dll reset-password` from the API working directory. After a successful reset, log in again (old sessions are invalid). Full notes: [How do I reset my password?](../troubleshooting/faq.md#how-do-i-reset-my-password).
+
 ## Troubleshooting
 
 ### Services Not Starting
