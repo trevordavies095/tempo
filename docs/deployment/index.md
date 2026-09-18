@@ -40,7 +40,7 @@ See the [Docker Deployment Guide](docker.md) for detailed instructions.
 
 ### Monitoring
 
-- Health check endpoint: `/health` (via public origin `/api/health` or `docker compose exec`)
+- Ready check: `/ready` (via public origin `/api/ready` or `docker compose exec`). API liveness is `/api/health`. Public `/health` (no `/api`) is the command-center process pulse, not the API.
 - Version endpoint: `/version`
 - Container logs: `docker compose -f docker-compose.prod.yml logs -f`
 

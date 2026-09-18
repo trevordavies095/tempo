@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Command center `GET /health`** - Next Route Handler returns `{ "status": "healthy" }` with no API or Postgres call. Development and production Compose frontend healthchecks probe it with Node `fetch` (`http://127.0.0.1:3000/health`). Public `/health` is the command-center pulse; API verify stays `/api/ready` (liveness `/api/health`).
+- **Liveness `/health` and readiness `/ready`** - `GET /health` stays a cheap process pulse (`{ "status": "healthy" }`). `GET /ready` returns `200` with `{ "status": "ready", "checks": { "database": "ok" } }` when Postgres answers within 2s, otherwise `503` / `not_ready` / `fail` (no secrets in the body). Development and production Compose API healthchecks use `/ready`. Verify a deploy with `/api/ready` (public) or in-container `curl -f http://localhost:5001/ready`.
 - **Host-only `reset-password` command** - `dotnet Tempo.Api.dll reset-password` (Docker: `compose exec -it api …`). Optional `--username` (sole account is the default), TTY prompt or `--password-stdin`. Same password policy and BCrypt 12 as register/change-password; bumps `SessionVersion` so outstanding JWTs die. Not an HTTP route.
 
 ### Security

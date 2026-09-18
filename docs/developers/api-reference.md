@@ -870,13 +870,33 @@ GET /version
 
 Returns application version, build date, and git commit.
 
-### Health Check
+### Health (liveness)
 
 ```http
 GET /health
 ```
 
-Public endpoint (no authentication required).
+Public endpoint (no authentication required). Returns `200` with `{ "status": "healthy" }` while the API process is accepting HTTP. Does **not** check Postgres — this can be `200` while the database is down. Orchestrators that need to know whether this instance can serve should use `/ready`.
+
+### Ready (readiness)
+
+```http
+GET /ready
+```
+
+Public endpoint (no authentication required). Returns `200` when Postgres is reachable within 2 seconds:
+
+```json
+{ "status": "ready", "checks": { "database": "ok" } }
+```
+
+Returns `503` when the database check fails or times out:
+
+```json
+{ "status": "not_ready", "checks": { "database": "fail" } }
+```
+
+Bodies never include connection strings, hostnames, or exception text. Compose API healthchecks and reverse-proxy “can I send traffic” probes should use this URL (`curl -f` already fails on `503`).
 
 ## Error Responses
 

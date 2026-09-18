@@ -86,10 +86,9 @@ Issuer, audience, and expiration defaults are in the API image. Override with `J
 
 ### Monitoring
 
-- [ ] Health check reachable via the public origin (`/api/health`) or `docker compose exec`
+- [ ] Ready check reachable via the public origin (`/api/ready`) or `docker compose exec`
 - [ ] Logs configured and monitored
 - [ ] Resource usage monitored
-- [ ] Error tracking in place
 
 ## Reverse Proxy Setup
 
@@ -251,18 +250,19 @@ deploy:
 
 ### Health Checks
 
-Via the public origin (preferred):
+Prefer readiness (`/ready`) so a green check means Postgres is reachable. Via the public origin:
 
 ```bash
-curl https://your.domain/api/health
+curl -f https://your.domain/api/ready
 ```
 
 Or inside the Compose network:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001/health
+docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001/ready
 ```
 
+`GET /api/health` is API liveness only — it can return `200` while Postgres is down. Public `https://your.domain/health` (no `/api`) is the **command center** process pulse; do not use it as the API check.
 ### Logging
 
 View container logs:

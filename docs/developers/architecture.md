@@ -144,7 +144,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 - JWT-based authentication with httpOnly cookies
 - Registration only available when no users exist (single-user deployment)
 - Password hashing using BCrypt
-- All workout and settings endpoints require authentication (except `/health` and `/version`)
+- All workout and settings endpoints require authentication (except `/health`, `/ready`, and `/version`)
 - **First-run onboarding**: `User.OnboardingCompleted` (new registrations `false`; migration backfills existing users `true`). `GET /auth/me` exposes `onboardingCompleted`; `POST /auth/onboarding/complete` sets it `true` only (idempotent). The command center hard-gates app routes to `/onboarding` until complete.
 
 ## Database Indexing
