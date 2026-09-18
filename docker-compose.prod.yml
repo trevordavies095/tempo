@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: tempo
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}"
     ports:
       - "5432:5432"
     volumes:
@@ -29,7 +29,7 @@ services:
     container_name: tempo-api
     environment:
       # Database connection
-      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=tempo;Username=postgres;Password=postgres"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=tempo;Username=postgres;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}"
       # Media storage
       MediaStorage__RootPath: "/app/media"
       MediaStorage__MaxFileSizeBytes: "52428800"
@@ -41,9 +41,9 @@ services:
       ASPNETCORE_ENVIRONMENT: "Production"
       # CORS - Allow multiple origins (comma-separated)
       CORS__AllowedOrigins: "http://localhost:3000,http://localhost:3004,http://192.168.4.205:3004"
-      # JWT Authentication - REQUIRED: Set a secure random key in production
+      # JWT Authentication - REQUIRED: set JWT_SECRET_KEY in .env (copy .env.example)
       # Generate with: openssl rand -base64 32
-      JWT__SecretKey: "${JWT_SECRET_KEY:-CHANGE_THIS_IN_PRODUCTION_USE_ENVIRONMENT_VARIABLE}"
+      JWT__SecretKey: "${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env (copy .env.example)}"
       JWT__Issuer: "Tempo"
       JWT__Audience: "Tempo"
       JWT__ExpirationDays: "7"

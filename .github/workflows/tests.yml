@@ -7,6 +7,29 @@ on:
     branches: [main, develop]
 
 jobs:
+  prod-compose-secrets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compose config fails without required secrets
+        run: |
+          unset JWT_SECRET_KEY POSTGRES_PASSWORD
+          if docker compose -f docker-compose.prod.yml config >/dev/null 2>&1; then
+            echo "Expected compose config to fail without JWT_SECRET_KEY and POSTGRES_PASSWORD"
+            exit 1
+          fi
+
+      - name: Compose config succeeds with required secrets
+        env:
+          JWT_SECRET_KEY: ci-prod-compose-jwt-secret-not-for-production-use
+          POSTGRES_PASSWORD: ci-prod-compose-db-password
+        run: docker compose -f docker-compose.prod.yml config >/dev/null
+
   test:
     runs-on: ubuntu-latest
     permissions:
