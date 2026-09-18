@@ -30,7 +30,7 @@ See the [Docker Deployment Guide](docker.md) for detailed instructions.
 - **JWT Secret Key**: Must be set via `JWT_SECRET_KEY` in `.env` (production Compose fails without it)
 - **HTTPS**: Required for secure cookie transmission
 - **Database Password**: Must be set via `POSTGRES_PASSWORD` in `.env` (same value for Postgres and the API)
-- **CORS**: Configure allowed origins appropriately
+- **Public origin**: One reverse-proxy upstream to `127.0.0.1:3004` for command center and daily driver (CORS not required on the default path)
 
 ### Performance
 
@@ -40,9 +40,9 @@ See the [Docker Deployment Guide](docker.md) for detailed instructions.
 
 ### Monitoring
 
-- Health check endpoint: `/health`
+- Health check endpoint: `/health` (via public origin `/api/health` or `docker compose exec`)
 - Version endpoint: `/version`
-- Container logs: `docker-compose logs -f`
+- Container logs: `docker compose -f docker-compose.prod.yml logs -f`
 
 ## Next Steps
 

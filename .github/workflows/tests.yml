@@ -28,7 +28,29 @@ jobs:
         env:
           JWT_SECRET_KEY: ci-prod-compose-jwt-secret-not-for-production-use
           POSTGRES_PASSWORD: ci-prod-compose-db-password
-        run: docker compose -f docker-compose.prod.yml config >/dev/null
+        run: |
+          RENDERED=$(mktemp)
+          docker compose -f docker-compose.prod.yml config > "$RENDERED"
+
+          grep -q 'POSTGRES_PASSWORD: ci-prod-compose-db-password' "$RENDERED"
+          grep -q 'Password=ci-prod-compose-db-password' "$RENDERED"
+
+          if grep -q 'CHANGE_THIS_IN_PRODUCTION' "$RENDERED"; then
+            echo "Found JWT placeholder in rendered config"
+            exit 1
+          fi
+          if grep -q '192\.168' "$RENDERED"; then
+            echo "Found private LAN address in rendered config"
+            exit 1
+          fi
+          if grep -E 'published: ["'\'']?(5432|5001)["'\'']?$' "$RENDERED"; then
+            echo "Found published host port 5432 or 5001 in rendered config"
+            exit 1
+          fi
+          grep -q 'host_ip: 127.0.0.1' "$RENDERED"
+          grep -Eq 'published: ["'\'']?3004["'\'']?$' "$RENDERED"
+
+          rm -f "$RENDERED"
 
   test:
     runs-on: ubuntu-latest

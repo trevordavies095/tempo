@@ -1,15 +1,20 @@
-version: '3.8'
+# Production Compose — operator contract
+#
+# 1. cp .env.example .env
+# 2. Set JWT_SECRET_KEY and POSTGRES_PASSWORD (required; empty fails Compose)
+# 3. Point your reverse proxy at 127.0.0.1:3004 (one upstream)
+# 4. Use that public HTTPS origin for the command center and the daily driver
+#    (/api is the command-center rewrite, not a second URL)
+#
+# Pin image tags to a release (e.g. v2.9.0). Bump the tags when updating — do not use latest as "stable".
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: tempo-postgres
     environment:
       POSTGRES_DB: tempo
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}"
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,40 +23,21 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    networks:
-      - tempo-network
 
   api:
-    # Available tags: latest (stable), v1.0.0 (specific version)
-    # Update the version tag below when deploying a new release
-    # Example: ghcr.io/trevordavies095/tempo/api:v1.0.0
+    # Pin to a release tag; bump when deploying a new version
     image: ghcr.io/trevordavies095/tempo/api:v2.9.0
-    container_name: tempo-api
     environment:
-      # Database connection
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=tempo;Username=postgres;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}"
-      # Media storage
       MediaStorage__RootPath: "/app/media"
-      MediaStorage__MaxFileSizeBytes: "52428800"
-      # Elevation calculation
-      ElevationCalculation__NoiseThresholdMeters: "2.0"
-      ElevationCalculation__MinDistanceMeters: "10.0"
-      # ASP.NET Core
-      ASPNETCORE_URLS: "http://+:5001"
-      ASPNETCORE_ENVIRONMENT: "Production"
-      # CORS - Allow multiple origins (comma-separated)
-      CORS__AllowedOrigins: "http://localhost:3000,http://localhost:3004,http://192.168.4.205:3004"
       # JWT Authentication - REQUIRED: set JWT_SECRET_KEY in .env (copy .env.example)
       # Generate with: openssl rand -base64 32
       JWT__SecretKey: "${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env (copy .env.example)}"
-      JWT__Issuer: "Tempo"
-      JWT__Audience: "Tempo"
-      JWT__ExpirationDays: "7"
-      JWT__RememberMeExpirationDays: "30"
       # CARTO basemaps (optional; set CARTO_BASEMAPS_API_KEY in .env)
       CartoBasemaps__ApiKey: "${CARTO_BASEMAPS_API_KEY:-}"
-    ports:
-      - "5001:5001"
+    # Opt-in for Bruno / curl / unmigrated split proxies on the host only:
+    # ports:
+    #   - "127.0.0.1:5001:5001"
     volumes:
       - ./media:/app/media
     depends_on:
@@ -64,31 +50,16 @@ services:
       retries: 3
       start_period: 40s
     restart: unless-stopped
-    networks:
-      - tempo-network
 
   frontend:
-    # Available tags: latest (stable), v1.0.0 (specific version)
-    # Update the version tag below when deploying a new release
-    # Example: ghcr.io/trevordavies095/tempo/frontend:v1.0.0
+    # Pin to a release tag; bump when deploying a new version
     image: ghcr.io/trevordavies095/tempo/frontend:v2.9.0
-    container_name: tempo-frontend
     ports:
-      - "3004:3000"
+      - "127.0.0.1:3004:3000"
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
-    networks:
-      - tempo-network
 
 volumes:
   postgres_data:
-
-networks:
-  tempo-network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 10.20.0.0/16
-

@@ -8,60 +8,40 @@ This guide covers production configuration, environment variables, and deploymen
 
 ## Environment Variables
 
-Configure the following in `docker-compose.prod.yml` or via environment files:
+Set secrets in `.env` (copy from `.env.example`). Production Compose fails closed if they are missing or empty — see [Docker Deployment](docker.md).
 
 ### Required Configuration
 
 #### JWT Secret Key
 
-**CRITICAL**: Must be set to a secure random value.
+**CRITICAL**: Must be set to a secure random value in `.env` as `JWT_SECRET_KEY`.
 
 ```bash
 # Generate a secure key
 openssl rand -base64 32
 ```
 
-Set in `docker-compose.prod.yml`:
-```yaml
-JWT__SecretKey: "your-generated-secret-key-here"
-```
-
-Or use an environment variable:
 ```bash
-export JWT_SECRET_KEY="your-generated-secret-key-here"
+# In .env
+JWT_SECRET_KEY=your-generated-secret-key-here
 ```
 
-### Database Configuration
+#### Database password
 
-```yaml
-ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=tempo;Username=postgres;Password=YOUR_SECURE_PASSWORD"
+**CRITICAL**: Set `POSTGRES_PASSWORD` in `.env` (same value for Postgres and the API connection string). Do not use `;`. Existing volumes must use the password already in the cluster; editing `.env` alone does not rotate it.
+
+```bash
+# In .env
+POSTGRES_PASSWORD=your-secure-password
 ```
 
-**Important**: Change the default database password in production.
+### CORS (usually not needed)
 
-### CORS Configuration
-
-Configure allowed origins:
-
-```yaml
-CORS__AllowedOrigins: "https://yourdomain.com,https://www.yourdomain.com"
-```
-
-For multiple origins, use comma-separated list.
+The command center talks same-origin `/api` through the Next rewrite. The daily driver is native. Production Compose does **not** set `CORS__AllowedOrigins`. Only configure CORS if you intentionally expose the API to a browser on another origin.
 
 ### Media Storage
 
-```yaml
-MediaStorage__RootPath: "/app/media"
-MediaStorage__MaxFileSizeBytes: "52428800"  # 50MB default
-```
-
-### Elevation Calculation
-
-```yaml
-ElevationCalculation__NoiseThresholdMeters: "2.0"
-ElevationCalculation__MinDistanceMeters: "10.0"
-```
+Defaults live in the API image / `appsettings.json`. Compose mounts media at `/app/media`.
 
 ### CARTO Basemaps (Maps)
 
@@ -73,34 +53,29 @@ CARTO_BASEMAPS_API_KEY=your-key-here
 
 Compose passes this to the API as `CartoBasemaps__ApiKey`. Request a key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey). Restart the API and hard-refresh the browser after updating.
 
-### JWT Configuration
+### JWT issuer / expiry
 
-```yaml
-JWT__SecretKey: "YOUR_SECRET_KEY"  # REQUIRED
-JWT__Issuer: "Tempo"
-JWT__Audience: "Tempo"
-JWT__ExpirationDays: "7"
-```
+Issuer, audience, and expiration defaults are in the API image. Override with `JWT__*` env vars only if you need non-defaults.
 
 ## Production Checklist
 
 ### Security
 
-- [ ] JWT secret key is set and secure (minimum 32 characters)
-- [ ] Database password changed from default
+- [x] JWT secret required from `.env` (`JWT_SECRET_KEY`) — done by production Compose
+- [x] Database password required from `.env` (`POSTGRES_PASSWORD`) — done by production Compose (choose a strong value; existing volumes must match the cluster)
 - [ ] HTTPS configured (required for secure cookies)
-- [ ] CORS origins configured correctly
-- [ ] Firewall rules configured
+- [x] Postgres and API not published on the host — done by production Compose (command center is `127.0.0.1:3004` only)
+- [x] Image tags pinned in Compose (not `latest` as the contract) — done by production Compose
+- [ ] Firewall rules configured (expose the reverse proxy, not Compose ports)
 - [ ] Regular security updates applied
 
 ### Configuration
 
-- [ ] Environment variables set correctly
-- [ ] Database connection string configured
-- [ ] Media storage path configured and writable
+- [ ] `.env` filled from `.env.example`
+- [ ] Media directory (`./media`) writable
 - [ ] CARTO basemaps API key set (`CARTO_BASEMAPS_API_KEY` in `.env`) if maps should not show the watermark
-- [ ] Ports configured appropriately
-- [ ] Health checks enabled
+- [ ] Reverse proxy pointed at `127.0.0.1:3004`
+- [x] Health checks enabled — done by production Compose
 
 ### Data Management
 
@@ -111,12 +86,14 @@ JWT__ExpirationDays: "7"
 
 ### Monitoring
 
-- [ ] Health check endpoint accessible
+- [ ] Health check reachable via the public origin (`/api/health`) or `docker compose exec`
 - [ ] Logs configured and monitored
 - [ ] Resource usage monitored
 - [ ] Error tracking in place
 
 ## Reverse Proxy Setup
+
+Point **one** upstream at the command center on loopback. `/api` is rewritten inside the frontend container to the API on the Compose network — do not split `/api` to a host `:5001` unless you uncomment the opt-in loopback API publish.
 
 ### Nginx Example
 
@@ -136,23 +113,14 @@ server {
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
     
-    # Frontend
+    # Command center (Next rewrites /api to the API on the Compose network)
     location / {
-        proxy_pass http://localhost:3004;
+        proxy_pass http://127.0.0.1:3004;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-    }
-    
-    # API
-    location /api/ {
-        proxy_pass http://localhost:5001/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
+
         # Optional: whole-ZIP adapters through this host (command center uses 512 KiB chunks)
         client_max_body_size 500M;
         proxy_read_timeout 600s;
@@ -165,53 +133,29 @@ server {
 ### Caddy Example
 
 ```caddy
-# API endpoint for iOS app / Bruno / whole-ZIP adapters (direct API access)
-api-tempo.yourdomain.com {
+tempo.yourdomain.com {
     tls {
         protocols tls1.2 tls1.3
     }
 
-    # Whole-ZIP uploads up to 500MB (command center uses 512 KiB chunks via the web host)
-    reverse_proxy localhost:5001 {
+    # One upstream: command center. /api is rewritten to the API inside Docker.
+    reverse_proxy 127.0.0.1:3004 {
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
         transport http {
             read_timeout 30m
             write_timeout 30m
         }
     }
 }
-
-# Web frontend with API routing
-tempo.yourdomain.com {
-    tls {
-        protocols tls1.2 tls1.3
-    }
-
-    # API routes (strip only /api prefix). Command-center import jobs use small chunks here.
-    handle_path /api/* {
-        reverse_proxy localhost:5001 {
-            header_up Host {host}
-            header_up X-Real-IP {remote}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-
-    # Frontend
-    handle {
-        reverse_proxy localhost:3004 {
-            header_up Host {host}
-            header_up X-Real-IP {remote}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-}
 ```
 
-**Note**: 
-- Adjust the hostnames and ports based on your deployment setup
-- The `api-tempo.yourdomain.com` subdomain is optional and only needed if you have a mobile app or whole-ZIP clients that require direct API access
-- `handle_path /api/*` strips the `/api` prefix so `/api/workouts/import/jobs` reaches the API as `/workouts/import/jobs`
+**Note**:
+- Use the same public HTTPS origin for the command center and the daily driver
+- If you still need Bruno/curl on the host API port, uncomment `127.0.0.1:5001:5001` in `docker-compose.prod.yml` (loopback only)
+- Upgrading from a split `/` + `/api`→`:5001` proxy: merge to this one-upstream shape or temporarily keep the loopback API publish
 
 ### Traefik Example
 
@@ -231,7 +175,7 @@ labels:
 
 Tempo supports ZIP archives up to 500MB (Strava exports, Tempo exports). The **command center** uploads those archives in **512 KiB** chunks over `/api`, so a default reverse-proxy body limit is usually enough for the UI path. Processing runs as a background import job (poll + cancel), not as one long multipart request.
 
-**Whole-ZIP adapters** (`POST /workouts/import/bulk`, `POST /workouts/import/export`) and direct posts to the API still send the full body in one request. For those clients (Bruno, curl, scripts), configure the reverse proxy (or hit the API port directly) with:
+**Whole-ZIP adapters** (`POST /workouts/import/bulk`, `POST /workouts/import/export`) and direct posts to the API still send the full body in one request. Prefer the public origin’s `/api` path, or uncomment loopback `:5001` for host tooling.
 
 ### Settings for whole-ZIP / direct API uploads
 
@@ -244,10 +188,10 @@ These limits are already configured in the API (`Program.cs`) for Kestrel and fo
 
 ### Testing Large Uploads
 
-After configuration, smoke-test through the command center (`:3000`):
+After configuration, smoke-test through the command center:
 1. Export a large archive from Strava (typically 50–200MB), or use a Tempo Settings export with media
 2. Strava or Tempo restore: **Settings** → Data Management → **Migrate / restore** (or first-run onboarding)
-3. Confirm upload progress then import/restore progress; optional: retry with Bruno/curl against the API for the whole-ZIP adapter
+3. Confirm upload progress then import/restore progress; optional: retry with Bruno/curl against the public origin `/api` (or loopback `:5001` if enabled)
 
 ## SSL/TLS Configuration
 
@@ -307,10 +251,16 @@ deploy:
 
 ### Health Checks
 
-Monitor the health endpoint:
+Via the public origin (preferred):
 
 ```bash
-curl http://localhost:5001/health
+curl https://your.domain/api/health
+```
+
+Or inside the Compose network:
+
+```bash
+docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001/health
 ```
 
 ### Logging
@@ -318,8 +268,8 @@ curl http://localhost:5001/health
 View container logs:
 
 ```bash
-docker-compose -f docker-compose.prod.yml logs -f api
-docker-compose -f docker-compose.prod.yml logs -f frontend
+docker compose -f docker-compose.prod.yml logs -f api
+docker compose -f docker-compose.prod.yml logs -f frontend
 ```
 
 ### Resource Monitoring
