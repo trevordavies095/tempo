@@ -538,10 +538,11 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         var result = JsonSerializer.Deserialize<WorkoutDetailResponse>(json, JsonSerializerOptions.Web);
         var zoneTimes = result!.HeartRateZoneTimes;
         zoneTimes.Should().NotBeNull();
-        zoneTimes!.Should().HaveCount(5);
-        zoneTimes[0].TimeS.Should().BeGreaterThan(0);
-        zoneTimes[2].TimeS.Should().BeGreaterThan(0);
-        zoneTimes[4].TimeS.Should().BeGreaterThan(0);
+        var times = zoneTimes!;
+        times.Should().HaveCount(5);
+        times[0].TimeS.Should().BeGreaterThan(0);
+        times[2].TimeS.Should().BeGreaterThan(0);
+        times[4].TimeS.Should().BeGreaterThan(0);
     }
 
     [Fact]

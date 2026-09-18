@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
@@ -13,29 +12,28 @@ namespace Tempo.Api.Tests.Services;
 /// <summary>
 /// Unit tests for WorkoutQueryService duplicate detection logic
 /// </summary>
-public class WorkoutQueryServiceTests : IDisposable
+public class WorkoutQueryServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
 
-    public WorkoutQueryServiceTests()
+    public async Task InitializeAsync()
     {
-        // Create in-memory SQLite database for testing
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]
@@ -503,7 +501,7 @@ public class WorkoutQueryServiceTests : IDisposable
         await _db.SaveChangesAsync();
 
         var sql = WorkoutQueryService.QueryListPage(_db.Workouts.AsNoTracking()).ToQueryString();
-        sql.Should().Contain("COUNT");
+        sql.Should().Contain("count");
         sql.Should().Contain("WorkoutSplits");
         sql.Should().NotContain("\"Idx\"");
 
@@ -646,7 +644,7 @@ public class WorkoutQueryServiceTests : IDisposable
     private TempoDbContext CreateLoggingDb(List<string> commands)
     {
         var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
+            .UseNpgsql(_cloneConnectionString)
             .LogTo(commands.Add, [DbLoggerCategory.Database.Command.Name], LogLevel.Information)
             .Options;
         return new TempoDbContext(options);

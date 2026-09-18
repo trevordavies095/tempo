@@ -219,11 +219,10 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
                 .FirstOrDefaultAsync();
             
             workout.Should().NotBeNull();
-            if (workout!.Splits.Any())
-            {
-                // Metric splits should be approximately 1000m
-                workout.Splits.First().DistanceM.Should().BeApproximately(1000.0, 100.0);
-            }
+            var kmSplit = workout!.Splits.OrderBy(s => s.Idx).FirstOrDefault();
+            kmSplit.Should().NotBeNull();
+            // First distance split is one kilometre when the GPX is longer than 1000m
+            kmSplit!.DistanceM.Should().BeApproximately(1000.0, 100.0);
         }
     }
 
@@ -260,11 +259,10 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
                 .FirstOrDefaultAsync();
             
             workout.Should().NotBeNull();
-            if (workout!.Splits.Any())
-            {
-                // Imperial splits should be approximately 1609.344m (1 mile)
-                workout.Splits.First().DistanceM.Should().BeApproximately(1609.344, 100.0);
-            }
+            var mileSplit = workout!.Splits.OrderBy(s => s.Idx).FirstOrDefault();
+            mileSplit.Should().NotBeNull();
+            // First distance split is one mile when the GPX is longer than 1609m
+            mileSplit!.DistanceM.Should().BeApproximately(1609.344, 100.0);
         }
     }
 

@@ -268,30 +268,12 @@ public static class WorkoutsEndpoints
         // Apply keyword search (case-insensitive partial matching across Name, Device, and Source)
         if (!string.IsNullOrWhiteSpace(keyword))
         {
-            var keywordLower = keyword.ToLowerInvariant();
-            // Use database-agnostic approach: ILike for PostgreSQL, Contains for SQLite
-            // Check database provider using EF Core's reliable provider detection
-            var isSqlite = db.Database.IsSqlite();
-            
-            if (isSqlite)
-            {
-                // SQLite: use ToLower() for case-insensitive comparison
-                query = query.Where(w =>
-                    (w.Name != null && w.Name.ToLower().Contains(keywordLower)) ||
-                    (w.Device != null && w.Device.ToLower().Contains(keywordLower)) ||
-                    (w.Source != null && w.Source.ToLower().Contains(keywordLower))
-                );
-            }
-            else
-            {
-                // PostgreSQL and other providers: use ILike for case-insensitive pattern matching
-                var keywordPattern = $"%{keyword}%";
-                query = query.Where(w =>
-                    (w.Name != null && EF.Functions.ILike(w.Name, keywordPattern)) ||
-                    (w.Device != null && EF.Functions.ILike(w.Device, keywordPattern)) ||
-                    (w.Source != null && EF.Functions.ILike(w.Source, keywordPattern))
-                );
-            }
+            var keywordPattern = $"%{keyword}%";
+            query = query.Where(w =>
+                (w.Name != null && EF.Functions.ILike(w.Name, keywordPattern)) ||
+                (w.Device != null && EF.Functions.ILike(w.Device, keywordPattern)) ||
+                (w.Source != null && EF.Functions.ILike(w.Source, keywordPattern))
+            );
         }
 
         // Apply runType filter

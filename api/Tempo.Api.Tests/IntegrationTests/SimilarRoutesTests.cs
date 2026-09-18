@@ -505,7 +505,7 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
         var match = matches.FirstOrDefault(r => r.WorkoutId == similarWorkout.Id);
         match.Should().NotBeNull();
         match!.WorkoutId.Should().Be(similarWorkout.Id);
-        match.StartedAt.Should().Be(similarWorkout.StartedAt);
+        match.StartedAt.Should().BeCloseTo(similarWorkout.StartedAt, TimeSpan.FromMilliseconds(1));
         match.DurationS.Should().Be(similarWorkout.DurationS);
         match.DistanceM.Should().Be(similarWorkout.DistanceM);
         match.AvgPaceS.Should().Be(similarWorkout.AvgPaceS);

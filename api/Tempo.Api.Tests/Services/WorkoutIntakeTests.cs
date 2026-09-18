@@ -2,7 +2,6 @@ using System.Text;
 using System.Text.Json;
 using Dynastream.Fit;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tempo.Api.Data;
@@ -15,28 +14,21 @@ using FitFile = Dynastream.Fit.File;
 
 namespace Tempo.Api.Tests.Services;
 
-public class WorkoutIntakeTests : IDisposable
+public class WorkoutIntakeTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly FakeWeatherService _weather;
-    private readonly FakeRelativeEffortService _relativeEffort;
-    private readonly FakeBestEffortService _bestEfforts;
-    private readonly WorkoutIntake _intake;
-    private readonly GpxParserService _gpxParser;
-    private readonly FitParserService _fitParser;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private FakeWeatherService _weather = null!;
+    private FakeRelativeEffortService _relativeEffort = null!;
+    private FakeBestEffortService _bestEfforts = null!;
+    private WorkoutIntake _intake = null!;
+    private GpxParserService _gpxParser = null!;
+    private FitParserService _fitParser = null!;
 
-    public WorkoutIntakeTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
 
         var elevationConfig = new ElevationCalculationConfig
         {
@@ -63,10 +55,17 @@ public class WorkoutIntakeTests : IDisposable
             NullLogger<WorkoutIntake>.Instance);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]
@@ -219,12 +218,6 @@ public class WorkoutIntakeTests : IDisposable
             CreatedAt = System.DateTime.UtcNow
         };
         _db.Workouts.Add(existing);
-        await _db.SaveChangesAsync();
-        _db.WorkoutRoutes.Add(new WorkoutRoute
-        {
-            WorkoutId = existing.Id,
-            RouteGeoJson = ""
-        });
         await _db.SaveChangesAsync();
 
         using var stream = CreateGpxStream();
@@ -891,23 +884,21 @@ public class WorkoutIntakeTests : IDisposable
     [Fact]
     public async Task PersistAsync_ExternalIdentity_ParallelSamePair_YieldsOneWorkout()
     {
-        await using var keepAlive = new SqliteConnection("Data Source=file:ext-id-race?mode=memory&cache=shared");
-        await keepAlive.OpenAsync();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite("Data Source=file:ext-id-race?mode=memory&cache=shared")
-            .Options;
-
-        await using var db1 = new TempoDbContext(options);
-        await db1.Database.EnsureCreatedAsync();
+        await using var db1 = PostgresTestFixture.CreateContext(_cloneConnectionString);
         await TestDataSeeder.SeedUserSettingsAsync(db1);
 
-        await using var db2 = new TempoDbContext(options);
+        await using var db2 = PostgresTestFixture.CreateContext(_cloneConnectionString);
 
         var intake1 = CreateIntake(db1);
         var intake2 = CreateIntake(db2);
-        var (decoded1, overlay1) = CreateDecodedWithExternalIdentity("race-1");
-        var (decoded2, overlay2) = CreateDecodedWithExternalIdentity("race-1");
+        var (decoded1, overlay1) = CreateDecodedWithExternalIdentity(
+            "race-1",
+            startedAt: new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc),
+            distanceM: 5000);
+        var (decoded2, overlay2) = CreateDecodedWithExternalIdentity(
+            "race-1",
+            startedAt: new System.DateTime(2024, 8, 1, 14, 0, 0, System.DateTimeKind.Utc),
+            distanceM: 8000);
 
         var results = await Task.WhenAll(
             intake1.PersistAsync(decoded1, overlay1),
@@ -917,7 +908,7 @@ public class WorkoutIntakeTests : IDisposable
         results.Select(r => r.Action).Should().Contain("created");
         results.Select(r => r.Workout!.Id).Distinct().Should().HaveCount(1);
 
-        await using var verify = new TempoDbContext(options);
+        await using var verify = PostgresTestFixture.CreateContext(_cloneConnectionString);
         (await verify.Workouts.CountAsync()).Should().Be(1);
         (await verify.WorkoutExternalIdentities.CountAsync()).Should().Be(1);
     }

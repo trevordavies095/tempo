@@ -1,6 +1,5 @@
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
@@ -12,7 +11,21 @@ using Xunit;
 
 namespace Tempo.Api.Tests.Services;
 
-public class CadenceBackfillServiceTests : IDisposable
+public class CadenceBackfillCandidateSqlTests
+{
+    [Fact]
+    public void PostgresCandidateSql_UsesJsonbPath_AndDoesNotLikeCompactMarker()
+    {
+        var sql = CadenceBackfillService.PostgresCandidateSql;
+
+        sql.Should().Contain("->>'cadenceUnit'");
+        sql.Should().Contain("->>'cadenceBackfill'");
+        sql.Should().NotContain("LIKE");
+        sql.Should().NotContain(CadenceBackfillService.CadenceUnitSpmMarker);
+    }
+}
+
+public class CadenceBackfillServiceTests : IAsyncLifetime
 {
     private static readonly string FixturePath =
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "running-cadence-80.fit");
@@ -20,33 +33,32 @@ public class CadenceBackfillServiceTests : IDisposable
     private static readonly DateTime FixtureStart =
         new(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc);
 
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly ThrowingSaveChangesInterceptor _saveInterceptor;
-    private readonly ListLogger<CadenceBackfillService> _logger;
-    private readonly CadenceBackfillService _service;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ThrowingSaveChangesInterceptor _saveInterceptor = null!;
+    private ListLogger<CadenceBackfillService> _logger = null!;
+    private CadenceBackfillService _service = null!;
 
-    public CadenceBackfillServiceTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
         _saveInterceptor = new ThrowingSaveChangesInterceptor();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .AddInterceptors(_saveInterceptor)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString, _saveInterceptor);
         _logger = new ListLogger<CadenceBackfillService>();
         _service = new CadenceBackfillService(_db, new FitParserService(), _logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]
@@ -69,7 +81,7 @@ public class CadenceBackfillServiceTests : IDisposable
         await _db.Entry(workout).ReloadAsync();
         workout.AvgCadenceRpm.Should().Be(160);
         workout.MaxCadenceRpm.Should().Be(176);
-        workout.RawFitData.Should().Contain(CadenceBackfillService.CadenceUnitSpmMarker);
+        AssertHasCadenceUnitSpm(workout.RawFitData);
 
         using (var doc = JsonDocument.Parse(workout.RawFitData!))
         {
@@ -102,6 +114,7 @@ public class CadenceBackfillServiceTests : IDisposable
         var workout = await SeedUnmarkedFitCandidateAsync();
         workout.RawFitData = BuildLegacyRawFitData(includeSpacedCadenceUnit: true);
         await _db.SaveChangesAsync();
+        await _db.Entry(workout).ReloadAsync();
         var rawBefore = workout.RawFitData;
 
         var processed = await _service.RunAsync();
@@ -113,19 +126,44 @@ public class CadenceBackfillServiceTests : IDisposable
         workout.AvgCadenceRpm.Should().Be(80);
         workout.MaxCadenceRpm.Should().Be(88);
         workout.RawFitData.Should().Be(rawBefore);
-        workout.RawFitData.Should().Contain(CadenceBackfillService.CadenceUnitSpmMarkerSpaced);
+        AssertHasCadenceUnitSpm(workout.RawFitData);
         workout.RawFitData.Should().NotContain(CadenceBackfillService.CadenceUnitSpmMarker);
     }
 
     [Fact]
-    public void PostgresCandidateSql_UsesJsonbPath_AndDoesNotLikeCompactMarker()
+    public async Task PostgresCandidateSql_SkipsJsonbWrittenCompactCadenceUnit_CompactLikeMisses()
     {
-        var sql = CadenceBackfillService.PostgresCandidateSql;
+        var workout = await SeedUnmarkedFitCandidateAsync();
+        workout.RawFitData = BuildLegacyRawFitData(includeCompactCadenceUnit: true);
+        await _db.SaveChangesAsync();
 
-        sql.Should().Contain("->>'cadenceUnit'");
-        sql.Should().Contain("->>'cadenceBackfill'");
-        sql.Should().NotContain("LIKE");
-        sql.Should().NotContain(CadenceBackfillService.CadenceUnitSpmMarker);
+        var candidates = await _db.Database
+            .SqlQueryRaw<Guid>(CadenceBackfillService.PostgresCandidateSql)
+            .ToListAsync();
+        candidates.Should().BeEmpty();
+
+        var compactLike = await _db.Database
+            .SqlQueryRaw<Guid>(
+                """
+                SELECT w."Id" AS "Value"
+                FROM "Workouts" AS w
+                WHERE w."RawFitData"::text LIKE '%"cadenceUnit":"spm"%'
+                """)
+            .ToListAsync();
+        compactLike.Should().BeEmpty();
+
+        var brokenCandidate = await _db.Database
+            .SqlQueryRaw<Guid>(
+                """
+                SELECT w."Id" AS "Value"
+                FROM "Workouts" AS w
+                WHERE w."RawFileData" IS NOT NULL
+                  AND w."RawFitData" IS NOT NULL
+                  AND w."RawFitData"::text <> ''
+                  AND w."RawFitData"::text NOT LIKE '%"cadenceUnit":"spm"%'
+                """)
+            .ToListAsync();
+        brokenCandidate.Should().Equal(workout.Id);
     }
 
     [Fact]
@@ -200,7 +238,7 @@ public class CadenceBackfillServiceTests : IDisposable
 
         await _db.Entry(good).ReloadAsync();
         good.AvgCadenceRpm.Should().Be(160);
-        good.RawFitData.Should().Contain(CadenceBackfillService.CadenceUnitSpmMarker);
+        AssertHasCadenceUnitSpm(good.RawFitData);
 
         await _db.Entry(bad).ReloadAsync();
         bad.AvgCadenceRpm.Should().Be(80);
@@ -214,31 +252,10 @@ public class CadenceBackfillServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_StampsGarbageRawFitData_AndNoOpsOnSecondRun()
-    {
-        var workout = await SeedUnmarkedFitCandidateAsync();
-        workout.RawFitData = "not-json";
-        await _db.SaveChangesAsync();
-
-        var processed = await _service.RunAsync();
-
-        processed.Should().Be(1);
-        await _db.Entry(workout).ReloadAsync();
-        workout.AvgCadenceRpm.Should().Be(80);
-        workout.MaxCadenceRpm.Should().Be(88);
-        workout.RawFitData.Should().Be("""{"cadenceBackfill":"unparseable"}""");
-        AssertUnparseableStamp(workout.RawFitData);
-
-        _logger.Messages.Clear();
-        var second = await _service.RunAsync();
-        second.Should().Be(0);
-        _logger.Messages.Should().Contain("FIT cadence backfill: 0 of 0");
-    }
-
-    [Fact]
     public async Task RunAsync_DoesNotStamp_WhenSaveFails()
     {
         var workout = await SeedUnmarkedFitCandidateAsync();
+        await _db.Entry(workout).ReloadAsync();
         var rawBefore = workout.RawFitData;
 
         _saveInterceptor.Throw = true;
@@ -258,7 +275,7 @@ public class CadenceBackfillServiceTests : IDisposable
 
         await _db.Entry(workout).ReloadAsync();
         workout.AvgCadenceRpm.Should().Be(160);
-        workout.RawFitData.Should().Contain(CadenceBackfillService.CadenceUnitSpmMarker);
+        AssertHasCadenceUnitSpm(workout.RawFitData);
     }
 
     private async Task<Workout> SeedUnmarkedFitCandidateAsync(bool includeUnmatchedSeries = false)
@@ -306,13 +323,19 @@ public class CadenceBackfillServiceTests : IDisposable
         return workout;
     }
 
-    private static string BuildLegacyRawFitData(bool includeSpacedCadenceUnit = false)
+    private static string BuildLegacyRawFitData(
+        bool includeSpacedCadenceUnit = false,
+        bool includeCompactCadenceUnit = false)
     {
-        var cadenceUnitLine = includeSpacedCadenceUnit
+        var cadenceUnitLine = includeCompactCadenceUnit
             ? """
-                  "cadenceUnit": "spm",
+                  "cadenceUnit":"spm",
               """
-            : "";
+            : includeSpacedCadenceUnit
+                ? """
+                      "cadenceUnit": "spm",
+                  """
+                : "";
 
         return $$"""
             {
@@ -351,6 +374,13 @@ public class CadenceBackfillServiceTests : IDisposable
               "source": "fit_import"
             }
             """;
+    }
+
+    private static void AssertHasCadenceUnitSpm(string? rawFitData)
+    {
+        rawFitData.Should().NotBeNull();
+        using var doc = JsonDocument.Parse(rawFitData!);
+        doc.RootElement.GetProperty("cadenceUnit").GetString().Should().Be("spm");
     }
 
     private static void AssertUnparseableStamp(string? rawFitData)

@@ -381,98 +381,42 @@ public class DeviceLapBackfillService
 
     private async Task<List<Guid>> LoadCandidateIdsAsync(CancellationToken cancellationToken)
     {
-        var isPostgres = _db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
         var markerPattern = "%" + LapsBackfillMarkerPrefix + "%";
 
-        if (isPostgres)
-        {
-            return await _db.Database
-                .SqlQueryRaw<Guid>(
-                    """
-                    SELECT w."Id" AS "Value"
-                    FROM "Workouts" AS w
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM "WorkoutSplits" AS s
-                        WHERE s."WorkoutId" = w."Id" AND s."Kind" = {0}
+        return await _db.Database
+            .SqlQueryRaw<Guid>(
+                """
+                SELECT w."Id" AS "Value"
+                FROM "Workouts" AS w
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM "WorkoutSplits" AS s
+                    WHERE s."WorkoutId" = w."Id" AND s."Kind" = {0}
+                )
+                AND (
+                  (
+                    w."RawFitData" IS NOT NULL
+                    AND w."RawFitData"::text <> ''
+                    AND w."RawFitData"::text NOT LIKE {1}
+                  )
+                  OR (
+                    w."RawFileData" IS NOT NULL
+                    AND length(w."RawFileData") > 0
+                    AND (
+                      w."RawFitData" IS NULL
+                      OR w."RawFitData"::text = ''
+                      OR w."RawFitData"::text NOT LIKE {1}
                     )
                     AND (
-                      (
-                        w."RawFitData" IS NOT NULL
-                        AND w."RawFitData"::text <> ''
-                        AND w."RawFitData"::text NOT LIKE {1}
-                      )
-                      OR (
-                        w."RawFileData" IS NOT NULL
-                        AND length(w."RawFileData") > 0
-                        AND (
-                          w."RawFitData" IS NULL
-                          OR w."RawFitData"::text = ''
-                          OR w."RawFitData"::text NOT LIKE {1}
-                        )
-                        AND (
-                          lower(coalesce(w."RawFileType", '')) = 'fit'
-                          OR lower(coalesce(w."RawFileName", '')) LIKE '%.fit'
-                          OR lower(coalesce(w."RawFileName", '')) LIKE '%.fit.gz'
-                        )
-                      )
+                      lower(coalesce(w."RawFileType", '')) = 'fit'
+                      OR lower(coalesce(w."RawFileName", '')) LIKE '%.fit'
+                      OR lower(coalesce(w."RawFileName", '')) LIKE '%.fit.gz'
                     )
-                    ORDER BY w."Id"
-                    """,
-                    WorkoutSplitKinds.DeviceLap,
-                    markerPattern)
-                .ToListAsync(cancellationToken);
-        }
-
-        // SQLite: Contains works on string columns; refine FIT-byte candidates in memory.
-        // Avoid RawFileData.Length (translates to Enumerable.Any and fails on SQLite).
-        var rows = await _db.Workouts
-            .Where(w =>
-                !w.Splits.Any(s => s.Kind == WorkoutSplitKinds.DeviceLap) &&
-                (
-                    (w.RawFitData != null &&
-                     w.RawFitData != "" &&
-                     !w.RawFitData.Contains(LapsBackfillMarkerPrefix)) ||
-                    w.RawFileData != null
-                ))
-            .OrderBy(w => w.Id)
-            .Select(w => new
-            {
-                w.Id,
-                w.RawFitData,
-                w.RawFileData,
-                w.RawFileType,
-                w.RawFileName
-            })
+                  )
+                )
+                ORDER BY w."Id"
+                """,
+                WorkoutSplitKinds.DeviceLap,
+                markerPattern)
             .ToListAsync(cancellationToken);
-
-        return rows
-            .Where(w =>
-            {
-                if (!string.IsNullOrEmpty(w.RawFitData) &&
-                    !w.RawFitData.Contains(LapsBackfillMarkerPrefix, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-
-                if (w.RawFileData == null || w.RawFileData.Length == 0)
-                {
-                    return false;
-                }
-
-                if (!string.IsNullOrEmpty(w.RawFitData) &&
-                    w.RawFitData.Contains(LapsBackfillMarkerPrefix, StringComparison.Ordinal))
-                {
-                    return false;
-                }
-
-                return LooksLikeFitFile(new Workout
-                {
-                    RawFileType = w.RawFileType,
-                    RawFileName = w.RawFileName,
-                    RawFitData = w.RawFitData
-                });
-            })
-            .Select(w => w.Id)
-            .ToList();
     }
 }

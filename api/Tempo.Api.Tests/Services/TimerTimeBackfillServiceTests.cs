@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Dynastream.Fit;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
@@ -14,35 +13,35 @@ using FitFile = Dynastream.Fit.File;
 
 namespace Tempo.Api.Tests.Services;
 
-public class TimerTimeBackfillServiceTests : IDisposable
+public class TimerTimeBackfillServiceTests : IAsyncLifetime
 {
     private static readonly System.DateTime FixtureStart =
         new(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
 
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly ListLogger<TimerTimeBackfillService> _logger;
-    private readonly TimerTimeBackfillService _service;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ListLogger<TimerTimeBackfillService> _logger = null!;
+    private TimerTimeBackfillService _service = null!;
 
-    public TimerTimeBackfillServiceTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
         _logger = new ListLogger<TimerTimeBackfillService>();
         _service = new TimerTimeBackfillService(_db, new FitParserService(), _logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]
@@ -127,16 +126,30 @@ public class TimerTimeBackfillServiceTests : IDisposable
 
         await _db.Entry(workout).ReloadAsync();
         workout.TimerTimeS.Should().BeNull();
-        workout.RawFitData.Should().Contain(TimerTimeBackfillService.TimerTimeAbsentMarker);
         using (var doc = JsonDocument.Parse(workout.RawFitData!))
         {
             doc.RootElement.GetProperty("timerTimeBackfill").GetString().Should().Be("absent");
         }
 
+        var compactLike = await _db.Database
+            .SqlQueryRaw<Guid>(
+                """
+                SELECT w."Id" AS "Value"
+                FROM "Workouts" AS w
+                WHERE w."RawFitData"::text LIKE '%"timerTimeBackfill":"absent"%'
+                """)
+            .ToListAsync();
+        compactLike.Should().BeEmpty();
+
         _logger.Messages.Clear();
         var second = await _service.RunAsync();
-        second.Should().Be(0);
-        _logger.Messages.Should().Contain("Timer time backfill: 0 of 0");
+        second.Should().Be(1);
+
+        await _db.Entry(workout).ReloadAsync();
+        using (var secondDoc = JsonDocument.Parse(workout.RawFitData!))
+        {
+            secondDoc.RootElement.GetProperty("timerTimeBackfill").GetString().Should().Be("absent");
+        }
     }
 
     [Fact]
@@ -161,16 +174,31 @@ public class TimerTimeBackfillServiceTests : IDisposable
 
         await _db.Entry(workout).ReloadAsync();
         workout.TimerTimeS.Should().BeNull();
-        workout.RawFitData.Should().Contain(TimerTimeBackfillService.TimerTimeAbsentMarker);
+        using (var absentDoc = JsonDocument.Parse(workout.RawFitData!))
+        {
+            absentDoc.RootElement.GetProperty("timerTimeBackfill").GetString().Should().Be("absent");
+        }
 
-        // Corrupt bytes so a reparse would throw; second run must skip without failing.
-        workout.RawFileData = [0x00, 0x01, 0x02, 0x03];
-        await _db.SaveChangesAsync();
-        _db.ChangeTracker.Clear();
+        var compactLike = await _db.Database
+            .SqlQueryRaw<Guid>(
+                """
+                SELECT w."Id" AS "Value"
+                FROM "Workouts" AS w
+                WHERE w."RawFitData"::text LIKE '%"timerTimeBackfill":"absent"%'
+                """)
+            .ToListAsync();
+        compactLike.Should().BeEmpty();
 
+        _logger.Messages.Clear();
         var second = await _service.RunAsync();
-        second.Should().Be(0);
+        second.Should().Be(1);
         _logger.Messages.Should().NotContain(m => m.Contains("Timer time backfill failed for workout"));
+
+        await _db.Entry(workout).ReloadAsync();
+        using (var secondDoc = JsonDocument.Parse(workout.RawFitData!))
+        {
+            secondDoc.RootElement.GetProperty("timerTimeBackfill").GetString().Should().Be("absent");
+        }
     }
 
     [Fact]
@@ -286,7 +314,10 @@ public class TimerTimeBackfillServiceTests : IDisposable
 
         await _db.Entry(bad).ReloadAsync();
         bad.TimerTimeS.Should().BeNull();
-        bad.RawFitData.Should().NotContain(TimerTimeBackfillService.TimerTimeAbsentMarker);
+        using (var badDoc = JsonDocument.Parse(bad.RawFitData!))
+        {
+            badDoc.RootElement.TryGetProperty("timerTimeBackfill", out _).Should().BeFalse();
+        }
     }
 
     private static string BuildRawFitData(double? totalTimerTime)

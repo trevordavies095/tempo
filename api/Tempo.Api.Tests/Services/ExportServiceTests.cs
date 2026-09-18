@@ -432,15 +432,7 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
 
     private async Task CleanDatabaseAsync()
     {
-        // Delete in order to respect foreign key constraints
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutTimeSeries");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutSplits");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutMedia");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM BestEfforts");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutRoutes");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Workouts");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM UserSettings");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Shoes");
+        await TestDataSeeder.SafeClearAllDataAsync(_db, preserveUsers: true);
     }
 }
 

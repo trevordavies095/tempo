@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
@@ -15,25 +14,17 @@ namespace Tempo.Api.Tests.Services;
 /// <summary>
 /// Unit tests for SplitRecalculationService
 /// </summary>
-public class SplitRecalculationServiceTests : IDisposable
+public class SplitRecalculationServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly ILogger<SplitRecalculationService> _logger;
-    private readonly SplitRecalculationService _service;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ILogger<SplitRecalculationService> _logger = null!;
+    private SplitRecalculationService _service = null!;
 
-    public SplitRecalculationServiceTests()
+    public async Task InitializeAsync()
     {
-        // Create in-memory SQLite database for testing
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
 
         var elevationConfig = new ElevationCalculationConfig
         {
@@ -51,10 +42,17 @@ public class SplitRecalculationServiceTests : IDisposable
         _service = new SplitRecalculationService(_db, rehydration, trackGeometry, new SplitHeartRateService(), _logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]
@@ -75,7 +73,10 @@ public class SplitRecalculationServiceTests : IDisposable
 
         // Assert
         result.Should().BeTrue();
-        var splits = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
         splits.Should().HaveCountGreaterThan(0);
         // First split should be approximately 1000m (metric)
         splits[0].DistanceM.Should().BeApproximately(1000.0, 100.0);
@@ -99,7 +100,10 @@ public class SplitRecalculationServiceTests : IDisposable
 
         // Assert
         result.Should().BeTrue();
-        var splits = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
         splits.Should().HaveCountGreaterThan(0);
         // First split should be approximately 1609m (1 mile)
         splits[0].DistanceM.Should().BeApproximately(1609.344, 100.0);
@@ -296,6 +300,7 @@ public class SplitRecalculationServiceTests : IDisposable
         result.Should().BeTrue();
         var newSplits = await _db.WorkoutSplits
             .Where(s => s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.Distance)
+            .OrderBy(s => s.Idx)
             .ToListAsync();
         newSplits.Should().HaveCountGreaterThan(0);
         // New splits should be approximately 1000m (not 500m)
@@ -338,6 +343,7 @@ public class SplitRecalculationServiceTests : IDisposable
 
         var distance = await _db.WorkoutSplits
             .Where(s => s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.Distance)
+            .OrderBy(s => s.Idx)
             .ToListAsync();
         distance.Should().NotBeEmpty();
         distance[0].DistanceM.Should().BeApproximately(1000.0, 100.0);

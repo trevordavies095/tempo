@@ -35,10 +35,34 @@ jobs:
           cd api
           # Swashbuckle boots the real host. Use Development (not Testing): the generic host
           # otherwise looks for StartupTesting, which this minimal-host app does not define.
-          # In-memory SQLite + a throwaway JWT secret avoid Postgres and appsettings placeholder checks.
+          # One-shot Postgres 16 (not a workflow services: block); host applies migrations.
+          OPENAPI_PG_USER=tempo_openapi
+          OPENAPI_PG_PASSWORD=tempo_openapi_ci
+          OPENAPI_PG_DB=tempo_openapi
+          OPENAPI_PG_CONTAINER="tempo-openapi-pg-$$"
+          docker run -d --name "$OPENAPI_PG_CONTAINER" \
+            -e POSTGRES_USER="$OPENAPI_PG_USER" \
+            -e POSTGRES_PASSWORD="$OPENAPI_PG_PASSWORD" \
+            -e POSTGRES_DB="$OPENAPI_PG_DB" \
+            -p 127.0.0.1:5432:5432 \
+            postgres:16-alpine
+          cleanup() {
+            docker rm -f "$OPENAPI_PG_CONTAINER" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          for i in $(seq 1 60); do
+            if docker exec "$OPENAPI_PG_CONTAINER" pg_isready -U "$OPENAPI_PG_USER" -d "$OPENAPI_PG_DB"; then
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "OpenAPI Postgres did not become ready"
+              exit 1
+            fi
+            sleep 1
+          done
           export ASPNETCORE_ENVIRONMENT=Development
           export JWT__SecretKey='ci-openapi-generation-only-not-for-production-use-32b!'
-          export ConnectionStrings__DefaultConnection='Data Source=:memory:'
+          export ConnectionStrings__DefaultConnection="Host=127.0.0.1;Port=5432;Database=${OPENAPI_PG_DB};Username=${OPENAPI_PG_USER};Password=${OPENAPI_PG_PASSWORD}"
           dotnet swagger tofile \
             --output /tmp/openapi-generated.json \
             bin/Debug/net10.0/Tempo.Api.dll \

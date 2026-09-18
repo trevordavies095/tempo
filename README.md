@@ -70,17 +70,39 @@ That's it! The database migrations run automatically on first startup. For detai
 
 **OpenAPI:** The canonical HTTP API contract for tools and client generation (including the planned read-only CLI) is **[docs/openapi.json](docs/openapi.json)** on the default integration branch (`develop`). After changing routes or Swagger metadata, regenerate it: run `dotnet tool restore` once at the repo root, then:
 
+If compose Postgres is already up (`Host=localhost`, database `tempo`):
+
 ```bash
 cd api && dotnet build \
   && ASPNETCORE_ENVIRONMENT=Development \
      JWT__SecretKey='local-openapi-only-not-for-production-min-32-chars!' \
-     ConnectionStrings__DefaultConnection='Data Source=:memory:' \
+     ConnectionStrings__DefaultConnection='Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres' \
      dotnet swagger tofile --output ../docs/openapi.json bin/Debug/net10.0/Tempo.Api.dll v1
+```
+
+Otherwise use the same one-shot as CI (`postgres:16-alpine`), then tear it down:
+
+```bash
+docker run -d --name tempo-openapi-pg \
+  -e POSTGRES_USER=tempo_openapi \
+  -e POSTGRES_PASSWORD=tempo_openapi \
+  -e POSTGRES_DB=tempo_openapi \
+  -p 5432:5432 \
+  postgres:16-alpine
+until docker exec tempo-openapi-pg pg_isready -U tempo_openapi -d tempo_openapi; do sleep 1; done
+
+cd api && dotnet build \
+  && ASPNETCORE_ENVIRONMENT=Development \
+     JWT__SecretKey='local-openapi-only-not-for-production-min-32-chars!' \
+     ConnectionStrings__DefaultConnection='Host=localhost;Port=5432;Database=tempo_openapi;Username=tempo_openapi;Password=tempo_openapi' \
+     dotnet swagger tofile --output ../docs/openapi.json bin/Debug/net10.0/Tempo.Api.dll v1
+
+docker rm -f tempo-openapi-pg
 ```
 
 Use the **Debug** output assembly (`bin/Debug/...`) so the file matches **CI**, which runs `dotnet swagger tofile` against `bin/Debug/net10.0/Tempo.Api.dll` after `dotnet build Tempo.sln`.
 
-Use **Development** (not `Testing`) for `dotnet swagger tofile`: with `Testing`, the generic host looks for a `StartupTesting` class that this app does not ship, and Swashbuckle fails. In-memory SQLite avoids needing Postgres for this one-off export.
+Use **Development** (not `Testing`) for `dotnet swagger tofile`: with `Testing`, the generic host looks for a `StartupTesting` class that this app does not ship, and Swashbuckle fails. The host applies migrations against PostgreSQL 16.
 
 With the API running in **Development**, you can also fetch the same document at `http://localhost:5001/swagger/v1/swagger.json`. Production deployments do not expose Swagger by default.
 

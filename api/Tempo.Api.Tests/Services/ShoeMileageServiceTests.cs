@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
@@ -12,42 +11,34 @@ namespace Tempo.Api.Tests.Services;
 /// <summary>
 /// Unit tests for ShoeMileageService
 /// </summary>
-public class ShoeMileageServiceTests : IDisposable
+public class ShoeMileageServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly ShoeMileageService _service;
-    private readonly ILogger<ShoeMileageService> _logger;
-    private readonly SqliteConnection _connection;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ShoeMileageService _service = null!;
+    private ILogger<ShoeMileageService> _logger = null!;
 
-    public ShoeMileageServiceTests()
+    public async Task InitializeAsync()
     {
-        // Create in-memory SQLite database
-        // Use non-shared in-memory database for better test isolation
-        // This ensures each test class instance gets a fresh database
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-        
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
 
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
-        
-        // Enable foreign key constraints for SQLite (disabled by default)
-        _db.Database.ExecuteSqlRaw("PRAGMA foreign_keys = ON;");
-
-        // Create logger mock
         var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
         _logger = loggerFactory.CreateLogger<ShoeMileageService>();
-
         _service = new ShoeMileageService();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]
@@ -186,9 +177,7 @@ public class ShoeMileageServiceTests : IDisposable
     [Fact]
     public async Task GetTotalMileageWithUserPreferenceAsync_UsesSettingsUnitPreference()
     {
-        // Arrange - clear all existing data first to ensure test isolation
-        await CleanDatabaseAsync();
-        
+        // Arrange
         await TestDataSeeder.SeedUserSettingsAsync(_db, unitPreference: "imperial");
         var shoe = await TestDataSeeder.SeedShoeAsync(_db, "Nike", "Pegasus", initialMileage: null);
         await TestDataSeeder.SeedWorkoutAsync(_db, shoeId: shoe.Id, distanceM: 1609.344); // 1 mile
@@ -200,28 +189,10 @@ public class ShoeMileageServiceTests : IDisposable
         result.Should().BeApproximately(1.0, 0.001); // Should return in miles
     }
     
-    /// <summary>
-    /// Cleans all data from the database to ensure test isolation
-    /// </summary>
-    private async Task CleanDatabaseAsync()
-    {
-        // Delete in order to respect foreign key constraints
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutTimeSeries");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutSplits");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutMedia");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM BestEfforts");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutRoutes");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Workouts");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM UserSettings");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Shoes");
-    }
-
     [Fact]
     public async Task GetTotalMileageWithUserPreferenceAsync_WithNoSettings_DefaultsToMetric()
     {
-        // Arrange - clear all existing data first to ensure test isolation
-        await CleanDatabaseAsync();
-        
+        // Arrange
         // No settings seeded
         var shoe = await TestDataSeeder.SeedShoeAsync(_db, "Nike", "Pegasus", initialMileage: null);
         await TestDataSeeder.SeedWorkoutAsync(_db, shoeId: shoe.Id, distanceM: 5000.0); // 5km
