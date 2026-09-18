@@ -73,7 +73,10 @@ public class SplitRecalculationServiceTests : IAsyncLifetime
 
         // Assert
         result.Should().BeTrue();
-        var splits = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
         splits.Should().HaveCountGreaterThan(0);
         // First split should be approximately 1000m (metric)
         splits[0].DistanceM.Should().BeApproximately(1000.0, 100.0);
@@ -97,7 +100,10 @@ public class SplitRecalculationServiceTests : IAsyncLifetime
 
         // Assert
         result.Should().BeTrue();
-        var splits = await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync();
+        var splits = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
         splits.Should().HaveCountGreaterThan(0);
         // First split should be approximately 1609m (1 mile)
         splits[0].DistanceM.Should().BeApproximately(1609.344, 100.0);
@@ -294,6 +300,7 @@ public class SplitRecalculationServiceTests : IAsyncLifetime
         result.Should().BeTrue();
         var newSplits = await _db.WorkoutSplits
             .Where(s => s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.Distance)
+            .OrderBy(s => s.Idx)
             .ToListAsync();
         newSplits.Should().HaveCountGreaterThan(0);
         // New splits should be approximately 1000m (not 500m)
@@ -336,6 +343,7 @@ public class SplitRecalculationServiceTests : IAsyncLifetime
 
         var distance = await _db.WorkoutSplits
             .Where(s => s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.Distance)
+            .OrderBy(s => s.Idx)
             .ToListAsync();
         distance.Should().NotBeEmpty();
         distance[0].DistanceM.Should().BeApproximately(1000.0, 100.0);
