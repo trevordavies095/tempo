@@ -141,9 +141,17 @@ public static class TestDataSeeder
         int durationS = 1800,
         string? name = null)
     {
+        var started = startedAt ?? DateTime.UtcNow.AddHours(-1);
+        var startedUtc = started.Kind switch
+        {
+            DateTimeKind.Utc => started,
+            DateTimeKind.Local => started.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(started, DateTimeKind.Utc)
+        };
+
         var workout = new Workout
         {
-            StartedAt = startedAt ?? DateTime.UtcNow.AddHours(-1),
+            StartedAt = startedUtc,
             DurationS = durationS,
             DistanceM = distanceM,
             AvgPaceS = durationS / (distanceM / 1000.0), // seconds per km
