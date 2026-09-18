@@ -148,6 +148,9 @@ public static class TestDataSeeder
             DateTimeKind.Local => started.ToUniversalTime(),
             _ => DateTime.SpecifyKind(started, DateTimeKind.Utc)
         };
+        // timestamptz stores microseconds; DateTime ticks are 100ns
+        var startedTicks = startedUtc.Ticks - (startedUtc.Ticks % TimeSpan.TicksPerMicrosecond);
+        startedUtc = new DateTime(startedTicks, DateTimeKind.Utc);
 
         var workout = new Workout
         {
