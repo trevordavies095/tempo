@@ -9,7 +9,9 @@ using Xunit;
 namespace Tempo.Api.Tests.IntegrationTests;
 
 /// <summary>
-/// Integration tests for health and version endpoints
+/// Integration tests for health and version endpoints.
+/// Prefer the shared factory: version/image fields are read per-request from env.
+/// Only logging profile needs a fresh host (parsed at startup).
 /// </summary>
 [Collection("Integration Tests")]
 public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
@@ -27,13 +29,10 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
     [Fact]
     public async Task GetHealth_ReturnsOk_WithHealthyStatus()
     {
-        // Arrange
         var client = _factory.CreateClient();
 
-        // Act
         var response = await client.GetAsync("/health");
 
-        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<HealthResponse>();
         result.Should().NotBeNull();
@@ -96,25 +95,74 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
     [Fact]
     public async Task GetVersion_ReturnsVersionFromEnvironmentVariables_WhenSet()
     {
-        var originalVersion = Environment.GetEnvironmentVariable("TEMPO_VERSION");
-        var originalBuildDate = Environment.GetEnvironmentVariable("TEMPO_BUILD_DATE");
-        var originalGitCommit = Environment.GetEnvironmentVariable("TEMPO_GIT_COMMIT");
-        var originalApiImage = Environment.GetEnvironmentVariable("TEMPO_API_IMAGE");
-        var originalFrontendImage = Environment.GetEnvironmentVariable("TEMPO_FRONTEND_IMAGE");
+        using var _ = new TempoEnvScope(
+            ("TEMPO_VERSION", "1.2.3-test"),
+            ("TEMPO_BUILD_DATE", "2024-01-15T10:30:00Z"),
+            ("TEMPO_GIT_COMMIT", "abc123def456"),
+            ("TEMPO_API_IMAGE", null),
+            ("TEMPO_FRONTEND_IMAGE", null));
+
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/version");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
+        result.Should().NotBeNull();
+        result!.Version.Should().Be("1.2.3-test");
+        result.BuildDate.Should().Be("2024-01-15T10:30:00Z");
+        result.GitCommit.Should().Be("abc123def456");
+        AssertSupportSnapshotDefaults(result);
+    }
+
+    [Fact]
+    public async Task GetVersion_ReturnsVersionFromFile_WhenEnvVarsNotSet()
+    {
+        using var _ = new TempoEnvScope(
+            ("TEMPO_VERSION", null),
+            ("TEMPO_BUILD_DATE", null),
+            ("TEMPO_GIT_COMMIT", null),
+            ("TEMPO_API_IMAGE", null),
+            ("TEMPO_FRONTEND_IMAGE", null));
+
+        var repoRoot = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", ".."));
+        var versionFilePath = Path.Combine(repoRoot, "VERSION");
+        File.Exists(versionFilePath).Should().BeTrue("repo VERSION file is required for this fallback path");
+
+        var expectedVersion = (await File.ReadAllTextAsync(versionFilePath)).Trim();
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/version");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
+        result.Should().NotBeNull();
+        result!.Version.Should().Be(expectedVersion);
+        result.BuildDate.Should().Be("unknown");
+        result.GitCommit.Should().Be("unknown");
+        AssertSupportSnapshotDefaults(result);
+    }
+
+    [Fact]
+    public async Task GetVersion_ReturnsUnknown_WhenNeitherEnvVarsNorFileExist()
+    {
+        using var _ = new TempoEnvScope(
+            ("TEMPO_VERSION", null),
+            ("TEMPO_BUILD_DATE", null),
+            ("TEMPO_GIT_COMMIT", null),
+            ("TEMPO_API_IMAGE", null),
+            ("TEMPO_FRONTEND_IMAGE", null));
+
+        var testOutputDir = Path.Combine(Path.GetTempPath(), $"tempo-test-{Guid.NewGuid()}");
+        Directory.CreateDirectory(testOutputDir);
 
         try
         {
-            const string testVersion = "1.2.3-test";
-            const string testBuildDate = "2024-01-15T10:30:00Z";
-            const string testGitCommit = "abc123def456";
-
-            Environment.SetEnvironmentVariable("TEMPO_VERSION", testVersion);
-            Environment.SetEnvironmentVariable("TEMPO_BUILD_DATE", testBuildDate);
-            Environment.SetEnvironmentVariable("TEMPO_GIT_COMMIT", testGitCommit);
-            Environment.SetEnvironmentVariable("TEMPO_API_IMAGE", null);
-            Environment.SetEnvironmentVariable("TEMPO_FRONTEND_IMAGE", null);
-
-            using var factory = new TempoWebApplicationFactory();
+            // Isolated host so VERSION discovery cannot see the repo tree.
+            using var factory = new TempoWebApplicationFactory()
+                .WithWebHostBuilder(builder =>
+                {
+                    builder.UseEnvironment("Testing");
+                    builder.UseContentRoot(testOutputDir);
+                });
             var client = factory.CreateClient();
 
             var response = await client.GetAsync("/version");
@@ -122,251 +170,84 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
             result.Should().NotBeNull();
-            result!.Version.Should().Be(testVersion);
-            result.BuildDate.Should().Be(testBuildDate);
-            result.GitCommit.Should().Be(testGitCommit);
+            result!.Version.Should().Be("unknown");
+            result.BuildDate.Should().Be("unknown");
+            result.GitCommit.Should().Be("unknown");
             AssertSupportSnapshotDefaults(result);
         }
         finally
         {
-            Environment.SetEnvironmentVariable("TEMPO_VERSION", originalVersion);
-            Environment.SetEnvironmentVariable("TEMPO_BUILD_DATE", originalBuildDate);
-            Environment.SetEnvironmentVariable("TEMPO_GIT_COMMIT", originalGitCommit);
-            Environment.SetEnvironmentVariable("TEMPO_API_IMAGE", originalApiImage);
-            Environment.SetEnvironmentVariable("TEMPO_FRONTEND_IMAGE", originalFrontendImage);
-        }
-    }
-
-    [Fact]
-    public async Task GetVersion_ReturnsVersionFromFile_WhenEnvVarsNotSet()
-    {
-        var originalVersion = Environment.GetEnvironmentVariable("TEMPO_VERSION");
-        var originalBuildDate = Environment.GetEnvironmentVariable("TEMPO_BUILD_DATE");
-        var originalGitCommit = Environment.GetEnvironmentVariable("TEMPO_GIT_COMMIT");
-        var originalApiImage = Environment.GetEnvironmentVariable("TEMPO_API_IMAGE");
-        var originalFrontendImage = Environment.GetEnvironmentVariable("TEMPO_FRONTEND_IMAGE");
-
-        try
-        {
-            Environment.SetEnvironmentVariable("TEMPO_VERSION", null);
-            Environment.SetEnvironmentVariable("TEMPO_BUILD_DATE", null);
-            Environment.SetEnvironmentVariable("TEMPO_GIT_COMMIT", null);
-            Environment.SetEnvironmentVariable("TEMPO_API_IMAGE", null);
-            Environment.SetEnvironmentVariable("TEMPO_FRONTEND_IMAGE", null);
-
-            var repoRoot = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", "..");
-            var repoRootPath = Path.GetFullPath(repoRoot);
-            var versionFilePath = Path.Combine(repoRootPath, "VERSION");
-
-            if (!File.Exists(versionFilePath))
+            if (Directory.Exists(testOutputDir))
             {
-                const string testVersion = "2.1.0-test-file";
-                await File.WriteAllTextAsync(versionFilePath, testVersion);
-
-                try
-                {
-                    using var factory = new TempoWebApplicationFactory();
-                    var client = factory.CreateClient();
-
-                    var response = await client.GetAsync("/version");
-
-                    response.StatusCode.Should().Be(HttpStatusCode.OK);
-                    var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
-                    result.Should().NotBeNull();
-                    result!.Version.Should().NotBe("unknown");
-                    result.BuildDate.Should().Be("unknown");
-                    result.GitCommit.Should().Be("unknown");
-                    AssertSupportSnapshotDefaults(result);
-                }
-                finally
-                {
-                    if (File.Exists(versionFilePath))
-                    {
-                        File.Delete(versionFilePath);
-                    }
-                }
+                Directory.Delete(testOutputDir, recursive: true);
             }
-            else
-            {
-                var expectedVersion = (await File.ReadAllTextAsync(versionFilePath)).Trim();
-
-                using var factory = new TempoWebApplicationFactory();
-                var client = factory.CreateClient();
-
-                var response = await client.GetAsync("/version");
-
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
-                result.Should().NotBeNull();
-                result!.Version.Should().Be(expectedVersion);
-                result.BuildDate.Should().Be("unknown");
-                result.GitCommit.Should().Be("unknown");
-                AssertSupportSnapshotDefaults(result);
-            }
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("TEMPO_VERSION", originalVersion);
-            Environment.SetEnvironmentVariable("TEMPO_BUILD_DATE", originalBuildDate);
-            Environment.SetEnvironmentVariable("TEMPO_GIT_COMMIT", originalGitCommit);
-            Environment.SetEnvironmentVariable("TEMPO_API_IMAGE", originalApiImage);
-            Environment.SetEnvironmentVariable("TEMPO_FRONTEND_IMAGE", originalFrontendImage);
-        }
-    }
-
-    [Fact]
-    public async Task GetVersion_ReturnsUnknown_WhenNeitherEnvVarsNorFileExist()
-    {
-        var originalVersion = Environment.GetEnvironmentVariable("TEMPO_VERSION");
-        var originalBuildDate = Environment.GetEnvironmentVariable("TEMPO_BUILD_DATE");
-        var originalGitCommit = Environment.GetEnvironmentVariable("TEMPO_GIT_COMMIT");
-        var originalApiImage = Environment.GetEnvironmentVariable("TEMPO_API_IMAGE");
-        var originalFrontendImage = Environment.GetEnvironmentVariable("TEMPO_FRONTEND_IMAGE");
-
-        try
-        {
-            Environment.SetEnvironmentVariable("TEMPO_VERSION", null);
-            Environment.SetEnvironmentVariable("TEMPO_BUILD_DATE", null);
-            Environment.SetEnvironmentVariable("TEMPO_GIT_COMMIT", null);
-            Environment.SetEnvironmentVariable("TEMPO_API_IMAGE", null);
-            Environment.SetEnvironmentVariable("TEMPO_FRONTEND_IMAGE", null);
-
-            var testOutputDir = Path.Combine(Path.GetTempPath(), $"tempo-test-{Guid.NewGuid()}");
-            Directory.CreateDirectory(testOutputDir);
-
-            try
-            {
-                using var factory = new TempoWebApplicationFactory()
-                    .WithWebHostBuilder(builder =>
-                    {
-                        builder.UseEnvironment("Testing");
-                        builder.UseContentRoot(testOutputDir);
-                    });
-                var client = factory.CreateClient();
-
-                var response = await client.GetAsync("/version");
-
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
-                result.Should().NotBeNull();
-                result!.Version.Should().Be("unknown");
-                result.BuildDate.Should().Be("unknown");
-                result.GitCommit.Should().Be("unknown");
-                AssertSupportSnapshotDefaults(result);
-            }
-            finally
-            {
-                if (Directory.Exists(testOutputDir))
-                {
-                    Directory.Delete(testOutputDir, recursive: true);
-                }
-            }
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("TEMPO_VERSION", originalVersion);
-            Environment.SetEnvironmentVariable("TEMPO_BUILD_DATE", originalBuildDate);
-            Environment.SetEnvironmentVariable("TEMPO_GIT_COMMIT", originalGitCommit);
-            Environment.SetEnvironmentVariable("TEMPO_API_IMAGE", originalApiImage);
-            Environment.SetEnvironmentVariable("TEMPO_FRONTEND_IMAGE", originalFrontendImage);
         }
     }
 
     [Fact]
     public async Task GetVersion_EchoesImageEnvVars_WhenSet()
     {
-        var originalApiImage = Environment.GetEnvironmentVariable("TEMPO_API_IMAGE");
-        var originalFrontendImage = Environment.GetEnvironmentVariable("TEMPO_FRONTEND_IMAGE");
+        const string apiImage = "ghcr.io/trevordavies095/tempo/api:v2.9.0";
+        const string frontendImage = "ghcr.io/trevordavies095/tempo/frontend:v2.9.0";
+        using var _ = new TempoEnvScope(
+            ("TEMPO_API_IMAGE", apiImage),
+            ("TEMPO_FRONTEND_IMAGE", frontendImage));
 
-        try
-        {
-            const string apiImage = "ghcr.io/trevordavies095/tempo/api:v2.9.0";
-            const string frontendImage = "ghcr.io/trevordavies095/tempo/frontend:v2.9.0";
-            Environment.SetEnvironmentVariable("TEMPO_API_IMAGE", apiImage);
-            Environment.SetEnvironmentVariable("TEMPO_FRONTEND_IMAGE", frontendImage);
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/version");
 
-            using var factory = new TempoWebApplicationFactory();
-            var client = factory.CreateClient();
-
-            var response = await client.GetAsync("/version");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
-            result.Should().NotBeNull();
-            result!.ApiImage.Should().Be(apiImage);
-            result.FrontendImage.Should().Be(frontendImage);
-            result.Snapshot.Should().Be(ExpectedSnapshot(result));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("TEMPO_API_IMAGE", originalApiImage);
-            Environment.SetEnvironmentVariable("TEMPO_FRONTEND_IMAGE", originalFrontendImage);
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
+        result.Should().NotBeNull();
+        result!.ApiImage.Should().Be(apiImage);
+        result.FrontendImage.Should().Be(frontendImage);
+        result.Snapshot.Should().Be(ExpectedSnapshot(result));
     }
 
     [Fact]
     public async Task GetVersion_TreatsWhitespaceImageEnvAsUnknown()
     {
-        var originalApiImage = Environment.GetEnvironmentVariable("TEMPO_API_IMAGE");
-        var originalFrontendImage = Environment.GetEnvironmentVariable("TEMPO_FRONTEND_IMAGE");
+        using var _ = new TempoEnvScope(
+            ("TEMPO_API_IMAGE", "   "),
+            ("TEMPO_FRONTEND_IMAGE", "\t"));
 
-        try
-        {
-            Environment.SetEnvironmentVariable("TEMPO_API_IMAGE", "   ");
-            Environment.SetEnvironmentVariable("TEMPO_FRONTEND_IMAGE", "\t");
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/version");
 
-            using var factory = new TempoWebApplicationFactory();
-            var client = factory.CreateClient();
-
-            var response = await client.GetAsync("/version");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
-            result.Should().NotBeNull();
-            result!.ApiImage.Should().Be("unknown");
-            result.FrontendImage.Should().Be("unknown");
-            result.Snapshot.Should().Be(ExpectedSnapshot(result));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("TEMPO_API_IMAGE", originalApiImage);
-            Environment.SetEnvironmentVariable("TEMPO_FRONTEND_IMAGE", originalFrontendImage);
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
+        result.Should().NotBeNull();
+        result!.ApiImage.Should().Be("unknown");
+        result.FrontendImage.Should().Be("unknown");
+        result.Snapshot.Should().Be(ExpectedSnapshot(result));
     }
 
     [Fact]
     public async Task GetVersion_ReturnsDebugLogProfile_WhenConfigured()
     {
-        var originalProfile = Environment.GetEnvironmentVariable("Tempo__Logging__Profile");
+        // Profile is parsed once at host startup — needs a dedicated factory, not process pollution across the suite.
+        using var _ = new TempoEnvScope(("Tempo__Logging__Profile", "debug"));
+        using var factory = new TempoWebApplicationFactory();
+        var client = factory.CreateClient();
 
-        try
-        {
-            Environment.SetEnvironmentVariable("Tempo__Logging__Profile", "debug");
+        var response = await client.GetAsync("/version");
 
-            using var factory = new TempoWebApplicationFactory();
-            var client = factory.CreateClient();
-
-            var response = await client.GetAsync("/version");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
-            result.Should().NotBeNull();
-            result!.LogProfile.Should().Be("debug");
-            result.Snapshot.Should().Be(ExpectedSnapshot(result));
-            result.Snapshot.Should().Contain("logProfile: debug");
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("Tempo__Logging__Profile", originalProfile);
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
+        result.Should().NotBeNull();
+        result!.LogProfile.Should().Be("debug");
+        result.Snapshot.Should().Be(ExpectedSnapshot(result));
+        result.Snapshot.Should().Contain("logProfile: debug");
     }
 
     [Fact]
     public async Task GetVersion_BodyContainsNoSecrets()
     {
-        using var factory = new TempoWebApplicationFactory();
-        var client = factory.CreateClient();
+        using var _ = new TempoEnvScope(
+            ("TEMPO_API_IMAGE", null),
+            ("TEMPO_FRONTEND_IMAGE", null));
 
+        var client = _factory.CreateClient();
         var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
         connectionString.Should().NotBeNullOrWhiteSpace();
 
@@ -405,6 +286,31 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
             result.Environment,
             result.ApiImage,
             result.FrontendImage);
+
+    /// <summary>Sets process env vars for the duration of a test and restores prior values.</summary>
+    private sealed class TempoEnvScope : IDisposable
+    {
+        private readonly (string Key, string? Previous)[] _previous;
+
+        public TempoEnvScope(params (string Key, string? Value)[] values)
+        {
+            _previous = values
+                .Select(v => (v.Key, Environment.GetEnvironmentVariable(v.Key)))
+                .ToArray();
+            foreach (var (key, value) in values)
+            {
+                Environment.SetEnvironmentVariable(key, value);
+            }
+        }
+
+        public void Dispose()
+        {
+            foreach (var (key, previous) in _previous)
+            {
+                Environment.SetEnvironmentVariable(key, previous);
+            }
+        }
+    }
 
     private class HealthResponse
     {
