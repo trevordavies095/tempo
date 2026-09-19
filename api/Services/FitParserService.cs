@@ -440,6 +440,8 @@ public class FitParserService
         SetIfPresent(sessionData, "totalWork", session.GetTotalWork());
         SetIfPresent(sessionData, "totalGrit", session.GetTotalGrit());
         SetIfPresent(sessionData, "avgFlow", session.GetAvgFlow());
+        // Raw FIT uint8 (Borg CR10 × 10). Persist divides to Workout.Rpe 1–10.
+        SetIfPresent(sessionData, "workoutRpe", session.GetWorkoutRpe());
 
         return sessionData;
     }

@@ -105,3 +105,7 @@ _Avoid_: hover state, cursor (as the domain name)
 **Cadence**:
 Steps per minute (both feet). Stored in `CadenceRpm` / `AvgCadenceRpm` / `MaxCadenceRpm` (historical names; the number is steps/min). FIT decode multiplies record and session avg/max cadence by 2 (strides → steps); GPX TrackPointExtension and HealthKit `cad` are stored as given. API JSON keys stay `cadenceRpm` / `avgCadenceRpm` / `maxCadenceRpm`.
 _Avoid_: rpm (for running), strides/min (as the stored unit)
+
+**RPE**:
+Rate of Perceived Exertion, 1–10 on a Workout. Athlete-set on Workout overview, or filled from FIT session `workout_rpe` (Borg CR10 × 10) when null. Not Feel (Very Weak → Very Strong). Not relative effort.
+_Avoid_: Feel, perceived exertion as relative effort, Garmin Connect-only RPE

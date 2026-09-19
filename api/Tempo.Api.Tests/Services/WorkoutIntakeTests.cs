@@ -93,6 +93,7 @@ public class WorkoutIntakeTests : IAsyncLifetime
         _bestEfforts.CallCount.Should().Be(1);
         stored.Weather.Should().Be("{\"source\":\"fake\"}");
         stored.RelativeEffort.Should().Be(7);
+        stored.Rpe.Should().BeNull();
     }
 
     [Fact]
@@ -258,6 +259,174 @@ public class WorkoutIntakeTests : IAsyncLifetime
         stored.DurationS.Should().Be(1200);
         stored.TimerTimeS.Should().Be(1000);
         stored.AvgPaceS.Should().BeApproximately(1000 / (stored.DistanceM / 1000.0), 0.01);
+    }
+
+    [Theory]
+    [InlineData((byte)70, (byte)7)]
+    [InlineData((byte)10, (byte)1)]
+    [InlineData((byte)100, (byte)10)]
+    public async Task ProcessAsync_Created_Fit_FillsRpeFromWorkoutRpe(byte rawWorkoutRpe, byte expectedRpe)
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(workoutRpe: rawWorkoutRpe);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "rpe.fit");
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Rpe.Should().Be(expectedRpe);
+        using var doc = JsonDocument.Parse(stored.RawFitData!);
+        doc.RootElement.GetProperty("session").GetProperty("workoutRpe").GetInt32()
+            .Should().Be(rawWorkoutRpe);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData((byte)0)]
+    [InlineData((byte)15)]
+    [InlineData((byte)55)]
+    [InlineData((byte)255)]
+    public async Task ProcessAsync_Created_Fit_LeavesRpeNull_WhenWorkoutRpeInvalidOrMissing(byte? rawWorkoutRpe)
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(workoutRpe: rawWorkoutRpe);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "no-rpe.fit");
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Rpe.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Created_Fit_LeavesRpeNull_WhenOnlyFeelPresent()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(workoutFeel: 50);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "feel-only.fit");
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Rpe.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Updated_Fit_FillsRpeWhenNullWithoutChangingDuration()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(elapsedSeconds: 1200f, timerSeconds: 1000f, workoutRpe: 70);
+        using (var parseStream = new MemoryStream(fitBytes))
+        {
+            var parsed = _fitParser.ParseFit(parseStream);
+            var existing = new Workout
+            {
+                StartedAt = parsed.StartTime,
+                DurationS = parsed.DurationSeconds,
+                DistanceM = parsed.DistanceMeters,
+                AvgPaceS = parsed.DurationSeconds / (parsed.DistanceMeters / 1000.0),
+                ElevGainM = 42,
+                RawFileData = new byte[] { 1, 2, 3 },
+                RawFileName = "old.fit",
+                RawFileType = "fit",
+                RawFitData = """{"session":{}}""",
+                Source = "fit_import",
+                RunType = "Easy Run",
+                CreatedAt = System.DateTime.UtcNow
+            };
+            _db.Workouts.Add(existing);
+            await _db.SaveChangesAsync();
+
+            var originalDuration = existing.DurationS;
+            using var stream = new MemoryStream(fitBytes);
+            var result = await _intake.ProcessAsync(stream, "run.fit");
+
+            result.Action.Should().Be("updated");
+            var updated = await _db.Workouts.SingleAsync();
+            updated.DurationS.Should().Be(originalDuration);
+            updated.Rpe.Should().Be(7);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Updated_Fit_DoesNotOverwriteExistingRpe()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(elapsedSeconds: 1200f, timerSeconds: 1000f, workoutRpe: 70);
+        using (var parseStream = new MemoryStream(fitBytes))
+        {
+            var parsed = _fitParser.ParseFit(parseStream);
+            var existing = new Workout
+            {
+                StartedAt = parsed.StartTime,
+                DurationS = parsed.DurationSeconds,
+                DistanceM = parsed.DistanceMeters,
+                AvgPaceS = parsed.DurationSeconds / (parsed.DistanceMeters / 1000.0),
+                ElevGainM = 42,
+                Rpe = 8,
+                RawFileData = new byte[] { 1, 2, 3 },
+                RawFileName = "old.fit",
+                RawFileType = "fit",
+                RawFitData = """{"session":{}}""",
+                Source = "fit_import",
+                RunType = "Easy Run",
+                CreatedAt = System.DateTime.UtcNow
+            };
+            _db.Workouts.Add(existing);
+            await _db.SaveChangesAsync();
+
+            using var stream = new MemoryStream(fitBytes);
+            var result = await _intake.ProcessAsync(stream, "run.fit");
+
+            result.Action.Should().Be("updated");
+            var updated = await _db.Workouts.SingleAsync();
+            updated.Rpe.Should().Be(8);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Skipped_Fit_DoesNotFillNullRpe()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var firstBytes = CreateMinimalFitBytes();
+        using (var first = new MemoryStream(firstBytes))
+        {
+            var created = await _intake.ProcessAsync(first, "run.fit");
+            created.Action.Should().Be("created");
+            created.Workout!.Rpe.Should().BeNull();
+        }
+
+        var secondBytes = CreateMinimalFitBytes(workoutRpe: 70);
+        using var second = new MemoryStream(secondBytes);
+        var result = await _intake.ProcessAsync(second, "run.fit");
+
+        result.Action.Should().Be("skipped");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Rpe.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Skipped_Fit_DoesNotOverwriteExistingRpe()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var firstBytes = CreateMinimalFitBytes(workoutRpe: 50);
+        using (var first = new MemoryStream(firstBytes))
+        {
+            var created = await _intake.ProcessAsync(first, "run.fit");
+            created.Action.Should().Be("created");
+            created.Workout!.Rpe.Should().Be(5);
+        }
+
+        var secondBytes = CreateMinimalFitBytes(workoutRpe: 90);
+        using var second = new MemoryStream(secondBytes);
+        var result = await _intake.ProcessAsync(second, "run.fit");
+
+        result.Action.Should().Be("skipped");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Rpe.Should().Be(5);
     }
 
     [Fact]
@@ -1752,7 +1921,9 @@ public class WorkoutIntakeTests : IAsyncLifetime
         float timerSeconds = 1200f,
         float? movingSeconds = null,
         float totalDistanceMeters = 2400f,
-        IReadOnlyList<SyntheticLap>? laps = null)
+        IReadOnlyList<SyntheticLap>? laps = null,
+        byte? workoutRpe = null,
+        byte? workoutFeel = null)
     {
         var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
         var fitStart = new FitDateTime(start);
@@ -1808,6 +1979,14 @@ public class WorkoutIntakeTests : IAsyncLifetime
         }
         session.SetTotalDistance(totalDistanceMeters);
         session.SetSport(Sport.Running);
+        if (workoutRpe.HasValue)
+        {
+            session.SetWorkoutRpe(workoutRpe.Value);
+        }
+        if (workoutFeel.HasValue)
+        {
+            session.SetWorkoutFeel(workoutFeel.Value);
+        }
         encode.Write(session);
         encode.Close();
 

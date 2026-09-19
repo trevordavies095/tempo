@@ -927,6 +927,7 @@ public class WorkoutIntake
                         workout.AvgPowerWatts = (ushort)avgPow.GetInt32();
                     if (sessionElement.TryGetProperty("totalCalories", out var cals) && cals.ValueKind == JsonValueKind.Number)
                         workout.Calories = (ushort)cals.GetInt32();
+                    TryFillRpeFromSession(workout, sessionElement);
                 }
 
                 if (rawFit.TryGetProperty("device", out var deviceElement))
@@ -950,6 +951,27 @@ public class WorkoutIntake
                 workout.Device = "Apple Watch";
             }
         }
+    }
+
+    /// <summary>
+    /// Fill <see cref="Workout.Rpe"/> from FIT session <c>workoutRpe</c> (Borg CR10 × 10)
+    /// only when the column is null.
+    /// </summary>
+    private static void TryFillRpeFromSession(Workout workout, JsonElement sessionElement)
+    {
+        if (workout.Rpe.HasValue)
+        {
+            return;
+        }
+
+        if (!sessionElement.TryGetProperty("workoutRpe", out var workoutRpe) ||
+            workoutRpe.ValueKind != JsonValueKind.Number ||
+            !workoutRpe.TryGetInt32(out var raw))
+        {
+            return;
+        }
+
+        workout.Rpe = WorkoutRpe.FromFitSessionRaw(raw);
     }
 
     private void PopulateMetricsFromStrava(Workout workout, string? rawStravaDataJson)
