@@ -124,21 +124,38 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
             ("TEMPO_API_IMAGE", null),
             ("TEMPO_FRONTEND_IMAGE", null));
 
-        var repoRoot = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", ".."));
-        var versionFilePath = Path.Combine(repoRoot, "VERSION");
-        File.Exists(versionFilePath).Should().BeTrue("repo VERSION file is required for this fallback path");
+        // VersionEndpoints reads ./VERSION from the process current directory first.
+        var versionFilePath = Path.Combine(Directory.GetCurrentDirectory(), "VERSION");
+        const string testVersion = "9.9.9-file-fallback";
+        var previousContents = File.Exists(versionFilePath)
+            ? await File.ReadAllTextAsync(versionFilePath)
+            : null;
+        await File.WriteAllTextAsync(versionFilePath, testVersion);
 
-        var expectedVersion = (await File.ReadAllTextAsync(versionFilePath)).Trim();
-        var client = _factory.CreateClient();
-        var response = await client.GetAsync("/version");
+        try
+        {
+            var client = _factory.CreateClient();
+            var response = await client.GetAsync("/version");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
-        result.Should().NotBeNull();
-        result!.Version.Should().Be(expectedVersion);
-        result.BuildDate.Should().Be("unknown");
-        result.GitCommit.Should().Be("unknown");
-        AssertSupportSnapshotDefaults(result);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
+            result.Should().NotBeNull();
+            result!.Version.Should().Be(testVersion);
+            result.BuildDate.Should().Be("unknown");
+            result.GitCommit.Should().Be("unknown");
+            AssertSupportSnapshotDefaults(result);
+        }
+        finally
+        {
+            if (previousContents is null)
+            {
+                File.Delete(versionFilePath);
+            }
+            else
+            {
+                await File.WriteAllTextAsync(versionFilePath, previousContents);
+            }
+        }
     }
 
     [Fact]
