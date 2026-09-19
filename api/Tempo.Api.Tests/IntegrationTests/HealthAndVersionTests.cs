@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Hosting;
 using Tempo.Api.Models;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
@@ -9,9 +8,9 @@ using Xunit;
 namespace Tempo.Api.Tests.IntegrationTests;
 
 /// <summary>
-/// Integration tests for health and version endpoints.
-/// Prefer the shared factory: version/image fields are read per-request from env.
-/// Only logging profile needs a fresh host (parsed at startup).
+/// Health / ready / version HTTP contract. Version and image fields are read per-request from env,
+/// so these cases reuse the shared factory (no extra Testcontainers clones).
+/// Logging-profile formatting is covered by <see cref="VersionInfoTests"/>; booted profile is asserted as standard here.
 /// </summary>
 [Collection("Integration Tests")]
 public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
@@ -124,7 +123,6 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
             ("TEMPO_API_IMAGE", null),
             ("TEMPO_FRONTEND_IMAGE", null));
 
-        // VersionEndpoints reads ./VERSION from the process current directory first.
         var versionFilePath = Path.Combine(Directory.GetCurrentDirectory(), "VERSION");
         const string testVersion = "9.9.9-file-fallback";
         var previousContents = File.Exists(versionFilePath)
@@ -154,49 +152,6 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
             else
             {
                 await File.WriteAllTextAsync(versionFilePath, previousContents);
-            }
-        }
-    }
-
-    [Fact]
-    public async Task GetVersion_ReturnsUnknown_WhenNeitherEnvVarsNorFileExist()
-    {
-        using var _ = new TempoEnvScope(
-            ("TEMPO_VERSION", null),
-            ("TEMPO_BUILD_DATE", null),
-            ("TEMPO_GIT_COMMIT", null),
-            ("TEMPO_API_IMAGE", null),
-            ("TEMPO_FRONTEND_IMAGE", null));
-
-        var testOutputDir = Path.Combine(Path.GetTempPath(), $"tempo-test-{Guid.NewGuid()}");
-        Directory.CreateDirectory(testOutputDir);
-
-        try
-        {
-            // Isolated host so VERSION discovery cannot see the repo tree.
-            using var factory = new TempoWebApplicationFactory()
-                .WithWebHostBuilder(builder =>
-                {
-                    builder.UseEnvironment("Testing");
-                    builder.UseContentRoot(testOutputDir);
-                });
-            var client = factory.CreateClient();
-
-            var response = await client.GetAsync("/version");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
-            result.Should().NotBeNull();
-            result!.Version.Should().Be("unknown");
-            result.BuildDate.Should().Be("unknown");
-            result.GitCommit.Should().Be("unknown");
-            AssertSupportSnapshotDefaults(result);
-        }
-        finally
-        {
-            if (Directory.Exists(testOutputDir))
-            {
-                Directory.Delete(testOutputDir, recursive: true);
             }
         }
     }
@@ -237,24 +192,6 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
         result!.ApiImage.Should().Be("unknown");
         result.FrontendImage.Should().Be("unknown");
         result.Snapshot.Should().Be(ExpectedSnapshot(result));
-    }
-
-    [Fact]
-    public async Task GetVersion_ReturnsDebugLogProfile_WhenConfigured()
-    {
-        // Profile is parsed once at host startup — needs a dedicated factory, not process pollution across the suite.
-        using var _ = new TempoEnvScope(("Tempo__Logging__Profile", "debug"));
-        using var factory = new TempoWebApplicationFactory();
-        var client = factory.CreateClient();
-
-        var response = await client.GetAsync("/version");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<VersionResponse>();
-        result.Should().NotBeNull();
-        result!.LogProfile.Should().Be("debug");
-        result.Snapshot.Should().Be(ExpectedSnapshot(result));
-        result.Snapshot.Should().Contain("logProfile: debug");
     }
 
     [Fact]
@@ -304,7 +241,6 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
             result.ApiImage,
             result.FrontendImage);
 
-    /// <summary>Sets process env vars for the duration of a test and restores prior values.</summary>
     private sealed class TempoEnvScope : IDisposable
     {
         private readonly (string Key, string? Previous)[] _previous;
