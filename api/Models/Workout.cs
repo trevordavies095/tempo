@@ -73,7 +73,8 @@ public class Workout
     public int? RelativeEffort { get; set; }
 
     /// <summary>
-    /// Rate of Perceived Exertion (user-set, 1–10 scale). Not populated from import files.
+    /// Rate of Perceived Exertion (1–10). Athlete-set on overview, or filled from FIT
+    /// session <c>workout_rpe</c> (Borg CR10 × 10) when null. Not Feel; not relative effort.
     /// </summary>
     public byte? Rpe { get; set; }
 

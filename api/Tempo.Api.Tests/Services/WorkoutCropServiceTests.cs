@@ -212,6 +212,25 @@ public class WorkoutCropServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CropWorkoutAsync_LeavesRpeUnchanged()
+    {
+        var originalDuration = 1800;
+        var startTrim = 300;
+        var endTrim = 200;
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000.0, durationS: originalDuration);
+        workout.Rpe = 7;
+        workout.TimerTimeS = 1650;
+        await _db.SaveChangesAsync();
+        await TestDataSeeder.SeedWorkoutWithRouteAsync(_db, workout);
+        await TestDataSeeder.SeedWorkoutWithTimeSeriesAsync(_db, workout, totalDurationS: originalDuration);
+
+        var result = await _service.CropWorkoutAsync(workout, startTrim, endTrim);
+
+        result.Rpe.Should().Be(7);
+        result.TimerTimeS.Should().BeNull();
+    }
+
+    [Fact]
     public async Task CropWorkoutAsync_WithCropExceedingDuration_ThrowsException()
     {
         // Arrange
