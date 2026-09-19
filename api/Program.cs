@@ -60,6 +60,7 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 Log.Information("Logging profile: {Profile}", LoggingProfile.ToConfigName(loggingProfile));
+builder.Services.AddSingleton(typeof(LoggingProfileKind), loggingProfile);
 
 // Add services
 builder.Services.AddEndpointsApiExplorer();

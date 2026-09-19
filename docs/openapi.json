@@ -1145,12 +1145,19 @@
         "tags": [
           "Version"
         ],
-        "summary": "Get version information",
-        "description": "Version information is retrieved from environment variables (set during Docker build) or from the VERSION file.\nReturns \"unknown\" for any values that cannot be determined.",
+        "summary": "Get version and support-snapshot information",
+        "description": "Public identity endpoint (no authentication). Version fields come from Docker bake-in\nenvironment variables or the VERSION file. Image tags come from TEMPO_API_IMAGE /\nTEMPO_FRONTEND_IMAGE when set. Undetermined fields are \"unknown\". Does not touch Postgres\nand never includes secrets.",
         "operationId": "GetVersion",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionInfo"
+                }
+              }
+            }
           }
         }
       }
@@ -2928,6 +2935,56 @@
         },
         "additionalProperties": false,
         "description": "Request model for updating unit preference"
+      },
+      "VersionInfo": {
+        "required": [
+          "apiImage",
+          "buildDate",
+          "environment",
+          "frontendImage",
+          "gitCommit",
+          "logProfile",
+          "snapshot",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "gitCommit": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "buildDate": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "logProfile": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "environment": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "apiImage": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "frontendImage": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "snapshot": {
+            "minLength": 1,
+            "type": "string",
+            "description": "Frozen plain-text projection of the other fields for copy-paste into bug reports."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Public support snapshot from GET /version. Identity only — no secrets, no Postgres."
       }
     },
     "securitySchemes": {
