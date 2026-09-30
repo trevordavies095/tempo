@@ -159,6 +159,37 @@ public class FitParserServiceTests
     }
 
     [Fact]
+    public void ParseFit_IncludesRawWorkoutRpe_InSessionJson()
+    {
+        var fitBytes = CreateFitWithClocks(
+            elapsedSeconds: 1200f,
+            timerSeconds: 1000f,
+            workoutRpe: 70);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = _parser.ParseFit(stream);
+
+        using var doc = JsonDocument.Parse(result.RawFitDataJson!);
+        doc.RootElement.GetProperty("session").GetProperty("workoutRpe").GetInt32()
+            .Should().Be(70);
+        doc.RootElement.GetProperty("session").TryGetProperty("workoutFeel", out _)
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void ParseFit_OmitsWorkoutRpe_WhenNotSet()
+    {
+        var fitBytes = CreateFitWithClocks(elapsedSeconds: 1200f, timerSeconds: 1000f);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = _parser.ParseFit(stream);
+
+        using var doc = JsonDocument.Parse(result.RawFitDataJson!);
+        doc.RootElement.GetProperty("session").TryGetProperty("workoutRpe", out _)
+            .Should().BeFalse();
+    }
+
+    [Fact]
     public void ParseGzippedFit_ConvertsCadenceToStepsPerMinute_FromCommittedFixture()
     {
         var fitData = IOFile.ReadAllBytes(CadenceFixturePath);
@@ -440,7 +471,8 @@ public class FitParserServiceTests
         byte? strideCadence = null,
         byte? avgCadence = null,
         byte? maxCadence = null,
-        IReadOnlyList<SyntheticLap>? laps = null)
+        IReadOnlyList<SyntheticLap>? laps = null,
+        byte? workoutRpe = null)
     {
         var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
         var fitStart = new FitDateTime(start);
@@ -498,6 +530,10 @@ public class FitParserServiceTests
         if (maxCadence.HasValue)
         {
             session.SetMaxCadence(maxCadence.Value);
+        }
+        if (workoutRpe.HasValue)
+        {
+            session.SetWorkoutRpe(workoutRpe.Value);
         }
         encode.Write(session);
         encode.Close();

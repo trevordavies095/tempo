@@ -9,21 +9,58 @@ using Serilog;
 using System.IdentityModel.Tokens.Jwt;
 using Tempo.Api.Authentication;
 using Tempo.Api.Authorization;
+using Tempo.Api.Commands;
 using Tempo.Api.Data;
 using Tempo.Api.Endpoints;
+using Tempo.Api.Logging;
 using Tempo.Api.OpenApi;
 using Tempo.Api.Services;
 
-var builder = WebApplication.CreateBuilder(args);
+ResetPasswordArgs? resetCommand = null;
+string? resetPassword = null;
+if (ResetPasswordCommand.IsVerb(args))
+{
+    if (!ResetPasswordCommand.TryParse(args, out resetCommand, out var parseError))
+    {
+        Console.Error.WriteLine(parseError);
+        Console.Error.WriteLine();
+        Console.Error.WriteLine(ResetPasswordCommand.Usage);
+        Environment.ExitCode = 1;
+        return;
+    }
 
-// Configure Serilog
+    if (resetCommand.Help)
+    {
+        Console.Out.WriteLine(ResetPasswordCommand.Usage);
+        return;
+    }
+
+    if (!ResetPasswordCommand.TryReadPassword(
+            resetCommand,
+            new ConsoleResetPasswordInput(),
+            Console.Error,
+            out resetPassword,
+            out var readError))
+    {
+        Console.Error.WriteLine(readError);
+        Environment.ExitCode = 1;
+        return;
+    }
+}
+
+var builder = WebApplication.CreateBuilder(resetCommand is not null ? [] : args);
+
+// Named logging profile owns Serilog levels (not MEL Logging:LogLevel / Serilog__* overrides)
+var loggingProfile = LoggingProfile.Parse(builder.Configuration[LoggingProfile.ConfigKey]);
 Log.Logger = new LoggerConfiguration()
-    .ReadFrom.Configuration(builder.Configuration)
+    .ApplyLevels(loggingProfile)
     .Enrich.FromLogContext()
     .WriteTo.Console()
     .CreateLogger();
 
 builder.Host.UseSerilog();
+Log.Information("Logging profile: {Profile}", LoggingProfile.ToConfigName(loggingProfile));
+builder.Services.AddSingleton(typeof(LoggingProfileKind), loggingProfile);
 
 // Add services
 builder.Services.AddEndpointsApiExplorer();
@@ -111,30 +148,21 @@ builder.Services.AddAuthorization(options =>
     });
 });
 
-// Configure Entity Framework
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+// Configure Entity Framework — PostgreSQL only. Fail before provider registration.
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
-// Check both the builder environment and the ASPNETCORE_ENVIRONMENT variable
-var isTesting = builder.Environment.IsEnvironment("Testing") 
-    || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing";
-var isSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) == true;
-
-// Always register TempoDbContext with the appropriate provider, unless already registered (for testing)
-// The test factory will remove and re-register it, so we skip if already registered
-if (!builder.Services.Any(s => s.ServiceType == typeof(TempoDbContext)))
+if (string.IsNullOrWhiteSpace(connectionString) ||
+    connectionString.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase))
 {
-    builder.Services.AddDbContext<TempoDbContext>(options =>
-    {
-        if (isSqlite)
-        {
-            options.UseSqlite(connectionString);
-        }
-        else
-        {
-            options.UseNpgsql(connectionString);
-        }
-    });
+    throw new InvalidOperationException(
+        "PostgreSQL is required. ConnectionStrings:DefaultConnection must be a PostgreSQL connection string. " +
+        "SQLite is not supported (including Data Source= strings).");
 }
+
+builder.Services.AddDbContext<TempoDbContext>(options =>
+{
+    options.UseNpgsql(connectionString);
+});
 
 // Register services
 builder.Services.AddHttpContextAccessor();
@@ -179,6 +207,19 @@ builder.Services.AddHttpClient<WeatherService>();
 builder.Services.AddScoped<IWeatherService>(sp => sp.GetRequiredService<WeatherService>());
 builder.Services.AddScoped<WorkoutIntake>();
 builder.Services.AddScoped<HealthKitWorkoutDecoder>();
+builder.Services.AddSingleton<IntervalsIcuSecretProtector>();
+builder.Services.AddHttpClient(IntervalsIcuClient.HttpClientName, client =>
+{
+    client.BaseAddress = new Uri("https://intervals.icu/api/v1/");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddScoped<IIntervalsIcuClient, IntervalsIcuClient>();
+builder.Services.AddSingleton<IntervalsIcuSyncQueue>();
+builder.Services.AddScoped<IntervalsIcuSyncService>();
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddHostedService<IntervalsIcuSyncWorker>();
+}
 
 // Configure media storage
 var mediaRootPath = builder.Configuration["MediaStorage:RootPath"] ?? "./media";
@@ -223,6 +264,23 @@ builder.WebHost.ConfigureKestrel(options =>
 
 var app = builder.Build();
 
+if (resetCommand is not null)
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+    var passwordService = scope.ServiceProvider.GetRequiredService<PasswordService>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(ResetPasswordCommand));
+    Environment.ExitCode = await ResetPasswordCommand.ExecuteAsync(
+        db,
+        passwordService,
+        logger,
+        resetCommand.Username,
+        resetPassword!,
+        Console.Out,
+        Console.Error);
+    return;
+}
+
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
@@ -237,7 +295,15 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseSerilogRequestLogging();
+app.UseSerilogRequestLogging(options =>
+{
+    options.GetLevel = (httpContext, _, exception) =>
+        LoggingProfile.GetRequestLogLevel(
+            loggingProfile,
+            httpContext.Request.Path.Value,
+            httpContext.Response.StatusCode,
+            exception);
+});
 
 // Map endpoints
 app.MapAuthEndpoints();
@@ -246,39 +312,21 @@ app.MapSettingsEndpoints();
 app.MapShoesEndpoints();
 app.MapStatsEndpoints();
 app.MapVersionEndpoints();
-
-// Health check endpoint
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
-    .WithTags("Health")
-    .WithSummary("Health check");
+app.MapHealthEndpoints();
 
 // Apply database migrations automatically on startup
 try
 {
-    var migrationConnectionString = app.Configuration.GetConnectionString("DefaultConnection") 
-        ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
-    var isSqliteForMigration = migrationConnectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) == true;
-    var isTestingForMigration = app.Environment.IsEnvironment("Testing") 
+    var isTestingForMigration = app.Environment.IsEnvironment("Testing")
         || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Testing";
-    
-    // Skip migrations in Testing environment (test factory handles schema creation)
+
+    // Skip migrations in Testing environment (template/clone fixture owns schema)
     if (isTestingForMigration)
     {
-        Log.Information("Skipping migrations for Testing environment (test factory handles schema creation)");
-    }
-    else if (isSqliteForMigration)
-    {
-        // For SQLite in non-testing environments, use EnsureCreated (migrations don't work well with SQLite)
-        using (var scope = app.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            db.Database.EnsureCreated();
-        }
-        Log.Information("SQLite database schema created using EnsureCreated");
+        Log.Information("Skipping migrations for Testing environment (test fixture handles schema creation)");
     }
     else
     {
-        // For PostgreSQL, use migrations
         using (var scope = app.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();

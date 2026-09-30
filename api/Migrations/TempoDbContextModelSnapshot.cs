@@ -181,6 +181,43 @@ namespace Tempo.Api.Migrations
                     b.ToTable("ImportJobs");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.IntervalsIcuConnection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("ApiKeyCiphertext")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<DateTime>("ConnectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("LastSuccessfulSyncAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastSyncAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("IntervalsIcuConnections");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.Shoe", b =>
                 {
                     b.Property<Guid>("Id")
@@ -437,6 +474,9 @@ namespace Tempo.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<string>("SplitHeartRateBackfill")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -482,6 +522,39 @@ namespace Tempo.Api.Migrations
                     b.HasIndex("StartedAt", "DistanceM", "DurationS");
 
                     b.ToTable("Workouts");
+                });
+
+            modelBuilder.Entity("Tempo.Api.Models.WorkoutExternalIdentity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<Guid>("WorkoutId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Source", "ExternalId")
+                        .IsUnique();
+
+                    b.HasIndex("WorkoutId", "Source")
+                        .IsUnique();
+
+                    b.ToTable("WorkoutExternalIdentities");
                 });
 
             modelBuilder.Entity("Tempo.Api.Models.WorkoutMedia", b =>
@@ -685,6 +758,17 @@ namespace Tempo.Api.Migrations
                     b.Navigation("Shoe");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.WorkoutExternalIdentity", b =>
+                {
+                    b.HasOne("Tempo.Api.Models.Workout", "Workout")
+                        .WithMany("ExternalIdentities")
+                        .HasForeignKey("WorkoutId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workout");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.WorkoutMedia", b =>
                 {
                     b.HasOne("Tempo.Api.Models.Workout", "Workout")
@@ -741,6 +825,8 @@ namespace Tempo.Api.Migrations
 
             modelBuilder.Entity("Tempo.Api.Models.Workout", b =>
                 {
+                    b.Navigation("ExternalIdentities");
+
                     b.Navigation("Media");
 
                     b.Navigation("Route");

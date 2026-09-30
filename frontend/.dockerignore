@@ -8,4 +8,9 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+CLAUDE.md
+AGENTS.md
 

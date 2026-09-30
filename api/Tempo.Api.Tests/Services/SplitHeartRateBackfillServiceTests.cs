@@ -1,6 +1,6 @@
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -10,32 +10,32 @@ using Xunit;
 
 namespace Tempo.Api.Tests.Services;
 
-public class SplitHeartRateBackfillServiceTests : IDisposable
+public class SplitHeartRateBackfillServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly ListLogger<SplitHeartRateBackfillService> _logger;
-    private readonly SplitHeartRateBackfillService _service;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ListLogger<SplitHeartRateBackfillService> _logger = null!;
+    private SplitHeartRateBackfillService _service = null!;
 
-    public SplitHeartRateBackfillServiceTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
         _logger = new ListLogger<SplitHeartRateBackfillService>();
         _service = new SplitHeartRateBackfillService(_db, new SplitHeartRateService(), _logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]
@@ -61,6 +61,8 @@ public class SplitHeartRateBackfillServiceTests : IDisposable
 
         var splits = await _db.WorkoutSplits.ToListAsync();
         splits.Should().OnlyContain(s => s.AvgHeartRateBpm != null);
+        (await _db.Workouts.Select(w => w.SplitHeartRateBackfill).ToListAsync())
+            .Should().OnlyContain(cursor => cursor == null);
 
         _logger.Messages.Should().Contain($"Split heart rate backfill: {SplitHeartRateBackfillService.BatchSize} of {total}");
         _logger.Messages.Should().Contain($"Split heart rate backfill: {total} of {total}");
@@ -69,6 +71,8 @@ public class SplitHeartRateBackfillServiceTests : IDisposable
         var second = await _service.RunAsync();
         second.Should().Be(0);
         _logger.Messages.Should().Contain("Split heart rate backfill: 0 of 0");
+        (await _db.Workouts.Select(w => w.SplitHeartRateBackfill).ToListAsync())
+            .Should().OnlyContain(cursor => cursor == null);
     }
 
     [Fact]
@@ -189,6 +193,89 @@ public class SplitHeartRateBackfillServiceTests : IDisposable
         splits.Should().OnlyContain(s => s.AvgHeartRateBpm != null);
     }
 
+    [Fact]
+    public async Task RunAsync_NoOverlapLeftover_StampsOnce_LeavesSplitBpmsNull_ThenIdle()
+    {
+        var workout = await SeedNoOverlapCandidateAsync();
+
+        var first = await _service.RunAsync();
+        first.Should().Be(1);
+        _logger.Messages.Should().Contain("Split heart rate backfill: 1 of 1");
+
+        await _db.Entry(workout).ReloadAsync();
+        workout.SplitHeartRateBackfill.Should().Be(SplitHeartRateBackfillService.NoOverlapCursor);
+        (await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync())
+            .Should().OnlyContain(s => s.AvgHeartRateBpm == null);
+
+        _logger.Messages.Clear();
+        var second = await _service.RunAsync();
+        second.Should().Be(0);
+        _logger.Messages.Should().Contain("Split heart rate backfill: 0 of 0");
+
+        await _db.Entry(workout).ReloadAsync();
+        workout.SplitHeartRateBackfill.Should().Be(SplitHeartRateBackfillService.NoOverlapCursor);
+        (await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync())
+            .Should().OnlyContain(s => s.AvgHeartRateBpm == null);
+    }
+
+    [Fact]
+    public async Task RunAsync_AlreadyStampedNoOverlap_DoesNotPersistOrCount()
+    {
+        var workout = await SeedNoOverlapCandidateAsync();
+        workout.SplitHeartRateBackfill = SplitHeartRateBackfillService.NoOverlapCursor;
+        await _db.SaveChangesAsync();
+
+        var saves = new CountingSaveChangesInterceptor();
+        await using var db = PostgresTestFixture.CreateContext(_cloneConnectionString, saves);
+        var logger = new ListLogger<SplitHeartRateBackfillService>();
+        var service = new SplitHeartRateBackfillService(db, new SplitHeartRateService(), logger);
+
+        var processed = await service.RunAsync();
+
+        processed.Should().Be(0);
+        saves.Count.Should().Be(0);
+        logger.Messages.Should().Contain("Split heart rate backfill: 0 of 0");
+        await _db.Entry(workout).ReloadAsync();
+        workout.SplitHeartRateBackfill.Should().Be(SplitHeartRateBackfillService.NoOverlapCursor);
+        (await _db.WorkoutSplits.Where(s => s.WorkoutId == workout.Id).ToListAsync())
+            .Should().OnlyContain(s => s.AvgHeartRateBpm == null);
+    }
+
+    [Fact]
+    public async Task RunAsync_PersistsAndCounts_OnlyWhenBpmChangesOrNoOverlapWritten()
+    {
+        var fill = await SeedCandidateAsync();
+        var leftover = await SeedNoOverlapCandidateAsync();
+
+        var saves = new CountingSaveChangesInterceptor();
+        await using var db = PostgresTestFixture.CreateContext(_cloneConnectionString, saves);
+        var logger = new ListLogger<SplitHeartRateBackfillService>();
+        var service = new SplitHeartRateBackfillService(db, new SplitHeartRateService(), logger);
+
+        var processed = await service.RunAsync();
+
+        processed.Should().Be(2);
+        saves.Count.Should().Be(2);
+
+        _db.ChangeTracker.Clear();
+        var filled = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == fill.Id);
+        filled.SplitHeartRateBackfill.Should().BeNull();
+        (await _db.WorkoutSplits.AsNoTracking().Where(s => s.WorkoutId == fill.Id).ToListAsync())
+            .Should().Contain(s => s.AvgHeartRateBpm != null);
+
+        var stamped = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == leftover.Id);
+        stamped.SplitHeartRateBackfill.Should().Be(SplitHeartRateBackfillService.NoOverlapCursor);
+        (await _db.WorkoutSplits.AsNoTracking().Where(s => s.WorkoutId == leftover.Id).ToListAsync())
+            .Should().OnlyContain(s => s.AvgHeartRateBpm == null);
+
+        logger.Messages.Clear();
+        saves.Count = 0;
+        var second = await service.RunAsync();
+        second.Should().Be(0);
+        saves.Count.Should().Be(0);
+        logger.Messages.Should().Contain("Split heart rate backfill: 0 of 0");
+    }
+
     private async Task<Workout> SeedCandidateAsync(bool withRoute = false)
     {
         var workout = await TestDataSeeder.SeedWorkoutAsync(
@@ -228,6 +315,55 @@ public class SplitHeartRateBackfillServiceTests : IDisposable
         return workout;
     }
 
+    /// <summary>
+    /// HR samples sit before the first split window. Last-split remainder cannot
+    /// claim them — IndexForElapsedWindow only matches elapsed &gt;= StartElapsedS.
+    /// </summary>
+    private async Task<Workout> SeedNoOverlapCandidateAsync()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(
+            _db,
+            startedAt: DateTime.UtcNow.AddMinutes(-_seedOffset++),
+            distanceM: 2000,
+            durationS: 600);
+
+        _db.WorkoutSplits.Add(new WorkoutSplit
+        {
+            WorkoutId = workout.Id,
+            Kind = WorkoutSplitKinds.Distance,
+            Idx = 0,
+            DistanceM = 2000,
+            DurationS = 300,
+            PaceS = 150,
+            StartElapsedS = 300,
+            EndElapsedS = 600
+        });
+        _db.WorkoutTimeSeries.AddRange(
+            new WorkoutTimeSeries
+            {
+                WorkoutId = workout.Id,
+                ElapsedSeconds = 0,
+                DistanceM = 0,
+                HeartRateBpm = 140
+            },
+            new WorkoutTimeSeries
+            {
+                WorkoutId = workout.Id,
+                ElapsedSeconds = 1,
+                DistanceM = 20,
+                HeartRateBpm = 150
+            },
+            new WorkoutTimeSeries
+            {
+                WorkoutId = workout.Id,
+                ElapsedSeconds = 10,
+                DistanceM = 80,
+                HeartRateBpm = 160
+            });
+        await _db.SaveChangesAsync();
+        return workout;
+    }
+
     private int _seedOffset;
 
     private sealed class ListLogger<T> : ILogger<T>
@@ -254,6 +390,28 @@ public class SplitHeartRateBackfillServiceTests : IDisposable
             public void Dispose()
             {
             }
+        }
+    }
+
+    private sealed class CountingSaveChangesInterceptor : SaveChangesInterceptor
+    {
+        public int Count { get; set; }
+
+        public override InterceptionResult<int> SavingChanges(
+            DbContextEventData eventData,
+            InterceptionResult<int> result)
+        {
+            Count++;
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            Count++;
+            return ValueTask.FromResult(result);
         }
     }
 }

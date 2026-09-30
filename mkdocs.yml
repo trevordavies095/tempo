@@ -55,6 +55,12 @@ plugins:
   - search:
       lang: en
 
+# Stay in git for maintainers; do not publish on the docs site.
+exclude_docs: |
+  /PR-*.md
+  /PRD-*.md
+  /README.md
+
 nav:
   - Home: index.md
   - Getting Started:
@@ -77,6 +83,7 @@ nav:
     - developers/setup.md
     - developers/api-reference.md
     - developers/database.md
+    - developers/testing.md
     - developers/contributing.md
   - Deployment:
     - deployment/index.md

@@ -3,7 +3,7 @@
   "info": {
     "title": "Tempo API",
     "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
-    "version": "2.9.0"
+    "version": "2.10.0"
   },
   "paths": {
     "/auth/register": {
@@ -272,10 +272,30 @@
         "tags": [
           "Health"
         ],
-        "summary": "Health check",
+        "summary": "Liveness: the API process is accepting HTTP.",
+        "description": "Does not touch Postgres, media, or backfills. May return 200 while the database is down.",
+        "operationId": "GetHealth",
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Readiness: this instance can serve because Postgres answers.",
+        "description": "Returns 200 when CanConnectAsync succeeds within 2 seconds; otherwise 503.\nJSON names the database check; never includes connection strings or exception text.",
+        "operationId": "GetReady",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "503": {
+            "description": "Service Unavailable"
           }
         }
       }
@@ -490,6 +510,150 @@
           },
           "404": {
             "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/intervals-icu": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get intervals.icu connection status",
+        "description": "Returns whether an Intervals.icu connection exists. Never returns the API key. When disconnected, connected is false.",
+        "operationId": "GetIntervalsIcuConnection",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntervalsIcuConnectionDocument"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Connect or replace intervals.icu key",
+        "description": "Probes intervals.icu as athlete 0, then stores the API key encrypted. A second PUT while connected replaces the ciphertext only and keeps connectedAt / lastSuccessfulSyncAt.",
+        "operationId": "PutIntervalsIcuConnection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutIntervalsIcuConnectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntervalsIcuConnectionDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Disconnect intervals.icu",
+        "description": "Deletes the connection row. Workouts and external identities stay. 204 if already gone.",
+        "operationId": "DeleteIntervalsIcuConnection",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/intervals-icu/enable": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Re-enable intervals.icu sync",
+        "description": "Probes with the stored key and turns live sync back on. 404 if there is no connection. 400 if decrypt or probe fails.",
+        "operationId": "PostIntervalsIcuEnable",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntervalsIcuConnectionDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/intervals-icu/sync": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Wake intervals.icu sync",
+        "description": "Enqueues a live sync tick. Returns 202 when connected and enabled, including coalesced wakes while a tick is in flight or pending. Returns 204 when there is no connection or sync is disabled. Does not import on the request thread.",
+        "operationId": "PostIntervalsIcuSync",
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "204": {
+            "description": "No Content"
           }
         },
         "security": [
@@ -981,12 +1145,19 @@
         "tags": [
           "Version"
         ],
-        "summary": "Get version information",
-        "description": "Version information is retrieved from environment variables (set during Docker build) or from the VERSION file.\nReturns \"unknown\" for any values that cannot be determined.",
+        "summary": "Get version and support-snapshot information",
+        "description": "Public identity endpoint (no authentication). Version fields come from Docker bake-in\nenvironment variables or the VERSION file. Image tags come from TEMPO_API_IMAGE /\nTEMPO_FRONTEND_IMAGE when set. Undetermined fields are \"unknown\". Does not touch Postgres\nand never includes secrets.",
         "operationId": "GetVersion",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionInfo"
+                }
+              }
+            }
           }
         }
       }
@@ -2574,6 +2745,33 @@
         },
         "additionalProperties": false
       },
+      "IntervalsIcuConnectionDocument": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "lastSuccessfulSyncAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastSyncAttemptAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "LoginRequest": {
         "type": "object",
         "properties": {
@@ -2591,6 +2789,16 @@
         },
         "additionalProperties": false,
         "description": "Request model for user login"
+      },
+      "PutIntervalsIcuConnectionRequest": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "RegisterRequest": {
         "type": "object",
@@ -2727,6 +2935,56 @@
         },
         "additionalProperties": false,
         "description": "Request model for updating unit preference"
+      },
+      "VersionInfo": {
+        "required": [
+          "apiImage",
+          "buildDate",
+          "environment",
+          "frontendImage",
+          "gitCommit",
+          "logProfile",
+          "snapshot",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "gitCommit": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "buildDate": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "logProfile": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "environment": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "apiImage": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "frontendImage": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "snapshot": {
+            "minLength": 1,
+            "type": "string",
+            "description": "Frozen plain-text projection of the other fields for copy-paste into bug reports."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Public support snapshot from GET /version. Identity only — no secrets, no Postgres."
       }
     },
     "securitySchemes": {

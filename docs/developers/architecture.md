@@ -23,7 +23,7 @@ Tempo is a self-hosted running tracker built as a full-stack application with a 
 - **Language**: C#
 - **Database**: PostgreSQL 16 with JSONB fields for raw workout data
 - **ORM**: Entity Framework Core
-- **Logging**: Serilog
+- **Logging**: Serilog with named profiles (`standard` | `debug`) via `Tempo:Logging:Profile`
 
 ### Database
 
@@ -53,18 +53,20 @@ Each extension method:
 
 ### 2. Service Layer
 
-- `GpxParserService` / `FitParserService` — decode adapters: `TrackPoint`s, raw JSON, optional device summary (and GPX name). They do not expose `CalculateSplits` and do not hand FIT `RecordMesg` to callers. The FIT SDK comes from the `Garmin.FIT.Sdk` NuGet package (`Dynastream.Fit` namespace).
+- `GpxParserService` / `FitParserService` — decode adapters: `TrackPoint`s, raw JSON, optional device summary (and GPX name). They do not expose `CalculateSplits` and do not hand FIT `RecordMesg` to callers. The FIT SDK comes from the `Garmin.FIT.Sdk` NuGet package (`Dynastream.Fit` namespace). FIT session JSON may include raw `workoutRpe` (Borg CR10 × 10).
 - `StravaCsvParserService` — parses Strava export CSV metadata for bulk ZIP import.
 - `TrackGeometry` — in-process: `TrackPoint`s in; elevation gain, `WorkoutRoute` (empty when no GPS), `WorkoutSplit`s (Haversine or cumulative `DistanceM` stream), `WorkoutTimeSeries` out. No `DbContext`.
-- `WorkoutIntake` — decode adapters (GPX/FIT file → `DecodedWorkout`; HealthKit JSON via `HealthKitWorkoutDecoder`) feed `PersistAsync` (geometry, duplicate policy, default shoe, weather, relative effort, incremental best efforts). Persist is the single pipeline; HTTP import is a thin adapter. Bulk calls intake per activity file.
+- `WorkoutIntake` — decode adapters (GPX/FIT file → `DecodedWorkout`; HealthKit JSON via `HealthKitWorkoutDecoder`) feed `PersistAsync` (geometry, duplicate policy, default shoe, weather, relative effort, incremental best efforts). Persist is the single pipeline; HTTP import is a thin adapter. Bulk calls intake per activity file. FIT session `workoutRpe` fills `Workout.Rpe` (1–10) when null.
 - `TrackPointRehydration` — stored Workout fields → `TrackPoint`s for crop and split recalc.
 - `ImportJobService` — create/chunk/complete/current/get/cancel, one-active-job rules, archive staging under `media/imports/{jobId}/`.
 - `ImportJobWorker` — hosted service; wakes on channel, new DI scope per job; branches on `kind` (`strava_bulk` | `tempo_export`).
+- `IntervalsIcuSyncService` — one tick: decrypt key, list recent activities (`oldest` = max(connect−2d, lastSuccess−2d, today−14d)), skip non-runs / junk `file_type` and existing `intervals_icu` identities before file fetch, then `WorkoutIntake.ProcessAsync` with overlay identity `intervals_icu`. Stats-key attach does not rename `Workout.Source`. 401/decrypt disables and keeps the ciphertext; 429/5xx stay enabled.
+- `IntervalsIcuSyncWorker` — hosted service (not registered in Testing); 15-minute timer (`IntervalsIcu__PollIntervalMinutes`) plus Sync now channel; new DI scope per tick. Not an ImportJob.
 - `StravaBulkImportOrchestrator` — Strava ZIP extract/CSV loop calling `BulkImportService` + Workout intake; writes job counters.
 - `BulkImportService` — ZIP safety, `activities.csv`, non-run skip, per-file intake mapping, Strava media copy.
 - `ImportService` — Tempo export ZIP restore (`ImportExportAsync` with progress + cancel); not Workout intake.
 
-Most services are registered as `Scoped` in `Program.cs`. Configuration objects (`MediaStorageConfig`, `ElevationCalculationConfig`) and `ImportJobQueue` are `Singleton`. `ImportJobWorker` is a hosted service.
+Most services are registered as `Scoped` in `Program.cs`. Configuration objects (`MediaStorageConfig`, `ElevationCalculationConfig`), `ImportJobQueue`, and `IntervalsIcuSyncQueue` are `Singleton`. `ImportJobWorker` and `IntervalsIcuSyncWorker` are hosted services.
 
 ### 3. Hybrid Data Storage
 
@@ -90,9 +92,12 @@ This ensures migrations can be safely applied even when database state doesn't m
 
 ### 6. Logging
 
-- Serilog configured for structured logging
-- Console output in development
-- Request logging enabled via `UseSerilogRequestLogging()`
+- Serilog console output; levels owned by named profile `Tempo:Logging:Profile` (`standard` | `debug`), not MEL `Logging:LogLevel`
+- Startup logs `Logging profile: …` once so pasted dumps declare the mode
+- `standard` (default): Tempo Information; Microsoft / System Warning (hosting lifetime Information); request middleware logs 5xx / unhandled exceptions only
+- `debug`: Information including EF SQL and non-probe request traces (not Serilog level Debug)
+- Successful `/health` and `/ready` request lines omitted on both profiles
+- Official Compose Postgres uses `log_checkpoints=off` (not driven by the API profile)
 
 ## Data Model
 
@@ -108,6 +113,8 @@ This ensures migrations can be safely applied even when database state doesn't m
 - **User**: User accounts for authentication
 - **UserSettings**: Single-row table for user preferences (heart rate zones, unit preferences, default shoe). Command-center appearance is not UserSettings.
 - **ImportJob**: Background import (`strava_bulk` | `tempo_export`) with status, byte/progress counters, ErrorDetailsJson (Strava), ResultJson (Tempo), and archive path. At most one row in `receiving` | `queued` | `running`.
+- **IntervalsIcuConnection**: Optional 0-or-1 row for a BYO intervals.icu API key (encrypted). Not UserSettings.
+- **Intervals.icu sync**: `IntervalsIcuSyncWorker` (15-minute timer + Sync now channel) decrypts the key, lists recent activities, fetches FIT/GPX, and persists through `WorkoutIntake` with overlay identity `intervals_icu`. List `oldest` is max(connect−2d, lastSuccess−2d, today−14d). 401/decrypt disables (key stays); Sync now coalesces while a tick is in flight or pending. Non-runs, junk `file_type`, and existing identities skip before file fetch; stats-key attach does not rename `Workout.Source`. Not an ImportJob.
 
 ## Data Flow
 
@@ -117,7 +124,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 2. HTTP maps `IFormFile` to `WorkoutIntake` (stream + filename), or `HealthKitWorkoutDecoder` maps JSON → `DecodedWorkout` + overlay
 3. File decode adapter: GPX or FIT → `DecodedWorkout` (`TrackPoint`s, raw JSON, optional device summary); HealthKit skips file parse
 4. `PersistAsync` → `TrackGeometry.Derive` builds elevation, route (omitted when there are no GPS coordinates), splits (Haversine or DistM stream), and time series (device summary wins for distance/duration when present)
-5. Duplicate policy: HealthKit UUID identity first when present (`skipped` before geometry/enrichment); then same key (`StartedAt`, `DistanceM`, `DurationS`). Incomplete raw JSON/bytes can `updated`; complete duplicates `skipped` (HealthKit vs complete GPX/FIT is always `skipped`, but may stamp `HealthKitUuid` onto the existing row for client badging)
+5. Duplicate policy: HealthKit UUID first when present (`skipped` before geometry/enrichment); then Workout external identity when present (`skipped` before geometry; on a stats-key match, attach a row only if this Workout has no row for that source; if the pair is already stored on another Workout, skip the owner — identity wins). Then the start/distance/elapsed stats key (`StartedAt`, `DistanceM`, `DurationS`). Incomplete raw JSON/bytes can `updated`; complete duplicates `skipped` (HealthKit vs complete GPX/FIT is always `skipped`, but may stamp `HealthKitUuid` onto the existing row for client badging). Intake never overwrites a stored external `ExternalId` and does not rename `Workout.Source` on attach.
 6. Weather, default shoe, relative effort, incremental best efforts
 7. Workout persisted with JSONB raw data and `WorkoutRoute`
 
@@ -140,7 +147,7 @@ This ensures migrations can be safely applied even when database state doesn't m
 - JWT-based authentication with httpOnly cookies
 - Registration only available when no users exist (single-user deployment)
 - Password hashing using BCrypt
-- All workout and settings endpoints require authentication (except `/health` and `/version`)
+- All workout and settings endpoints require authentication (except `/health`, `/ready`, and `/version`)
 - **First-run onboarding**: `User.OnboardingCompleted` (new registrations `false`; migration backfills existing users `true`). `GET /auth/me` exposes `onboardingCompleted`; `POST /auth/onboarding/complete` sets it `true` only (idempotent). The command center hard-gates app routes to `/onboarding` until complete.
 
 ## Database Indexing
@@ -149,6 +156,7 @@ The `TempoDbContext` configures several important indexes:
 - **Workout indexes**: `StartedAt`, composite index on `(StartedAt, DistanceM, DurationS)` for duplicate detection
 - **JSONB GIN indexes**: On `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, and `Weather` fields
 - **HealthKit UUID**: Unique index on `HealthKitUuid` for import idempotency
+- **Workout external identity**: Unique `(Source, ExternalId)` and unique `(WorkoutId, Source)`
 - **WorkoutSplit**: Unique composite index on `(WorkoutId, Kind, Idx)`
 - **WorkoutTimeSeries**: Composite index on `(WorkoutId, ElapsedSeconds)`
 - **User**: Unique index on `Username`

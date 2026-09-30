@@ -186,14 +186,19 @@ Detailed solutions for common Tempo problems.
 - Registration fails
 - Redirected to onboarding / cannot open Dashboard or Settings
 
+Forgot the passphrase is a different failure from a cookie that will not stick. If you cannot complete login because the password is gone, use the host-only reset command — see [How do I reset my password?](faq.md#how-do-i-reset-my-password). Do not `docker compose down -v` or hand-hash BCrypt.
+
+If login succeeds and the session expires immediately (or the cookie never appears):
+
 **Solutions:**
 1. Verify JWT secret key is configured (production)
-2. Check cookie settings (requires HTTPS in production)
+2. Check cookie settings (requires HTTPS in production; `ASPNETCORE_ENVIRONMENT=Production`)
 3. Clear browser cookies
-4. Verify database has user table
-5. Check API logs for authentication errors
-6. If you are on first-run setup: complete [onboarding](../getting-started/onboarding.md) (or **Skip for now** after a failed Strava import). Existing upgraded accounts should already be marked complete and not see the wizard
-7. Late Strava or Tempo ZIP migrates live under Settings → Migrate / restore, not the Import page
+4. Verify CORS allowed origins match the URL you use in the browser
+5. Verify database has user table
+6. Check API logs for authentication errors
+7. If you are on first-run setup: complete [onboarding](../getting-started/onboarding.md) (or **Skip for now** after a failed Strava import). Existing upgraded accounts should already be marked complete and not see the wizard
+8. Late Strava or Tempo ZIP migrates live under Settings → Migrate / restore, not the Import page
 
 ### CORS Errors
 

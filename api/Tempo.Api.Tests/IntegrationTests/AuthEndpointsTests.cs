@@ -5,8 +5,10 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Tempo.Api.Commands;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Services;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -822,6 +824,42 @@ public class AuthEndpointsTests : IClassFixture<TempoWebApplicationFactory>
 
         var meA = await clientA.GetAsync("/auth/me");
         meA.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var oldLogin = await _factory.CreateClient().PostAsJsonAsync("/auth/login", new { username = "soleuser", password = TestPasswords.Default });
+        oldLogin.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var newLogin = await _factory.CreateClient().PostAsJsonAsync("/auth/login", new { username = "soleuser", password = TestPasswords.Alternate });
+        newLogin.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task ResetPasswordCommand_RevokesAllJwtSessions()
+    {
+        await EnsureCleanDatabaseAsync();
+        var registerClient = _factory.CreateClient();
+        await registerClient.PostAsJsonAsync("/auth/register", new { username = "soleuser", password = TestPasswords.Default });
+
+        var clientA = _factory.CreateClient();
+        var loginA = await clientA.PostAsJsonAsync("/auth/login", new { username = "soleuser", password = TestPasswords.Default });
+        loginA.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var passwordService = scope.ServiceProvider.GetRequiredService<PasswordService>();
+            var code = await ResetPasswordCommand.ExecuteAsync(
+                db,
+                passwordService,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+                "soleuser",
+                TestPasswords.Alternate,
+                TextWriter.Null,
+                TextWriter.Null);
+            code.Should().Be(0);
+        }
+
+        var meA = await clientA.GetAsync("/auth/me");
+        meA.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
         var oldLogin = await _factory.CreateClient().PostAsJsonAsync("/auth/login", new { username = "soleuser", password = TestPasswords.Default });
         oldLogin.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

@@ -2,7 +2,6 @@ using System.Text;
 using System.Text.Json;
 using Dynastream.Fit;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tempo.Api.Data;
@@ -15,28 +14,21 @@ using FitFile = Dynastream.Fit.File;
 
 namespace Tempo.Api.Tests.Services;
 
-public class WorkoutIntakeTests : IDisposable
+public class WorkoutIntakeTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly FakeWeatherService _weather;
-    private readonly FakeRelativeEffortService _relativeEffort;
-    private readonly FakeBestEffortService _bestEfforts;
-    private readonly WorkoutIntake _intake;
-    private readonly GpxParserService _gpxParser;
-    private readonly FitParserService _fitParser;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private FakeWeatherService _weather = null!;
+    private FakeRelativeEffortService _relativeEffort = null!;
+    private FakeBestEffortService _bestEfforts = null!;
+    private WorkoutIntake _intake = null!;
+    private GpxParserService _gpxParser = null!;
+    private FitParserService _fitParser = null!;
 
-    public WorkoutIntakeTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
 
         var elevationConfig = new ElevationCalculationConfig
         {
@@ -63,10 +55,17 @@ public class WorkoutIntakeTests : IDisposable
             NullLogger<WorkoutIntake>.Instance);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     [Fact]
@@ -94,6 +93,7 @@ public class WorkoutIntakeTests : IDisposable
         _bestEfforts.CallCount.Should().Be(1);
         stored.Weather.Should().Be("{\"source\":\"fake\"}");
         stored.RelativeEffort.Should().Be(7);
+        stored.Rpe.Should().BeNull();
     }
 
     [Fact]
@@ -220,12 +220,6 @@ public class WorkoutIntakeTests : IDisposable
         };
         _db.Workouts.Add(existing);
         await _db.SaveChangesAsync();
-        _db.WorkoutRoutes.Add(new WorkoutRoute
-        {
-            WorkoutId = existing.Id,
-            RouteGeoJson = ""
-        });
-        await _db.SaveChangesAsync();
 
         using var stream = CreateGpxStream();
         var result = await _intake.ProcessAsync(stream, "morning.gpx");
@@ -265,6 +259,174 @@ public class WorkoutIntakeTests : IDisposable
         stored.DurationS.Should().Be(1200);
         stored.TimerTimeS.Should().Be(1000);
         stored.AvgPaceS.Should().BeApproximately(1000 / (stored.DistanceM / 1000.0), 0.01);
+    }
+
+    [Theory]
+    [InlineData((byte)70, (byte)7)]
+    [InlineData((byte)10, (byte)1)]
+    [InlineData((byte)100, (byte)10)]
+    public async Task ProcessAsync_Created_Fit_FillsRpeFromWorkoutRpe(byte rawWorkoutRpe, byte expectedRpe)
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(workoutRpe: rawWorkoutRpe);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "rpe.fit");
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Rpe.Should().Be(expectedRpe);
+        using var doc = JsonDocument.Parse(stored.RawFitData!);
+        doc.RootElement.GetProperty("session").GetProperty("workoutRpe").GetInt32()
+            .Should().Be(rawWorkoutRpe);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData((byte)0)]
+    [InlineData((byte)15)]
+    [InlineData((byte)55)]
+    [InlineData((byte)255)]
+    public async Task ProcessAsync_Created_Fit_LeavesRpeNull_WhenWorkoutRpeInvalidOrMissing(byte? rawWorkoutRpe)
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(workoutRpe: rawWorkoutRpe);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "no-rpe.fit");
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Rpe.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Created_Fit_LeavesRpeNull_WhenOnlyFeelPresent()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(workoutFeel: 50);
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "feel-only.fit");
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Rpe.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Updated_Fit_FillsRpeWhenNullWithoutChangingDuration()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(elapsedSeconds: 1200f, timerSeconds: 1000f, workoutRpe: 70);
+        using (var parseStream = new MemoryStream(fitBytes))
+        {
+            var parsed = _fitParser.ParseFit(parseStream);
+            var existing = new Workout
+            {
+                StartedAt = parsed.StartTime,
+                DurationS = parsed.DurationSeconds,
+                DistanceM = parsed.DistanceMeters,
+                AvgPaceS = parsed.DurationSeconds / (parsed.DistanceMeters / 1000.0),
+                ElevGainM = 42,
+                RawFileData = new byte[] { 1, 2, 3 },
+                RawFileName = "old.fit",
+                RawFileType = "fit",
+                RawFitData = """{"session":{}}""",
+                Source = "fit_import",
+                RunType = "Easy Run",
+                CreatedAt = System.DateTime.UtcNow
+            };
+            _db.Workouts.Add(existing);
+            await _db.SaveChangesAsync();
+
+            var originalDuration = existing.DurationS;
+            using var stream = new MemoryStream(fitBytes);
+            var result = await _intake.ProcessAsync(stream, "run.fit");
+
+            result.Action.Should().Be("updated");
+            var updated = await _db.Workouts.SingleAsync();
+            updated.DurationS.Should().Be(originalDuration);
+            updated.Rpe.Should().Be(7);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Updated_Fit_DoesNotOverwriteExistingRpe()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var fitBytes = CreateMinimalFitBytes(elapsedSeconds: 1200f, timerSeconds: 1000f, workoutRpe: 70);
+        using (var parseStream = new MemoryStream(fitBytes))
+        {
+            var parsed = _fitParser.ParseFit(parseStream);
+            var existing = new Workout
+            {
+                StartedAt = parsed.StartTime,
+                DurationS = parsed.DurationSeconds,
+                DistanceM = parsed.DistanceMeters,
+                AvgPaceS = parsed.DurationSeconds / (parsed.DistanceMeters / 1000.0),
+                ElevGainM = 42,
+                Rpe = 8,
+                RawFileData = new byte[] { 1, 2, 3 },
+                RawFileName = "old.fit",
+                RawFileType = "fit",
+                RawFitData = """{"session":{}}""",
+                Source = "fit_import",
+                RunType = "Easy Run",
+                CreatedAt = System.DateTime.UtcNow
+            };
+            _db.Workouts.Add(existing);
+            await _db.SaveChangesAsync();
+
+            using var stream = new MemoryStream(fitBytes);
+            var result = await _intake.ProcessAsync(stream, "run.fit");
+
+            result.Action.Should().Be("updated");
+            var updated = await _db.Workouts.SingleAsync();
+            updated.Rpe.Should().Be(8);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Skipped_Fit_DoesNotFillNullRpe()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var firstBytes = CreateMinimalFitBytes();
+        using (var first = new MemoryStream(firstBytes))
+        {
+            var created = await _intake.ProcessAsync(first, "run.fit");
+            created.Action.Should().Be("created");
+            created.Workout!.Rpe.Should().BeNull();
+        }
+
+        var secondBytes = CreateMinimalFitBytes(workoutRpe: 70);
+        using var second = new MemoryStream(secondBytes);
+        var result = await _intake.ProcessAsync(second, "run.fit");
+
+        result.Action.Should().Be("skipped");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Rpe.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Skipped_Fit_DoesNotOverwriteExistingRpe()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var firstBytes = CreateMinimalFitBytes(workoutRpe: 50);
+        using (var first = new MemoryStream(firstBytes))
+        {
+            var created = await _intake.ProcessAsync(first, "run.fit");
+            created.Action.Should().Be("created");
+            created.Workout!.Rpe.Should().Be(5);
+        }
+
+        var secondBytes = CreateMinimalFitBytes(workoutRpe: 90);
+        using var second = new MemoryStream(secondBytes);
+        var result = await _intake.ProcessAsync(second, "run.fit");
+
+        result.Action.Should().Be("skipped");
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Rpe.Should().Be(5);
     }
 
     [Fact]
@@ -768,6 +930,355 @@ public class WorkoutIntakeTests : IDisposable
         result.Action.Should().Be("created");
         var stored = await _db.Workouts.SingleAsync();
         stored.HealthKitUuid.Should().BeNull();
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_Created_WritesRow()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("  99  ");
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        result.Workout.Should().NotBeNull();
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Id.Should().Be(result.Workout!.Id);
+        var identity = await _db.WorkoutExternalIdentities.SingleAsync();
+        identity.WorkoutId.Should().Be(stored.Id);
+        identity.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
+        identity.ExternalId.Should().Be("99");
+        identity.CreatedAt.Should().BeCloseTo(System.DateTime.UtcNow, TimeSpan.FromSeconds(30));
+        _weather.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_Skipped_WhenSamePairPostedTwice()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("42");
+
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        var (decoded2, overlay2) = CreateDecodedWithExternalIdentity("42");
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(first.Workout!.Id);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(1);
+        _weather.CallCount.Should().Be(0);
+        _relativeEffort.CallCount.Should().Be(0);
+        _bestEfforts.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_Skipped_WhenSamePairDifferentStats()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("7", distanceM: 5000);
+
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        var (decoded2, overlay2) = CreateDecodedWithExternalIdentity(
+            "7",
+            startedAt: decoded.StartedAt.AddHours(1),
+            durationS: 2400,
+            distanceM: 10000);
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(first.Workout!.Id);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        _weather.CallCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(null, "123")]
+    [InlineData("intervals_icu", null)]
+    [InlineData("  ", "123")]
+    [InlineData("intervals_icu", "  ")]
+    [InlineData("", "123")]
+    public async Task PersistAsync_ExternalIdentity_InvalidOverlay_CreatesWorkoutWithoutRow(
+        string? source,
+        string? externalId)
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("unused");
+        overlay = new WorkoutIntakeOverlay
+        {
+            Source = overlay.Source,
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = source,
+                ExternalId = externalId
+            }
+        };
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_DeleteWorkout_CascadesIdentityRows()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("cascade");
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+        result.Action.Should().Be("created");
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(1);
+
+        _db.Workouts.Remove(result.Workout!);
+        await _db.SaveChangesAsync();
+
+        (await _db.Workouts.CountAsync()).Should().Be(0);
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_ParallelSamePair_YieldsOneWorkout()
+    {
+        await using var db1 = PostgresTestFixture.CreateContext(_cloneConnectionString);
+        await TestDataSeeder.SeedUserSettingsAsync(db1);
+
+        await using var db2 = PostgresTestFixture.CreateContext(_cloneConnectionString);
+
+        var intake1 = CreateIntake(db1);
+        var intake2 = CreateIntake(db2);
+        var (decoded1, overlay1) = CreateDecodedWithExternalIdentity(
+            "race-1",
+            startedAt: new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc),
+            distanceM: 5000);
+        var (decoded2, overlay2) = CreateDecodedWithExternalIdentity(
+            "race-1",
+            startedAt: new System.DateTime(2024, 8, 1, 14, 0, 0, System.DateTimeKind.Utc),
+            distanceM: 8000);
+
+        var results = await Task.WhenAll(
+            intake1.PersistAsync(decoded1, overlay1),
+            intake2.PersistAsync(decoded2, overlay2));
+
+        results.Select(r => r.Action).Should().OnlyContain(a => a == "created" || a == "skipped");
+        results.Select(r => r.Action).Should().Contain("created");
+        results.Select(r => r.Workout!.Id).Distinct().Should().HaveCount(1);
+
+        await using var verify = PostgresTestFixture.CreateContext(_cloneConnectionString);
+        (await verify.Workouts.CountAsync()).Should().Be(1);
+        (await verify.WorkoutExternalIdentities.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_AttachesOnStatsMatch_WithoutRenamingSource()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var stream = CreateGpxStream();
+        var created = await _intake.ProcessAsync(stream, "morning.gpx");
+        created.Action.Should().Be("created");
+        var gpx = created.Workout!;
+        gpx.Source.Should().Be("gpx_import");
+
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        var (decoded, _) = CreateDecodedWithExternalIdentity(
+            "icu-attach",
+            startedAt: gpx.StartedAt,
+            durationS: gpx.DurationS,
+            distanceM: gpx.DistanceM);
+        var overlay = new WorkoutIntakeOverlay
+        {
+            Source = WorkoutExternalSource.IntervalsIcu,
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = WorkoutExternalSource.IntervalsIcu,
+                ExternalId = "icu-attach"
+            }
+        };
+
+        var second = await _intake.PersistAsync(decoded, overlay);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(gpx.Id);
+        (await _db.Workouts.CountAsync()).Should().Be(1);
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Source.Should().Be("gpx_import");
+        var identity = await _db.WorkoutExternalIdentities.SingleAsync();
+        identity.WorkoutId.Should().Be(gpx.Id);
+        identity.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
+        identity.ExternalId.Should().Be("icu-attach");
+        _weather.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_AttachesOnStatsMatch_WhenDuplicateUpdates()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var first = CreateGpxStream();
+        var created = await _intake.ProcessAsync(first, "morning.gpx");
+        created.Action.Should().Be("created");
+        var workout = await _db.Workouts.SingleAsync();
+        workout.Source.Should().Be("gpx_import");
+        workout.RawFileData = null;
+        await _db.SaveChangesAsync();
+
+        _weather.Reset();
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        using var second = CreateGpxStream();
+        var rawFileData = second.ToArray();
+        second.Position = 0;
+        var parsed = _gpxParser.ParseGpx(second);
+        var decoded = new DecodedWorkout
+        {
+            StartedAt = parsed.StartTime,
+            DurationS = parsed.DurationSeconds,
+            DistanceM = parsed.DistanceMeters,
+            TrackPoints = parsed.TrackPoints,
+            SeriesPoints = null,
+            Name = parsed.Name,
+            RawGpxDataJson = parsed.RawGpxDataJson,
+            RawFileData = rawFileData,
+            RawFileName = "morning.gpx",
+            RawFileType = "gpx"
+        };
+        var overlay = new WorkoutIntakeOverlay
+        {
+            Source = WorkoutExternalSource.IntervalsIcu,
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = WorkoutExternalSource.IntervalsIcu,
+                ExternalId = "icu-update"
+            }
+        };
+
+        var result = await _intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("updated");
+        result.Workout!.Id.Should().Be(workout.Id);
+        var stored = await _db.Workouts.SingleAsync();
+        stored.Source.Should().Be("gpx_import");
+        stored.RawFileData.Should().NotBeNullOrEmpty();
+        var identity = await _db.WorkoutExternalIdentities.SingleAsync();
+        identity.WorkoutId.Should().Be(workout.Id);
+        identity.ExternalId.Should().Be("icu-update");
+        _weather.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_AlreadyHasSource_DoesNotOverwrite()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var stream = CreateGpxStream();
+        var created = await _intake.ProcessAsync(stream, "morning.gpx");
+        created.Action.Should().Be("created");
+        var gpx = created.Workout!;
+
+        var (decoded1, overlay1) = CreateDecodedWithExternalIdentity(
+            "1",
+            startedAt: gpx.StartedAt,
+            durationS: gpx.DurationS,
+            distanceM: gpx.DistanceM);
+        var first = await _intake.PersistAsync(decoded1, overlay1);
+        first.Action.Should().Be("skipped");
+        (await _db.WorkoutExternalIdentities.SingleAsync()).ExternalId.Should().Be("1");
+
+        var (decoded2, _) = CreateDecodedWithExternalIdentity(
+            "2",
+            startedAt: gpx.StartedAt,
+            durationS: gpx.DurationS,
+            distanceM: gpx.DistanceM);
+        var overlay2 = new WorkoutIntakeOverlay
+        {
+            Source = WorkoutExternalSource.IntervalsIcu,
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = WorkoutExternalSource.IntervalsIcu,
+                ExternalId = "2"
+            }
+        };
+
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(gpx.Id);
+        var identity = await _db.WorkoutExternalIdentities.SingleAsync();
+        identity.ExternalId.Should().Be("1");
+        identity.Source.Should().Be(WorkoutExternalSource.IntervalsIcu);
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_SameIdAlreadyOnWorkout_DoesNotOverwrite()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decoded, overlay) = CreateDecodedWithExternalIdentity("keep");
+        var first = await _intake.PersistAsync(decoded, overlay);
+        first.Action.Should().Be("created");
+
+        var (decoded2, overlay2) = CreateDecodedWithExternalIdentity("keep");
+        var second = await _intake.PersistAsync(decoded2, overlay2);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(first.Workout!.Id);
+        (await _db.WorkoutExternalIdentities.CountAsync()).Should().Be(1);
+        (await _db.WorkoutExternalIdentities.SingleAsync()).ExternalId.Should().Be("keep");
+    }
+
+    [Fact]
+    public async Task PersistAsync_ExternalIdentity_OwnedElsewhere_SkipsOwner()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var (decodedA, overlayA) = CreateDecodedWithExternalIdentity("1", distanceM: 5000);
+        var first = await _intake.PersistAsync(decodedA, overlayA);
+        first.Action.Should().Be("created");
+        var ownerId = first.Workout!.Id;
+
+        using var gpx = CreateGpxStream();
+        var createdB = await _intake.ProcessAsync(gpx, "other.gpx");
+        createdB.Action.Should().Be("created");
+        var workoutB = createdB.Workout!;
+        workoutB.Id.Should().NotBe(ownerId);
+
+        var (decodedReuse, _) = CreateDecodedWithExternalIdentity(
+            "1",
+            startedAt: workoutB.StartedAt,
+            durationS: workoutB.DurationS,
+            distanceM: workoutB.DistanceM);
+        var overlayReuse = new WorkoutIntakeOverlay
+        {
+            Source = WorkoutExternalSource.IntervalsIcu,
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = WorkoutExternalSource.IntervalsIcu,
+                ExternalId = "1"
+            }
+        };
+
+        var second = await _intake.PersistAsync(decodedReuse, overlayReuse);
+
+        second.Action.Should().Be("skipped");
+        second.Workout!.Id.Should().Be(ownerId);
+        (await _db.Workouts.CountAsync()).Should().Be(2);
+        var identity = await _db.WorkoutExternalIdentities.SingleAsync();
+        identity.WorkoutId.Should().Be(ownerId);
+        identity.ExternalId.Should().Be("1");
+        (await _db.WorkoutExternalIdentities.CountAsync(i => i.WorkoutId == workoutB.Id)).Should().Be(0);
     }
 
     [Fact]
@@ -1193,6 +1704,48 @@ public class WorkoutIntakeTests : IDisposable
             .Should().Be(lapCount);
     }
 
+    private static WorkoutIntake CreateIntake(TempoDbContext db)
+    {
+        var elevationConfig = new ElevationCalculationConfig
+        {
+            NoiseThresholdMeters = 2.0,
+            MinDistanceMeters = 10.0
+        };
+        return new WorkoutIntake(
+            db,
+            new GpxParserService(elevationConfig),
+            new FitParserService(),
+            new TrackGeometry(elevationConfig),
+            new FakeWeatherService(),
+            new HeartRateZoneService(),
+            new FakeRelativeEffortService(),
+            new FakeBestEffortService(),
+            new SplitHeartRateService(),
+            NullLogger<WorkoutIntake>.Instance);
+    }
+
+    private static (DecodedWorkout Decoded, WorkoutIntakeOverlay Overlay) CreateDecodedWithExternalIdentity(
+        string externalId,
+        System.DateTime? startedAt = null,
+        int durationS = 1800,
+        double distanceM = 5000)
+    {
+        var (decoded, _) = CreateHealthKitOutdoorDecoded(
+            startedAt: startedAt,
+            durationS: durationS,
+            distanceM: distanceM);
+        var overlay = new WorkoutIntakeOverlay
+        {
+            Source = "fit_import",
+            ExternalIdentity = new WorkoutIntakeExternalIdentity
+            {
+                Source = WorkoutExternalSource.IntervalsIcu,
+                ExternalId = externalId
+            }
+        };
+        return (decoded, overlay);
+    }
+
     private static (DecodedWorkout Decoded, WorkoutIntakeOverlay Overlay) CreateHealthKitOutdoorDecoded(
         System.DateTime? startedAt = null,
         int durationS = 1800,
@@ -1368,7 +1921,9 @@ public class WorkoutIntakeTests : IDisposable
         float timerSeconds = 1200f,
         float? movingSeconds = null,
         float totalDistanceMeters = 2400f,
-        IReadOnlyList<SyntheticLap>? laps = null)
+        IReadOnlyList<SyntheticLap>? laps = null,
+        byte? workoutRpe = null,
+        byte? workoutFeel = null)
     {
         var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
         var fitStart = new FitDateTime(start);
@@ -1424,6 +1979,14 @@ public class WorkoutIntakeTests : IDisposable
         }
         session.SetTotalDistance(totalDistanceMeters);
         session.SetSport(Sport.Running);
+        if (workoutRpe.HasValue)
+        {
+            session.SetWorkoutRpe(workoutRpe.Value);
+        }
+        if (workoutFeel.HasValue)
+        {
+            session.SetWorkoutFeel(workoutFeel.Value);
+        }
         encode.Write(session);
         encode.Close();
 

@@ -403,6 +403,33 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
     }
 
     [Fact]
+    public async Task ExportAllDataAsync_WorkoutsJsonOmitsSplitHeartRateBackfill()
+    {
+        await CleanDatabaseAsync();
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db);
+        workout.SplitHeartRateBackfill = SplitHeartRateBackfillService.NoOverlapCursor;
+        await _db.SaveChangesAsync();
+
+        using var zipStream = new MemoryStream();
+        await _exportService.ExportAllDataAsync(zipStream);
+        zipStream.Position = 0;
+
+        using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+        var workoutsEntry = archive.GetEntry("data/workouts.json");
+        workoutsEntry.Should().NotBeNull();
+        using var workoutsStream = workoutsEntry!.Open();
+        var workoutsJson = await new StreamReader(workoutsStream).ReadToEndAsync();
+        workoutsJson.Should().NotContain("splitHeartRateBackfill");
+        workoutsJson.Should().NotContain("SplitHeartRateBackfill");
+        var workouts = JsonSerializer.Deserialize<List<JsonElement>>(workoutsJson);
+        workouts.Should().NotBeNull();
+        workouts.Should().HaveCount(1);
+        workouts![0].TryGetProperty("splitHeartRateBackfill", out _).Should().BeFalse();
+        workouts[0].TryGetProperty("SplitHeartRateBackfill", out _).Should().BeFalse();
+        workouts[0].GetProperty("id").GetGuid().Should().Be(workout.Id);
+    }
+
+    [Fact]
     public async Task ExportAllDataAsync_RoutesJsonDoesNotIncludePreviewGeoJson()
     {
         await CleanDatabaseAsync();
@@ -432,15 +459,7 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
 
     private async Task CleanDatabaseAsync()
     {
-        // Delete in order to respect foreign key constraints
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutTimeSeries");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutSplits");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutMedia");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM BestEfforts");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM WorkoutRoutes");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Workouts");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM UserSettings");
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Shoes");
+        await TestDataSeeder.SafeClearAllDataAsync(_db, preserveUsers: true);
     }
 }
 

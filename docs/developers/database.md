@@ -18,6 +18,7 @@ Core workout entity with statistics and metadata.
 - `StartedAt` (DateTime)
 - `DurationS` (int) - Total elapsed time (wall clock, including pauses)
 - `TimerTimeS` (int, nullable) - FIT timer time (`total_timer_time`); Garmin’s primary duration when present
+- `SplitHeartRateBackfill` (string, nullable) - startup split-HR idle cursor (`no_overlap`); not a runner-facing metric; omitted from GET and Tempo ZIP export
 - `DistanceM` (double)
 - `ElevationGainM` (double, nullable)
 - `ElevationLossM` (double, nullable)
@@ -45,6 +46,41 @@ Core workout entity with statistics and metadata.
 - `RunType`
 - `ShoeId` - Foreign key index for efficient shoe queries
 - GIN indexes on JSONB fields: `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, `Weather`
+
+### Workout external identity
+
+A `(source, externalId)` row linking a Workout to one upstream system for intake idempotency. Not `Workout.Source` (ingest provenance such as `gpx_import` / `fit_import` / `healthkit`). HealthKit remains on `Workout.HealthKitUuid` until a later move; this table is not written with `healthkit` rows yet.
+
+**Columns:**
+- `Id` (Guid, Primary Key)
+- `WorkoutId` (Guid, Foreign Key to Workout, cascade delete)
+- `Source` (string, max 50) — upstream that minted the id (e.g. `intervals_icu`)
+- `ExternalId` (string, max 128) — opaque token, trimmed, case-sensitive
+- `CreatedAt` (DateTime UTC) — when the row was attached; not a sync cursor
+
+**Indexes:**
+- Unique composite on `(Source, ExternalId)` — one Workout owns a given upstream id
+- Unique composite on `(WorkoutId, Source)` — one id per upstream per Workout
+
+**Relationship:**
+- Many-to-one with `Workout` (cascade delete)
+
+### Intervals.icu connection
+
+Instance-level 0-or-1 row for a personal intervals.icu API key. Application-enforced single row (same idea as UserSettings). Not exported in a Tempo ZIP.
+
+**Columns:**
+- `Id` (Guid, Primary Key)
+- `ApiKeyCiphertext` (bytea) — AES-GCM blob (nonce + tag + ciphertext). Never returned on GET.
+- `Enabled` (bool) — live sync flag (poller is a later slice)
+- `ConnectedAt` (DateTime UTC) — sync origin floor; set on first persist
+- `LastSuccessfulSyncAt` (DateTime UTC, nullable)
+- `LastSyncAttemptAt` (DateTime UTC, nullable)
+- `LastError` (string, max 500, nullable) — safe message, no key material
+- `CreatedAt` / `UpdatedAt` (DateTime UTC)
+
+**Relationship:**
+- Standalone (no FK to Workout)
 
 ### WorkoutRoute
 
@@ -208,6 +244,7 @@ Workout (1) ── (N) WorkoutMedia
 Workout (N) ── (1) Shoe (via ShoeId, nullable)
 UserSettings (1) ── (1) Shoe (via DefaultShoeId, nullable)
 ImportJob (standalone; no FK to Workout)
+IntervalsIcuConnection (standalone; no FK)
 ```
 
 ## Migrations
@@ -248,6 +285,7 @@ The `__EFMigrationsHistory` table tracks applied migrations. The `DatabaseMigrat
 - **Workout.StartedAt** - Fast date range queries
 - **Workout composite (StartedAt, DistanceM, DurationS)** - Duplicate detection
 - **Workout.HealthKitUuid** (unique) - HealthKit import idempotency
+- **WorkoutExternalIdentities** unique `(Source, ExternalId)` and unique `(WorkoutId, Source)`
 - **WorkoutSplit (WorkoutId, Idx)** - Efficient split queries
 - **WorkoutTimeSeries (WorkoutId, ElapsedSeconds)** - Time-series queries
 

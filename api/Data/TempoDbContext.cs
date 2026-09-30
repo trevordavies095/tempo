@@ -20,6 +20,8 @@ public class TempoDbContext : DbContext
     public DbSet<BestEffort> BestEfforts { get; set; }
     public DbSet<Shoe> Shoes { get; set; }
     public DbSet<ImportJob> ImportJobs { get; set; }
+    public DbSet<WorkoutExternalIdentity> WorkoutExternalIdentities { get; set; }
+    public DbSet<IntervalsIcuConnection> IntervalsIcuConnections { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -147,6 +149,23 @@ public class TempoDbContext : DbContext
             entity.HasIndex(e => e.Status);
             entity.Property(e => e.ErrorDetailsJson).HasColumnType("text");
             entity.Property(e => e.ResultJson).HasColumnType("text");
+        });
+
+        modelBuilder.Entity<WorkoutExternalIdentity>(entity =>
+        {
+            entity.HasOne(e => e.Workout)
+                .WithMany(w => w.ExternalIdentities)
+                .HasForeignKey(e => e.WorkoutId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.Source, e.ExternalId }).IsUnique();
+            entity.HasIndex(e => new { e.WorkoutId, e.Source }).IsUnique();
+        });
+
+        modelBuilder.Entity<IntervalsIcuConnection>(entity =>
+        {
+            entity.Property(e => e.ApiKeyCiphertext).IsRequired();
+            entity.Property(e => e.LastError).HasMaxLength(500);
         });
     }
 }

@@ -1,0 +1,41 @@
+meta {
+  name: get /ready
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/ready
+  body: none
+  auth: inherit
+}
+
+example {
+  name: 200 Response
+  description: Ready (database ok)
+
+  request: {
+    url: {{baseUrl}}/ready
+    method: GET
+    mode: none
+  }
+
+  response: {
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+{
+  "status": "ready",
+  "checks": {
+    "database": "ok"
+  }
+}
+'''
+    }
+  }
+}

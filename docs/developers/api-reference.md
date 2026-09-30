@@ -725,6 +725,69 @@ Content-Type: application/json
 
 Set `shoeId` to `null` to remove the default shoe.
 
+### Get intervals.icu connection
+
+```http
+GET /settings/intervals-icu
+```
+
+Always **200**. Never returns the API key.
+
+Disconnected:
+
+```json
+{ "connected": false }
+```
+
+Connected:
+
+```json
+{
+  "connected": true,
+  "enabled": true,
+  "lastSuccessfulSyncAt": null,
+  "lastSyncAttemptAt": null,
+  "lastError": null
+}
+```
+
+### Connect intervals.icu
+
+```http
+PUT /settings/intervals-icu
+Content-Type: application/json
+
+{
+  "apiKey": "personal-key"
+}
+```
+
+Probes intervals.icu as athlete `0` before persist. **400** if the key is blank or rejected (401/403). **503** if intervals.icu is unreachable. A second PUT while connected **replaces the ciphertext only** (`connectedAt` / `lastSuccessfulSyncAt` stay). **200** with the same status document as GET (no key).
+
+### Disconnect intervals.icu
+
+```http
+DELETE /settings/intervals-icu
+```
+
+Deletes the connection row. **204** if it was already gone. Workouts and Workout external identities stay.
+
+### Re-enable intervals.icu
+
+```http
+POST /settings/intervals-icu/enable
+```
+
+Probes with the stored key and turns live sync back on. **404** if there is no connection. **400** if decrypt or probe fails. **503** if intervals.icu is unreachable. **200** with the status document.
+
+### Sync intervals.icu now
+
+```http
+POST /settings/intervals-icu/sync
+```
+
+Wakes the live sync worker. **202** when connected and enabled (does not import on the request thread), including coalesced wakes while a tick is already in flight or pending. **204** when there is no connection or sync is disabled.
+
 ## Shoes
 
 ### List Shoes
@@ -807,13 +870,33 @@ GET /version
 
 Returns application version, build date, and git commit.
 
-### Health Check
+### Health (liveness)
 
 ```http
 GET /health
 ```
 
-Public endpoint (no authentication required).
+Public endpoint (no authentication required). Returns `200` with `{ "status": "healthy" }` while the API process is accepting HTTP. Does **not** check Postgres — this can be `200` while the database is down. Orchestrators that need to know whether this instance can serve should use `/ready`.
+
+### Ready (readiness)
+
+```http
+GET /ready
+```
+
+Public endpoint (no authentication required). Returns `200` when Postgres is reachable within 2 seconds:
+
+```json
+{ "status": "ready", "checks": { "database": "ok" } }
+```
+
+Returns `503` when the database check fails or times out:
+
+```json
+{ "status": "not_ready", "checks": { "database": "fail" } }
+```
+
+Bodies never include connection strings, hostnames, or exception text. Compose API healthchecks and reverse-proxy “can I send traffic” probes should use this URL (`curl -f` already fails on `503`).
 
 ## Error Responses
 

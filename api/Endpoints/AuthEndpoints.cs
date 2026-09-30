@@ -197,8 +197,7 @@ public static class AuthEndpoints
             return Results.BadRequest(new { error = "New password must be different from the current password" });
         }
 
-        user.PasswordHash = passwordService.HashPassword(request.NewPassword);
-        user.SessionVersion++;
+        UserPassword.ApplyNewPassword(user, request.NewPassword, passwordService);
         await db.SaveChangesAsync();
 
         var rememberMe = string.Equals(

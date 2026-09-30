@@ -48,6 +48,10 @@ _Avoid_: GpxParser splits, GPS smoothing (as the module name)
 The persist pipeline behind `POST /workouts/import`, `POST /workouts/import/healthkit`, and Strava bulk per-file processing: decode adapter (GPX/FIT/HealthKit) then `PersistAsync` (geometry, duplicate policy, weather, relative effort, best efforts). Persist is the single pipeline; new formats enter via decoded input, not a second pipeline. Not the HTTP module and not Settings ZIP restore.
 _Avoid_: import endpoint (when meaning this module), bulk persist
 
+**Workout external identity**:
+A `(source, externalId)` row linking a Workout to one upstream system. Used for intake idempotency (find / persist / unique-race) before the start/distance/elapsed stats key.
+_Avoid_: `Workout.Source` (provenance of how the Workout was ingested: `fit_import`, `healthkit`, `strava_import`, …), `HealthKitUuid` (dedicated column until a later move), activity id as a Workout column
+
 **Import job**:
 A Postgres-backed background import (`kind`: `strava_bulk` or `tempo_export`) with chunked upload (or whole-ZIP adapter), worker processing, poll, cancel, and one-active-job rules. Not Workout intake and not single-file GPX/FIT import.
 _Avoid_: Hangfire job, sync bulk POST (as the product model)
@@ -78,6 +82,14 @@ A pair of running shoes with mileage and Workout assignments.
 Single-row preferences: units, heart-rate zones, default shoe. Appearance (dark/light) is a command-center preference, not UserSettings.
 _Avoid_: config, profile
 
+**Intervals.icu connection**:
+Instance-level 0-or-1 row linking Tempo to the authenticated intervals.icu athlete (always id `0`): encrypted personal API key, enabled flag, sync origin, last-success / last-error. Command-center Settings card. Not UserSettings, not Tempo `ApiKey`, not an ImportJob.
+_Avoid_: UserSettings, Tempo API key, ImportJob (as the connection)
+
+**Intervals.icu sync**:
+Hosted poller plus on-demand wake. Lists recent running activities, fetches original FIT/GPX, feeds Workout intake with overlay identity `source = intervals_icu`. Not backfill, not a webhook, not client-held secrets.
+_Avoid_: ImportJob, backfill, webhook (as this product)
+
 **Onboarding**:
 Hard-gated first-run wizard on the command center after registration (optional Tempo export restore, essentials, optional Strava bulk). Driven by `User.OnboardingCompleted` (account flag, not UserSettings). Day-to-day Import stays GPX/FIT; late ZIPs use Settings → Migrate / restore.
 _Avoid_: setup wizard as UserSettings, re-run setup from Settings
@@ -93,3 +105,7 @@ _Avoid_: hover state, cursor (as the domain name)
 **Cadence**:
 Steps per minute (both feet). Stored in `CadenceRpm` / `AvgCadenceRpm` / `MaxCadenceRpm` (historical names; the number is steps/min). FIT decode multiplies record and session avg/max cadence by 2 (strides → steps); GPX TrackPointExtension and HealthKit `cad` are stored as given. API JSON keys stay `cadenceRpm` / `avgCadenceRpm` / `maxCadenceRpm`.
 _Avoid_: rpm (for running), strides/min (as the stored unit)
+
+**RPE**:
+Rate of Perceived Exertion, 1–10 on a Workout. Athlete-set on Workout overview, or filled from FIT session `workout_rpe` (Borg CR10 × 10) when null. Not Feel (Very Weak → Very Strong). Not relative effort.
+_Avoid_: Feel, perceived exertion as relative effort, Garmin Connect-only RPE

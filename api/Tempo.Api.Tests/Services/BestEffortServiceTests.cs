@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
@@ -13,40 +12,34 @@ namespace Tempo.Api.Tests.Services;
 /// <summary>
 /// Unit tests for BestEffortService covering calculation logic and error handling
 /// </summary>
-public class BestEffortServiceTests : IDisposable
+public class BestEffortServiceTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly BestEffortService _service;
-    private readonly ILogger<BestEffortService> _logger;
-    private readonly SqliteConnection _connection;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private BestEffortService _service = null!;
+    private ILogger<BestEffortService> _logger = null!;
 
-    public BestEffortServiceTests()
+    public async Task InitializeAsync()
     {
-        // Create in-memory SQLite database
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-        
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
 
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
-        
-        // Enable foreign key constraints for SQLite
-        _db.Database.ExecuteSqlRaw("PRAGMA foreign_keys = ON;");
-
-        // Create logger
         var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
         _logger = loggerFactory.CreateLogger<BestEffortService>();
-
         _service = new BestEffortService(_logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
     }
 
     #region GetBestEffortsAsync Tests

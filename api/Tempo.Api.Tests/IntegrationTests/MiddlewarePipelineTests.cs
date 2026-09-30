@@ -63,6 +63,7 @@ public class MiddlewarePipelineTests
         var originalJwtSecretDoubleUnderscore = Environment.GetEnvironmentVariable("JWT__SecretKey");
         var originalJwtSecretColon = Environment.GetEnvironmentVariable("JWT:SecretKey");
         var originalConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+        var cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
 
         try
         {
@@ -74,7 +75,7 @@ public class MiddlewarePipelineTests
             {
                 Environment.SetEnvironmentVariable("JWT:SecretKey", null);
             }
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=file::memory:?cache=shared");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", cloneConnectionString);
 
             // Create factory with Development environment
             using var factory = new WebApplicationFactory<Program>()
@@ -87,7 +88,7 @@ public class MiddlewarePipelineTests
                         config.AddInMemoryCollection(new Dictionary<string, string?>
                         {
                             { "JWT:SecretKey", "ValidSecretKeyForDevelopmentTesting12345678901234567890" },
-                            { "ConnectionStrings:DefaultConnection", "Data Source=file::memory:?cache=shared" }
+                            { "ConnectionStrings:DefaultConnection", cloneConnectionString }
                         });
                     });
                 });
@@ -103,6 +104,7 @@ public class MiddlewarePipelineTests
         }
         finally
         {
+            await PostgresTestFixture.DropCloneAsync(cloneConnectionString);
             // Restore original environment variables (both variations)
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
             Environment.SetEnvironmentVariable("JWT__SecretKey", originalJwtSecretDoubleUnderscore);
@@ -120,6 +122,7 @@ public class MiddlewarePipelineTests
         var originalJwtSecretDoubleUnderscore = Environment.GetEnvironmentVariable("JWT__SecretKey");
         var originalJwtSecretColon = Environment.GetEnvironmentVariable("JWT:SecretKey");
         var originalConnectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+        var cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
 
         try
         {
@@ -131,7 +134,7 @@ public class MiddlewarePipelineTests
             {
                 Environment.SetEnvironmentVariable("JWT:SecretKey", null);
             }
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Data Source=file::memory:?cache=shared");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", cloneConnectionString);
 
             // Create factory with Production environment
             using var factory = new WebApplicationFactory<Program>()
@@ -144,7 +147,7 @@ public class MiddlewarePipelineTests
                         config.AddInMemoryCollection(new Dictionary<string, string?>
                         {
                             { "JWT:SecretKey", "ValidSecretKeyForProductionTesting12345678901234567890" },
-                            { "ConnectionStrings:DefaultConnection", "Data Source=file::memory:?cache=shared" }
+                            { "ConnectionStrings:DefaultConnection", cloneConnectionString }
                         });
                     });
                 });
@@ -158,6 +161,7 @@ public class MiddlewarePipelineTests
         }
         finally
         {
+            await PostgresTestFixture.DropCloneAsync(cloneConnectionString);
             // Restore original environment variables (both variations)
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
             Environment.SetEnvironmentVariable("JWT__SecretKey", originalJwtSecretDoubleUnderscore);
@@ -181,6 +185,22 @@ public class MiddlewarePipelineTests
     }
 
     [Fact]
+    public async Task Cors_IsApplied_ForReadyEndpoint()
+    {
+        using var factory = new TempoWebApplicationFactory();
+        var client = factory.CreateClient();
+        var origin = "http://localhost:3000";
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/ready");
+        request.Headers.Add("Origin", origin);
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Should().ContainKey("Access-Control-Allow-Origin");
+        response.Headers.GetValues("Access-Control-Allow-Origin").Should().Contain(origin);
+    }
+
+    [Fact]
     public async Task HealthEndpoint_DoesNotRequireAuthentication()
     {
         // Arrange
@@ -194,6 +214,20 @@ public class MiddlewarePipelineTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("healthy");
+    }
+
+    [Fact]
+    public async Task ReadyEndpoint_DoesNotRequireAuthentication()
+    {
+        using var factory = new TempoWebApplicationFactory();
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/ready");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("ready");
+        content.Should().Contain("database");
     }
 
     [Fact]

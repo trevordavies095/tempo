@@ -156,6 +156,48 @@ Or add to `api/appsettings.Development.json` (local only; do not commit real key
 
 After configuring, hard-refresh the browser — CARTO and your browser may cache watermarked tiles briefly.
 
+## Logging profiles
+
+API console verbosity is controlled by one named profile — host config (environment / appsettings), restart to change. Not a Settings UI toggle. Do not use Microsoft.Extensions.Logging `Logging:LogLevel` or `Serilog__MinimumLevel__Override__…` as the public interface; the named profile owns Serilog levels.
+
+| Profile | Behavior |
+|---------|----------|
+| `standard` (default) | Tempo Information stays (imports, backfills, auth, media). Microsoft / System at Warning (hosting lifetime still prints). No EF SQL dumps. Request middleware logs 5xx and unhandled exceptions only. |
+| `debug` | EF SQL and non-probe request traces at Information. Profile name `debug` is **not** Serilog level Debug. |
+
+Successful `/health` and `/ready` request lines are omitted on both profiles (failed probes still log). Empty or unset profile → `standard`. Unknown values refuse to start (allowed: `standard`, `debug`; case-insensitive).
+
+### Docker
+
+Official Compose passes `Tempo__Logging__Profile` from `.env`:
+
+```bash
+TEMPO_LOGGING_PROFILE=standard
+```
+
+Restart the API after changing. Official Compose Postgres also runs with `log_checkpoints=off`; setting `debug` does **not** turn checkpoints back on (see [production logging](../deployment/production.md#logging)).
+
+### Local development
+
+```bash
+export Tempo__Logging__Profile=debug
+cd api && dotnet watch run
+```
+
+Or in `api/appsettings.Development.json`:
+
+```json
+{
+  "Tempo": {
+    "Logging": {
+      "Profile": "debug"
+    }
+  }
+}
+```
+
+Unset still means `standard` even when `ASPNETCORE_ENVIRONMENT=Development`.
+
 ## Environment Variables Reference
 
 All configuration can be set via environment variables using the double underscore (`__`) notation for nested keys:
@@ -168,6 +210,7 @@ All configuration can be set via environment variables using the double undersco
 | `ElevationCalculation:NoiseThresholdMeters` | `ElevationCalculation__NoiseThresholdMeters` | `2.0` |
 | `ElevationCalculation:MinDistanceMeters` | `ElevationCalculation__MinDistanceMeters` | `10.0` |
 | `CartoBasemaps:ApiKey` | `CartoBasemaps__ApiKey` or `CARTO_BASEMAPS_API_KEY` (via compose `.env`) | empty (watermarked tiles) |
+| `Tempo:Logging:Profile` | `Tempo__Logging__Profile` or `TEMPO_LOGGING_PROFILE` (via compose `.env`) | `standard` |
 | `CORS:AllowedOrigins` | `CORS__AllowedOrigins` | - |
 | `JWT:SecretKey` | `JWT__SecretKey` | - (REQUIRED in production) |
 | `JWT:Issuer` | `JWT__Issuer` | `Tempo` |

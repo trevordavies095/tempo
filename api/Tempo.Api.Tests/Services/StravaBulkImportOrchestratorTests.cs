@@ -1,7 +1,6 @@
 using System.IO.Compression;
 using System.Text;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tempo.Api.Data;
@@ -12,24 +11,17 @@ using Xunit;
 
 namespace Tempo.Api.Tests.Services;
 
-public class StravaBulkImportOrchestratorTests : IDisposable
+public class StravaBulkImportOrchestratorTests : IAsyncLifetime
 {
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly StravaBulkImportOrchestrator _orchestrator;
-    private readonly string _mediaDir;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private StravaBulkImportOrchestrator _orchestrator = null!;
+    private string _mediaDir = null!;
 
-    public StravaBulkImportOrchestratorTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString);
 
         _mediaDir = Path.Combine(Path.GetTempPath(), $"tempo-orch-media-{Guid.NewGuid()}");
         Directory.CreateDirectory(_mediaDir);
@@ -69,10 +61,18 @@ public class StravaBulkImportOrchestratorTests : IDisposable
             NullLogger<StravaBulkImportOrchestrator>.Instance);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
+
         TryDelete(_mediaDir);
     }
 

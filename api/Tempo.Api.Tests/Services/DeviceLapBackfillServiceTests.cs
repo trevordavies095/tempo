@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Dynastream.Fit;
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -14,27 +14,22 @@ using FitFile = Dynastream.Fit.File;
 
 namespace Tempo.Api.Tests.Services;
 
-public class DeviceLapBackfillServiceTests : IDisposable
+public class DeviceLapBackfillServiceTests : IAsyncLifetime
 {
     private static readonly System.DateTime FixtureStart =
         new(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
 
-    private readonly TempoDbContext _db;
-    private readonly SqliteConnection _connection;
-    private readonly ListLogger<DeviceLapBackfillService> _logger;
-    private readonly DeviceLapBackfillService _service;
+    private string _cloneConnectionString = null!;
+    private TempoDbContext _db = null!;
+    private ThrowingSaveChangesInterceptor _saveInterceptor = null!;
+    private ListLogger<DeviceLapBackfillService> _logger = null!;
+    private DeviceLapBackfillService _service = null!;
 
-    public DeviceLapBackfillServiceTests()
+    public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<TempoDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _db = new TempoDbContext(options);
-        _db.Database.EnsureCreated();
+        _cloneConnectionString = await PostgresTestFixture.CreateCloneAsync();
+        _saveInterceptor = new ThrowingSaveChangesInterceptor();
+        _db = PostgresTestFixture.CreateContext(_cloneConnectionString, _saveInterceptor);
         _logger = new ListLogger<DeviceLapBackfillService>();
         _service = new DeviceLapBackfillService(
             _db,
@@ -43,10 +38,28 @@ public class DeviceLapBackfillServiceTests : IDisposable
             _logger);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        if (_db is not null)
+        {
+            await _db.DisposeAsync();
+        }
+
+        if (_cloneConnectionString is not null)
+        {
+            await PostgresTestFixture.DropCloneAsync(_cloneConnectionString);
+        }
+    }
+
+    [Fact]
+    public void PostgresCandidateSql_UsesJsonbPath_AndDoesNotLikeCompactMarker()
+    {
+        var sql = DeviceLapBackfillService.PostgresCandidateSql;
+
+        sql.Should().Contain("->>'lapsBackfill'");
+        sql.Should().NotContain("\"lapsBackfill\":");
+        sql.Should().NotContain("::text LIKE");
+        sql.Should().NotContain("::text NOT LIKE");
     }
 
     [Fact]
@@ -290,7 +303,37 @@ public class DeviceLapBackfillServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_LogsCorruptFile_AndDoesNotThrow()
+    public async Task RunAsync_IsNoOp_WhenSpacedLapsBackfillAlreadyPresent()
+    {
+        var workout = await SeedFitCandidateAsync(durationS: 1800);
+        workout.RawFitData = """
+            {
+              "session": { "totalElapsedTime": 1800 },
+              "laps": [
+                { "start": "2024-01-15T10:00:00.0000000Z", "distance": 1000, "timer": 300, "elapsed": 300 },
+                { "start": "2024-01-15T10:05:00.0000000Z", "distance": 1000, "timer": 300, "elapsed": 300 }
+              ],
+              "lapsBackfill": "applied",
+              "source": "fit_import"
+            }
+            """;
+        await _db.SaveChangesAsync();
+        await _db.Entry(workout).ReloadAsync();
+        var rawBefore = workout.RawFitData;
+
+        var processed = await _service.RunAsync();
+
+        processed.Should().Be(0);
+        _logger.Messages.Should().Contain("Device lap backfill: 0 of 0");
+
+        await _db.Entry(workout).ReloadAsync();
+        workout.RawFitData.Should().Be(rawBefore);
+        Marker(workout.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerApplied);
+        (await DeviceLapCountAsync(workout.Id)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RunAsync_LogsCorruptFile_StampsUnparseable_AndSecondRunIsIdle()
     {
         var good = await SeedFitCandidateAsync(durationS: 1800, name: "Good");
         good.RawFitData = BuildRawFitWithLaps(
@@ -311,14 +354,85 @@ public class DeviceLapBackfillServiceTests : IDisposable
 
         var processed = await _service.RunAsync();
 
-        processed.Should().Be(1);
+        processed.Should().Be(2);
         _logger.Messages.Should().Contain(m => m.Contains("Device lap backfill failed for workout"));
 
         await _db.Entry(good).ReloadAsync();
         Marker(good.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerApplied);
 
         await _db.Entry(bad).ReloadAsync();
-        bad.RawFitData.Should().NotContain(DeviceLapBackfillService.LapsBackfillMarkerPrefix);
+        Marker(bad.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerUnparseable);
+        (await DeviceLapCountAsync(bad.Id)).Should().Be(0);
+        using (var doc = JsonDocument.Parse(bad.RawFitData!))
+        {
+            doc.RootElement.TryGetProperty("session", out _).Should().BeTrue();
+        }
+
+        _logger.Messages.Clear();
+        var second = await _service.RunAsync();
+        second.Should().Be(0);
+        _logger.Messages.Should().Contain("Device lap backfill: 0 of 0");
+    }
+
+    [Fact]
+    public async Task RunAsync_StampsUnparseable_WhenRawFitDataIsNotAnObject()
+    {
+        var workout = await SeedFitCandidateAsync(durationS: 1200);
+        workout.RawFitData = "[1, 2, 3]";
+        await _db.SaveChangesAsync();
+
+        var processed = await _service.RunAsync();
+
+        processed.Should().Be(1);
+        await _db.Entry(workout).ReloadAsync();
+        Marker(workout.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerUnparseable);
+        using (var doc = JsonDocument.Parse(workout.RawFitData!))
+        {
+            doc.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
+            doc.RootElement.EnumerateObject().Should().ContainSingle()
+                .Which.Name.Should().Be(DeviceLapBackfillService.LapsBackfillKey);
+        }
+
+        (await DeviceLapCountAsync(workout.Id)).Should().Be(0);
+
+        _logger.Messages.Clear();
+        var second = await _service.RunAsync();
+        second.Should().Be(0);
+        _logger.Messages.Should().Contain("Device lap backfill: 0 of 0");
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotStamp_WhenSaveFails()
+    {
+        var workout = await SeedFitCandidateAsync(durationS: 1800);
+        workout.RawFitData = BuildRawFitWithLaps(
+            sessionElapsed: 1800,
+            laps:
+            [
+                LapJson(FixtureStart, distance: 1000, timer: 300, elapsed: 300),
+                LapJson(FixtureStart.AddSeconds(300), distance: 1000, timer: 300, elapsed: 300)
+            ]);
+        await _db.SaveChangesAsync();
+        await _db.Entry(workout).ReloadAsync();
+        var rawBefore = workout.RawFitData;
+
+        _saveInterceptor.Throw = true;
+        var processed = await _service.RunAsync();
+        _saveInterceptor.Throw = false;
+
+        processed.Should().Be(0);
+        await _db.Entry(workout).ReloadAsync();
+        workout.RawFitData.Should().Be(rawBefore);
+        Marker(workout.RawFitData!).Should().BeNull();
+        (await DeviceLapCountAsync(workout.Id)).Should().Be(0);
+
+        _logger.Messages.Clear();
+        var second = await _service.RunAsync();
+        second.Should().Be(1);
+
+        await _db.Entry(workout).ReloadAsync();
+        Marker(workout.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerApplied);
+        (await DeviceLapCountAsync(workout.Id)).Should().Be(2);
     }
 
     private async Task<Workout> SeedFitCandidateAsync(
@@ -436,6 +550,36 @@ public class DeviceLapBackfillServiceTests : IDisposable
         encode.Close();
 
         return stream.ToArray();
+    }
+
+    private sealed class ThrowingSaveChangesInterceptor : SaveChangesInterceptor
+    {
+        public bool Throw { get; set; }
+
+        public override InterceptionResult<int> SavingChanges(
+            DbContextEventData eventData,
+            InterceptionResult<int> result)
+        {
+            if (Throw)
+            {
+                throw new InvalidOperationException("simulated save failure");
+            }
+
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Throw)
+            {
+                throw new InvalidOperationException("simulated save failure");
+            }
+
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class ListLogger<T> : ILogger<T>

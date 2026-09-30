@@ -7,13 +7,16 @@ namespace Tempo.Api.Services;
 /// <summary>
 /// Stamps <c>WorkoutSplit.AvgHeartRateBpm</c> from existing WorkoutTimeSeries.
 /// Does not re-derive km/mile geometry. Idempotent: workouts that already have
-/// any filled split, or that have no heart-rate samples, are left alone.
+/// any filled split, no heart-rate samples, or a split-HR cursor are left alone.
+/// No-overlap leftovers get <see cref="NoOverlapCursor"/> once; successful fills
+/// drop out via any split BPM and do not write <c>applied</c>.
 /// Processes one workout at a time so a long HR series cannot OOM or timeout
 /// a 200-workout Include.
 /// </summary>
 public class SplitHeartRateBackfillService
 {
     public const int BatchSize = 200;
+    public const string NoOverlapCursor = "no_overlap";
 
     private readonly TempoDbContext _db;
     private readonly SplitHeartRateService _splitHeartRate;
@@ -57,7 +60,11 @@ public class SplitHeartRateBackfillService
 
             try
             {
-                await FillWorkoutAsync(workoutId, cancellationToken);
+                if (!await FillWorkoutAsync(workoutId, cancellationToken))
+                {
+                    continue;
+                }
+
                 processed++;
                 if (processed % BatchSize == 0 || processed == total)
                 {
@@ -89,11 +96,23 @@ public class SplitHeartRateBackfillService
         return processed;
     }
 
-    private async Task FillWorkoutAsync(Guid workoutId, CancellationToken cancellationToken)
+    private async Task<bool> FillWorkoutAsync(Guid workoutId, CancellationToken cancellationToken)
     {
+        var workout = await _db.Workouts
+            .FirstOrDefaultAsync(w => w.Id == workoutId, cancellationToken);
+        if (workout is null || workout.SplitHeartRateBackfill != null)
+        {
+            return false;
+        }
+
         var splits = await _db.WorkoutSplits
             .Where(s => s.WorkoutId == workoutId)
             .ToListAsync(cancellationToken);
+
+        if (splits.Count == 0 || splits.Any(s => s.AvgHeartRateBpm != null))
+        {
+            return false;
+        }
 
         var series = await _db.WorkoutTimeSeries
             .AsNoTracking()
@@ -107,13 +126,25 @@ public class SplitHeartRateBackfillService
             })
             .ToListAsync(cancellationToken);
 
+        var before = splits.ToDictionary(s => s.Id, s => s.AvgHeartRateBpm);
         _splitHeartRate.ApplyToSplits(splits, series);
+        var bpmChanged = splits.Any(s => before[s.Id] != s.AvgHeartRateBpm);
+
+        if (bpmChanged)
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        workout.SplitHeartRateBackfill = NoOverlapCursor;
         await _db.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     private IQueryable<Workout> CandidateQuery()
     {
         return _db.Workouts.Where(w =>
+            w.SplitHeartRateBackfill == null &&
             _db.WorkoutSplits.Any(s => s.WorkoutId == w.Id) &&
             !_db.WorkoutSplits.Any(s => s.WorkoutId == w.Id && s.AvgHeartRateBpm != null) &&
             _db.WorkoutTimeSeries.Any(ts => ts.WorkoutId == w.Id && ts.HeartRateBpm != null));

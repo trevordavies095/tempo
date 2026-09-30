@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace Tempo.Api.Models;
 
@@ -72,7 +73,8 @@ public class Workout
     public int? RelativeEffort { get; set; }
 
     /// <summary>
-    /// Rate of Perceived Exertion (user-set, 1–10 scale). Not populated from import files.
+    /// Rate of Perceived Exertion (1–10). Athlete-set on overview, or filled from FIT
+    /// session <c>workout_rpe</c> (Borg CR10 × 10) when null. Not Feel; not relative effort.
     /// </summary>
     public byte? Rpe { get; set; }
 
@@ -112,6 +114,14 @@ public class Workout
     public string? RawFileType { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Startup split-HR backfill cursor. Only value written: <c>no_overlap</c>.
+    /// Not a runner-facing metric; omitted from API and Tempo ZIP export.
+    /// </summary>
+    [JsonIgnore]
+    [Column(TypeName = "text")]
+    public string? SplitHeartRateBackfill { get; set; }
 
     // ============================================
     // RAW DATA (JSONB Fields)
@@ -162,5 +172,6 @@ public class Workout
     public ICollection<WorkoutSplit> Splits { get; set; } = new List<WorkoutSplit>();
     public ICollection<WorkoutMedia> Media { get; set; } = new List<WorkoutMedia>();
     public ICollection<WorkoutTimeSeries> TimeSeries { get; set; } = new List<WorkoutTimeSeries>();
+    public ICollection<WorkoutExternalIdentity> ExternalIdentities { get; set; } = new List<WorkoutExternalIdentity>();
 }
 
