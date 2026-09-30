@@ -6,7 +6,7 @@
 # 4. Use that public HTTPS origin for the command center and the daily driver
 #    (/api is the command-center rewrite, not a second URL)
 #
-# Pin image tags to a release (e.g. v2.9.0). Bump the tags when updating — do not use latest as "stable".
+# Pin image tags to a release (e.g. v2.10.0). Bump the tags when updating — do not use latest as "stable".
 
 services:
   postgres:
@@ -27,7 +27,7 @@ services:
 
   api:
     # Pin to a release tag; bump when deploying a new version
-    image: ghcr.io/trevordavies095/tempo/api:v2.9.0
+    image: ghcr.io/trevordavies095/tempo/api:v2.10.0
     environment:
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=tempo;Username=postgres;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}"
       MediaStorage__RootPath: "/app/media"
@@ -56,7 +56,7 @@ services:
 
   frontend:
     # Pin to a release tag; bump when deploying a new version
-    image: ghcr.io/trevordavies095/tempo/frontend:v2.9.0
+    image: ghcr.io/trevordavies095/tempo/frontend:v2.10.0
     ports:
       - "127.0.0.1:3004:3000"
     depends_on:

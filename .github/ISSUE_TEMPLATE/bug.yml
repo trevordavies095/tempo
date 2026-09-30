@@ -48,8 +48,8 @@ body:
     id: tempo-version
     attributes:
       label: Tempo version
-      description: From Settings, `/version`, or the image tag (e.g. v2.9.0).
-      placeholder: v2.9.0
+      description: From Settings, `/version`, or the image tag (e.g. v2.10.0).
+      placeholder: v2.10.0
     validations:
       required: true
 
