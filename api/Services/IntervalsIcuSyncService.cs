@@ -31,15 +31,16 @@ public sealed class IntervalsIcuSyncService
 
     public async Task RunTickAsync(CancellationToken cancellationToken = default)
     {
-        var row = await _db.IntervalsIcuConnections.FirstOrDefaultAsync(cancellationToken);
-        if (row == null || !row.Enabled)
-        {
-            return;
-        }
-
+        // Begin before any await so a failed/early tick cannot leave the wake latched.
         _queue.BeginTick();
         try
         {
+            var row = await _db.IntervalsIcuConnections.FirstOrDefaultAsync(cancellationToken);
+            if (row == null || !row.Enabled)
+            {
+                return;
+            }
+
             await RunTickCoreAsync(row, cancellationToken);
         }
         finally
