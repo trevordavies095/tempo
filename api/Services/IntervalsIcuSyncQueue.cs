@@ -36,6 +36,7 @@ public sealed class IntervalsIcuSyncQueue
     {
         lock (_gate)
         {
+            _pending = false;
             _inFlight = false;
         }
     }
