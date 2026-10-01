@@ -56,6 +56,11 @@ public sealed class IntervalsIcuSyncWorker : BackgroundService
                 {
                     _logger.LogError(ex, "Intervals.icu sync tick failed");
                 }
+                finally
+                {
+                    // Safety net if RunTickAsync never reached BeginTick (e.g. DI failure).
+                    _queue.EndTick();
+                }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

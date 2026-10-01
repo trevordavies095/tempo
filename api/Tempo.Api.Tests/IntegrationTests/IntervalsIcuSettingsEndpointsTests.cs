@@ -431,6 +431,29 @@ public class IntervalsIcuSettingsEndpointsTests : IClassFixture<IntervalsIcuSett
     }
 
     [Fact]
+    public async Task RunTick_WhenDisabledAfterWake_ClearsPendingSoLaterWakeWorks()
+    {
+        var client = await AuthenticatedClientAsync();
+        await ConnectAndResetFakeAsync(client);
+        var queue = _factory.Decorated.Services.GetRequiredService<IntervalsIcuSyncQueue>();
+
+        (await client.PostAsync("/settings/intervals-icu/sync", content: null))
+            .StatusCode.Should().Be(HttpStatusCode.Accepted);
+        queue.TryWake().Should().BeFalse();
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var row = await db.IntervalsIcuConnections.SingleAsync();
+            row.Enabled = false;
+            await db.SaveChangesAsync();
+            await scope.ServiceProvider.GetRequiredService<IntervalsIcuSyncService>().RunTickAsync();
+        }
+
+        queue.TryWake().Should().BeTrue();
+    }
+
+    [Fact]
     public async Task RunTick_AfterDeletedWorkout_ReimportsSameActivity()
     {
         var client = await AuthenticatedClientAsync();

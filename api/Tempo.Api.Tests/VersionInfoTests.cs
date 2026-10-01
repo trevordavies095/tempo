@@ -10,7 +10,7 @@ public class VersionInfoTests
     public void FormatSnapshot_UsesFrozenKeyOrderAndTrailingNewline()
     {
         var text = VersionInfo.FormatSnapshot(
-            version: "2.10.0",
+            version: "2.10.1",
             gitCommit: "abc123",
             buildDate: "2026-09-16T00:00:00Z",
             logProfile: "debug",
@@ -21,7 +21,7 @@ public class VersionInfoTests
         text.Should().Be(
             "Tempo support snapshot\n" +
             "\n" +
-            "version: 2.10.0\n" +
+            "version: 2.10.1\n" +
             "gitCommit: abc123\n" +
             "buildDate: 2026-09-16T00:00:00Z\n" +
             "logProfile: debug\n" +

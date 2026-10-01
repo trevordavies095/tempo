@@ -159,8 +159,8 @@ public class HealthAndVersionTests : IClassFixture<TempoWebApplicationFactory>
     [Fact]
     public async Task GetVersion_EchoesImageEnvVars_WhenSet()
     {
-        const string apiImage = "ghcr.io/trevordavies095/tempo/api:v2.10.0";
-        const string frontendImage = "ghcr.io/trevordavies095/tempo/frontend:v2.10.0";
+        const string apiImage = "ghcr.io/trevordavies095/tempo/api:v2.10.1";
+        const string frontendImage = "ghcr.io/trevordavies095/tempo/frontend:v2.10.1";
         using var _ = new TempoEnvScope(
             ("TEMPO_API_IMAGE", apiImage),
             ("TEMPO_FRONTEND_IMAGE", frontendImage));

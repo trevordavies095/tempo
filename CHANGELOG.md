@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-10-01
+
+### Fixed
+- **intervals.icu sync queue stuck pending** - `IntervalsIcuSyncQueue.BeginTick` clears `_pending` when a tick starts, so a completed Sync now can wake again. `RunTickAsync` calls `BeginTick` before any await; the worker calls `EndTick` if the tick fails before `BeginTick`.
+
+### Security
+- **Frontend: Next.js 16.3.8**
+  - Raised `next` and `eslint-config-next` to **>=16.3.8** (lockfile resolves 16.3.8)
+  - Addresses [GHSA-vcvr-r3jv-pc5j](https://github.com/advisories/GHSA-vcvr-r3jv-pc5j) (RCE in `next/og` ImageResponse; patched in 16.3.6+)
+- **Frontend: `brace-expansion` overrides**
+  - Pins `brace-expansion@1` to **1.1.21** and `brace-expansion@2` to **2.1.7** ([GHSA-q2hr-2g5m-vwhr](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr))
+- **Frontend: `ajv` override**
+  - Pins `ajv` to **^6.14.0** (lockfile resolves 6.15.0) for [GHSA-2g4f-4pwh-qvx6](https://github.com/advisories/GHSA-2g4f-4pwh-qvx6) (ReDoS with `$data`)
+
 ## [2.10.0] - 2026-09-30
 
 ### Added
