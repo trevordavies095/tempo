@@ -1272,6 +1272,15 @@ export async function getCartoBasemaps(): Promise<{ apiKey: string | null }> {
 export interface CoachSettingsStatus {
   available: boolean;
   optedIn: boolean;
+  providerConnected: boolean;
+  modelId: string | null;
+}
+
+export interface CoachProviderStatus {
+  connected: boolean;
+  modelId: string | null;
+  lastProbeAt: string | null;
+  lastError: string | null;
 }
 
 export interface CoachHome {
@@ -1279,6 +1288,11 @@ export interface CoachHome {
   disclaimer: string;
   nextSteps: string[];
 }
+
+export const COACH_ANTHROPIC_MODELS = [
+  { id: 'claude-opus-4-7', label: 'Claude Opus 4.7 (default)' },
+  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+] as const;
 
 export async function getCoachSettings(): Promise<CoachSettingsStatus> {
   const response = await fetchWithAuth(`${API_BASE_URL}/settings/coach`, {
@@ -1320,6 +1334,67 @@ export async function optOutCoach(): Promise<CoachSettingsStatus> {
   }
 
   return response.json();
+}
+
+export async function getCoachProvider(): Promise<CoachProviderStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/coach/provider`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get Coach provider: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function putCoachProvider(
+  apiKey: string,
+  modelId?: string
+): Promise<CoachProviderStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/coach/provider`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ apiKey, modelId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to save Coach provider: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function testCoachProvider(apiKey?: string): Promise<CoachProviderStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/coach/provider/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(apiKey ? { apiKey } : {}),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to test Coach provider: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteCoachProvider(): Promise<void> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/coach/provider`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+
+  if (!response.ok && response.status !== 204) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to remove Coach provider key: ${response.status}`);
+  }
 }
 
 export async function getCoachHome(): Promise<CoachHome> {

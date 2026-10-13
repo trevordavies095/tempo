@@ -244,7 +244,9 @@ The connection is **not** included in a Tempo export ZIP. After restore, connect
 
 Optional. Off by default on the server (`Coach__Enabled` / `COACH_ENABLED` must be `true`). When the host flag is on, Settings → Integrations shows an **AI Coach** card so you can opt in. Opting in adds a **Coach** item to the command-center nav and opens an empty Coach home with a not-medical-advice notice. Disable Coach anytime without wiping coach data.
 
-AI Coach is not a doctor and does not provide medical advice. Provider key, onboarding, and weekly plans are separate later steps.
+Under the same card you can save your **Anthropic API key** (encrypted at rest, never shown again) and choose a model (default Claude Opus 4.7, or Sonnet 4.6). **Save key** stores without calling Anthropic; **Test connection** is optional and does not send workout data. **Remove key** clears only the provider secret — it does not turn off Coach opt-in.
+
+AI Coach is not a doctor and does not provide medical advice. Onboarding and weekly plans are separate later steps.
 
 ## Export / Import
 

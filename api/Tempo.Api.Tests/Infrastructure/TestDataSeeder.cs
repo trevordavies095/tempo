@@ -481,6 +481,7 @@ public static class TestDataSeeder
         db.Workouts.RemoveRange(db.Workouts);
         db.IntervalsIcuConnections.RemoveRange(db.IntervalsIcuConnections);
         db.CoachPreferences.RemoveRange(db.CoachPreferences);
+        db.CoachProviderConnections.RemoveRange(db.CoachProviderConnections);
         db.UserSettings.RemoveRange(db.UserSettings);
         db.Shoes.RemoveRange(db.Shoes);
         db.ApiKeys.RemoveRange(db.ApiKeys);
@@ -511,6 +512,7 @@ public static class TestDataSeeder
             await db.ImportJobs.ExecuteDeleteAsync();
             await db.IntervalsIcuConnections.ExecuteDeleteAsync();
             await db.CoachPreferences.ExecuteDeleteAsync();
+            await db.CoachProviderConnections.ExecuteDeleteAsync();
             await db.UserSettings.ExecuteDeleteAsync();
             await db.Shoes.ExecuteDeleteAsync();
 

@@ -1,0 +1,18 @@
+meta {
+  name: Put Coach provider
+  type: http
+  seq: 34
+}
+
+put {
+  url: {{baseUrl}}/settings/coach/provider
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "apiKey": "sk-ant-your-key",
+    "modelId": "claude-opus-4-7"
+  }
+}

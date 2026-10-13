@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -12,10 +14,11 @@ public static class CoachEndpoints
         group.MapGet("/coach", GetCoachSettings)
             .WithName("GetCoachSettings")
             .Produces<CoachSettingsDocument>(200)
-            .WithSummary("Get AI Coach availability and opt-in status")
+            .WithSummary("Get AI Coach availability, opt-in, and provider status")
             .WithDescription(
-                "Returns whether the host has enabled AI Coach (Coach__Enabled) and whether the athlete has opted in. " +
-                "When the host flag is off, available is false and optedIn is always false.");
+                "Returns whether the host has enabled AI Coach (Coach__Enabled), whether the athlete has opted in, " +
+                "and Anthropic provider connection status. Never returns the API key. " +
+                "When the host flag is off, available is false and optedIn/providerConnected are false.");
 
         group.MapPost("/coach/opt-in", PostCoachOptIn)
             .WithName("PostCoachOptIn")
@@ -32,7 +35,49 @@ public static class CoachEndpoints
             .WithSummary("Opt out of AI Coach")
             .WithDescription(
                 "Non-destructive disable: sets OptedIn false and keeps the preferences row. " +
-                "404 when Coach__Enabled is false. Does not wipe coach data.");
+                "404 when Coach__Enabled is false. Does not wipe coach data or the provider key.");
+
+        group.MapGet("/coach/provider", GetCoachProvider)
+            .WithName("GetCoachProvider")
+            .Produces<CoachProviderDocument>(200)
+            .Produces(404)
+            .WithSummary("Get Coach Anthropic provider status")
+            .WithDescription(
+                "Returns whether an Anthropic provider connection exists. Never returns the API key. " +
+                "404 when Coach__Enabled is false.");
+
+        group.MapPut("/coach/provider", PutCoachProvider)
+            .WithName("PutCoachProvider")
+            .Accepts<PutCoachProviderRequest>("application/json")
+            .Produces<CoachProviderDocument>(200)
+            .Produces(400)
+            .Produces(404)
+            .WithSummary("Save Coach Anthropic API key and model")
+            .WithDescription(
+                "Encrypts and stores the BYO Anthropic API key without probing. " +
+                "modelId defaults to claude-opus-4-7; unknown model ids are rejected. " +
+                "404 when Coach__Enabled is false.");
+
+        group.MapPost("/coach/provider/test", PostCoachProviderTest)
+            .WithName("PostCoachProviderTest")
+            .Accepts<TestCoachProviderRequest>("application/json")
+            .Produces<CoachProviderDocument>(200)
+            .Produces(400)
+            .Produces(404)
+            .Produces(503)
+            .WithSummary("Test Coach Anthropic connection")
+            .WithDescription(
+                "Athlete-data-free probe. If apiKey is provided, probes that key without saving. " +
+                "Otherwise probes the stored key (404 if none). Updates lastProbeAt/lastError only for stored keys.");
+
+        group.MapDelete("/coach/provider", DeleteCoachProvider)
+            .WithName("DeleteCoachProvider")
+            .Produces(204)
+            .Produces(404)
+            .WithSummary("Remove Coach Anthropic API key")
+            .WithDescription(
+                "Deletes the provider connection row. Does not touch CoachPreferences or opt-in. " +
+                "404 when Coach__Enabled is false. 204 if already gone.");
 
         return group;
     }
@@ -57,11 +102,16 @@ public static class CoachEndpoints
     {
         if (!coachConfig.Enabled)
         {
-            return Results.Ok(new CoachSettingsDocument(Available: false, OptedIn: false));
+            return Results.Ok(new CoachSettingsDocument(
+                Available: false,
+                OptedIn: false,
+                ProviderConnected: false,
+                ModelId: null));
         }
 
-        var row = await db.CoachPreferences.AsNoTracking().FirstOrDefaultAsync();
-        return Results.Ok(new CoachSettingsDocument(Available: true, OptedIn: row?.OptedIn == true));
+        var prefs = await db.CoachPreferences.AsNoTracking().FirstOrDefaultAsync();
+        var provider = await db.CoachProviderConnections.AsNoTracking().FirstOrDefaultAsync();
+        return Results.Ok(ToSettingsDocument(optedIn: prefs?.OptedIn == true, provider));
     }
 
     private static async Task<IResult> PostCoachOptIn(TempoDbContext db, CoachConfig coachConfig)
@@ -90,7 +140,8 @@ public static class CoachEndpoints
         }
 
         await db.SaveChangesAsync();
-        return Results.Ok(new CoachSettingsDocument(Available: true, OptedIn: true));
+        var provider = await db.CoachProviderConnections.AsNoTracking().FirstOrDefaultAsync();
+        return Results.Ok(ToSettingsDocument(optedIn: true, provider));
     }
 
     private static async Task<IResult> PostCoachOptOut(TempoDbContext db, CoachConfig coachConfig)
@@ -119,7 +170,163 @@ public static class CoachEndpoints
         }
 
         await db.SaveChangesAsync();
-        return Results.Ok(new CoachSettingsDocument(Available: true, OptedIn: false));
+        var provider = await db.CoachProviderConnections.AsNoTracking().FirstOrDefaultAsync();
+        return Results.Ok(ToSettingsDocument(optedIn: false, provider));
+    }
+
+    private static async Task<IResult> GetCoachProvider(TempoDbContext db, CoachConfig coachConfig)
+    {
+        if (!coachConfig.Enabled)
+        {
+            return Results.NotFound();
+        }
+
+        var row = await db.CoachProviderConnections.AsNoTracking().FirstOrDefaultAsync();
+        return Results.Ok(ToProviderDocument(row));
+    }
+
+    private static async Task<IResult> PutCoachProvider(
+        [FromBody] PutCoachProviderRequest? request,
+        TempoDbContext db,
+        CoachConfig coachConfig,
+        CoachAnthropicSecretProtector protector,
+        ILoggerFactory loggerFactory)
+    {
+        if (!coachConfig.Enabled)
+        {
+            return Results.NotFound();
+        }
+
+        var apiKey = request?.ApiKey?.Trim();
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            return Results.BadRequest(new { error = "apiKey is required" });
+        }
+
+        var modelId = CoachAnthropicModels.NormalizeOrReject(request?.ModelId);
+        if (modelId == null)
+        {
+            return Results.BadRequest(new { error = "Unknown model id" });
+        }
+
+        var now = DateTime.UtcNow;
+        var existing = await db.CoachProviderConnections.FirstOrDefaultAsync();
+        if (existing != null)
+        {
+            existing.ApiKeyCiphertext = protector.Encrypt(apiKey);
+            existing.ModelId = modelId;
+            existing.LastError = null;
+            existing.UpdatedAt = now;
+            await db.SaveChangesAsync();
+            loggerFactory.CreateLogger("CoachProvider").LogInformation("Coach Anthropic API key replaced");
+            return Results.Ok(ToProviderDocument(existing));
+        }
+
+        var row = new CoachProviderConnection
+        {
+            ApiKeyCiphertext = protector.Encrypt(apiKey),
+            ModelId = modelId,
+            ConnectedAt = now,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        db.CoachProviderConnections.Add(row);
+        await db.SaveChangesAsync();
+        loggerFactory.CreateLogger("CoachProvider").LogInformation("Coach Anthropic connection saved");
+        return Results.Ok(ToProviderDocument(row));
+    }
+
+    private static async Task<IResult> PostCoachProviderTest(
+        [FromBody] TestCoachProviderRequest? request,
+        TempoDbContext db,
+        CoachConfig coachConfig,
+        CoachAnthropicSecretProtector protector,
+        IAnthropicCoachClient anthropic)
+    {
+        if (!coachConfig.Enabled)
+        {
+            return Results.NotFound();
+        }
+
+        var requestKey = request?.ApiKey?.Trim();
+        var testingStored = string.IsNullOrEmpty(requestKey);
+        CoachProviderConnection? row = null;
+        string apiKey;
+
+        if (testingStored)
+        {
+            row = await db.CoachProviderConnections.FirstOrDefaultAsync();
+            if (row == null)
+            {
+                return Results.NotFound();
+            }
+
+            try
+            {
+                apiKey = protector.Decrypt(row.ApiKeyCiphertext);
+            }
+            catch (CryptographicException)
+            {
+                row.LastError = "Stored key could not be decrypted";
+                row.LastProbeAt = DateTime.UtcNow;
+                row.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                return Results.BadRequest(new { error = "Stored key could not be decrypted" });
+            }
+        }
+        else
+        {
+            apiKey = requestKey!;
+        }
+
+        var probe = await anthropic.ProbeApiKeyAsync(apiKey);
+        if (testingStored && row != null)
+        {
+            row.LastProbeAt = DateTime.UtcNow;
+            row.LastError = probe switch
+            {
+                AnthropicProbeResult.Ok => null,
+                AnthropicProbeResult.Unauthorized => "Anthropic rejected the API key",
+                AnthropicProbeResult.Billing => "Anthropic billing or payment required",
+                _ => "Could not reach Anthropic. Try again."
+            };
+            row.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        return probe switch
+        {
+            AnthropicProbeResult.Ok => Results.Ok(
+                testingStored && row != null
+                    ? ToProviderDocument(row)
+                    : new CoachProviderDocument(
+                        Connected: false,
+                        ModelId: null,
+                        LastProbeAt: null,
+                        LastError: null)),
+            AnthropicProbeResult.Unauthorized => Results.BadRequest(new { error = "Anthropic rejected the API key" }),
+            AnthropicProbeResult.Billing => Results.BadRequest(new { error = "Anthropic billing or payment required" }),
+            _ => Results.Json(
+                new { error = "Could not reach Anthropic. Try again." },
+                statusCode: StatusCodes.Status503ServiceUnavailable)
+        };
+    }
+
+    private static async Task<IResult> DeleteCoachProvider(TempoDbContext db, CoachConfig coachConfig)
+    {
+        if (!coachConfig.Enabled)
+        {
+            return Results.NotFound();
+        }
+
+        var rows = await db.CoachProviderConnections.ToListAsync();
+        if (rows.Count > 0)
+        {
+            db.CoachProviderConnections.RemoveRange(rows);
+            await db.SaveChangesAsync();
+        }
+
+        return Results.NoContent();
     }
 
     private static async Task<IResult> GetCoachHome(TempoDbContext db, CoachConfig coachConfig)
@@ -135,19 +342,54 @@ public static class CoachEndpoints
             return Results.NotFound();
         }
 
+        var providerConnected = await db.CoachProviderConnections.AsNoTracking().AnyAsync();
+        var nextSteps = new List<string>();
+        if (!providerConnected)
+        {
+            nextSteps.Add("Connect your Anthropic API key");
+        }
+
+        nextSteps.Add("Complete coach onboarding");
+
         return Results.Ok(new CoachHomeDocument(
             Title: "AI Coach",
             Disclaimer:
                 "Tempo AI Coach is not a doctor and does not provide medical advice. " +
                 "It offers training suggestions only. Seek a qualified professional for pain, injury, or health concerns.",
-            NextSteps: new[]
-            {
-                "Connect your Anthropic API key",
-                "Complete coach onboarding"
-            }));
+            NextSteps: nextSteps));
     }
+
+    private static CoachSettingsDocument ToSettingsDocument(bool optedIn, CoachProviderConnection? provider) =>
+        new(
+            Available: true,
+            OptedIn: optedIn,
+            ProviderConnected: provider != null,
+            ModelId: provider?.ModelId);
+
+    private static CoachProviderDocument ToProviderDocument(CoachProviderConnection? row) =>
+        row == null
+            ? new CoachProviderDocument(Connected: false, ModelId: null, LastProbeAt: null, LastError: null)
+            : new CoachProviderDocument(
+                Connected: true,
+                ModelId: row.ModelId,
+                LastProbeAt: row.LastProbeAt,
+                LastError: row.LastError);
 }
 
-public record CoachSettingsDocument(bool Available, bool OptedIn);
+public record CoachSettingsDocument(
+    bool Available,
+    bool OptedIn,
+    bool ProviderConnected,
+    string? ModelId);
+
+public record CoachProviderDocument(
+    bool Connected,
+    string? ModelId,
+    DateTime? LastProbeAt,
+    string? LastError);
+
+public record PutCoachProviderRequest(string? ApiKey, string? ModelId);
+
+public record TestCoachProviderRequest(string? ApiKey);
 
 public record CoachHomeDocument(string Title, string Disclaimer, IReadOnlyList<string> NextSteps);

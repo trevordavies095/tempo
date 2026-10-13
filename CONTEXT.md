@@ -94,6 +94,10 @@ _Avoid_: chatbot, Strava coach, core workout prescription (v1)
 Instance-level 0-or-1 peelable row (`CoachPreferences`) holding athlete opt-in. Distinct from the host `Coach__Enabled` flag. Opt-out is non-destructive (does not wipe coach data). Not UserSettings, not `User.OnboardingCompleted`.
 _Avoid_: UserSettings toggle, onboarding flag
 
+**Coach Anthropic connection**:
+Instance-level 0-or-1 peelable row for the athlete’s BYO Anthropic API key (ciphertext) and curated model id. Encrypted with HKDF purpose `tempo-coach-anthropic-api-key`. Never echoed after save. Optional athlete-data-free Test connection. Remove-key does not touch Coach preferences / opt-in. Not UserSettings, not Intervals.icu connection.
+_Avoid_: UserSettings, Tempo ApiKey, Intervals.icu connection
+
 **Intervals.icu sync**:
 Hosted poller plus on-demand wake. Lists recent running activities, fetches original FIT/GPX, feeds Workout intake with overlay identity `source = intervals_icu`. Not backfill, not a webhook, not client-held secrets.
 _Avoid_: ImportJob, backfill, webhook (as this product)

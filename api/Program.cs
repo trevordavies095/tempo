@@ -208,12 +208,19 @@ builder.Services.AddScoped<IWeatherService>(sp => sp.GetRequiredService<WeatherS
 builder.Services.AddScoped<WorkoutIntake>();
 builder.Services.AddScoped<HealthKitWorkoutDecoder>();
 builder.Services.AddSingleton<IntervalsIcuSecretProtector>();
+builder.Services.AddSingleton<CoachAnthropicSecretProtector>();
 builder.Services.AddHttpClient(IntervalsIcuClient.HttpClientName, client =>
 {
     client.BaseAddress = new Uri("https://intervals.icu/api/v1/");
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddScoped<IIntervalsIcuClient, IntervalsIcuClient>();
+builder.Services.AddHttpClient(AnthropicCoachClient.HttpClientName, client =>
+{
+    client.BaseAddress = new Uri("https://api.anthropic.com/");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddScoped<IAnthropicCoachClient, AnthropicCoachClient>();
 builder.Services.AddSingleton<IntervalsIcuSyncQueue>();
 builder.Services.AddScoped<IntervalsIcuSyncService>();
 if (!builder.Environment.IsEnvironment("Testing"))

@@ -698,8 +698,8 @@
         "tags": [
           "Settings"
         ],
-        "summary": "Get AI Coach availability and opt-in status",
-        "description": "Returns whether the host has enabled AI Coach (Coach__Enabled) and whether the athlete has opted in. When the host flag is off, available is false and optedIn is always false.",
+        "summary": "Get AI Coach availability, opt-in, and provider status",
+        "description": "Returns whether the host has enabled AI Coach (Coach__Enabled), whether the athlete has opted in, and Anthropic provider connection status. Never returns the API key. When the host flag is off, available is false and optedIn/providerConnected are false.",
         "operationId": "GetCoachSettings",
         "responses": {
           "200": {
@@ -756,7 +756,7 @@
           "Settings"
         ],
         "summary": "Opt out of AI Coach",
-        "description": "Non-destructive disable: sets OptedIn false and keeps the preferences row. 404 when Coach__Enabled is false. Does not wipe coach data.",
+        "description": "Non-destructive disable: sets OptedIn false and keeps the preferences row. 404 when Coach__Enabled is false. Does not wipe coach data or the provider key.",
         "operationId": "PostCoachOptOut",
         "responses": {
           "200": {
@@ -771,6 +771,142 @@
           },
           "404": {
             "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/coach/provider": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get Coach Anthropic provider status",
+        "description": "Returns whether an Anthropic provider connection exists. Never returns the API key. 404 when Coach__Enabled is false.",
+        "operationId": "GetCoachProvider",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachProviderDocument"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Save Coach Anthropic API key and model",
+        "description": "Encrypts and stores the BYO Anthropic API key without probing. modelId defaults to claude-opus-4-7; unknown model ids are rejected. 404 when Coach__Enabled is false.",
+        "operationId": "PutCoachProvider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutCoachProviderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachProviderDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Remove Coach Anthropic API key",
+        "description": "Deletes the provider connection row. Does not touch CoachPreferences or opt-in. 404 when Coach__Enabled is false. 204 if already gone.",
+        "operationId": "DeleteCoachProvider",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/coach/provider/test": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Test Coach Anthropic connection",
+        "description": "Athlete-data-free probe. If apiKey is provided, probes that key without saving. Otherwise probes the stored key (404 if none). Updates lastProbeAt/lastError only for stored keys.",
+        "operationId": "PostCoachProviderTest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestCoachProviderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachProviderDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "503": {
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -2519,6 +2655,28 @@
         },
         "additionalProperties": false
       },
+      "CoachProviderDocument": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "modelId": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastProbeAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CoachSettingsDocument": {
         "type": "object",
         "properties": {
@@ -2527,6 +2685,13 @@
           },
           "optedIn": {
             "type": "boolean"
+          },
+          "providerConnected": {
+            "type": "boolean"
+          },
+          "modelId": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -2940,6 +3105,20 @@
         "additionalProperties": false,
         "description": "Request model for user login"
       },
+      "PutCoachProviderRequest": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "modelId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "PutIntervalsIcuConnectionRequest": {
         "type": "object",
         "properties": {
@@ -2987,6 +3166,16 @@
             "nullable": true
           },
           "error": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TestCoachProviderRequest": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
             "type": "string",
             "nullable": true
           }

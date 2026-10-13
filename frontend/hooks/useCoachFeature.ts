@@ -19,12 +19,16 @@ export function useCoachFeature() {
 
   const available = query.data?.available === true;
   const optedIn = query.data?.optedIn === true;
+  const providerConnected = query.data?.providerConnected === true;
+  const modelId = query.data?.modelId ?? null;
   const showCoachNav = available && optedIn;
 
   return {
     ...query,
     available,
     optedIn,
+    providerConnected,
+    modelId,
     showCoachNav,
   };
 }
