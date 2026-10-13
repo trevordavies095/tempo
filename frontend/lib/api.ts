@@ -1269,6 +1269,73 @@ export async function getCartoBasemaps(): Promise<{ apiKey: string | null }> {
   return response.json();
 }
 
+export interface CoachSettingsStatus {
+  available: boolean;
+  optedIn: boolean;
+}
+
+export interface CoachHome {
+  title: string;
+  disclaimer: string;
+  nextSteps: string[];
+}
+
+export async function getCoachSettings(): Promise<CoachSettingsStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/coach`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get Coach settings: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function optInCoach(): Promise<CoachSettingsStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/coach/opt-in`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to opt into Coach: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function optOutCoach(): Promise<CoachSettingsStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/coach/opt-out`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to opt out of Coach: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachHome(): Promise<CoachHome> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get Coach home: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export interface IntervalsIcuConnectionStatus {
   connected: boolean;
   enabled: boolean | null;

@@ -86,6 +86,14 @@ _Avoid_: config, profile
 Instance-level 0-or-1 row linking Tempo to the authenticated intervals.icu athlete (always id `0`): encrypted personal API key, enabled flag, sync origin, last-success / last-error. Command-center Settings card. Not UserSettings, not Tempo `ApiKey`, not an ImportJob.
 _Avoid_: UserSettings, Tempo API key, ImportJob (as the connection)
 
+**AI Coach**:
+Opt-in weekly coaching area on the command center. Host kill switch `Coach:Enabled` / `Coach__Enabled` (default false) plus athlete opt-in. Peelable coach module — not core Workout calendar, not UserSettings. Not a doctor; not medical advice.
+_Avoid_: chatbot, Strava coach, core workout prescription (v1)
+
+**Coach preferences**:
+Instance-level 0-or-1 peelable row (`CoachPreferences`) holding athlete opt-in. Distinct from the host `Coach__Enabled` flag. Opt-out is non-destructive (does not wipe coach data). Not UserSettings, not `User.OnboardingCompleted`.
+_Avoid_: UserSettings toggle, onboarding flag
+
 **Intervals.icu sync**:
 Hosted poller plus on-demand wake. Lists recent running activities, fetches original FIT/GPX, feeds Workout intake with overlay identity `source = intervals_icu`. Not backfill, not a webhook, not client-held secrets.
 _Avoid_: ImportJob, backfill, webhook (as this product)

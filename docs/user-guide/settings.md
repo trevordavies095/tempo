@@ -14,6 +14,7 @@ Tempo settings allow you to customize:
 - Shoe tracking and management
 - **Export** (prominent under Data Management) and collapsed **Migrate / restore** (Strava archive + Tempo export restore)
 - Optional **intervals.icu** connection under Integrations (Garmin and other devices via intervals.icu)
+- Optional **AI Coach** under Integrations when the server has enabled it (`Coach__Enabled`)
 
 On a fresh install, units, heart rate zones, and an optional default shoe are usually set during [first-run onboarding](../getting-started/onboarding.md). You can change them anytime here.
 
@@ -238,6 +239,12 @@ After you connect, Tempo looks for new running activities about every 15 minutes
 **Privacy:** activity files transit intervals.icu (a donation-supported third party). Tempo does not talk to Garmin unofficially.
 
 The connection is **not** included in a Tempo export ZIP. After restore, connect again in Settings.
+
+### AI Coach
+
+Optional. Off by default on the server (`Coach__Enabled` / `COACH_ENABLED` must be `true`). When the host flag is on, Settings → Integrations shows an **AI Coach** card so you can opt in. Opting in adds a **Coach** item to the command-center nav and opens an empty Coach home with a not-medical-advice notice. Disable Coach anytime without wiping coach data.
+
+AI Coach is not a doctor and does not provide medical advice. Provider key, onboarding, and weekly plans are separate later steps.
 
 ## Export / Import
 

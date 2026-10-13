@@ -246,6 +246,12 @@ builder.Services.AddSingleton(new CartoBasemapsConfig
     ApiKey = builder.Configuration["CartoBasemaps:ApiKey"]?.Trim() ?? string.Empty
 });
 
+// AI Coach host kill switch (default off; env Coach__Enabled)
+builder.Services.AddSingleton(new CoachConfig
+{
+    Enabled = builder.Configuration.GetValue("Coach:Enabled", false)
+});
+
 // Configure form options for large file uploads (bulk import)
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
 {
@@ -309,6 +315,7 @@ app.UseSerilogRequestLogging(options =>
 app.MapAuthEndpoints();
 app.MapWorkoutsEndpoints();
 app.MapSettingsEndpoints();
+app.MapCoachEndpoints();
 app.MapShoesEndpoints();
 app.MapStatsEndpoints();
 app.MapVersionEndpoints();

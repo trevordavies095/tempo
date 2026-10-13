@@ -38,6 +38,8 @@ services:
       Tempo__Logging__Profile: "${TEMPO_LOGGING_PROFILE:-standard}"
       # CARTO basemaps (optional; set CARTO_BASEMAPS_API_KEY in .env)
       CartoBasemaps__ApiKey: "${CARTO_BASEMAPS_API_KEY:-}"
+      # AI Coach host kill switch (default off)
+      Coach__Enabled: "${COACH_ENABLED:-false}"
     # Opt-in for Bruno / curl / unmigrated split proxies on the host only:
     # ports:
     #   - "127.0.0.1:5001:5001"

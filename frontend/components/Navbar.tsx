@@ -4,11 +4,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCoachFeature } from '@/hooks/useCoachFeature';
 
 export function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isAuthenticated, logout } = useAuth();
+  const { showCoachNav } = useCoachFeature();
   const isOnboarding = pathname === '/onboarding';
   const showAppLinks = isAuthenticated && !isOnboarding;
 
@@ -24,6 +26,9 @@ export function Navbar() {
     }
     if (path === '/activities') {
       return pathname === '/activities';
+    }
+    if (path === '/coach') {
+      return pathname === '/coach' || pathname.startsWith('/coach/');
     }
     return pathname === path;
   };
@@ -82,6 +87,11 @@ export function Navbar() {
                 <Link href="/activities" className={navLinkClasses('/activities')}>
                   Activities
                 </Link>
+                {showCoachNav && (
+                  <Link href="/coach" className={navLinkClasses('/coach')}>
+                    Coach
+                  </Link>
+                )}
                 <Link href="/import" className={navLinkClasses('/import')}>
                   Import
                 </Link>
@@ -155,6 +165,15 @@ export function Navbar() {
                 >
                   Activities
                 </Link>
+                {showCoachNav && (
+                  <Link
+                    href="/coach"
+                    className={navLinkClasses('/coach')}
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    Coach
+                  </Link>
+                )}
                 <Link
                   href="/import"
                   className={navLinkClasses('/import')}

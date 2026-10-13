@@ -53,6 +53,17 @@ CARTO_BASEMAPS_API_KEY=your-key-here
 
 Compose passes this to the API as `CartoBasemaps__ApiKey`. Request a key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey). Restart the API and hard-refresh the browser after updating.
 
+### AI Coach (optional)
+
+AI Coach is **off by default**. To expose the Coach opt-in surface:
+
+```bash
+# In .env
+COACH_ENABLED=true
+```
+
+Compose passes this to the API as `Coach__Enabled`. Athletes still must opt in under Settings → Integrations. Restart the API after changing.
+
 ### JWT issuer / expiry
 
 Issuer, audience, and expiration defaults are in the API image. Override with `JWT__*` env vars only if you need non-defaults.

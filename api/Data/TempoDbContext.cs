@@ -22,6 +22,7 @@ public class TempoDbContext : DbContext
     public DbSet<ImportJob> ImportJobs { get; set; }
     public DbSet<WorkoutExternalIdentity> WorkoutExternalIdentities { get; set; }
     public DbSet<IntervalsIcuConnection> IntervalsIcuConnections { get; set; }
+    public DbSet<CoachPreferences> CoachPreferences { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -166,6 +167,11 @@ public class TempoDbContext : DbContext
         {
             entity.Property(e => e.ApiKeyCiphertext).IsRequired();
             entity.Property(e => e.LastError).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<CoachPreferences>(entity =>
+        {
+            entity.HasIndex(e => e.Id).IsUnique();
         });
     }
 }

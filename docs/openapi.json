@@ -267,6 +267,36 @@
         ]
       }
     },
+    "/coach": {
+      "get": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Get Coach home shell",
+        "description": "Empty Coach home when host-enabled and athlete opted in. 404 when Coach is unavailable or the athlete has not opted in.",
+        "operationId": "GetCoachHome",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachHomeDocument"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -654,6 +684,93 @@
           },
           "204": {
             "description": "No Content"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/coach": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get AI Coach availability and opt-in status",
+        "description": "Returns whether the host has enabled AI Coach (Coach__Enabled) and whether the athlete has opted in. When the host flag is off, available is false and optedIn is always false.",
+        "operationId": "GetCoachSettings",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachSettingsDocument"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/coach/opt-in": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Opt into AI Coach",
+        "description": "Athlete opt-in when the host has enabled Coach. 404 when Coach__Enabled is false. Idempotent.",
+        "operationId": "PostCoachOptIn",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachSettingsDocument"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/coach/opt-out": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Opt out of AI Coach",
+        "description": "Non-destructive disable: sets OptedIn false and keeps the preferences row. 404 when Coach__Enabled is false. Does not wipe coach data.",
+        "operationId": "PostCoachOptOut",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachSettingsDocument"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
           }
         },
         "security": [
@@ -2381,6 +2498,39 @@
         },
         "additionalProperties": false
       },
+      "CoachHomeDocument": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "disclaimer": {
+            "type": "string",
+            "nullable": true
+          },
+          "nextSteps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachSettingsDocument": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "optedIn": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateApiKeyRequest": {
         "type": "object",
         "properties": {
@@ -2999,6 +3149,9 @@
   "tags": [
     {
       "name": "Authentication"
+    },
+    {
+      "name": "Coach"
     },
     {
       "name": "Health"

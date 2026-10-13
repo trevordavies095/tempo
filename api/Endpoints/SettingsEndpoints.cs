@@ -500,6 +500,7 @@ public static class SettingsEndpoints
             .WithDescription("Sets the default shoe for automatic assignment to new workouts. Pass null to clear the default.");
 
         group.MapIntervalsIcuSettings();
+        group.MapCoachSettings();
     }
 
     /// <summary>

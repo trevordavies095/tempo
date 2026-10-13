@@ -98,6 +98,29 @@ namespace Tempo.Api.Migrations
                     b.ToTable("BestEfforts");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.CoachPreferences", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("OptedIn")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Id")
+                        .IsUnique();
+
+                    b.ToTable("CoachPreferences");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.ImportJob", b =>
                 {
                     b.Property<Guid>("Id")

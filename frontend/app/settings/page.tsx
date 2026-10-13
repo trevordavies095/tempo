@@ -21,6 +21,7 @@ import AppearanceSection from '@/components/AppearanceSection';
 import { ShoeManagementSection } from '@/components/ShoeManagementSection';
 import { ExportImportSection } from '@/components/ExportImportSection';
 import { IntervalsIcuSection } from '@/components/IntervalsIcuSection';
+import { CoachSection } from '@/components/CoachSection';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
@@ -541,6 +542,7 @@ function SettingsPageContent() {
           <div className="space-y-4">
             <h2 className={sectionHeading}>Integrations</h2>
             <IntervalsIcuSection />
+            <CoachSection />
           </div>
 
           {/* Data Management */}

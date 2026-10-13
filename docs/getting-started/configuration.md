@@ -156,6 +156,26 @@ Or add to `api/appsettings.Development.json` (local only; do not commit real key
 
 After configuring, hard-refresh the browser — CARTO and your browser may cache watermarked tiles briefly.
 
+## AI Coach (optional)
+
+AI Coach is **disabled by default**. The host must set `Coach:Enabled` / `Coach__Enabled` (or Compose `COACH_ENABLED=true`) before Settings shows the opt-in card and before Coach APIs accept opt-in. Athletes still opt in separately; disabling Coach in Settings does not wipe coach data.
+
+```bash
+# Docker Compose (.env)
+COACH_ENABLED=true
+
+# Or direct env
+export Coach__Enabled=true
+```
+
+```json
+{
+  "Coach": {
+    "Enabled": true
+  }
+}
+```
+
 ## Logging profiles
 
 API console verbosity is controlled by one named profile — host config (environment / appsettings), restart to change. Not a Settings UI toggle. Do not use Microsoft.Extensions.Logging `Logging:LogLevel` or `Serilog__MinimumLevel__Override__…` as the public interface; the named profile owns Serilog levels.
@@ -210,6 +230,7 @@ All configuration can be set via environment variables using the double undersco
 | `ElevationCalculation:NoiseThresholdMeters` | `ElevationCalculation__NoiseThresholdMeters` | `2.0` |
 | `ElevationCalculation:MinDistanceMeters` | `ElevationCalculation__MinDistanceMeters` | `10.0` |
 | `CartoBasemaps:ApiKey` | `CartoBasemaps__ApiKey` or `CARTO_BASEMAPS_API_KEY` (via compose `.env`) | empty (watermarked tiles) |
+| `Coach:Enabled` | `Coach__Enabled` or `COACH_ENABLED` (via compose `.env`) | `false` (AI Coach APIs/UI off until enabled) |
 | `Tempo:Logging:Profile` | `Tempo__Logging__Profile` or `TEMPO_LOGGING_PROFILE` (via compose `.env`) | `standard` |
 | `CORS:AllowedOrigins` | `CORS__AllowedOrigins` | - |
 | `JWT:SecretKey` | `JWT__SecretKey` | - (REQUIRED in production) |
