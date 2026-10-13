@@ -2,9 +2,10 @@ name: Build and Push Docker Images
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, feat/ai-coach]
     tags:
       - 'v*'
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -57,6 +58,20 @@ jobs:
             echo "tag=edge" >> $GITHUB_OUTPUT
             echo "api_tag_edge=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}:edge" >> $GITHUB_OUTPUT
             echo "frontend_tag_edge=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:edge" >> $GITHUB_OUTPUT
+            echo "push_latest=false" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/feat/ai-coach" ]]; then
+            # Feature preview — do not overwrite latest/edge
+            echo "tag=feat-ai-coach" >> $GITHUB_OUTPUT
+            echo "api_tag_version=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}:feat-ai-coach" >> $GITHUB_OUTPUT
+            echo "frontend_tag_version=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:feat-ai-coach" >> $GITHUB_OUTPUT
+            echo "push_latest=false" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # Manual run from any ref — tag from sanitized branch/tag name
+            RAW_REF="${GITHUB_REF_NAME}"
+            SAFE_TAG=$(echo "$RAW_REF" | tr '/_' '-' | tr -cd '[:alnum:].-')
+            echo "tag=$SAFE_TAG" >> $GITHUB_OUTPUT
+            echo "api_tag_version=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}:$SAFE_TAG" >> $GITHUB_OUTPUT
+            echo "frontend_tag_version=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:$SAFE_TAG" >> $GITHUB_OUTPUT
             echo "push_latest=false" >> $GITHUB_OUTPUT
           fi
 
