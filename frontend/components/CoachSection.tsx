@@ -48,7 +48,7 @@ export function CoachSection() {
   const [isTesting, setIsTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
-  const [modelId, setModelId] = useState(COACH_ANTHROPIC_MODELS[0].id);
+  const [modelId, setModelId] = useState<string>(COACH_ANTHROPIC_MODELS[0].id);
   const [provider, setProvider] = useState<CoachProviderStatus | null>(null);
   const [providerLoading, setProviderLoading] = useState(false);
 
