@@ -579,6 +579,96 @@
         ]
       }
     },
+    "/coach/check-in": {
+      "get": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Get weekly Coach check-in with Tempo autofill",
+        "description": "Returns the Mon–Sun check-in for timezoneOffsetMinutes + referenceDate (yyyy-MM-dd). Runs autofill from Tempo workouts in the full week window; saved note overlays apply without writing Workout.Notes. adherenceHints is empty until a committed coach plan exists. 404 when Coach is unavailable or the athlete has not opted in.",
+        "operationId": "GetCoachCheckIn",
+        "parameters": [
+          {
+            "name": "timezoneOffsetMinutes",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "referenceDate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachCheckInDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Save weekly Coach check-in",
+        "description": "Upserts optional subjective fields and per-run note overlays for the week. Does not mutate Workout rows. Empty weeks and skipped subjective fields are allowed.",
+        "operationId": "PutCoachCheckIn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutCoachCheckInRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachCheckInDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -2916,6 +3006,130 @@
         },
         "additionalProperties": false
       },
+      "CoachAdherenceHintDocument": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "date": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachCheckInDocument": {
+        "type": "object",
+        "properties": {
+          "weekStartDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "weekEndDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "referenceDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "timezoneOffsetMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unitPreference": {
+            "type": "string",
+            "nullable": true
+          },
+          "overallFeel": {
+            "type": "string",
+            "nullable": true
+          },
+          "niggles": {
+            "type": "string",
+            "nullable": true
+          },
+          "lifeConstraints": {
+            "type": "string",
+            "nullable": true
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoachCheckInRunDocument"
+            },
+            "nullable": true
+          },
+          "adherenceHints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoachAdherenceHintDocument"
+            },
+            "nullable": true
+          },
+          "saved": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachCheckInRunDocument": {
+        "type": "object",
+        "properties": {
+          "workoutId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "durationS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "avgHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "runType": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "workoutNotes": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "notesEdited": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "CoachConstraintDocument": {
         "type": "object",
         "properties": {
@@ -3855,6 +4069,58 @@
         },
         "additionalProperties": false,
         "description": "Request model for user login"
+      },
+      "PutCoachCheckInRequest": {
+        "type": "object",
+        "properties": {
+          "weekStartDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "referenceDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "timezoneOffsetMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "overallFeel": {
+            "type": "string",
+            "nullable": true
+          },
+          "niggles": {
+            "type": "string",
+            "nullable": true
+          },
+          "lifeConstraints": {
+            "type": "string",
+            "nullable": true
+          },
+          "runNotes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PutCoachCheckInRunNoteRequest"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PutCoachCheckInRunNoteRequest": {
+        "type": "object",
+        "properties": {
+          "workoutId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "PutCoachProviderRequest": {
         "type": "object",

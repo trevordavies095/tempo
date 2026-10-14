@@ -95,12 +95,14 @@ function CoachPageContent() {
                 </p>
                 {goal.notes && <p className="text-sm text-muted mt-2">{goal.notes}</p>}
               </div>
-              <p className="text-sm text-muted">
-                Weekly check-in and plan generate land in later slices.
-              </p>
               <div className="flex flex-wrap gap-2">
+                <Link href="/coach/check-in">
+                  <Button type="button">Weekly check-in</Button>
+                </Link>
                 <Link href="/coach/constraints">
-                  <Button type="button">Non-negotiables</Button>
+                  <Button type="button" variant="secondary">
+                    Non-negotiables
+                  </Button>
                 </Link>
                 <Link href="/coach/onboarding">
                   <Button type="button" variant="secondary">

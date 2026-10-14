@@ -1,0 +1,11 @@
+meta {
+  name: Get Coach check-in
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/coach/check-in?timezoneOffsetMinutes=0&referenceDate=2026-10-13
+  body: none
+  auth: inherit
+}

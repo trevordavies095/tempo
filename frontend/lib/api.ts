@@ -1675,6 +1675,95 @@ export async function retireCoachConstraint(id: string): Promise<CoachConstraint
   return response.json();
 }
 
+export interface CoachAdherenceHint {
+  code: string;
+  message: string;
+  date: string | null;
+}
+
+export interface CoachCheckInRun {
+  workoutId: string;
+  startedAt: string;
+  distanceM: number;
+  durationS: number;
+  avgHeartRateBpm: number | null;
+  runType: string | null;
+  name: string | null;
+  workoutNotes: string | null;
+  notes: string | null;
+  notesEdited: boolean;
+}
+
+export interface CoachCheckIn {
+  weekStartDate: string;
+  weekEndDate: string;
+  referenceDate: string;
+  timezoneOffsetMinutes: number;
+  unitPreference: string;
+  overallFeel: string | null;
+  niggles: string | null;
+  lifeConstraints: string | null;
+  runs: CoachCheckInRun[];
+  adherenceHints: CoachAdherenceHint[];
+  saved: boolean;
+  updatedAt: string | null;
+}
+
+export interface PutCoachCheckInRequest {
+  weekStartDate?: string | null;
+  referenceDate?: string | null;
+  timezoneOffsetMinutes?: number | null;
+  overallFeel?: string | null;
+  niggles?: string | null;
+  lifeConstraints?: string | null;
+  runNotes?: Array<{ workoutId: string; notes?: string | null }> | null;
+}
+
+export async function getCoachCheckIn(
+  timezoneOffsetMinutes?: number,
+  referenceDate?: string
+): Promise<CoachCheckIn> {
+  const searchParams = new URLSearchParams();
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+  if (referenceDate) {
+    searchParams.set('referenceDate', referenceDate);
+  }
+  const qs = searchParams.toString();
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/check-in${qs ? `?${qs}` : ''}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get Coach check-in: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function putCoachCheckIn(body: PutCoachCheckInRequest): Promise<CoachCheckIn> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/check-in`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to save Coach check-in: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export interface IntervalsIcuConnectionStatus {
   connected: boolean;
   enabled: boolean | null;

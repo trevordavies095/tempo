@@ -1,0 +1,22 @@
+meta {
+  name: Put Coach check-in
+  type: http
+  seq: 11
+}
+
+put {
+  url: {{baseUrl}}/coach/check-in
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "referenceDate": "2026-10-13",
+    "timezoneOffsetMinutes": 0,
+    "overallFeel": "tired but ok",
+    "niggles": null,
+    "lifeConstraints": "travel Thursday",
+    "runNotes": []
+  }
+}

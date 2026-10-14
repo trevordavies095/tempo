@@ -27,6 +27,7 @@ public class TempoDbContext : DbContext
     public DbSet<CoachGoal> CoachGoals { get; set; }
     public DbSet<CoachMemoryLayer> CoachMemoryLayers { get; set; }
     public DbSet<CoachConstraint> CoachConstraints { get; set; }
+    public DbSet<CoachCheckIn> CoachCheckIns { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -209,6 +210,15 @@ public class TempoDbContext : DbContext
             entity.Property(e => e.Weekdays).HasColumnType("jsonb");
             entity.HasIndex(e => e.Kind);
             entity.HasIndex(e => e.IsRetired);
+        });
+
+        modelBuilder.Entity<CoachCheckIn>(entity =>
+        {
+            entity.Property(e => e.OverallFeel).HasMaxLength(500);
+            entity.Property(e => e.Niggles).HasMaxLength(2000);
+            entity.Property(e => e.LifeConstraints).HasMaxLength(2000);
+            entity.Property(e => e.RunNotesJson).IsRequired().HasColumnType("jsonb");
+            entity.HasIndex(e => e.WeekStartDate).IsUnique();
         });
     }
 }

@@ -99,6 +99,7 @@ public static class CoachEndpoints
 
         CoachOnboardingEndpoints.Map(group);
         CoachConstraintEndpoints.Map(group);
+        CoachCheckInEndpoints.Map(group);
     }
 
     private static async Task<IResult> GetCoachSettings(TempoDbContext db, CoachConfig coachConfig)

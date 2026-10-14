@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Utils;
 
 namespace Tempo.Api.Endpoints;
 
@@ -22,106 +23,9 @@ public static class StatsEndpoints
         int RelativeEffortSum,
         double? EasyRunAvgHeartRateBpm);
 
-    private sealed record UtcRange(DateTime StartUtc, DateTime EndUtc);
-
-    private sealed record WeeklyRecapUtcContext(
-        DateTime ReferenceLocalDate,
-        DateTime WeekStartLocal,
-        DateTime WeekEndLocal,
-        UtcRange CurrentRange,
-        UtcRange PreviousWeekRange,
-        UtcRange TrailingWeek2,
-        UtcRange TrailingWeek3,
-        bool CurrentWeekIsPartial);
-
-    /// <summary>
-    /// Builds Monday–Sunday week boundaries and UTC query ranges. Current range is week-to-date capped at UTC now.
-    /// </summary>
-    private static WeeklyRecapUtcContext BuildWeeklyRecapUtcContext(
-        DateTime utcNow,
-        int? timezoneOffsetMinutes,
-        DateTime? referenceLocalDate)
-    {
-        DateTime localAnchorDate;
-        if (referenceLocalDate.HasValue)
-        {
-            localAnchorDate = referenceLocalDate.Value.Date;
-        }
-        else
-        {
-            var localNow = timezoneOffsetMinutes.HasValue
-                ? utcNow.AddMinutes(timezoneOffsetMinutes.Value)
-                : utcNow;
-            localAnchorDate = localNow.Date;
-        }
-
-        var daysSinceMonday = ((int)localAnchorDate.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        var weekStartLocal = localAnchorDate.AddDays(-daysSinceMonday);
-        var weekEndLocal = weekStartLocal.AddDays(7).AddTicks(-1);
-
-        var weekStartUtc = LocalDateRangeStartToUtc(weekStartLocal, timezoneOffsetMinutes);
-        var weekEndUtc = LocalDateRangeEndToUtc(weekEndLocal, timezoneOffsetMinutes);
-
-        var currentEndUtc = utcNow < weekEndUtc ? utcNow : weekEndUtc;
-        UtcRange currentRange;
-        if (currentEndUtc < weekStartUtc)
-        {
-            currentRange = new UtcRange(weekStartUtc, weekStartUtc.AddTicks(-1));
-        }
-        else
-        {
-            currentRange = new UtcRange(weekStartUtc, currentEndUtc);
-        }
-
-        var previousWeekStartLocal = weekStartLocal.AddDays(-7);
-        var previousWeekEndLocal = previousWeekStartLocal.AddDays(7).AddTicks(-1);
-        var previousWeekRange = new UtcRange(
-            LocalDateRangeStartToUtc(previousWeekStartLocal, timezoneOffsetMinutes),
-            LocalDateRangeEndToUtc(previousWeekEndLocal, timezoneOffsetMinutes));
-
-        UtcRange TrailingWeek(int offsetFromCurrentWeekStart)
-        {
-            var start = weekStartLocal.AddDays(-7 * offsetFromCurrentWeekStart);
-            var end = start.AddDays(7).AddTicks(-1);
-            return new UtcRange(
-                LocalDateRangeStartToUtc(start, timezoneOffsetMinutes),
-                LocalDateRangeEndToUtc(end, timezoneOffsetMinutes));
-        }
-
-        var trailing2 = TrailingWeek(2);
-        var trailing3 = TrailingWeek(3);
-
-        var currentWeekIsPartial = utcNow < weekEndUtc && utcNow >= weekStartUtc;
-
-        return new WeeklyRecapUtcContext(
-            localAnchorDate,
-            weekStartLocal,
-            weekEndLocal,
-            currentRange,
-            previousWeekRange,
-            trailing2,
-            trailing3,
-            currentWeekIsPartial);
-    }
-
-    private static DateTime LocalDateRangeStartToUtc(DateTime localDateMidnight, int? timezoneOffsetMinutes)
-    {
-        var d = localDateMidnight.Date;
-        return timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(d.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(d, DateTimeKind.Utc);
-    }
-
-    private static DateTime LocalDateRangeEndToUtc(DateTime localEndInclusive, int? timezoneOffsetMinutes)
-    {
-        return timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(localEndInclusive.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(localEndInclusive, DateTimeKind.Utc);
-    }
-
     private static async Task<BucketAggregates> GetBucketAggregatesAsync(
         TempoDbContext db,
-        UtcRange range,
+        WeeklyRecapWeekMath.UtcRange range,
         CancellationToken cancellationToken = default)
     {
         if (range.EndUtc < range.StartUtc)
@@ -502,7 +406,7 @@ public static class StatsEndpoints
         }
 
         var utcNow = DateTime.UtcNow;
-        var ctx = BuildWeeklyRecapUtcContext(utcNow, timezoneOffsetMinutes, referenceLocalDate);
+        var ctx = WeeklyRecapWeekMath.BuildWeeklyRecapUtcContext(utcNow, timezoneOffsetMinutes, referenceLocalDate);
 
         var current = await GetBucketAggregatesAsync(db, ctx.CurrentRange);
         var previous = await GetBucketAggregatesAsync(db, ctx.PreviousWeekRange);
