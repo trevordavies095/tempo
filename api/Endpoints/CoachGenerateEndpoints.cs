@@ -109,6 +109,7 @@ public static class CoachGenerateEndpoints
     private static async Task<IResult> GetDraftWeek(
         TempoDbContext db,
         CoachConfig coachConfig,
+        CoachAdjustmentService adjustmentService,
         [FromQuery] string? weekStartDate)
     {
         if (!await IsCoachAvailableAsync(db, coachConfig))
@@ -128,13 +129,19 @@ public static class CoachGenerateEndpoints
             return Results.NotFound();
         }
 
-        return Results.Ok(ToWeekDocument(week));
+        var adjustment = await adjustmentService.FindForWeekDocumentAsync(
+            week.WeekStartDate,
+            week.JobId,
+            week.Status);
+        return Results.Ok(CoachWeekDocumentMapper.ToDocument(week, adjustment));
     }
 
     private static CoachJobDocument ToJobDocument(CoachJob job) =>
         new(
             Id: job.Id,
             Status: job.Status,
+            Kind: string.IsNullOrWhiteSpace(job.Kind) ? CoachJobKinds.Generate : job.Kind,
+            AdjustmentId: job.AdjustmentId,
             WeekStartDate: job.WeekStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             PreflightId: job.PreflightId,
             ErrorCode: job.ErrorCode,
@@ -146,30 +153,6 @@ public static class CoachGenerateEndpoints
             CreatedAt: job.CreatedAt,
             StartedAt: job.StartedAt,
             CompletedAt: job.CompletedAt);
-
-    private static CoachWeekDocument ToWeekDocument(CoachWeek week)
-    {
-        object? commit;
-        try
-        {
-            commit = JsonSerializer.Deserialize<object>(week.CommitJson, JsonOptions);
-        }
-        catch
-        {
-            commit = null;
-        }
-
-        return new CoachWeekDocument(
-            Id: week.Id,
-            WeekStartDate: week.WeekStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            Status: week.Status,
-            Commit: commit,
-            PreflightId: week.PreflightId,
-            JobId: week.JobId,
-            PayloadHash: week.PayloadHash,
-            CreatedAt: week.CreatedAt,
-            UpdatedAt: week.UpdatedAt);
-    }
 
     private static async Task<bool> IsCoachAvailableAsync(TempoDbContext db, CoachConfig coachConfig)
     {
@@ -188,6 +171,8 @@ public sealed record PostCoachGenerateRequest(Guid? PreflightId);
 public sealed record CoachJobDocument(
     Guid Id,
     string Status,
+    string Kind,
+    Guid? AdjustmentId,
     string WeekStartDate,
     Guid PreflightId,
     string? ErrorCode,
@@ -209,4 +194,9 @@ public sealed record CoachWeekDocument(
     Guid JobId,
     string PayloadHash,
     DateTime CreatedAt,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    bool IsAdjustment = false,
+    Guid? AdjustmentId = null,
+    string? LockedThroughDate = null,
+    string? AdjustmentCategory = null,
+    string? AdjustmentStatus = null);

@@ -2,6 +2,12 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Tempo.Api.Models;
 
+public static class CoachJobKinds
+{
+    public const string Generate = "generate";
+    public const string Adjust = "adjust";
+}
+
 public static class CoachJobStatuses
 {
     public const string Queued = "queued";
@@ -28,7 +34,7 @@ public static class CoachJobErrorCodes
 }
 
 /// <summary>
-/// Peelable background coach generate job (import-job shaped; not mutexed with imports).
+/// Peelable background coach generate/adjust job (import-job shaped; not mutexed with imports).
 /// </summary>
 public class CoachJob
 {
@@ -38,6 +44,12 @@ public class CoachJob
     [Required]
     [MaxLength(32)]
     public string Status { get; set; } = CoachJobStatuses.Queued;
+
+    [Required]
+    [MaxLength(32)]
+    public string Kind { get; set; } = CoachJobKinds.Generate;
+
+    public Guid? AdjustmentId { get; set; }
 
     public DateOnly WeekStartDate { get; set; }
 

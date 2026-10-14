@@ -125,6 +125,9 @@ function ReviewPageInner() {
     enabled: showCoachNav && Boolean(weekStartDate),
   });
 
+  const lockedThroughDate = draftQuery.data?.lockedThroughDate ?? null;
+  const isAdjustment = Boolean(draftQuery.data?.isAdjustment);
+
   useEffect(() => {
     if (isFetched && !showCoachNav) {
       router.replace('/dashboard');
@@ -196,6 +199,7 @@ function ReviewPageInner() {
     onSuccess: async () => {
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ['coach-draft-week'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-committed-week'] });
       await queryClient.invalidateQueries({ queryKey: ['coach-check-in'] });
       await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
       router.push('/coach');
@@ -233,7 +237,7 @@ function ReviewPageInner() {
   return (
     <PageShell
       density="control"
-      title="Review weekly plan"
+      title={isAdjustment ? 'Review adjust draft' : 'Review weekly plan'}
       subtitle={`Week of ${weekStartDate}`}
       leading={
         <div className="space-y-3 mb-4">
@@ -246,6 +250,9 @@ function ReviewPageInner() {
           >
             Tempo AI Coach is not a doctor and does not provide medical advice. It offers training
             suggestions only.
+            {isAdjustment
+              ? ' Elapsed days are locked historical; only remaining days are editable.'
+              : ''}
           </div>
         </div>
       }
@@ -352,16 +359,27 @@ function ReviewPageInner() {
             <Card>
               <h2 className="text-lg font-semibold text-ink mb-4">Plan</h2>
               <div className="space-y-4">
-                {commit.days.map((day, i) => (
+                {commit.days.map((day, i) => {
+                  const locked =
+                    Boolean(lockedThroughDate) && day.date <= (lockedThroughDate as string);
+                  return (
                   <div
                     key={day.date}
-                    className="rounded-tempo border border-border p-3 space-y-3"
+                    className={`rounded-tempo border border-border p-3 space-y-3 ${
+                      locked ? 'opacity-60 bg-canvas' : ''
+                    }`}
                   >
                     <div className="flex flex-wrap items-center gap-3">
                       <p className="text-sm font-medium text-ink min-w-[7rem]">{day.date}</p>
+                      {locked && (
+                        <span className="rounded-tempo border border-border px-2 py-0.5 text-xs text-muted">
+                          Locked · Adjustment
+                        </span>
+                      )}
                       <select
                         className={fieldClass + ' max-w-[10rem]'}
                         value={day.dayType}
+                        disabled={locked}
                         onChange={(e) =>
                           setCommit((c) =>
                             c
@@ -386,6 +404,7 @@ function ReviewPageInner() {
                             type="number"
                             min={0}
                             step={0.1}
+                            disabled={locked}
                             value={metersToDisplay(day.run.distanceM, unitPreference)}
                             onChange={(e) =>
                               setCommit((c) =>
@@ -407,6 +426,7 @@ function ReviewPageInner() {
                           <span>Structure</span>
                           <input
                             className={fieldClass}
+                            disabled={locked}
                             value={day.run.structure ?? ''}
                             onChange={(e) =>
                               setCommit((c) =>
@@ -423,6 +443,7 @@ function ReviewPageInner() {
                           <span>Pace / HR</span>
                           <input
                             className={fieldClass}
+                            disabled={locked}
                             value={day.run.paceOrHr ?? ''}
                             onChange={(e) =>
                               setCommit((c) =>
@@ -439,6 +460,7 @@ function ReviewPageInner() {
                           <span>Notes</span>
                           <input
                             className={fieldClass}
+                            disabled={locked}
                             value={day.run.notes ?? ''}
                             onChange={(e) =>
                               setCommit((c) =>
@@ -454,7 +476,8 @@ function ReviewPageInner() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </Card>
 

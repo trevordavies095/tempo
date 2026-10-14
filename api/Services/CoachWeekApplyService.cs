@@ -30,9 +30,15 @@ public class CoachWeekApplyService
         string commitJson,
         CancellationToken cancellationToken = default)
     {
-        if (await _db.CoachWeeks.AnyAsync(
-                w => w.WeekStartDate == weekStartMonday && w.Status == CoachWeekStatuses.Committed,
-                cancellationToken))
+        var startedAdjust = await _db.CoachAdjustments.AsNoTracking()
+            .FirstOrDefaultAsync(
+                a => a.WeekStartDate == weekStartMonday && a.Status == CoachAdjustmentStatuses.Started,
+                cancellationToken);
+
+        var hasCommitted = await _db.CoachWeeks.AnyAsync(
+            w => w.WeekStartDate == weekStartMonday && w.Status == CoachWeekStatuses.Committed,
+            cancellationToken);
+        if (hasCommitted && startedAdjust == null)
         {
             return (null, "Week is already committed and immutable", 409);
         }
@@ -55,6 +61,19 @@ public class CoachWeekApplyService
             return (null, validateError ?? "Invalid weekly commit", 400);
         }
 
+        if (startedAdjust != null)
+        {
+            var lockError = await ValidateLockedAgainstSourceAsync(
+                startedAdjust,
+                weekStartMonday,
+                commit,
+                cancellationToken);
+            if (lockError != null)
+            {
+                return (null, lockError, 400);
+            }
+        }
+
         draft.CommitJson = CoachWeeklyCommitSchema.Serialize(commit);
         draft.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
@@ -68,9 +87,16 @@ public class CoachWeekApplyService
         IReadOnlyList<int> acceptedMemoryProposalIndexes,
         CancellationToken cancellationToken = default)
     {
-        if (await _db.CoachWeeks.AnyAsync(
+        var startedAdjust = await _db.CoachAdjustments
+            .FirstOrDefaultAsync(
+                a => a.WeekStartDate == weekStartMonday && a.Status == CoachAdjustmentStatuses.Started,
+                cancellationToken);
+
+        var priorCommitted = await _db.CoachWeeks
+            .FirstOrDefaultAsync(
                 w => w.WeekStartDate == weekStartMonday && w.Status == CoachWeekStatuses.Committed,
-                cancellationToken))
+                cancellationToken);
+        if (priorCommitted != null && startedAdjust == null)
         {
             return (null, "Week is already committed and immutable", 409);
         }
@@ -95,6 +121,19 @@ public class CoachWeekApplyService
                 return (null, validateError ?? "Invalid weekly commit", 400);
             }
 
+            if (startedAdjust != null)
+            {
+                var lockError = await ValidateLockedAgainstSourceAsync(
+                    startedAdjust,
+                    weekStartMonday,
+                    edited,
+                    cancellationToken);
+                if (lockError != null)
+                {
+                    return (null, lockError, 400);
+                }
+            }
+
             draft.CommitJson = CoachWeeklyCommitSchema.Serialize(edited);
             draft.UpdatedAt = DateTime.UtcNow;
         }
@@ -106,6 +145,19 @@ public class CoachWeekApplyService
         if (schemaError != null || commit == null)
         {
             return (null, schemaError ?? "Draft commit is invalid", 400);
+        }
+
+        if (startedAdjust != null)
+        {
+            var lockError = await ValidateLockedAgainstSourceAsync(
+                startedAdjust,
+                weekStartMonday,
+                commit,
+                cancellationToken);
+            if (lockError != null)
+            {
+                return (null, lockError, 400);
+            }
         }
 
         var ackError = ValidateSafetyAcknowledgments(commit.SafetyFlags, safetyAcknowledgments);
@@ -134,11 +186,47 @@ public class CoachWeekApplyService
                 .ToList(),
             AcceptedMemoryProposalIndexes: acceptIndexes.ToList());
 
+        if (startedAdjust != null && priorCommitted != null)
+        {
+            priorCommitted.Status = CoachWeekStatuses.Archived;
+            priorCommitted.UpdatedAt = now;
+            startedAdjust.Status = CoachAdjustmentStatuses.Applied;
+            startedAdjust.UpdatedAt = now;
+        }
+
         draft.Status = CoachWeekStatuses.Committed;
         draft.ApplyRecordJson = JsonSerializer.Serialize(applyRecord, JsonOptions);
         draft.UpdatedAt = now;
         await _db.SaveChangesAsync(cancellationToken);
         return (draft, null, 200);
+    }
+
+    private async Task<string?> ValidateLockedAgainstSourceAsync(
+        CoachAdjustment adjustment,
+        DateOnly weekStartMonday,
+        CoachWeeklyCommit commit,
+        CancellationToken cancellationToken)
+    {
+        var source = await _db.CoachWeeks.AsNoTracking()
+            .FirstOrDefaultAsync(w => w.Id == adjustment.SourceCommittedWeekId, cancellationToken);
+        if (source == null)
+        {
+            return "Source committed week for adjust not found";
+        }
+
+        var sourceError = CoachWeeklyCommitSchema.TryParseAndValidate(
+            source.CommitJson,
+            weekStartMonday,
+            out var sourceCommit);
+        if (sourceError != null || sourceCommit == null)
+        {
+            return sourceError ?? "Source committed week commit is invalid";
+        }
+
+        return CoachWeekSplice.ValidateLockedDaysUnchanged(
+            sourceCommit,
+            commit,
+            adjustment.LockedThroughDate);
     }
 
     private async Task<(CoachWeeklyCommit? Commit, string? Error)> ValidateCommitAgainstConstraintsAsync(

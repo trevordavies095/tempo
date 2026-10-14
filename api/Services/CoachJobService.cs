@@ -38,14 +38,30 @@ public sealed class CoachJobService
             return (null, "Anthropic provider key is required", 400);
         }
 
+        var startedAdjust = await _db.CoachAdjustments.AsNoTracking()
+            .FirstOrDefaultAsync(
+                a => a.WeekStartDate == preflight.WeekStartDate
+                     && a.Status == CoachAdjustmentStatuses.Started,
+                cancellationToken);
+
         var committed = await _db.CoachWeeks.AsNoTracking()
             .AnyAsync(
                 w => w.WeekStartDate == preflight.WeekStartDate
                      && w.Status == CoachWeekStatuses.Committed,
                 cancellationToken);
-        if (committed)
+        if (committed && startedAdjust == null)
         {
             return (null, "Committed weeks are immutable; cannot regenerate", 409);
+        }
+
+        if (committed && startedAdjust != null)
+        {
+            // Adjust generate requires the preflight packet to include the adjustment context.
+            if (!preflight.RedactedPayloadJson.Contains("\"adjustment\":", StringComparison.OrdinalIgnoreCase)
+                && !preflight.RedactedPayloadJson.Contains("\"Adjustment\":", StringComparison.Ordinal))
+            {
+                return (null, "Privacy pre-flight must be re-assembled after starting Adjust", 400);
+            }
         }
 
         var active = await FindActiveJobAsync(cancellationToken);
@@ -54,7 +70,7 @@ public sealed class CoachJobService
             return (null, "A coach generate job is already active", 409);
         }
 
-        // Drop prior draft for this week so regenerate replaces it.
+        // Drop prior draft for this week so regenerate/adjust replaces it.
         var drafts = await _db.CoachWeeks
             .Where(w => w.WeekStartDate == preflight.WeekStartDate && w.Status == CoachWeekStatuses.Draft)
             .ToListAsync(cancellationToken);
@@ -66,6 +82,8 @@ public sealed class CoachJobService
         var job = new CoachJob
         {
             Status = CoachJobStatuses.Queued,
+            Kind = startedAdjust != null ? CoachJobKinds.Adjust : CoachJobKinds.Generate,
+            AdjustmentId = startedAdjust?.Id,
             WeekStartDate = preflight.WeekStartDate,
             PreflightId = preflight.Id,
             CreatedAt = DateTime.UtcNow
@@ -107,15 +125,15 @@ public sealed class CoachJobService
         {
             job.Status = CoachJobStatuses.Failed;
             job.ErrorCode = CoachJobErrorCodes.Interrupted;
-            job.ErrorMessage = "interrupted";
+            job.ErrorMessage = "interrupted on API startup";
             job.CompletedAt = now;
         }
 
         await _db.SaveChangesAsync(cancellationToken);
     }
 
-    private Task<CoachJob?> FindActiveJobAsync(CancellationToken cancellationToken)
-        => _db.CoachJobs.AsNoTracking()
+    private Task<CoachJob?> FindActiveJobAsync(CancellationToken cancellationToken) =>
+        _db.CoachJobs.AsNoTracking()
             .Where(j => j.Status == CoachJobStatuses.Queued || j.Status == CoachJobStatuses.Running)
             .OrderByDescending(j => j.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);

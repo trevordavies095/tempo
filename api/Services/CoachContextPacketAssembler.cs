@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -115,6 +116,8 @@ public class CoachContextPacketAssembler
             LifeConstraints: checkInRow?.LifeConstraints,
             Runs: runs);
 
+        var adjustment = await BuildAdjustmentAsync(weekStartDate, cancellationToken);
+
         return new CoachContextPacket(
             Meta: new CoachPacketMeta(
                 WeekStartDate: weekStart,
@@ -128,7 +131,70 @@ public class CoachContextPacketAssembler
             Layer1: layer1,
             Layer2: new Dictionary<string, object>(),
             Layer3: new Dictionary<string, object>(),
-            CheckIn: checkIn);
+            CheckIn: checkIn,
+            Adjustment: adjustment);
+    }
+
+    private async Task<CoachPacketAdjustment?> BuildAdjustmentAsync(
+        DateOnly weekStartDate,
+        CancellationToken cancellationToken)
+    {
+        var started = await _db.CoachAdjustments.AsNoTracking()
+            .FirstOrDefaultAsync(
+                a => a.WeekStartDate == weekStartDate && a.Status == CoachAdjustmentStatuses.Started,
+                cancellationToken);
+        if (started == null)
+        {
+            return null;
+        }
+
+        var source = await _db.CoachWeeks.AsNoTracking()
+            .FirstOrDefaultAsync(w => w.Id == started.SourceCommittedWeekId, cancellationToken);
+        if (source == null)
+        {
+            return null;
+        }
+
+        var schemaError = CoachWeeklyCommitSchema.TryParseAndValidate(
+            source.CommitJson,
+            weekStartDate,
+            out var commit);
+        if (schemaError != null || commit == null)
+        {
+            return null;
+        }
+
+        var lockedThrough = started.LockedThroughDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var lockedDays = new List<object>();
+        var remainingDates = new List<string>();
+        foreach (var day in commit.Days.OrderBy(d => d.Date, StringComparer.Ordinal))
+        {
+            if (!DateOnly.TryParse(day.Date, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+            {
+                continue;
+            }
+
+            if (date <= started.LockedThroughDate)
+            {
+                lockedDays.Add(JsonSerializer.Deserialize<object>(
+                    JsonSerializer.Serialize(day, new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                    }))!);
+            }
+            else
+            {
+                remainingDates.Add(day.Date);
+            }
+        }
+
+        return new CoachPacketAdjustment(
+            Id: started.Id,
+            Reason: started.Reason,
+            Category: started.Category,
+            LockedThroughDate: lockedThrough,
+            LockedDays: lockedDays,
+            RemainingDates: remainingDates);
     }
 
     private async Task<CoachPacketLayer1> BuildLayer1Async(
@@ -206,7 +272,16 @@ public sealed record CoachContextPacket(
     CoachPacketLayer1 Layer1,
     Dictionary<string, object> Layer2,
     Dictionary<string, object> Layer3,
-    CoachPacketCheckIn CheckIn);
+    CoachPacketCheckIn CheckIn,
+    CoachPacketAdjustment? Adjustment = null);
+
+public sealed record CoachPacketAdjustment(
+    Guid Id,
+    string Reason,
+    string? Category,
+    string LockedThroughDate,
+    IReadOnlyList<object> LockedDays,
+    IReadOnlyList<string> RemainingDates);
 
 public sealed record CoachPacketMeta(
     string WeekStartDate,

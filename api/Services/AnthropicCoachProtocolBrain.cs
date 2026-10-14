@@ -170,7 +170,8 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
         Rules:
         - Honor unit preference from the packet when describing paces in notes.
         - Honor CoachConstraint non-negotiables: blackouts = rest; standing schedule presets; secondary_race dates must be run.type=race.
-        - Never initiate mid-week adjust.
+        - Never initiate mid-week adjust. Only the athlete starts Adjust.
+        - When the packet includes an "adjustment" object: replan ONLY remainingDates; copy lockedDays unchanged into those dates; severe niggles → backoff volume/intensity and/or refer-out safetyFlags — never diagnose.
         - Rest days: dayType=rest and run may be null.
         - coachesNotes is required and must be non-empty (max 800 chars).
         """;

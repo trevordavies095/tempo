@@ -181,6 +181,21 @@ public class CoachJobWorker : BackgroundService
                 return;
             }
 
+            if (job.Kind == CoachJobKinds.Adjust && job.AdjustmentId is Guid adjustmentId)
+            {
+                var spliceError = await TrySpliceAdjustAsync(
+                    db,
+                    adjustmentId,
+                    preflight.WeekStartDate,
+                    commit!,
+                    CancellationToken.None);
+                if (spliceError != null)
+                {
+                    await FailAsync(db, job, CoachJobErrorCodes.Validation, spliceError);
+                    return;
+                }
+            }
+
             var constraintError = CoachCommitConstraintValidator.Validate(commit!, constraints);
             if (constraintError != null)
             {
@@ -234,6 +249,59 @@ public class CoachJobWorker : BackgroundService
         CoachProtocolBrainError.Timeout => CoachJobErrorCodes.Timeout,
         _ => CoachJobErrorCodes.Unknown
     };
+
+    /// <summary>
+    /// Overwrites locked days on <paramref name="commit"/> from the source committed plan.
+    /// </summary>
+    private static async Task<string?> TrySpliceAdjustAsync(
+        TempoDbContext db,
+        Guid adjustmentId,
+        DateOnly weekStartMonday,
+        CoachWeeklyCommit commit,
+        CancellationToken cancellationToken)
+    {
+        var adjustment = await db.CoachAdjustments.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == adjustmentId, cancellationToken);
+        if (adjustment == null || adjustment.Status != CoachAdjustmentStatuses.Started)
+        {
+            return "Adjust session not found or not active";
+        }
+
+        var source = await db.CoachWeeks.AsNoTracking()
+            .FirstOrDefaultAsync(w => w.Id == adjustment.SourceCommittedWeekId, cancellationToken);
+        if (source == null)
+        {
+            return "Source committed week for adjust not found";
+        }
+
+        var sourceError = CoachWeeklyCommitSchema.TryParseAndValidate(
+            source.CommitJson,
+            weekStartMonday,
+            out var sourceCommit);
+        if (sourceError != null || sourceCommit == null)
+        {
+            return sourceError ?? "Source committed week commit is invalid";
+        }
+
+        var spliced = CoachWeekSplice.SpliceLockedDays(sourceCommit, commit, adjustment.LockedThroughDate);
+        var lockError = CoachWeekSplice.ValidateLockedDaysUnchanged(
+            sourceCommit,
+            spliced,
+            adjustment.LockedThroughDate);
+        if (lockError != null)
+        {
+            return lockError;
+        }
+
+        // Mutate the parsed commit in place for subsequent serialize.
+        commit.CoachesNotes = spliced.CoachesNotes;
+        commit.Days = spliced.Days;
+        commit.SafetyFlags = spliced.SafetyFlags;
+        commit.MemoryProposals = spliced.MemoryProposals;
+        commit.ClarifyingQuestion = spliced.ClarifyingQuestion;
+        commit.Callouts = spliced.Callouts;
+        return null;
+    }
 
     private static async Task FailAsync(TempoDbContext db, CoachJob job, string code, string message)
     {

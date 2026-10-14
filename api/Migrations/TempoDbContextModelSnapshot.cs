@@ -98,6 +98,52 @@ namespace Tempo.Api.Migrations
                     b.ToTable("BestEfforts");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.CoachAdjustment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("LockedThroughDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("SourceCommittedWeekId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("WeekStartDate")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceCommittedWeekId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("WeekStartDate");
+
+                    b.ToTable("CoachAdjustments");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.CoachCheckIn", b =>
                 {
                     b.Property<Guid>("Id")
@@ -246,6 +292,9 @@ namespace Tempo.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("AdjustmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -262,6 +311,11 @@ namespace Tempo.Api.Migrations
 
                     b.Property<int?>("InputTokens")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<int?>("OutputTokens")
                         .HasColumnType("integer");
@@ -287,6 +341,8 @@ namespace Tempo.Api.Migrations
                         .HasColumnType("date");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AdjustmentId");
 
                     b.HasIndex("CreatedAt");
 

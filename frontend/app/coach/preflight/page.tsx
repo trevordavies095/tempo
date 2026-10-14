@@ -33,6 +33,7 @@ function PreflightPageInner() {
   const searchParams = useSearchParams();
   const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
+  const isAdjustMode = searchParams.get('mode') === 'adjust';
   const initialRef = searchParams.get('referenceDate') || localDateInputValue(new Date());
   const [referenceDate, setReferenceDate] = useState(initialRef);
   const [preflight, setPreflight] = useState<CoachPrivacyPreflight | null>(null);
@@ -121,8 +122,12 @@ function PreflightPageInner() {
   return (
     <PageShell
       density="control"
-      title="Privacy pre-flight"
-      subtitle="Review what leaves your instance before any Anthropic call"
+      title={isAdjustMode ? 'Adjust privacy pre-flight' : 'Privacy pre-flight'}
+      subtitle={
+        isAdjustMode
+          ? 'Re-confirm the redacted packet before mid-week Adjust generate'
+          : 'Review what leaves your instance before any Anthropic call'
+      }
       leading={
         <div className="mb-4 space-y-3">
           <Link href="/coach" className="text-sm text-muted hover:text-ink">
@@ -133,7 +138,8 @@ function PreflightPageInner() {
             role="note"
           >
             Tempo AI Coach is not a doctor and does not provide medical advice. Nothing is sent to
-            Anthropic until you consent to this redacted packet.
+            Anthropic until you consent to this redacted packet
+            {isAdjustMode ? ' for mid-week Adjust' : ''}.
           </div>
         </div>
       }
@@ -262,7 +268,9 @@ function PreflightPageInner() {
                   >
                     {generateMutation.isPending || jobPolling
                       ? 'Generating...'
-                      : 'Generate weekly plan'}
+                      : isAdjustMode
+                        ? 'Generate adjust draft'
+                        : 'Generate weekly plan'}
                   </Button>
                   <Link href="/coach">
                     <Button type="button" variant="secondary">

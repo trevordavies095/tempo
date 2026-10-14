@@ -28,7 +28,7 @@ public static class CoachReviewEndpoints
             .WithSummary("Update the draft weekly commit")
             .WithDescription(
                 "Replaces draft CommitJson after schema + non-negotiable constraint validation. " +
-                "404 if no draft; 409 if the week is already committed.");
+                "404 if no draft; 409 if the week is already committed (unless a started Adjust is open).");
 
         group.MapPost("/weeks/draft/apply", ApplyDraftWeek)
             .WithName("ApplyCoachDraftWeek")
@@ -41,7 +41,8 @@ public static class CoachReviewEndpoints
             .WithDescription(
                 "Requires every safety flag acknowledged (index-based). Flags with requiresResponse need a non-empty response. " +
                 "Memory proposals default to rejected; only acceptedMemoryProposalIndexes are appended to coach memory. " +
-                "Transitions draft → committed (coach tables only). Optional commit edits then applies in one shot.");
+                "Transitions draft → committed (coach tables only). Mid-week Adjust apply archives the prior committed week and splices remaining days. " +
+                "Optional commit edits then applies in one shot.");
 
         group.MapGet("/weeks/committed", GetCommittedWeek)
             .WithName("GetCoachCommittedWeek")
@@ -55,7 +56,8 @@ public static class CoachReviewEndpoints
         [FromBody] PutCoachDraftWeekRequest? request,
         TempoDbContext db,
         CoachConfig coachConfig,
-        CoachWeekApplyService applyService)
+        CoachWeekApplyService applyService,
+        CoachAdjustmentService adjustmentService)
     {
         if (!await IsCoachAvailableAsync(db, coachConfig))
         {
@@ -88,20 +90,25 @@ public static class CoachReviewEndpoints
         }
 
         var (week, error, status) = await applyService.UpdateDraftAsync(monday, commitJson);
-        return status switch
+        if (status != 200 || week == null)
         {
-            200 when week != null => Results.Ok(ToWeekDocument(week)),
-            404 => Results.NotFound(new { error }),
-            409 => Results.Conflict(new { error }),
-            _ => Results.BadRequest(new { error })
-        };
+            return status switch
+            {
+                404 => Results.NotFound(new { error }),
+                409 => Results.Conflict(new { error }),
+                _ => Results.BadRequest(new { error })
+            };
+        }
+
+        return Results.Ok(await MapWeekAsync(week, adjustmentService));
     }
 
     private static async Task<IResult> ApplyDraftWeek(
         [FromBody] ApplyCoachDraftWeekRequest? request,
         TempoDbContext db,
         CoachConfig coachConfig,
-        CoachWeekApplyService applyService)
+        CoachWeekApplyService applyService,
+        CoachAdjustmentService adjustmentService)
     {
         if (!await IsCoachAvailableAsync(db, coachConfig))
         {
@@ -142,18 +149,23 @@ public static class CoachReviewEndpoints
             optionalCommitJson,
             acks,
             accepted);
-        return status switch
+        if (status != 200 || week == null)
         {
-            200 when week != null => Results.Ok(ToWeekDocument(week)),
-            404 => Results.NotFound(new { error }),
-            409 => Results.Conflict(new { error }),
-            _ => Results.BadRequest(new { error })
-        };
+            return status switch
+            {
+                404 => Results.NotFound(new { error }),
+                409 => Results.Conflict(new { error }),
+                _ => Results.BadRequest(new { error })
+            };
+        }
+
+        return Results.Ok(await MapWeekAsync(week, adjustmentService));
     }
 
     private static async Task<IResult> GetCommittedWeek(
         TempoDbContext db,
         CoachConfig coachConfig,
+        CoachAdjustmentService adjustmentService,
         [FromQuery] string? weekStartDate)
     {
         if (!await IsCoachAvailableAsync(db, coachConfig))
@@ -173,7 +185,7 @@ public static class CoachReviewEndpoints
             return Results.NotFound();
         }
 
-        return Results.Ok(ToWeekDocument(week));
+        return Results.Ok(await MapWeekAsync(week, adjustmentService));
     }
 
     private static bool TryParseWeekStart(string? weekStartDate, out DateOnly monday, out string? error)
@@ -189,28 +201,15 @@ public static class CoachReviewEndpoints
         return true;
     }
 
-    private static CoachWeekDocument ToWeekDocument(CoachWeek week)
+    private static async Task<CoachWeekDocument> MapWeekAsync(
+        CoachWeek week,
+        CoachAdjustmentService adjustmentService)
     {
-        object? commit;
-        try
-        {
-            commit = JsonSerializer.Deserialize<object>(week.CommitJson, JsonOptions);
-        }
-        catch
-        {
-            commit = null;
-        }
-
-        return new CoachWeekDocument(
-            Id: week.Id,
-            WeekStartDate: week.WeekStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            Status: week.Status,
-            Commit: commit,
-            PreflightId: week.PreflightId,
-            JobId: week.JobId,
-            PayloadHash: week.PayloadHash,
-            CreatedAt: week.CreatedAt,
-            UpdatedAt: week.UpdatedAt);
+        var adjustment = await adjustmentService.FindForWeekDocumentAsync(
+            week.WeekStartDate,
+            week.JobId,
+            week.Status);
+        return CoachWeekDocumentMapper.ToDocument(week, adjustment);
     }
 
     private static async Task<bool> IsCoachAvailableAsync(TempoDbContext db, CoachConfig coachConfig)

@@ -1846,10 +1846,14 @@ export async function consentCoachPrivacyPreflight(id: string): Promise<CoachPri
 }
 
 export type CoachJobStatus = 'queued' | 'running' | 'ready' | 'failed' | string;
+export type CoachJobKind = 'generate' | 'adjust' | string;
+export type CoachAdjustCategory = 'niggle' | 'illness' | 'life' | 'other';
 
 export interface CoachJob {
   id: string;
   status: CoachJobStatus;
+  kind: CoachJobKind;
+  adjustmentId: string | null;
   weekStartDate: string;
   preflightId: string;
   errorCode: string | null;
@@ -1914,6 +1918,31 @@ export interface CoachWeekDraft {
   payloadHash: string;
   createdAt: string;
   updatedAt: string;
+  isAdjustment?: boolean;
+  adjustmentId?: string | null;
+  lockedThroughDate?: string | null;
+  adjustmentCategory?: string | null;
+  adjustmentStatus?: string | null;
+}
+
+export interface CoachAdjustment {
+  id: string;
+  weekStartDate: string;
+  sourceCommittedWeekId: string;
+  reason: string;
+  category: CoachAdjustCategory | string | null;
+  lockedThroughDate: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CoachWeekPrivacyReceipt {
+  weekId: string;
+  weekStartDate: string;
+  status: string;
+  payloadHash: string;
+  redactedPayload: unknown;
 }
 
 export interface CoachSafetyAcknowledgment {
@@ -2068,6 +2097,73 @@ export async function getCoachCommittedWeek(weekStartDate: string): Promise<Coac
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to get committed week: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachCommittedWeekOrNull(
+  weekStartDate: string
+): Promise<CoachWeekDraft | null> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/weeks/committed?weekStartDate=${encodeURIComponent(weekStartDate)}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get committed week: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function startCoachAdjust(params: {
+  weekStartDate: string;
+  reason: string;
+  category?: CoachAdjustCategory | null;
+  timezoneOffsetMinutes?: number;
+  referenceDate?: string;
+}): Promise<CoachAdjustment> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/weeks/committed/adjust`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      weekStartDate: params.weekStartDate,
+      reason: params.reason,
+      category: params.category ?? null,
+      timezoneOffsetMinutes: params.timezoneOffsetMinutes ?? 0,
+      referenceDate: params.referenceDate ?? undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to start adjust: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachWeekPrivacyReceipt(weekId: string): Promise<CoachWeekPrivacyReceipt> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/weeks/${weekId}/privacy-receipt`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get privacy receipt: ${response.status}`);
   }
 
   return response.json();

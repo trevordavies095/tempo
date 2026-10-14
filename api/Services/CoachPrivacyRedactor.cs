@@ -151,7 +151,8 @@ public static partial class CoachPrivacyRedactor
             new("layer1", "HR zones, paces, shoes (no athlete name)"),
             new("layer2", "Layer 2 memory (empty until later slices)"),
             new("layer3", "Layer 3 rules (empty until later slices)"),
-            new("checkIn", "Subjective fields and run metrics/notes without workout names or GPS")
+            new("checkIn", "Subjective fields and run metrics/notes without workout names or GPS"),
+            new("adjustment", "Athlete-started mid-week adjust reason, category, and locked/remaining days")
         };
 
         // Always advertise what we strip by policy, even if keys were absent in this assemble.
