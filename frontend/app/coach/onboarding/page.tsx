@@ -383,8 +383,9 @@ function CoachOnboardingContent() {
           <Card>
             <h2 className="text-lg font-semibold text-ink mb-2">Confirm Layer 1</h2>
             <p className="text-sm text-muted mb-4">
-              Prefills come from Tempo. Suggested paces are heuristics from your best efforts —
-              edit them before saving. Nothing is trusted blindly.
+              Prefills come from Tempo. Suggested paces average your Race workouts from the last
+              ~4 months (normalized across distances) — edit them before saving. Nothing is trusted
+              blindly.
             </p>
 
             {prefillQuery.isLoading ? (
@@ -430,7 +431,7 @@ function CoachOnboardingContent() {
                   </h3>
                   {!prefillQuery.data?.suggestedPaces && (
                     <p className="text-sm text-muted mb-2">
-                      No 5K or mile best effort found — enter paces manually.
+                      No recent races (or best-effort fallback) found — enter paces manually.
                     </p>
                   )}
                   <div className="grid gap-3 sm:grid-cols-2">

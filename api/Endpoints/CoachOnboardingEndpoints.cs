@@ -32,7 +32,8 @@ public static class CoachOnboardingEndpoints
             .WithSummary("Prefill Coach onboarding from Tempo")
             .WithDescription(
                 "Returns HR zones, shoes, best efforts, unit preference, and suggested paces from Tempo. " +
-                "Does not persist. Requires Tempo onboardingCompleted. " +
+                "Suggested paces prefer Race workouts from the last 120 days (Riegel-normalized to 5K-equivalent, averaged); " +
+                "falls back to best-effort 5K / 1 mile. Does not persist. Requires Tempo onboardingCompleted. " +
                 "404 when Coach is unavailable or the athlete has not opted in.");
 
         group.MapPost("/onboarding", PostOnboarding)
@@ -105,7 +106,31 @@ public static class CoachOnboardingEndpoints
                 be.WorkoutDate.ToString("yyyy-MM-dd")))
             .ToListAsync();
 
-        var suggested = CoachPaceSuggestions.SuggestFromBestEfforts(
+        var utcNow = DateTime.UtcNow;
+        var raceCutoff = utcNow.AddDays(-CoachPaceSuggestions.RecentRaceWindowDays);
+        var recentRaces = await db.Workouts.AsNoTracking()
+            .Where(w =>
+                w.RunType == "Race" &&
+                w.StartedAt >= raceCutoff &&
+                w.DistanceM >= CoachPaceSuggestions.MinRaceDistanceM &&
+                w.DurationS > 0)
+            .Select(w => new
+            {
+                w.DistanceM,
+                w.DurationS,
+                w.TimerTimeS,
+                w.StartedAt
+            })
+            .ToListAsync();
+
+        var suggested = CoachPaceSuggestions.SuggestFromRecentRaces(
+            recentRaces.Select(r => (
+                r.DistanceM,
+                TimeS: r.TimerTimeS is > 0 ? r.TimerTimeS.Value : r.DurationS,
+                r.StartedAt)),
+            utcNow);
+
+        suggested ??= CoachPaceSuggestions.SuggestFromBestEfforts(
             bestEfforts.Select(be => (be.Distance, be.DistanceM, be.TimeS)));
 
         return Results.Ok(new CoachOnboardingPrefillDocument(

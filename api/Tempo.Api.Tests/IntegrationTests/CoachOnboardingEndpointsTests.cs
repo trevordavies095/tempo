@@ -188,16 +188,12 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             shoe = await TestDataSeeder.SeedShoeAsync(db, "Nike", "Pegasus");
             await TestDataSeeder.SeedUserSettingsAsync(db, defaultShoeId: shoe.Id, age: 32);
-            var workout = await TestDataSeeder.SeedWorkoutAsync(db, distanceM: 5000, durationS: 1200);
-            db.BestEfforts.Add(new BestEffort
-            {
-                Distance = "5K",
-                DistanceM = 5000,
-                TimeS = 1200,
-                WorkoutId = workout.Id,
-                WorkoutDate = workout.StartedAt,
-                CalculatedAt = DateTime.UtcNow
-            });
+            var race = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                distanceM: 5000,
+                durationS: 1200,
+                startedAt: DateTime.UtcNow.AddDays(-14));
+            race.RunType = "Race";
             await db.SaveChangesAsync();
         }
 
@@ -210,9 +206,8 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
         body.HrZones!.Zones.Should().HaveCount(5);
         body.Shoes.Should().ContainSingle(s => s.Id == shoe.Id && s.Brand == "Nike");
         body.DefaultShoeId.Should().Be(shoe.Id);
-        body.BestEfforts.Should().ContainSingle(be => be.Distance == "5K" && be.TimeS == 1200);
         body.SuggestedPaces.Should().NotBeNull();
-        body.SuggestedPaces!.ThresholdSecPerKm.Should().Be(240); // 1200s / 5km
+        body.SuggestedPaces!.ThresholdSecPerKm.Should().Be(240); // recent 5K race 1200s / 5km
         body.SuggestedPaces.EasySecPerKm.Should().Be(312); // 240 * 1.3
         body.GoalDistances.Should().Contain("Half-Marathon");
         body.Disclaimer.Should().Contain("not a doctor");
