@@ -3,25 +3,31 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
   completeCoachOnboarding,
+  createCoachConstraint,
   getCoachOnboarding,
   getCoachOnboardingPrefill,
+  listCoachConstraints,
+  retireCoachConstraint,
+  updateCoachConstraint,
   type CoachLayer1HrZones,
   type CoachLayer1Paces,
+  type CoachOnboardingStatus,
 } from '@/lib/api';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings, type UnitPreference } from '@/lib/settings';
 import {
   ConstraintFormFields,
+  coachConstraintToRequest,
+  describeCoachConstraint,
   emptyConstraintDraft,
-  formatConstraintSummary,
   type ConstraintDraft,
 } from '@/components/coach/ConstraintFormFields';
 
@@ -98,13 +104,25 @@ function pacesFromInputs(inputs: PaceInputs, unit: UnitPreference): CoachLayer1P
   };
 }
 
+function pacesToInputs(paces: CoachLayer1Paces, unit: UnitPreference): PaceInputs {
+  return {
+    easy: secPerKmToPaceInput(paces.easySecPerKm, unit),
+    tempo: secPerKmToPaceInput(paces.tempoSecPerKm, unit),
+    threshold: secPerKmToPaceInput(paces.thresholdSecPerKm, unit),
+    interval: secPerKmToPaceInput(paces.intervalSecPerKm, unit),
+  };
+}
+
 function CoachOnboardingContent() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   const { unitPreference } = useSettings();
   const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
 
   const [step, setStep] = useState<Step>('disclaimer');
+  const [isEditing, setIsEditing] = useState(false);
+  const [justSavedEdit, setJustSavedEdit] = useState(false);
   const [goalType, setGoalType] = useState<'race' | 'pr'>('race');
   const [distance, setDistance] = useState('Half-Marathon');
   const [raceDate, setRaceDate] = useState('');
@@ -113,7 +131,8 @@ function CoachOnboardingContent() {
   const [paceInputs, setPaceInputs] = useState<PaceInputs>(emptyPaceInputs);
   const [hrZones, setHrZones] = useState<CoachLayer1HrZones | null>(null);
   const [constraintDraft, setConstraintDraft] = useState<ConstraintDraft>(emptyConstraintDraft());
-  const [pendingConstraints, setPendingConstraints] = useState<ConstraintDraft[]>([]);
+  const [editingConstraintId, setEditingConstraintId] = useState<string | null>(null);
+  const [constraintError, setConstraintError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -131,6 +150,71 @@ function CoachOnboardingContent() {
     enabled: showCoachNav && !!user?.onboardingCompleted && step !== 'done',
   });
 
+  const constraintsQuery = useQuery({
+    queryKey: ['coach-constraints', 'active'],
+    queryFn: () => listCoachConstraints('active'),
+    enabled: showCoachNav && (step === 'constraints' || isEditing),
+  });
+
+  const saveConstraintMutation = useMutation({
+    mutationFn: async () => {
+      if (editingConstraintId) {
+        return updateCoachConstraint(editingConstraintId, constraintDraft);
+      }
+      return createCoachConstraint(constraintDraft);
+    },
+    onSuccess: async () => {
+      setConstraintError(null);
+      setEditingConstraintId(null);
+      setConstraintDraft(emptyConstraintDraft());
+      await queryClient.invalidateQueries({ queryKey: ['coach-constraints'] });
+    },
+    onError: (err: Error) => setConstraintError(err.message),
+  });
+
+  const retireConstraintMutation = useMutation({
+    mutationFn: (id: string) => retireCoachConstraint(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['coach-constraints'] });
+    },
+    onError: (err: Error) => setConstraintError(err.message),
+  });
+
+  function hydrateFromStatus(status: CoachOnboardingStatus) {
+    const goal = status.goal;
+    const layer1 = status.layer1;
+    if (goal) {
+      setGoalType(goal.type === 'pr' ? 'pr' : 'race');
+      setDistance(goal.distance);
+      setRaceDate(goal.raceDate ?? '');
+      setTargetTimeInput(goal.targetTimeS != null ? formatDuration(goal.targetTimeS) : '');
+      setNotes(goal.notes ?? '');
+    }
+    if (layer1) {
+      setHrZones(layer1.hrZones);
+      setPaceInputs(pacesToInputs(layer1.paces, unitPreference));
+    }
+  }
+
+  function startEditing() {
+    if (!statusQuery.data) return;
+    setJustSavedEdit(false);
+    setIsEditing(true);
+    hydrateFromStatus(statusQuery.data);
+    setSubmitError(null);
+    setStep('goal');
+  }
+
+  function cancelEditing() {
+    setIsEditing(false);
+    setJustSavedEdit(false);
+    setSubmitError(null);
+    setConstraintError(null);
+    setEditingConstraintId(null);
+    setConstraintDraft(emptyConstraintDraft());
+    setStep('done');
+  }
+
   useEffect(() => {
     if (isFetched && !showCoachNav) {
       router.replace('/dashboard');
@@ -144,14 +228,14 @@ function CoachOnboardingContent() {
   }, [user, router]);
 
   useEffect(() => {
-    if (statusQuery.data?.completed) {
+    if (statusQuery.data?.completed && !isEditing) {
       setStep('done');
     }
-  }, [statusQuery.data?.completed]);
+  }, [statusQuery.data?.completed, isEditing]);
 
   useEffect(() => {
     const prefill = prefillQuery.data;
-    if (!prefill) return;
+    if (!prefill || isEditing || statusQuery.data?.completed) return;
 
     setHrZones(prefill.hrZones);
     if (prefill.goalDistances.includes('Half-Marathon')) {
@@ -164,14 +248,9 @@ function CoachOnboardingContent() {
         prefill.unitPreference === 'imperial' || prefill.unitPreference === 'metric'
           ? prefill.unitPreference
           : unitPreference;
-      setPaceInputs({
-        easy: secPerKmToPaceInput(prefill.suggestedPaces.easySecPerKm, unit),
-        tempo: secPerKmToPaceInput(prefill.suggestedPaces.tempoSecPerKm, unit),
-        threshold: secPerKmToPaceInput(prefill.suggestedPaces.thresholdSecPerKm, unit),
-        interval: secPerKmToPaceInput(prefill.suggestedPaces.intervalSecPerKm, unit),
-      });
+      setPaceInputs(pacesToInputs(prefill.suggestedPaces, unit));
     }
-  }, [prefillQuery.data, unitPreference]);
+  }, [prefillQuery.data, unitPreference, isEditing, statusQuery.data?.completed]);
 
   const disclaimer =
     prefillQuery.data?.disclaimer ??
@@ -194,6 +273,15 @@ function CoachOnboardingContent() {
     [paceInputs, unitPreference]
   );
   const pacesValid = confirmedPaces != null;
+
+  const shoeSource = isEditing
+    ? statusQuery.data?.layer1
+    : prefillQuery.data
+      ? {
+          shoes: prefillQuery.data.shoes,
+          defaultShoeId: prefillQuery.data.defaultShoeId,
+        }
+      : statusQuery.data?.layer1;
 
   async function handleSubmit() {
     setSubmitError(null);
@@ -233,11 +321,14 @@ function CoachOnboardingContent() {
         },
         paces: confirmedPaces,
         hrZones: hrZones ?? undefined,
-        shoes: prefillQuery.data?.shoes,
-        defaultShoeId: prefillQuery.data?.defaultShoeId ?? null,
-        constraints: pendingConstraints.length > 0 ? pendingConstraints : undefined,
+        shoes: shoeSource?.shoes,
+        defaultShoeId: shoeSource?.defaultShoeId ?? null,
       });
+      const wasEditing = isEditing;
+      setIsEditing(false);
+      setJustSavedEdit(wasEditing);
       await statusQuery.refetch();
+      await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
       setStep('done');
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Failed to complete onboarding');
@@ -259,6 +350,8 @@ function CoachOnboardingContent() {
   if (!showCoachNav) {
     return null;
   }
+
+  const activeConstraints = constraintsQuery.data ?? [];
 
   return (
     <PageShell
@@ -291,7 +384,9 @@ function CoachOnboardingContent() {
 
         {step === 'goal' && (
           <Card>
-            <h2 className="text-lg font-semibold text-ink mb-4">Primary goal</h2>
+            <h2 className="text-lg font-semibold text-ink mb-4">
+              {isEditing ? 'Edit primary goal' : 'Primary goal'}
+            </h2>
             <div className="space-y-4">
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium text-ink">Goal type</legend>
@@ -366,9 +461,15 @@ function CoachOnboardingContent() {
               </label>
 
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={() => setStep('disclaimer')}>
-                  Back
-                </Button>
+                {isEditing ? (
+                  <Button type="button" variant="secondary" onClick={cancelEditing}>
+                    Cancel
+                  </Button>
+                ) : (
+                  <Button type="button" variant="secondary" onClick={() => setStep('disclaimer')}>
+                    Back
+                  </Button>
+                )}
                 <Button
                   type="button"
                   onClick={() => {
@@ -389,69 +490,119 @@ function CoachOnboardingContent() {
         )}
 
         {step === 'constraints' && (
-          <Card>
-            <h2 className="text-lg font-semibold text-ink mb-2">Non-negotiables (optional)</h2>
-            <p className="text-sm text-muted mb-4">
-              Seed B-races, travel blackouts, or standing schedule prefs now — or skip and manage
-              them later under Coach → Non-negotiables.
-            </p>
-            <ConstraintFormFields value={constraintDraft} onChange={setConstraintDraft} />
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setPendingConstraints((prev) => [...prev, constraintDraft]);
-                  setConstraintDraft(emptyConstraintDraft());
-                }}
-              >
-                Add to list
-              </Button>
-            </div>
-            {pendingConstraints.length > 0 && (
-              <ul className="mt-4 space-y-2 text-sm text-muted">
-                {pendingConstraints.map((c, i) => (
-                  <li key={`${c.kind}-${i}`} className="flex justify-between gap-2">
-                    <span>{formatConstraintSummary(c)}</span>
-                    <button
-                      type="button"
-                      className="text-danger"
-                      onClick={() =>
-                        setPendingConstraints((prev) => prev.filter((_, idx) => idx !== i))
-                      }
+          <>
+            <Card>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <h2 className="text-lg font-semibold text-ink">
+                  {editingConstraintId ? 'Edit non-negotiable' : 'Non-negotiables (optional)'}
+                </h2>
+                {editingConstraintId && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setEditingConstraintId(null);
+                      setConstraintDraft(emptyConstraintDraft());
+                      setConstraintError(null);
+                    }}
+                  >
+                    Cancel edit
+                  </Button>
+                )}
+              </div>
+              <p className="text-sm text-muted mb-4">
+                Changes save immediately. You can also manage them later under Coach →
+                Non-negotiables.
+              </p>
+              <ConstraintFormFields value={constraintDraft} onChange={setConstraintDraft} />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={() => saveConstraintMutation.mutate()}
+                  disabled={saveConstraintMutation.isPending}
+                >
+                  {saveConstraintMutation.isPending
+                    ? 'Saving...'
+                    : editingConstraintId
+                      ? 'Save changes'
+                      : 'Add non-negotiable'}
+                </Button>
+              </div>
+              {constraintError && <p className="text-sm text-danger mt-2">{constraintError}</p>}
+            </Card>
+
+            <Card>
+              <h2 className="text-lg font-semibold text-ink mb-4">Your constraints</h2>
+              {constraintsQuery.isLoading ? (
+                <p className="text-sm text-muted">Loading...</p>
+              ) : constraintsQuery.isError ? (
+                <p className="text-sm text-danger">
+                  {constraintsQuery.error instanceof Error
+                    ? constraintsQuery.error.message
+                    : 'Failed to load constraints'}
+                </p>
+              ) : activeConstraints.length === 0 ? (
+                <p className="text-sm text-muted">No constraints yet.</p>
+              ) : (
+                <ul className="space-y-3 mb-4">
+                  {activeConstraints.map((c) => (
+                    <li
+                      key={c.id}
+                      className="flex flex-wrap items-start justify-between gap-2 border-b border-border pb-3 last:border-0"
                     >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" onClick={() => setStep('goal')}>
-                Back
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => setStep('confirm')}>
-                Skip
-              </Button>
-              <Button type="button" onClick={() => setStep('confirm')}>
-                Continue to Layer 1
-              </Button>
-            </div>
-          </Card>
+                      <p className="text-sm text-ink">{describeCoachConstraint(c)}</p>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => {
+                            setEditingConstraintId(c.id);
+                            setConstraintDraft(coachConstraintToRequest(c));
+                            setConstraintError(null);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => retireConstraintMutation.mutate(c.id)}
+                          disabled={retireConstraintMutation.isPending}
+                        >
+                          Retire
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => setStep('goal')}>
+                  Back
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setStep('confirm')}>
+                  Skip
+                </Button>
+                <Button type="button" onClick={() => setStep('confirm')}>
+                  Continue to Layer 1
+                </Button>
+              </div>
+            </Card>
+          </>
         )}
 
         {step === 'confirm' && (
           <Card>
             <h2 className="text-lg font-semibold text-ink mb-2">Confirm Layer 1</h2>
             <p className="text-sm text-muted mb-4">
-              Prefills come from Tempo. Suggested paces average your Race workouts from the last
-              ~4 months (normalized across distances) — edit them before saving. Nothing is trusted
-              blindly.
+              {isEditing
+                ? 'Values below are your saved Layer 1 — edit paces before saving. Existing weekly plans are not changed automatically.'
+                : 'Prefills come from Tempo. Suggested paces average your Race workouts from the last ~4 months (normalized across distances) — edit them before saving. Nothing is trusted blindly.'}
             </p>
 
-            {prefillQuery.isLoading ? (
+            {prefillQuery.isLoading && !isEditing ? (
               <p className="text-sm text-muted">Loading Tempo data...</p>
-            ) : prefillQuery.isError ? (
+            ) : prefillQuery.isError && !isEditing && !hrZones ? (
               <p className="text-sm text-danger">
                 {prefillQuery.error instanceof Error
                   ? prefillQuery.error.message
@@ -472,14 +623,14 @@ function CoachOnboardingContent() {
 
                 <section>
                   <h3 className="text-sm font-semibold text-ink mb-2">Active shoes</h3>
-                  {(prefillQuery.data?.shoes.length ?? 0) === 0 ? (
+                  {(shoeSource?.shoes.length ?? 0) === 0 ? (
                     <p className="text-sm text-muted">No active shoes in Tempo yet.</p>
                   ) : (
                     <ul className="text-sm text-muted space-y-1">
-                      {prefillQuery.data!.shoes.map((s) => (
+                      {shoeSource!.shoes.map((s) => (
                         <li key={s.id}>
                           {s.brand} {s.model}
-                          {prefillQuery.data?.defaultShoeId === s.id ? ' (default)' : ''}
+                          {shoeSource?.defaultShoeId === s.id ? ' (default)' : ''}
                         </li>
                       ))}
                     </ul>
@@ -490,7 +641,7 @@ function CoachOnboardingContent() {
                   <h3 className="text-sm font-semibold text-ink mb-2">
                     Training paces (m:ss {paceUnitLabel}) — confirm or edit
                   </h3>
-                  {!prefillQuery.data?.suggestedPaces && (
+                  {!isEditing && !prefillQuery.data?.suggestedPaces && (
                     <p className="text-sm text-muted mb-2">
                       No recent races (or best-effort fallback) found — enter paces manually.
                     </p>
@@ -527,7 +678,11 @@ function CoachOnboardingContent() {
                     Back
                   </Button>
                   <Button type="button" onClick={handleSubmit} disabled={isSubmitting || !pacesValid}>
-                    {isSubmitting ? 'Saving...' : 'Complete coach onboarding'}
+                    {isSubmitting
+                      ? 'Saving...'
+                      : isEditing
+                        ? 'Save'
+                        : 'Complete coach onboarding'}
                   </Button>
                 </div>
                 {submitError && <p className="text-sm text-danger">{submitError}</p>}
@@ -548,9 +703,20 @@ function CoachOnboardingContent() {
                   : ''}
               </p>
             )}
-            <Link href="/coach">
-              <Button type="button">Back to Coach</Button>
-            </Link>
+            {justSavedEdit && (
+              <p className="text-sm text-muted mb-4">
+                Saved. Existing weekly plans are unchanged — regenerate if you want them to use
+                these inputs.
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={startEditing}>
+                Edit onboarding
+              </Button>
+              <Link href="/coach">
+                <Button type="button">Back to Coach</Button>
+              </Link>
+            </div>
           </Card>
         )}
       </div>

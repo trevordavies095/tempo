@@ -1412,7 +1412,6 @@ export interface CompleteCoachOnboardingRequest {
   hrZones?: CoachLayer1HrZones;
   shoes?: CoachLayer1Shoe[];
   defaultShoeId?: string | null;
-  constraints?: CoachConstraintRequest[];
 }
 
 export const COACH_GOAL_DISTANCES = [
@@ -1541,6 +1540,18 @@ export async function deleteCoachProvider(): Promise<void> {
   if (!response.ok && response.status !== 204) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to remove Coach provider key: ${response.status}`);
+  }
+}
+
+export async function deleteCoachSetup(): Promise<void> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/coach/setup`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+
+  if (!response.ok && response.status !== 204) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to reset Coach setup: ${response.status}`);
   }
 }
 

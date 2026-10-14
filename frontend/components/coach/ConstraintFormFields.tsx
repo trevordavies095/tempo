@@ -3,6 +3,7 @@
 import {
   COACH_GOAL_DISTANCES,
   COACH_WEEKDAY_LABELS,
+  type CoachConstraint,
   type CoachConstraintIntent,
   type CoachConstraintKind,
   type CoachConstraintRequest,
@@ -60,6 +61,36 @@ export function formatConstraintSummary(c: ConstraintDraft): string {
     .map((d) => COACH_WEEKDAY_LABELS[d] ?? String(d))
     .join(', ');
   return `${c.preset ?? 'schedule'}: ${days}`;
+}
+
+export function coachConstraintToRequest(c: CoachConstraint): CoachConstraintRequest {
+  return {
+    kind: c.kind as CoachConstraintRequest['kind'],
+    startDate: c.startDate,
+    endDate: c.endDate,
+    distance: c.distance,
+    intent: c.intent as CoachConstraintRequest['intent'],
+    preset: c.preset as CoachConstraintRequest['preset'],
+    weekdays: c.weekdays,
+    note: c.note,
+  };
+}
+
+export function describeCoachConstraint(c: CoachConstraint): string {
+  if (c.kind === 'secondary_race') {
+    return `B-race ${c.distance} on ${c.startDate} (${c.intent})`;
+  }
+  if (c.kind === 'blackout') {
+    const range =
+      c.endDate && c.endDate !== c.startDate
+        ? `${c.startDate}–${c.endDate}`
+        : c.startDate;
+    return `Blackout ${range}${c.note ? ` — ${c.note}` : ''}`;
+  }
+  const days = (c.weekdays ?? [])
+    .map((d) => COACH_WEEKDAY_LABELS[d] ?? String(d))
+    .join(', ');
+  return `${c.preset}: ${days}${c.note ? ` — ${c.note}` : ''}`;
 }
 
 export function ConstraintFormFields({ value, onChange }: ConstraintFormFieldsProps) {

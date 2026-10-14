@@ -331,7 +331,7 @@
           "Coach"
         ],
         "summary": "Complete Coach onboarding",
-        "description": "Upserts primary CoachGoal and Layer 1 from athlete-confirmed values. Paces must be confirmed (all four fields required). Requires Tempo onboardingCompleted. Not medical advice.",
+        "description": "Upserts primary CoachGoal and Layer 1 from athlete-confirmed values. Paces must be confirmed (all four fields required). Constraints are managed via /coach/constraints (not this payload). Requires Tempo onboardingCompleted. Not medical advice.",
         "operationId": "PostCoachOnboarding",
         "requestBody": {
           "content": {
@@ -1644,6 +1644,29 @@
         "summary": "Remove Coach Anthropic API key",
         "description": "Deletes the provider connection row. Does not touch CoachPreferences or opt-in. 404 when Coach__Enabled is false. 204 if already gone.",
         "operationId": "DeleteCoachProvider",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/coach/setup": {
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Reset Coach setup",
+        "description": "Interrupts active coach jobs, then deletes peelable coach data (goal, memory layers, constraints, check-ins, privacy preflights, jobs, weeks, adjustments). Keeps CoachPreferences (opt-in) and the Anthropic provider connection. 404 when Coach__Enabled is false.",
+        "operationId": "DeleteCoachSetup",
         "responses": {
           "204": {
             "description": "No Content"
@@ -4295,13 +4318,6 @@
           "defaultShoeId": {
             "type": "string",
             "format": "uuid",
-            "nullable": true
-          },
-          "constraints": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CoachConstraintRequest"
-            },
             "nullable": true
           }
         },

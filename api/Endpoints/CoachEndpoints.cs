@@ -79,6 +79,17 @@ public static class CoachEndpoints
                 "Deletes the provider connection row. Does not touch CoachPreferences or opt-in. " +
                 "404 when Coach__Enabled is false. 204 if already gone.");
 
+        group.MapDelete("/coach/setup", DeleteCoachSetup)
+            .WithName("DeleteCoachSetup")
+            .Produces(204)
+            .Produces(404)
+            .WithSummary("Reset Coach setup")
+            .WithDescription(
+                "Interrupts active coach jobs, then deletes peelable coach data " +
+                "(goal, memory layers, constraints, check-ins, privacy preflights, jobs, weeks, adjustments). " +
+                "Keeps CoachPreferences (opt-in) and the Anthropic provider connection. " +
+                "404 when Coach__Enabled is false.");
+
         return group;
     }
 
@@ -334,6 +345,19 @@ public static class CoachEndpoints
             await db.SaveChangesAsync();
         }
 
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> DeleteCoachSetup(
+        CoachConfig coachConfig,
+        CoachSetupService setupService)
+    {
+        if (!coachConfig.Enabled)
+        {
+            return Results.NotFound();
+        }
+
+        await setupService.ResetSetupAsync();
         return Results.NoContent();
     }
 

@@ -10,49 +10,18 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
   ConstraintFormFields,
+  coachConstraintToRequest,
+  describeCoachConstraint,
   emptyConstraintDraft,
   type ConstraintDraft,
 } from '@/components/coach/ConstraintFormFields';
 import {
-  COACH_WEEKDAY_LABELS,
   createCoachConstraint,
   listCoachConstraints,
   retireCoachConstraint,
   updateCoachConstraint,
-  type CoachConstraint,
-  type CoachConstraintRequest,
 } from '@/lib/api';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
-
-function toRequest(c: CoachConstraint): CoachConstraintRequest {
-  return {
-    kind: c.kind as CoachConstraintRequest['kind'],
-    startDate: c.startDate,
-    endDate: c.endDate,
-    distance: c.distance,
-    intent: c.intent as CoachConstraintRequest['intent'],
-    preset: c.preset as CoachConstraintRequest['preset'],
-    weekdays: c.weekdays,
-    note: c.note,
-  };
-}
-
-function describeConstraint(c: CoachConstraint): string {
-  if (c.kind === 'secondary_race') {
-    return `B-race ${c.distance} on ${c.startDate} (${c.intent})`;
-  }
-  if (c.kind === 'blackout') {
-    const range =
-      c.endDate && c.endDate !== c.startDate
-        ? `${c.startDate}–${c.endDate}`
-        : c.startDate;
-    return `Blackout ${range}${c.note ? ` — ${c.note}` : ''}`;
-  }
-  const days = (c.weekdays ?? [])
-    .map((d) => COACH_WEEKDAY_LABELS[d] ?? String(d))
-    .join(', ');
-  return `${c.preset}: ${days}${c.note ? ` — ${c.note}` : ''}`;
-}
 
 function ConstraintsPageContent() {
   const router = useRouter();
@@ -193,7 +162,7 @@ function ConstraintsPageContent() {
                 >
                   <div>
                     <p className="text-sm text-ink">
-                      {describeConstraint(c)}
+                      {describeCoachConstraint(c)}
                       {c.isRetired ? (
                         <span className="text-muted"> (retired)</span>
                       ) : null}
@@ -206,7 +175,7 @@ function ConstraintsPageContent() {
                         variant="secondary"
                         onClick={() => {
                           setEditingId(c.id);
-                          setDraft(toRequest(c));
+                          setDraft(coachConstraintToRequest(c));
                           setError(null);
                         }}
                       >

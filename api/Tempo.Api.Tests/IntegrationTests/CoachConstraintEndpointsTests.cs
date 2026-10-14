@@ -196,54 +196,6 @@ public class CoachConstraintEndpointsTests : IClassFixture<CoachEnabledTestFacto
             .StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [Fact]
-    public async Task OnboardingComplete_SeedsConstraints()
-    {
-        var client = await AuthenticatedClientAsync();
-        await OptInAsync(client);
-
-        var complete = await client.PostAsJsonAsync("/coach/onboarding", new
-        {
-            goal = new
-            {
-                type = "race",
-                distance = "Half-Marathon",
-                raceDate = "2027-01-09"
-            },
-            paces = new
-            {
-                easySecPerKm = 360,
-                tempoSecPerKm = 310,
-                thresholdSecPerKm = 280,
-                intervalSecPerKm = 265
-            },
-            constraints = new object[]
-            {
-                new
-                {
-                    kind = "secondary_race",
-                    startDate = "2026-11-27",
-                    distance = "5K",
-                    intent = "fun_run"
-                },
-                new
-                {
-                    kind = "blackout",
-                    startDate = "2026-12-04",
-                    endDate = "2026-12-06",
-                    note = "Travel"
-                }
-            }
-        });
-
-        complete.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var list = await client.GetFromJsonAsync<List<ConstraintResponse>>("/coach/constraints", JsonOptions);
-        list.Should().HaveCount(2);
-        list!.Should().Contain(c => c.Kind == "secondary_race" && c.Intent == "fun_run");
-        list.Should().Contain(c => c.Kind == "blackout" && c.Note == "Travel");
-    }
-
     private class ConstraintResponse
     {
         public Guid Id { get; set; }

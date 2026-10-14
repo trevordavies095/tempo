@@ -179,43 +179,6 @@ public static class CoachConstraintEndpoints
         return Results.Ok(ToDocument(row));
     }
 
-    internal static async Task<(string? Error, List<CoachConstraint> Created)> SeedFromRequestsAsync(
-        TempoDbContext db,
-        IReadOnlyList<CoachConstraintRequest>? requests,
-        DateTime now)
-    {
-        var created = new List<CoachConstraint>();
-        if (requests == null || requests.Count == 0)
-        {
-            return (null, created);
-        }
-
-        foreach (var request in requests)
-        {
-            var error = CoachConstraintValidation.TryNormalize(
-                request.Kind,
-                request.StartDate,
-                request.EndDate,
-                request.Distance,
-                request.Intent,
-                request.Preset,
-                request.Weekdays,
-                request.Note,
-                out var normalized);
-            if (error != null || normalized == null)
-            {
-                return (error, created);
-            }
-
-            var row = new CoachConstraint();
-            CoachConstraintValidation.Apply(row, normalized, now, isCreate: true);
-            db.CoachConstraints.Add(row);
-            created.Add(row);
-        }
-
-        return (null, created);
-    }
-
     internal static CoachConstraintDocument ToDocument(CoachConstraint row) =>
         new(
             Id: row.Id,

@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   COACH_ANTHROPIC_MODELS,
   deleteCoachProvider,
+  deleteCoachSetup,
   getCoachProvider,
   optInCoach,
   optOutCoach,
@@ -33,6 +35,7 @@ function formatTimestamp(value: string | null): string {
 }
 
 export function CoachSection() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const {
     available,
@@ -46,6 +49,8 @@ export function CoachSection() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
@@ -193,7 +198,26 @@ export function CoachSection() {
     }
   };
 
-  const busy = isSaving || isTesting || providerLoading;
+  const handleResetSetup = async () => {
+    setIsResetting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await deleteCoachSetup();
+      setConfirmReset(false);
+      await invalidateCoach();
+      await queryClient.invalidateQueries({ queryKey: ['coach-onboarding'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-constraints'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
+      router.push('/coach');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset Coach setup');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const busy = isSaving || isTesting || providerLoading || isResetting;
 
   return (
     <Card>
@@ -334,6 +358,57 @@ export function CoachSection() {
               </>
             )}
           </div>
+
+          {optedIn && (
+            <div className="border-t border-border pt-4 space-y-3">
+              <h4 className="text-sm font-semibold text-ink">Reset coach setup</h4>
+              {!confirmReset ? (
+                <>
+                  <p className="text-sm text-muted">
+                    Clears goal, Layer 1, constraints, check-ins, plans, and jobs. Keeps Coach
+                    enabled and your Anthropic API key.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    onClick={() => {
+                      setConfirmReset(true);
+                      setError(null);
+                      setSuccess(null);
+                    }}
+                    disabled={busy}
+                  >
+                    Reset coach setup
+                  </Button>
+                </>
+              ) : (
+                <div className="rounded-tempo border border-border bg-canvas p-3 space-y-3">
+                  <p className="text-sm text-ink">
+                    Keeps your API key and Coach enabled. Deletes goal, Layer 1, constraints,
+                    check-ins, plans, and jobs. This cannot be undone.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setConfirmReset(false)}
+                      disabled={busy}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={handleResetSetup}
+                      disabled={busy}
+                    >
+                      {isResetting ? 'Resetting...' : 'Reset coach setup'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

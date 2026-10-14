@@ -46,6 +46,7 @@ public static class CoachOnboardingEndpoints
             .WithDescription(
                 "Upserts primary CoachGoal and Layer 1 from athlete-confirmed values. " +
                 "Paces must be confirmed (all four fields required). " +
+                "Constraints are managed via /coach/constraints (not this payload). " +
                 "Requires Tempo onboardingCompleted. Not medical advice.");
     }
 
@@ -298,15 +299,6 @@ public static class CoachOnboardingEndpoints
             layer.UpdatedAt = now;
         }
 
-        var (seedError, _) = await CoachConstraintEndpoints.SeedFromRequestsAsync(
-            db,
-            request.Constraints,
-            now);
-        if (seedError != null)
-        {
-            return Results.BadRequest(new { error = seedError });
-        }
-
         await db.SaveChangesAsync();
         return Results.Ok(await BuildOnboardingDocumentAsync(db));
     }
@@ -506,5 +498,4 @@ public record CompleteCoachOnboardingRequest(
     CoachPacesRequest? Paces,
     CoachLayer1HrZones? HrZones,
     IReadOnlyList<CoachLayer1Shoe>? Shoes,
-    Guid? DefaultShoeId,
-    IReadOnlyList<CoachConstraintRequest>? Constraints);
+    Guid? DefaultShoeId);
