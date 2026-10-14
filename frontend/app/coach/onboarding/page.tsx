@@ -17,21 +17,28 @@ import {
 } from '@/lib/api';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSettings } from '@/lib/settings';
-import { formatPace } from '@/lib/format';
+import { useSettings, type UnitPreference } from '@/lib/settings';
 
 const fieldClass =
   'w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt';
 
+const KM_PER_MILE = 1.609344;
+
 type Step = 'disclaimer' | 'goal' | 'confirm' | 'done';
 
-function emptyPaces(): CoachLayer1Paces {
-  return {
-    easySecPerKm: 0,
-    tempoSecPerKm: 0,
-    thresholdSecPerKm: 0,
-    intervalSecPerKm: 0,
-  };
+type PaceFieldKey = 'easy' | 'tempo' | 'threshold' | 'interval';
+
+type PaceInputs = Record<PaceFieldKey, string>;
+
+const PACE_FIELDS: Array<{ key: PaceFieldKey; apiKey: keyof CoachLayer1Paces; label: string }> = [
+  { key: 'easy', apiKey: 'easySecPerKm', label: 'Easy' },
+  { key: 'tempo', apiKey: 'tempoSecPerKm', label: 'Tempo' },
+  { key: 'threshold', apiKey: 'thresholdSecPerKm', label: 'Threshold' },
+  { key: 'interval', apiKey: 'intervalSecPerKm', label: 'Interval' },
+];
+
+function emptyPaceInputs(): PaceInputs {
+  return { easy: '', tempo: '', threshold: '', interval: '' };
 }
 
 function formatDuration(totalSeconds: number): string {
@@ -55,6 +62,36 @@ function parseDurationToSeconds(value: string): number | null {
   return null;
 }
 
+/** API stores sec/km; UI edits m:ss per km or per mile. */
+function secPerKmToPaceInput(secPerKm: number, unit: UnitPreference): string {
+  if (secPerKm <= 0) return '';
+  const displaySec =
+    unit === 'imperial' ? Math.round(secPerKm * KM_PER_MILE) : Math.round(secPerKm);
+  const m = Math.floor(displaySec / 60);
+  const s = displaySec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function paceInputToSecPerKm(value: string, unit: UnitPreference): number | null {
+  const displaySec = parseDurationToSeconds(value);
+  if (displaySec == null || displaySec <= 0) return null;
+  if (unit === 'imperial') {
+    return Math.max(1, Math.round(displaySec / KM_PER_MILE));
+  }
+  return displaySec;
+}
+
+function pacesFromInputs(inputs: PaceInputs, unit: UnitPreference): CoachLayer1Paces | null {
+  const parsed = PACE_FIELDS.map(({ key }) => paceInputToSecPerKm(inputs[key], unit));
+  if (parsed.some((n) => n == null)) return null;
+  return {
+    easySecPerKm: parsed[0]!,
+    tempoSecPerKm: parsed[1]!,
+    thresholdSecPerKm: parsed[2]!,
+    intervalSecPerKm: parsed[3]!,
+  };
+}
+
 function CoachOnboardingContent() {
   const router = useRouter();
   const { user } = useAuth();
@@ -67,10 +104,12 @@ function CoachOnboardingContent() {
   const [raceDate, setRaceDate] = useState('');
   const [targetTimeInput, setTargetTimeInput] = useState('');
   const [notes, setNotes] = useState('');
-  const [paces, setPaces] = useState<CoachLayer1Paces>(emptyPaces());
+  const [paceInputs, setPaceInputs] = useState<PaceInputs>(emptyPaceInputs);
   const [hrZones, setHrZones] = useState<CoachLayer1HrZones | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const paceUnitLabel = unitPreference === 'imperial' ? '/mi' : '/km';
 
   const statusQuery = useQuery({
     queryKey: ['coach-onboarding'],
@@ -113,9 +152,18 @@ function CoachOnboardingContent() {
       setDistance(prefill.goalDistances[0]);
     }
     if (prefill.suggestedPaces) {
-      setPaces(prefill.suggestedPaces);
+      const unit =
+        prefill.unitPreference === 'imperial' || prefill.unitPreference === 'metric'
+          ? prefill.unitPreference
+          : unitPreference;
+      setPaceInputs({
+        easy: secPerKmToPaceInput(prefill.suggestedPaces.easySecPerKm, unit),
+        tempo: secPerKmToPaceInput(prefill.suggestedPaces.tempoSecPerKm, unit),
+        threshold: secPerKmToPaceInput(prefill.suggestedPaces.thresholdSecPerKm, unit),
+        interval: secPerKmToPaceInput(prefill.suggestedPaces.intervalSecPerKm, unit),
+      });
     }
-  }, [prefillQuery.data]);
+  }, [prefillQuery.data, unitPreference]);
 
   const disclaimer =
     prefillQuery.data?.disclaimer ??
@@ -133,14 +181,11 @@ function CoachOnboardingContent() {
     'Marathon',
   ];
 
-  const pacesValid = useMemo(
-    () =>
-      paces.easySecPerKm > 0 &&
-      paces.tempoSecPerKm > 0 &&
-      paces.thresholdSecPerKm > 0 &&
-      paces.intervalSecPerKm > 0,
-    [paces]
+  const confirmedPaces = useMemo(
+    () => pacesFromInputs(paceInputs, unitPreference),
+    [paceInputs, unitPreference]
   );
+  const pacesValid = confirmedPaces != null;
 
   async function handleSubmit() {
     setSubmitError(null);
@@ -163,8 +208,8 @@ function CoachOnboardingContent() {
       return;
     }
 
-    if (!pacesValid) {
-      setSubmitError('Confirm all four paces (seconds per km) before continuing.');
+    if (!confirmedPaces) {
+      setSubmitError(`Confirm all four paces as m:ss ${paceUnitLabel} before continuing.`);
       return;
     }
 
@@ -178,7 +223,7 @@ function CoachOnboardingContent() {
           targetTimeS,
           notes: notes.trim() || null,
         },
-        paces,
+        paces: confirmedPaces,
         hrZones: hrZones ?? undefined,
         shoes: prefillQuery.data?.shoes,
         defaultShoeId: prefillQuery.data?.defaultShoeId ?? null,
@@ -381,7 +426,7 @@ function CoachOnboardingContent() {
 
                 <section>
                   <h3 className="text-sm font-semibold text-ink mb-2">
-                    Training paces (sec/km) — confirm or edit
+                    Training paces (m:ss {paceUnitLabel}) — confirm or edit
                   </h3>
                   {!prefillQuery.data?.suggestedPaces && (
                     <p className="text-sm text-muted mb-2">
@@ -389,33 +434,27 @@ function CoachOnboardingContent() {
                     </p>
                   )}
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {(
-                      [
-                        ['easySecPerKm', 'Easy'],
-                        ['tempoSecPerKm', 'Tempo'],
-                        ['thresholdSecPerKm', 'Threshold'],
-                        ['intervalSecPerKm', 'Interval'],
-                      ] as const
-                    ).map(([key, label]) => (
+                    {PACE_FIELDS.map(({ key, label }) => (
                       <label key={key} className="block text-sm">
                         <span className="font-medium text-ink">{label}</span>
-                        <input
-                          type="number"
-                          min={1}
-                          className={`${fieldClass} mt-1`}
-                          value={paces[key] || ''}
-                          onChange={(e) =>
-                            setPaces((prev) => ({
-                              ...prev,
-                              [key]: Number(e.target.value) || 0,
-                            }))
-                          }
-                        />
-                        <span className="text-xs text-muted">
-                          {paces[key] > 0
-                            ? formatPace(paces[key], unitPreference)
-                            : '—'}
-                        </span>
+                        <div className="mt-1 flex items-center gap-2">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="m:ss"
+                            className={fieldClass}
+                            value={paceInputs[key]}
+                            onChange={(e) =>
+                              setPaceInputs((prev) => ({
+                                ...prev,
+                                [key]: e.target.value,
+                              }))
+                            }
+                          />
+                          <span className="text-xs text-muted whitespace-nowrap">
+                            {paceUnitLabel}
+                          </span>
+                        </div>
                       </label>
                     ))}
                   </div>
