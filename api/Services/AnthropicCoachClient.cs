@@ -29,12 +29,21 @@ public sealed class AnthropicCoachClient : IAnthropicCoachClient
         {
             var client = _httpClientFactory.CreateClient(HttpClientName);
             using var request = new HttpRequestMessage(HttpMethod.Get, "v1/models");
-            request.Headers.Add("x-api-key", apiKey);
-            request.Headers.Add("anthropic-version", "2023-06-01");
+            request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+            request.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
             using var response = await client.SendAsync(request, cancellationToken);
-            return ClassifyStatus(response.StatusCode);
+            var result = ClassifyStatus(response.StatusCode);
+            if (result != AnthropicProbeResult.Ok)
+            {
+                _logger.LogWarning(
+                    "Anthropic Coach probe returned {StatusCode} → {Result}",
+                    (int)response.StatusCode,
+                    result);
+            }
+
+            return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -47,11 +56,16 @@ public sealed class AnthropicCoachClient : IAnthropicCoachClient
         }
     }
 
-    private static AnthropicProbeResult ClassifyStatus(HttpStatusCode statusCode)
+    public static AnthropicProbeResult ClassifyStatus(HttpStatusCode statusCode)
     {
+        var code = (int)statusCode;
+        if (code is >= 200 and <= 299)
+        {
+            return AnthropicProbeResult.Ok;
+        }
+
         return statusCode switch
         {
-            HttpStatusCode.OK => AnthropicProbeResult.Ok,
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => AnthropicProbeResult.Unauthorized,
             HttpStatusCode.PaymentRequired => AnthropicProbeResult.Billing,
             (HttpStatusCode)429 => AnthropicProbeResult.Transient,

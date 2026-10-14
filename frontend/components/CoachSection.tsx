@@ -47,6 +47,7 @@ export function CoachSection() {
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [modelId, setModelId] = useState<string>(COACH_ANTHROPIC_MODELS[0].id);
   const [provider, setProvider] = useState<CoachProviderStatus | null>(null);
@@ -126,10 +127,12 @@ export function CoachSection() {
   const handleSaveProvider = async () => {
     setIsSaving(true);
     setError(null);
+    setSuccess(null);
     try {
       const next = await putCoachProvider(apiKey, modelId);
       setProvider(next);
       setApiKey('');
+      setSuccess('API key saved.');
       await invalidateCoach();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save Anthropic key');
@@ -141,11 +144,24 @@ export function CoachSection() {
   const handleTest = async () => {
     setIsTesting(true);
     setError(null);
+    setSuccess(null);
     try {
       const next = await testCoachProvider(apiKey.trim() || undefined);
       if (providerConnected || next.connected) {
         setProvider(await getCoachProvider());
+      } else {
+        setProvider((prev) =>
+          prev
+            ? { ...prev, lastProbeAt: next.lastProbeAt, lastError: null }
+            : {
+                connected: false,
+                modelId: null,
+                lastProbeAt: next.lastProbeAt,
+                lastError: null,
+              }
+        );
       }
+      setSuccess('Connection OK — Anthropic accepted the API key.');
       await invalidateCoach();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to test connection');
@@ -164,6 +180,7 @@ export function CoachSection() {
   const handleRemoveKey = async () => {
     setIsSaving(true);
     setError(null);
+    setSuccess(null);
     try {
       await deleteCoachProvider();
       setProvider({ connected: false, modelId: null, lastProbeAt: null, lastError: null });
@@ -240,7 +257,10 @@ export function CoachSection() {
                   {provider?.lastProbeAt && (
                     <div className="flex gap-2">
                       <dt className="text-muted">Last probe</dt>
-                      <dd className="text-ink">{formatTimestamp(provider.lastProbeAt)}</dd>
+                      <dd className="text-ink">
+                        {formatTimestamp(provider.lastProbeAt)}
+                        {!provider.lastError ? ' — OK' : ''}
+                      </dd>
                     </div>
                   )}
                   {provider?.lastError && (
@@ -318,6 +338,7 @@ export function CoachSection() {
       )}
 
       {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+      {success && !error && <p className="mt-3 text-sm text-ink">{success}</p>}
     </Card>
   );
 }

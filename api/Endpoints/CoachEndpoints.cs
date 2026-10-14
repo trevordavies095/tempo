@@ -302,7 +302,7 @@ public static class CoachEndpoints
                     : new CoachProviderDocument(
                         Connected: false,
                         ModelId: null,
-                        LastProbeAt: null,
+                        LastProbeAt: DateTime.UtcNow,
                         LastError: null)),
             AnthropicProbeResult.Unauthorized => Results.BadRequest(new { error = "Anthropic rejected the API key" }),
             AnthropicProbeResult.Billing => Results.BadRequest(new { error = "Anthropic billing or payment required" }),
