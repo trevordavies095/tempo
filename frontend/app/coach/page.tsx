@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
@@ -9,7 +9,7 @@ import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
-import { getCoachHome } from '@/lib/api';
+import { getCoachDraftWeekOrNull, getCoachHome } from '@/lib/api';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 
 function formatDuration(totalSeconds: number): string {
@@ -22,13 +22,32 @@ function formatDuration(totalSeconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function localMondayIso(d = new Date()): string {
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diff);
+  const y = monday.getFullYear();
+  const m = String(monday.getMonth() + 1).padStart(2, '0');
+  const dayNum = String(monday.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dayNum}`;
+}
+
 function CoachPageContent() {
   const router = useRouter();
   const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
 
+  const weekStartDate = useMemo(() => localMondayIso(), []);
+
   const homeQuery = useQuery({
     queryKey: ['coach-home'],
     queryFn: getCoachHome,
+    enabled: showCoachNav,
+  });
+
+  const draftQuery = useQuery({
+    queryKey: ['coach-draft-week', weekStartDate],
+    queryFn: () => getCoachDraftWeekOrNull(weekStartDate),
     enabled: showCoachNav,
   });
 
@@ -96,8 +115,17 @@ function CoachPageContent() {
                 {goal.notes && <p className="text-sm text-muted mt-2">{goal.notes}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
+                {draftQuery.data && (
+                  <Link
+                    href={`/coach/review?weekStartDate=${encodeURIComponent(draftQuery.data.weekStartDate)}`}
+                  >
+                    <Button type="button">Review draft</Button>
+                  </Link>
+                )}
                 <Link href="/coach/check-in">
-                  <Button type="button">Weekly check-in</Button>
+                  <Button type="button" variant={draftQuery.data ? 'secondary' : undefined}>
+                    Weekly check-in
+                  </Button>
                 </Link>
                 <Link href="/coach/preflight">
                   <Button type="button" variant="secondary">

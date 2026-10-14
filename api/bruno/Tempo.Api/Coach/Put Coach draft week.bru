@@ -1,0 +1,25 @@
+meta {
+  name: Put Coach draft week
+  type: http
+  seq: 18
+}
+
+put {
+  url: {{baseUrl}}/coach/weeks/draft
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "weekStartDate": "2026-10-12",
+    "commit": {
+      "coachesNotes": "Keep the long easy and protect Thursday.",
+      "days": [],
+      "safetyFlags": [],
+      "memoryProposals": [],
+      "clarifyingQuestion": null,
+      "callouts": []
+    }
+  }
+}

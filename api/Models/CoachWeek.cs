@@ -11,7 +11,7 @@ public static class CoachWeekStatuses
 }
 
 /// <summary>
-/// Peelable coach week plan. Issue 07 writes drafts only; apply lands later.
+/// Peelable coach week plan. Drafts from generate; apply transitions to committed.
 /// </summary>
 public class CoachWeek
 {
@@ -40,6 +40,10 @@ public class CoachWeek
     [Required]
     [Column(TypeName = "jsonb")]
     public string RedactedPayloadJson { get; set; } = "{}";
+
+    /// <summary>Apply audit (acks + accepted memory indexes) set when status becomes committed.</summary>
+    [Column(TypeName = "jsonb")]
+    public string? ApplyRecordJson { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

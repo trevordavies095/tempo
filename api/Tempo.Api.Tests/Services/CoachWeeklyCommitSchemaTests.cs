@@ -37,13 +37,21 @@ public class CoachWeeklyCommitSchemaTests
     internal static string BuildCommitJson(
         string notes = "Keep the long easy and protect Thursday.",
         Func<int, string>? dayTypeForIndex = null,
-        Func<int, string?>? runTypeForIndex = null)
+        Func<int, string?>? runTypeForIndex = null,
+        object[]? safetyFlags = null,
+        object[]? memoryProposals = null,
+        Func<int, double>? distanceMForIndex = null)
     {
         dayTypeForIndex ??= i => i == 6 ? "long" : i == 3 ? "quality" : i is 1 or 4 ? "rest" : "easy";
         runTypeForIndex ??= i =>
         {
             var dt = dayTypeForIndex(i);
             return dt == "rest" ? null : dt;
+        };
+        distanceMForIndex ??= i =>
+        {
+            var runType = runTypeForIndex(i);
+            return runType == "long" ? 16000 : 8000;
         };
 
         var days = new List<object>();
@@ -54,7 +62,15 @@ public class CoachWeeklyCommitSchemaTests
             var runType = runTypeForIndex(i);
             object? run = runType == null
                 ? null
-                : new { type = runType, distanceM = runType == "long" ? 16000 : 8000, structure = (string?)null, paceOrHr = (string?)null, shoeId = (string?)null, notes = (string?)null };
+                : new
+                {
+                    type = runType,
+                    distanceM = distanceMForIndex(i),
+                    structure = (string?)null,
+                    paceOrHr = (string?)null,
+                    shoeId = (string?)null,
+                    notes = (string?)null
+                };
             days.Add(new { date, dayType, run, strength = (object?)null });
         }
 
@@ -62,8 +78,8 @@ public class CoachWeeklyCommitSchemaTests
         {
             coachesNotes = notes,
             days,
-            safetyFlags = Array.Empty<object>(),
-            memoryProposals = Array.Empty<object>(),
+            safetyFlags = safetyFlags ?? Array.Empty<object>(),
+            memoryProposals = memoryProposals ?? Array.Empty<object>(),
             clarifyingQuestion = (string?)null,
             callouts = Array.Empty<string>()
         });

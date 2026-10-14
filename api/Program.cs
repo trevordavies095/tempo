@@ -230,6 +230,7 @@ builder.Services.AddScoped<ICoachProtocolBrain, AnthropicCoachProtocolBrain>();
 builder.Services.AddScoped<CoachContextPacketAssembler>();
 builder.Services.AddSingleton<CoachJobQueue>();
 builder.Services.AddScoped<CoachJobService>();
+builder.Services.AddScoped<CoachWeekApplyService>();
 builder.Services.AddHostedService<CoachJobWorker>();
 builder.Services.AddSingleton<IntervalsIcuSyncQueue>();
 builder.Services.AddScoped<IntervalsIcuSyncService>();

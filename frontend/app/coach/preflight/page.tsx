@@ -283,10 +283,12 @@ function PreflightPageInner() {
                     </p>
                     {job.status === 'ready' && (
                       <p className="text-ink">
-                        Draft ready for week {job.weekStartDate}. Structured review lands in the next
-                        slice —{' '}
-                        <Link href="/coach" className="underline">
-                          return to Coach
+                        Draft ready for week {job.weekStartDate}.{' '}
+                        <Link
+                          href={`/coach/review?weekStartDate=${encodeURIComponent(job.weekStartDate)}`}
+                          className="underline"
+                        >
+                          Review and apply
                         </Link>
                         .
                       </p>

@@ -1,0 +1,11 @@
+meta {
+  name: Get Coach committed week
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/coach/weeks/committed?weekStartDate=2026-10-12
+  body: none
+  auth: inherit
+}

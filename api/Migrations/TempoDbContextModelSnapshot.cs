@@ -433,6 +433,9 @@ namespace Tempo.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ApplyRecordJson")
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("CommitJson")
                         .IsRequired()
                         .HasColumnType("jsonb");

@@ -248,6 +248,7 @@ public class TempoDbContext : DbContext
             entity.Property(e => e.CommitJson).IsRequired().HasColumnType("jsonb");
             entity.Property(e => e.PayloadHash).IsRequired().HasMaxLength(64);
             entity.Property(e => e.RedactedPayloadJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.ApplyRecordJson).HasColumnType("jsonb");
             entity.HasIndex(e => new { e.WeekStartDate, e.Status });
         });
     }

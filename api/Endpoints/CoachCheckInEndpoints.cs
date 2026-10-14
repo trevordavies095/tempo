@@ -26,7 +26,7 @@ public static class CoachCheckInEndpoints
             .WithDescription(
                 "Returns the Mon–Sun check-in for timezoneOffsetMinutes + referenceDate (yyyy-MM-dd). " +
                 "Runs autofill from Tempo workouts in the full week window; saved note overlays apply without writing Workout.Notes. " +
-                "adherenceHints is empty until a committed coach plan exists. " +
+                "adherenceHints compare the committed coach plan (when present) to logged Tempo runs. " +
                 "404 when Coach is unavailable or the athlete has not opted in.");
 
         group.MapPut("/check-in", PutCheckIn)
@@ -214,9 +214,7 @@ public static class CoachCheckInEndpoints
             ? "metric"
             : settings!.UnitPreference;
 
-        // Committed coach plans land in a later slice — return empty hints for now.
-        // CoachAdherenceHints.Build is covered by unit tests with synthetic plan days.
-        IReadOnlyList<CoachAdherenceHintDocument> adherenceHints = [];
+        var adherenceHints = await BuildAdherenceHintsAsync(db, weekStartDate, workouts);
 
         return new CoachCheckInDocument(
             WeekStartDate: weekStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -231,6 +229,51 @@ public static class CoachCheckInEndpoints
             AdherenceHints: adherenceHints,
             Saved: saved != null,
             UpdatedAt: saved?.UpdatedAt);
+    }
+
+    private static async Task<IReadOnlyList<CoachAdherenceHintDocument>> BuildAdherenceHintsAsync(
+        TempoDbContext db,
+        DateOnly weekStartDate,
+        IReadOnlyList<Workout> workouts)
+    {
+        var committed = await db.CoachWeeks.AsNoTracking()
+            .FirstOrDefaultAsync(w =>
+                w.WeekStartDate == weekStartDate && w.Status == CoachWeekStatuses.Committed);
+        if (committed == null)
+        {
+            return [];
+        }
+
+        var schemaError = CoachWeeklyCommitSchema.TryParseAndValidate(
+            committed.CommitJson,
+            weekStartDate,
+            out var commit);
+        if (schemaError != null || commit == null)
+        {
+            return [];
+        }
+
+        var planned = commit.Days.Select(d =>
+        {
+            _ = DateOnly.TryParse(d.Date, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date);
+            double? distance = d.Run?.DistanceM;
+            return new CoachAdherenceHints.PlannedDay(date, d.DayType, distance);
+        }).ToList();
+
+        // Workouts are already filtered to the week UTC window; map to local calendar date
+        // using the stored StartedAt date portion (same convention as check-in run list).
+        var actual = workouts
+            .Select(w => new CoachAdherenceHints.ActualRun(
+                DateOnly.FromDateTime(w.StartedAt),
+                w.DistanceM))
+            .ToList();
+
+        return CoachAdherenceHints.Build(planned, actual)
+            .Select(h => new CoachAdherenceHintDocument(
+                h.Code,
+                h.Message,
+                h.Date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)))
+            .ToList();
     }
 
     private static bool TryResolveWeek(

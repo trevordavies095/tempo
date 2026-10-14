@@ -1863,16 +1863,70 @@ export interface CoachJob {
   completedAt: string | null;
 }
 
+export type CoachDayType = 'rest' | 'easy' | 'quality' | 'long' | 'race' | 'other' | string;
+export type CoachRunType = 'easy' | 'quality' | 'long' | 'race' | 'other' | string;
+
+export interface CoachWeeklyCommitRun {
+  type: CoachRunType;
+  distanceM: number;
+  structure: string | null;
+  paceOrHr: string | null;
+  shoeId: string | null;
+  notes: string | null;
+}
+
+export interface CoachWeeklyCommitDay {
+  date: string;
+  dayType: CoachDayType;
+  run: CoachWeeklyCommitRun | null;
+  strength: unknown;
+}
+
+export interface CoachWeeklyCommitSafetyFlag {
+  code: string;
+  message: string;
+  severity: string;
+  requiresResponse: boolean;
+}
+
+export interface CoachWeeklyCommitMemoryProposal {
+  layer: string;
+  path: string;
+  summary: string;
+}
+
+export interface CoachWeeklyCommit {
+  coachesNotes: string;
+  days: CoachWeeklyCommitDay[];
+  safetyFlags: CoachWeeklyCommitSafetyFlag[];
+  memoryProposals: CoachWeeklyCommitMemoryProposal[];
+  clarifyingQuestion: string | null;
+  callouts: string[];
+}
+
 export interface CoachWeekDraft {
   id: string;
   weekStartDate: string;
   status: string;
-  commit: unknown;
+  commit: CoachWeeklyCommit;
   preflightId: string;
   jobId: string;
   payloadHash: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CoachSafetyAcknowledgment {
+  index: number;
+  acknowledged: boolean;
+  response?: string | null;
+}
+
+export interface ApplyCoachDraftWeekRequest {
+  weekStartDate: string;
+  commit?: CoachWeeklyCommit;
+  safetyAcknowledgments: CoachSafetyAcknowledgment[];
+  acceptedMemoryProposalIndexes: number[];
 }
 
 export async function postCoachGenerate(preflightId: string): Promise<CoachJob> {
@@ -1937,6 +1991,83 @@ export async function getCoachDraftWeek(weekStartDate: string): Promise<CoachWee
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to get coach draft week: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachDraftWeekOrNull(weekStartDate: string): Promise<CoachWeekDraft | null> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/weeks/draft?weekStartDate=${encodeURIComponent(weekStartDate)}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get coach draft week: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function putCoachDraftWeek(
+  weekStartDate: string,
+  commit: CoachWeeklyCommit
+): Promise<CoachWeekDraft> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/weeks/draft`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ weekStartDate, commit }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to save draft week: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function applyCoachDraftWeek(
+  request: ApplyCoachDraftWeekRequest
+): Promise<CoachWeekDraft> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/weeks/draft/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to apply draft week: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachCommittedWeek(weekStartDate: string): Promise<CoachWeekDraft> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/weeks/committed?weekStartDate=${encodeURIComponent(weekStartDate)}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get committed week: ${response.status}`);
   }
 
   return response.json();

@@ -1,0 +1,25 @@
+meta {
+  name: Apply Coach draft week
+  type: http
+  seq: 19
+}
+
+post {
+  url: {{baseUrl}}/coach/weeks/draft/apply
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "weekStartDate": "2026-10-12",
+    "safetyAcknowledgments": [
+      {
+        "index": 0,
+        "acknowledged": true,
+        "response": "Understood"
+      }
+    ],
+    "acceptedMemoryProposalIndexes": []
+  }
+}

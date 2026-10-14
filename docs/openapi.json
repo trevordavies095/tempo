@@ -585,7 +585,7 @@
           "Coach"
         ],
         "summary": "Get weekly Coach check-in with Tempo autofill",
-        "description": "Returns the Mon–Sun check-in for timezoneOffsetMinutes + referenceDate (yyyy-MM-dd). Runs autofill from Tempo workouts in the full week window; saved note overlays apply without writing Workout.Notes. adherenceHints is empty until a committed coach plan exists. 404 when Coach is unavailable or the athlete has not opted in.",
+        "description": "Returns the Mon–Sun check-in for timezoneOffsetMinutes + referenceDate (yyyy-MM-dd). Runs autofill from Tempo workouts in the full week window; saved note overlays apply without writing Workout.Notes. adherenceHints compare the committed coach plan (when present) to logged Tempo runs. 404 when Coach is unavailable or the athlete has not opted in.",
         "operationId": "GetCoachCheckIn",
         "parameters": [
           {
@@ -922,6 +922,135 @@
         ],
         "summary": "Get the draft weekly commit for a weekStartDate (yyyy-MM-dd)",
         "operationId": "GetCoachDraftWeek",
+        "parameters": [
+          {
+            "name": "weekStartDate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachWeekDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Update the draft weekly commit",
+        "description": "Replaces draft CommitJson after schema + non-negotiable constraint validation. 404 if no draft; 409 if the week is already committed.",
+        "operationId": "PutCoachDraftWeek",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutCoachDraftWeekRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachWeekDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/coach/weeks/draft/apply": {
+      "post": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Approve and apply a draft weekly commit",
+        "description": "Requires every safety flag acknowledged (index-based). Flags with requiresResponse need a non-empty response. Memory proposals default to rejected; only acceptedMemoryProposalIndexes are appended to coach memory. Transitions draft → committed (coach tables only). Optional commit edits then applies in one shot.",
+        "operationId": "ApplyCoachDraftWeek",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyCoachDraftWeekRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachWeekDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/coach/weeks/committed": {
+      "get": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Get the committed weekly plan for a weekStartDate (yyyy-MM-dd)",
+        "operationId": "GetCoachCommittedWeek",
         "parameters": [
           {
             "name": "weekStartDate",
@@ -3278,6 +3407,51 @@
   },
   "components": {
     "schemas": {
+      "ApplyCoachDraftWeekRequest": {
+        "type": "object",
+        "properties": {
+          "weekStartDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "commit": {
+            "nullable": true
+          },
+          "safetyAcknowledgments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApplyCoachSafetyAckRequest"
+            },
+            "nullable": true
+          },
+          "acceptedMemoryProposalIndexes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApplyCoachSafetyAckRequest": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "acknowledged": {
+            "type": "boolean"
+          },
+          "response": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "properties": {
@@ -4600,6 +4774,19 @@
           },
           "notes": {
             "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PutCoachDraftWeekRequest": {
+        "type": "object",
+        "properties": {
+          "weekStartDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "commit": {
             "nullable": true
           }
         },
