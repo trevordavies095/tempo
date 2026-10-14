@@ -1,0 +1,20 @@
+meta {
+  name: Create Coach constraint
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/coach/constraints
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "kind": "secondary_race",
+    "startDate": "2026-11-27",
+    "distance": "5K",
+    "intent": "tune_up"
+  }
+}

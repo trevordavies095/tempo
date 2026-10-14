@@ -18,13 +18,19 @@ import {
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings, type UnitPreference } from '@/lib/settings';
+import {
+  ConstraintFormFields,
+  emptyConstraintDraft,
+  formatConstraintSummary,
+  type ConstraintDraft,
+} from '@/components/coach/ConstraintFormFields';
 
 const fieldClass =
   'w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt';
 
 const KM_PER_MILE = 1.609344;
 
-type Step = 'disclaimer' | 'goal' | 'confirm' | 'done';
+type Step = 'disclaimer' | 'goal' | 'constraints' | 'confirm' | 'done';
 
 type PaceFieldKey = 'easy' | 'tempo' | 'threshold' | 'interval';
 
@@ -106,6 +112,8 @@ function CoachOnboardingContent() {
   const [notes, setNotes] = useState('');
   const [paceInputs, setPaceInputs] = useState<PaceInputs>(emptyPaceInputs);
   const [hrZones, setHrZones] = useState<CoachLayer1HrZones | null>(null);
+  const [constraintDraft, setConstraintDraft] = useState<ConstraintDraft>(emptyConstraintDraft());
+  const [pendingConstraints, setPendingConstraints] = useState<ConstraintDraft[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -227,6 +235,7 @@ function CoachOnboardingContent() {
         hrZones: hrZones ?? undefined,
         shoes: prefillQuery.data?.shoes,
         defaultShoeId: prefillQuery.data?.defaultShoeId ?? null,
+        constraints: pendingConstraints.length > 0 ? pendingConstraints : undefined,
       });
       await statusQuery.refetch();
       setStep('done');
@@ -368,13 +377,65 @@ function CoachOnboardingContent() {
                       return;
                     }
                     setSubmitError(null);
-                    setStep('confirm');
+                    setStep('constraints');
                   }}
                 >
-                  Confirm Tempo data
+                  Non-negotiables
                 </Button>
               </div>
               {submitError && <p className="text-sm text-danger">{submitError}</p>}
+            </div>
+          </Card>
+        )}
+
+        {step === 'constraints' && (
+          <Card>
+            <h2 className="text-lg font-semibold text-ink mb-2">Non-negotiables (optional)</h2>
+            <p className="text-sm text-muted mb-4">
+              Seed B-races, travel blackouts, or standing schedule prefs now — or skip and manage
+              them later under Coach → Non-negotiables.
+            </p>
+            <ConstraintFormFields value={constraintDraft} onChange={setConstraintDraft} />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setPendingConstraints((prev) => [...prev, constraintDraft]);
+                  setConstraintDraft(emptyConstraintDraft());
+                }}
+              >
+                Add to list
+              </Button>
+            </div>
+            {pendingConstraints.length > 0 && (
+              <ul className="mt-4 space-y-2 text-sm text-muted">
+                {pendingConstraints.map((c, i) => (
+                  <li key={`${c.kind}-${i}`} className="flex justify-between gap-2">
+                    <span>{formatConstraintSummary(c)}</span>
+                    <button
+                      type="button"
+                      className="text-danger"
+                      onClick={() =>
+                        setPendingConstraints((prev) => prev.filter((_, idx) => idx !== i))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={() => setStep('goal')}>
+                Back
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setStep('confirm')}>
+                Skip
+              </Button>
+              <Button type="button" onClick={() => setStep('confirm')}>
+                Continue to Layer 1
+              </Button>
             </div>
           </Card>
         )}
@@ -462,7 +523,7 @@ function CoachOnboardingContent() {
                 </section>
 
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" onClick={() => setStep('goal')}>
+                  <Button type="button" variant="secondary" onClick={() => setStep('constraints')}>
                     Back
                   </Button>
                   <Button type="button" onClick={handleSubmit} disabled={isSubmitting || !pacesValid}>

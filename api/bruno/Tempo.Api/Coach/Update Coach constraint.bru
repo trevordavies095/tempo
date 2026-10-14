@@ -1,0 +1,20 @@
+meta {
+  name: Update Coach constraint
+  type: http
+  seq: 7
+}
+
+put {
+  url: {{baseUrl}}/coach/constraints/{{constraintId}}
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "kind": "blackout",
+    "startDate": "2026-12-04",
+    "endDate": "2026-12-06",
+    "note": "Wedding travel"
+  }
+}

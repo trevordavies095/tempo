@@ -1368,6 +1368,38 @@ export interface CoachOnboardingPrefill {
   disclaimer: string;
 }
 
+export type CoachConstraintKind = 'secondary_race' | 'blackout' | 'standing_schedule';
+export type CoachConstraintIntent = 'tune_up' | 'all_out' | 'fun_run';
+export type CoachStandingPreset = 'long_day' | 'no_quality_on' | 'no_run_on';
+
+export interface CoachConstraint {
+  id: string;
+  kind: CoachConstraintKind | string;
+  startDate: string | null;
+  endDate: string | null;
+  distance: string | null;
+  distanceM: number | null;
+  intent: CoachConstraintIntent | string | null;
+  preset: CoachStandingPreset | string | null;
+  weekdays: number[] | null;
+  note: string | null;
+  isRetired: boolean;
+  retiredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CoachConstraintRequest {
+  kind: CoachConstraintKind;
+  startDate?: string | null;
+  endDate?: string | null;
+  distance?: string | null;
+  intent?: CoachConstraintIntent | null;
+  preset?: CoachStandingPreset | null;
+  weekdays?: number[] | null;
+  note?: string | null;
+}
+
 export interface CompleteCoachOnboardingRequest {
   goal: {
     type: 'race' | 'pr';
@@ -1380,7 +1412,29 @@ export interface CompleteCoachOnboardingRequest {
   hrZones?: CoachLayer1HrZones;
   shoes?: CoachLayer1Shoe[];
   defaultShoeId?: string | null;
+  constraints?: CoachConstraintRequest[];
 }
+
+export const COACH_GOAL_DISTANCES = [
+  '5K',
+  '10K',
+  '15K',
+  '10 mile',
+  '20K',
+  'Half-Marathon',
+  '30K',
+  'Marathon',
+] as const;
+
+export const COACH_WEEKDAY_LABELS: Record<number, string> = {
+  1: 'Monday',
+  2: 'Tuesday',
+  3: 'Wednesday',
+  4: 'Thursday',
+  5: 'Friday',
+  6: 'Saturday',
+  7: 'Sunday',
+};
 
 export const COACH_ANTHROPIC_MODELS = [
   { id: 'claude-opus-4-7', label: 'Claude Opus 4.7 (default)' },
@@ -1546,6 +1600,76 @@ export async function completeCoachOnboarding(
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to complete Coach onboarding: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function listCoachConstraints(
+  status: 'active' | 'retired' | 'all' = 'active'
+): Promise<CoachConstraint[]> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/constraints?status=${encodeURIComponent(status)}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to list Coach constraints: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function createCoachConstraint(
+  body: CoachConstraintRequest
+): Promise<CoachConstraint> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/constraints`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to create Coach constraint: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function updateCoachConstraint(
+  id: string,
+  body: CoachConstraintRequest
+): Promise<CoachConstraint> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/constraints/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update Coach constraint: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function retireCoachConstraint(id: string): Promise<CoachConstraint> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/constraints/${id}/retire`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to retire Coach constraint: ${response.status}`);
   }
 
   return response.json();

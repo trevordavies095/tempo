@@ -102,6 +102,10 @@ _Avoid_: UserSettings, Tempo ApiKey, Intervals.icu connection
 Primary AI Coach target: `race` (distance + date + optional time) or `pr` (distance + target time), plus optional notes. Peelable `CoachGoals` row (0-or-1 in v1). Mapped into Layer 1 `raceStatus` at onboarding complete. Not a Workout, not a Run type.
 _Avoid_: Workout race, calendar event, B-race (those are CoachConstraints)
 
+**CoachConstraint**:
+Peelable non-negotiable for AI Coach plans: `secondary_race` (B-race + intent), `blackout` (date/range + reason), or `standing_schedule` (`long_day` / `no_quality_on` / `no_run_on` with ISO weekdays Mon=1…Sun=7). Soft-retired via `IsRetired`. Seeded in coach onboarding and managed at `/coach/constraints`. Separate from CoachGoal. Plan fail-closed validation is a later slice.
+_Avoid_: CoachGoal, free-text schedule DSL, core Workout calendar
+
 **Coach memory layer (L1)**:
 Peelable JSON document on `CoachMemoryLayers` (`Layer = L1`) holding confirmed HR zones, training paces, shoe snapshots, and `raceStatus` mirroring CoachGoal. Prefills from Tempo; athlete confirms paces before persist. No FK into Workouts/Shoes/UserSettings — assemble later overlays live Tempo shoes/HR. L2/L3 reserved for later slices.
 _Avoid_: UserSettings, User.OnboardingCompleted, core Tempo schema

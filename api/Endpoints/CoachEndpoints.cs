@@ -98,6 +98,7 @@ public static class CoachEndpoints
                 "404 when Coach is unavailable or the athlete has not opted in.");
 
         CoachOnboardingEndpoints.Map(group);
+        CoachConstraintEndpoints.Map(group);
     }
 
     private static async Task<IResult> GetCoachSettings(TempoDbContext db, CoachConfig coachConfig)

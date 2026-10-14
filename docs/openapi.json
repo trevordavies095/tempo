@@ -373,7 +373,7 @@
           "Coach"
         ],
         "summary": "Prefill Coach onboarding from Tempo",
-        "description": "Returns HR zones, shoes, best efforts, unit preference, and suggested paces from Tempo. Does not persist. Requires Tempo onboardingCompleted. 404 when Coach is unavailable or the athlete has not opted in.",
+        "description": "Returns HR zones, shoes, best efforts, unit preference, and suggested paces from Tempo. Suggested paces prefer Race workouts from the last 120 days (Riegel-normalized to 5K-equivalent, averaged); falls back to best-effort 5K / 1 mile. Does not persist. Requires Tempo onboardingCompleted. 404 when Coach is unavailable or the athlete has not opted in.",
         "operationId": "GetCoachOnboardingPrefill",
         "responses": {
           "200": {
@@ -388,6 +388,185 @@
           },
           "400": {
             "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/coach/constraints": {
+      "get": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "List Coach non-negotiables",
+        "description": "Lists CoachConstraints. status=active (default), retired, or all. 404 when Coach is unavailable or the athlete has not opted in.",
+        "operationId": "ListCoachConstraints",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CoachConstraintDocument"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Create a Coach non-negotiable",
+        "description": "Creates secondary_race, blackout, or standing_schedule. secondary_race intent defaults to tune_up. Unknown standing presets are rejected.",
+        "operationId": "CreateCoachConstraint",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CoachConstraintRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachConstraintDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/coach/constraints/{id}": {
+      "put": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Update an active Coach non-negotiable",
+        "description": "Edits an active constraint. 404 if missing or retired.",
+        "operationId": "UpdateCoachConstraint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CoachConstraintRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachConstraintDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/coach/constraints/{id}/retire": {
+      "post": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Retire a Coach non-negotiable",
+        "description": "Soft-retires the constraint. Idempotent if already retired.",
+        "operationId": "RetireCoachConstraint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachConstraintDocument"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not Found"
@@ -2737,6 +2916,115 @@
         },
         "additionalProperties": false
       },
+      "CoachConstraintDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "endDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "distance": {
+            "type": "string",
+            "nullable": true
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "intent": {
+            "type": "string",
+            "nullable": true
+          },
+          "preset": {
+            "type": "string",
+            "nullable": true
+          },
+          "weekdays": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "isRetired": {
+            "type": "boolean"
+          },
+          "retiredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachConstraintRequest": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "endDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "distance": {
+            "type": "string",
+            "nullable": true
+          },
+          "intent": {
+            "type": "string",
+            "nullable": true
+          },
+          "preset": {
+            "type": "string",
+            "nullable": true
+          },
+          "weekdays": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CoachGoalDocument": {
         "type": "object",
         "properties": {
@@ -3147,6 +3435,13 @@
           "defaultShoeId": {
             "type": "string",
             "format": "uuid",
+            "nullable": true
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoachConstraintRequest"
+            },
             "nullable": true
           }
         },

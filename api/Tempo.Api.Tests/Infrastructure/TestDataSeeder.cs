@@ -484,6 +484,7 @@ public static class TestDataSeeder
         db.CoachProviderConnections.RemoveRange(db.CoachProviderConnections);
         db.CoachGoals.RemoveRange(db.CoachGoals);
         db.CoachMemoryLayers.RemoveRange(db.CoachMemoryLayers);
+        db.CoachConstraints.RemoveRange(db.CoachConstraints);
         db.UserSettings.RemoveRange(db.UserSettings);
         db.Shoes.RemoveRange(db.Shoes);
         db.ApiKeys.RemoveRange(db.ApiKeys);
@@ -517,6 +518,7 @@ public static class TestDataSeeder
             await db.CoachProviderConnections.ExecuteDeleteAsync();
             await db.CoachGoals.ExecuteDeleteAsync();
             await db.CoachMemoryLayers.ExecuteDeleteAsync();
+            await db.CoachConstraints.ExecuteDeleteAsync();
             await db.UserSettings.ExecuteDeleteAsync();
             await db.Shoes.ExecuteDeleteAsync();
 

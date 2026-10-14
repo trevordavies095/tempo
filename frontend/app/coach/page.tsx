@@ -99,6 +99,9 @@ function CoachPageContent() {
                 Weekly check-in and plan generate land in later slices.
               </p>
               <div className="flex flex-wrap gap-2">
+                <Link href="/coach/constraints">
+                  <Button type="button">Non-negotiables</Button>
+                </Link>
                 <Link href="/coach/onboarding">
                   <Button type="button" variant="secondary">
                     Review onboarding
@@ -106,7 +109,9 @@ function CoachPageContent() {
                 </Link>
                 {needsProvider && (
                   <Link href="/settings">
-                    <Button type="button">Connect Anthropic key</Button>
+                    <Button type="button" variant="secondary">
+                      Connect Anthropic key
+                    </Button>
                   </Link>
                 )}
               </div>
@@ -130,6 +135,11 @@ function CoachPageContent() {
                   )}
                   <Link href="/coach/onboarding">
                     <Button type="button">Start coach onboarding</Button>
+                  </Link>
+                  <Link href="/coach/constraints">
+                    <Button type="button" variant="secondary">
+                      Non-negotiables
+                    </Button>
                   </Link>
                 </div>
               }

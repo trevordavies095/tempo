@@ -14,43 +14,33 @@ using Xunit;
 namespace Tempo.Api.Tests.IntegrationTests;
 
 [Collection("Integration Tests")]
-public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFactory>
+public class CoachOnboardingEndpointsTests : IClassFixture<CoachEnabledTestFactory>, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly TempoWebApplicationFactory _factory;
+    private readonly CoachEnabledTestFactory _factory;
+    private readonly TempoWebApplicationFactory _disabledFactory;
 
-    public CoachOnboardingEndpointsTests(TempoWebApplicationFactory factory)
+    public CoachOnboardingEndpointsTests(CoachEnabledTestFactory factory)
     {
         _factory = factory;
+        _disabledFactory = new TempoWebApplicationFactory();
     }
 
-    private static WebApplicationFactory<Program> CreateCoachEnabledFactory()
+    public void Dispose()
     {
-        return new TempoWebApplicationFactory()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.ConfigureServices(services =>
-                {
-                    var descriptor = services.SingleOrDefault(s => s.ServiceType == typeof(CoachConfig));
-                    if (descriptor != null)
-                    {
-                        services.Remove(descriptor);
-                    }
-
-                    services.AddSingleton(new CoachConfig { Enabled = true });
-                });
-            });
+        _disabledFactory.Dispose();
     }
 
-    private static async Task<HttpClient> AuthenticatedClientAsync(
-        WebApplicationFactory<Program> factory,
+    private async Task<HttpClient> AuthenticatedClientAsync(
+        WebApplicationFactory<Program>? factory = null,
         bool tempoOnboardingCompleted = true)
     {
-        using var scope = factory.Services.CreateScope();
+        var app = factory ?? _factory.Decorated;
+        using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
         await TestDataSeeder.SafeClearAllDataAsync(db, preserveUsers: true);
 
@@ -63,7 +53,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
         user.OnboardingCompleted = tempoOnboardingCompleted;
         await db.SaveChangesAsync();
 
-        return await TestHttpClientFactory.CreateAuthenticatedClientAsync(factory);
+        return await TestHttpClientFactory.CreateAuthenticatedClientAsync(app);
     }
 
     private static async Task OptInAsync(HttpClient client)
@@ -120,7 +110,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task Onboarding_WhenHostDisabled_ReturnsNotFound()
     {
-        var client = await AuthenticatedClientAsync(_factory);
+        var client = await AuthenticatedClientAsync(_disabledFactory);
 
         (await client.GetAsync("/coach/onboarding")).StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await client.GetAsync("/coach/onboarding/prefill")).StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -131,8 +121,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task Onboarding_WhenNotOptedIn_ReturnsNotFound()
     {
-        using var factory = CreateCoachEnabledFactory();
-        var client = await AuthenticatedClientAsync(factory);
+        var client = await AuthenticatedClientAsync();
 
         (await client.GetAsync("/coach/onboarding")).StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await client.GetAsync("/coach/onboarding/prefill")).StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -143,8 +132,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task PrefillAndComplete_WhenTempoOnboardingIncomplete_ReturnBadRequest()
     {
-        using var factory = CreateCoachEnabledFactory();
-        var client = await AuthenticatedClientAsync(factory, tempoOnboardingCompleted: false);
+        var client = await AuthenticatedClientAsync(tempoOnboardingCompleted: false);
         await OptInAsync(client);
 
         var prefill = await client.GetAsync("/coach/onboarding/prefill");
@@ -161,8 +149,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task GetOnboarding_WhenOptedIn_Empty_ReturnsNotCompleted()
     {
-        using var factory = CreateCoachEnabledFactory();
-        var client = await AuthenticatedClientAsync(factory);
+        var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
         var response = await client.GetAsync("/coach/onboarding");
@@ -178,12 +165,11 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task Prefill_ReturnsTempoSnapshotAndSuggestedPaces()
     {
-        using var factory = CreateCoachEnabledFactory();
-        var client = await AuthenticatedClientAsync(factory);
+        var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
         Shoe shoe;
-        using (var scope = factory.Services.CreateScope())
+        using (var scope = _factory.Decorated.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             shoe = await TestDataSeeder.SeedShoeAsync(db, "Nike", "Pegasus");
@@ -216,8 +202,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task Complete_RaceGoal_PersistsGoalAndLayer1_RaceStatusMirrors()
     {
-        using var factory = CreateCoachEnabledFactory();
-        var client = await AuthenticatedClientAsync(factory);
+        var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
         var response = await client.PostAsJsonAsync("/coach/onboarding", CompletePayload());
@@ -237,7 +222,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
         body.Layer1.Paces.EasySecPerKm.Should().Be(360);
         body.Disclaimer.Should().Contain("not a doctor");
 
-        using var scope = factory.Services.CreateScope();
+        using var scope = _factory.Decorated.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
         (await db.CoachGoals.CountAsync()).Should().Be(1);
         (await db.CoachMemoryLayers.CountAsync(l => l.Layer == "L1")).Should().Be(1);
@@ -246,8 +231,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task Complete_PrGoal_RequiresTargetTime()
     {
-        using var factory = CreateCoachEnabledFactory();
-        var client = await AuthenticatedClientAsync(factory);
+        var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
         var missing = await client.PostAsJsonAsync(
@@ -271,8 +255,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task Complete_WithoutConfirmedPaces_ReturnsBadRequest()
     {
-        using var factory = CreateCoachEnabledFactory();
-        var client = await AuthenticatedClientAsync(factory);
+        var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
         var response = await client.PostAsJsonAsync("/coach/onboarding", new
@@ -288,8 +271,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task Complete_Upserts_SingleGoalAndLayer1()
     {
-        using var factory = CreateCoachEnabledFactory();
-        var client = await AuthenticatedClientAsync(factory);
+        var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
         (await client.PostAsJsonAsync("/coach/onboarding", CompletePayload(distance: "5K", raceDate: "2026-12-01")))
@@ -304,7 +286,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
         body.Goal.Distance.Should().Be("10K");
         body.Layer1!.Paces.EasySecPerKm.Should().Be(350);
 
-        using var scope = factory.Services.CreateScope();
+        using var scope = _factory.Decorated.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
         (await db.CoachGoals.CountAsync()).Should().Be(1);
         (await db.CoachMemoryLayers.CountAsync()).Should().Be(1);
@@ -313,8 +295,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task Home_DropsOnboardingNextStep_WhenCompleted()
     {
-        using var factory = CreateCoachEnabledFactory();
-        var client = await AuthenticatedClientAsync(factory);
+        var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
         var before = await client.GetFromJsonAsync<HomeResponse>("/coach", JsonOptions);
@@ -334,12 +315,11 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
     [Fact]
     public async Task ShoeDelete_DoesNotCascadeBreakCoachLayer1Snapshot()
     {
-        using var factory = CreateCoachEnabledFactory();
-        var client = await AuthenticatedClientAsync(factory);
+        var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
         Shoe shoe;
-        using (var scope = factory.Services.CreateScope())
+        using (var scope = _factory.Decorated.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             shoe = await TestDataSeeder.SeedShoeAsync(db, "Saucony", "Endorphin");
@@ -361,7 +341,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<TempoWebApplicationFa
 
         (await client.PostAsJsonAsync("/coach/onboarding", payload)).StatusCode.Should().Be(HttpStatusCode.OK);
 
-        using (var scope = factory.Services.CreateScope())
+        using (var scope = _factory.Decorated.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             var row = await db.Shoes.SingleAsync(s => s.Id == shoe.Id);
