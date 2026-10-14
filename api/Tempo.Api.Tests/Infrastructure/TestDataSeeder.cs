@@ -487,6 +487,8 @@ public static class TestDataSeeder
         db.CoachConstraints.RemoveRange(db.CoachConstraints);
         db.CoachCheckIns.RemoveRange(db.CoachCheckIns);
         db.CoachPrivacyPreflights.RemoveRange(db.CoachPrivacyPreflights);
+        db.CoachJobs.RemoveRange(db.CoachJobs);
+        db.CoachWeeks.RemoveRange(db.CoachWeeks);
         db.UserSettings.RemoveRange(db.UserSettings);
         db.Shoes.RemoveRange(db.Shoes);
         db.ApiKeys.RemoveRange(db.ApiKeys);
@@ -523,6 +525,8 @@ public static class TestDataSeeder
             await db.CoachConstraints.ExecuteDeleteAsync();
             await db.CoachCheckIns.ExecuteDeleteAsync();
             await db.CoachPrivacyPreflights.ExecuteDeleteAsync();
+            await db.CoachJobs.ExecuteDeleteAsync();
+            await db.CoachWeeks.ExecuteDeleteAsync();
             await db.UserSettings.ExecuteDeleteAsync();
             await db.Shoes.ExecuteDeleteAsync();
 

@@ -1845,6 +1845,103 @@ export async function consentCoachPrivacyPreflight(id: string): Promise<CoachPri
   return response.json();
 }
 
+export type CoachJobStatus = 'queued' | 'running' | 'ready' | 'failed' | string;
+
+export interface CoachJob {
+  id: string;
+  status: CoachJobStatus;
+  weekStartDate: string;
+  preflightId: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  schemaRepairAttempted: boolean;
+  resultWeekId: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface CoachWeekDraft {
+  id: string;
+  weekStartDate: string;
+  status: string;
+  commit: unknown;
+  preflightId: string;
+  jobId: string;
+  payloadHash: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function postCoachGenerate(preflightId: string): Promise<CoachJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ preflightId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to start coach generate: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachJob(id: string): Promise<CoachJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/jobs/${id}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get coach job: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCurrentCoachJob(): Promise<CoachJob | null> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/jobs/current`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to get current coach job: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachDraftWeek(weekStartDate: string): Promise<CoachWeekDraft> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/weeks/draft?weekStartDate=${encodeURIComponent(weekStartDate)}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get coach draft week: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export interface IntervalsIcuConnectionStatus {
   connected: boolean;
   enabled: boolean | null;

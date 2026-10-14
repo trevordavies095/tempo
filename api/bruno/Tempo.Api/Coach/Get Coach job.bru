@@ -1,0 +1,11 @@
+meta {
+  name: Get Coach job
+  type: http
+  seq: 16
+}
+
+get {
+  url: {{baseUrl}}/coach/jobs/{{coachJobId}}
+  body: none
+  auth: inherit
+}

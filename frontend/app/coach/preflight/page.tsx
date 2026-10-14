@@ -10,7 +10,10 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
   consentCoachPrivacyPreflight,
+  getCoachJob,
+  postCoachGenerate,
   postCoachPrivacyPreflight,
+  type CoachJob,
   type CoachPrivacyPreflight,
 } from '@/lib/api';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
@@ -36,6 +39,8 @@ function PreflightPageInner() {
   const [inspectOpen, setInspectOpen] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [job, setJob] = useState<CoachJob | null>(null);
+  const [jobPolling, setJobPolling] = useState(false);
 
   const assembleMutation = useMutation({
     mutationFn: () => postCoachPrivacyPreflight(timezoneOffsetMinutes, referenceDate),
@@ -44,6 +49,7 @@ function PreflightPageInner() {
       setPreflight(doc);
       setAcknowledged(false);
       setInspectOpen(false);
+      setJob(null);
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -53,6 +59,32 @@ function PreflightPageInner() {
     onSuccess: (doc) => {
       setError(null);
       setPreflight(doc);
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: (id: string) => postCoachGenerate(id),
+    onSuccess: async (started) => {
+      setError(null);
+      setJob(started);
+      setJobPolling(true);
+      try {
+        let current = started;
+        const deadline = Date.now() + 180_000;
+        while (current.status !== 'ready' && current.status !== 'failed') {
+          if (Date.now() > deadline) {
+            throw new Error('Generate timed out while polling');
+          }
+          await new Promise((r) => setTimeout(r, 500));
+          current = await getCoachJob(started.id);
+          setJob(current);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Generate failed');
+      } finally {
+        setJobPolling(false);
+      }
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -218,17 +250,55 @@ function PreflightPageInner() {
               </Card>
             ) : (
               <Card>
-                <p className="text-sm text-ink">
-                  Consent recorded. Plan generate (next slice) can use this pre-flight — no Anthropic
-                  call from this screen.
+                <p className="text-sm text-ink mb-4">
+                  Consent recorded. Generate sends this redacted packet to Anthropic with your BYO
+                  key and stores a draft week for review.
                 </p>
-                <div className="mt-4">
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Button
+                    type="button"
+                    disabled={generateMutation.isPending || jobPolling}
+                    onClick={() => generateMutation.mutate(preflight.id)}
+                  >
+                    {generateMutation.isPending || jobPolling
+                      ? 'Generating...'
+                      : 'Generate weekly plan'}
+                  </Button>
                   <Link href="/coach">
                     <Button type="button" variant="secondary">
                       Back to Coach
                     </Button>
                   </Link>
                 </div>
+                {job && (
+                  <div className="mt-4 text-sm text-muted space-y-1">
+                    <p>
+                      Job status: <span className="text-ink">{job.status}</span>
+                      {job.inputTokens != null && (
+                        <>
+                          {' '}
+                          · tokens in {job.inputTokens} / out {job.outputTokens ?? 0}
+                        </>
+                      )}
+                    </p>
+                    {job.status === 'ready' && (
+                      <p className="text-ink">
+                        Draft ready for week {job.weekStartDate}. Structured review lands in the next
+                        slice —{' '}
+                        <Link href="/coach" className="underline">
+                          return to Coach
+                        </Link>
+                        .
+                      </p>
+                    )}
+                    {job.status === 'failed' && (
+                      <p className="text-danger">
+                        {job.errorCode ? `[${job.errorCode}] ` : ''}
+                        {job.errorMessage || 'Generate failed'}
+                      </p>
+                    )}
+                  </div>
+                )}
               </Card>
             )}
           </>

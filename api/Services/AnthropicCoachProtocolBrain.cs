@@ -1,0 +1,210 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+
+namespace Tempo.Api.Services;
+
+/// <summary>
+/// Anthropic Messages API implementation of the coach protocol brain.
+/// </summary>
+public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
+{
+    public const string HttpClientName = "AnthropicCoachProtocol";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
+
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<AnthropicCoachProtocolBrain> _logger;
+
+    public AnthropicCoachProtocolBrain(
+        IHttpClientFactory httpClientFactory,
+        ILogger<AnthropicCoachProtocolBrain> logger)
+    {
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
+    }
+
+    public async Task<CoachProtocolBrainResult> GenerateWeeklyCommitAsync(
+        string redactedPacketJson,
+        string modelId,
+        string apiKey,
+        string? repairHint,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(redactedPacketJson);
+        ArgumentException.ThrowIfNullOrEmpty(modelId);
+        ArgumentException.ThrowIfNullOrEmpty(apiKey);
+
+        var system = BuildSystemPrompt();
+        var user = string.IsNullOrWhiteSpace(repairHint)
+            ? $"Generate a weekly commit JSON for this redacted context packet:\n\n{redactedPacketJson}"
+            : $"Your previous weekly commit failed validation: {repairHint}\n\n"
+              + "Return a corrected weekly commit JSON for this packet:\n\n"
+              + redactedPacketJson;
+
+        var body = new
+        {
+            model = modelId,
+            max_tokens = 4096,
+            system,
+            messages = new[]
+            {
+                new { role = "user", content = user }
+            }
+        };
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "v1/messages");
+            request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+            request.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Content = new StringContent(
+                JsonSerializer.Serialize(body, JsonOptions),
+                Encoding.UTF8,
+                "application/json");
+
+            using var response = await client.SendAsync(request, cancellationToken);
+            var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = ClassifyStatus(response.StatusCode);
+                _logger.LogWarning(
+                    "Anthropic protocol brain returned {StatusCode} → {Error}",
+                    (int)response.StatusCode,
+                    error);
+                return new CoachProtocolBrainResult(
+                    false,
+                    null,
+                    null,
+                    null,
+                    error,
+                    $"Anthropic HTTP {(int)response.StatusCode}");
+            }
+
+            using var doc = JsonDocument.Parse(responseText);
+            var root = doc.RootElement;
+            var text = ExtractText(root);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return new CoachProtocolBrainResult(
+                    false,
+                    null,
+                    ReadUsage(root, "input_tokens"),
+                    ReadUsage(root, "output_tokens"),
+                    CoachProtocolBrainError.Unknown,
+                    "Anthropic response contained no text content");
+            }
+
+            return new CoachProtocolBrainResult(
+                true,
+                text,
+                ReadUsage(root, "input_tokens"),
+                ReadUsage(root, "output_tokens"),
+                CoachProtocolBrainError.None,
+                null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (TaskCanceledException)
+        {
+            return new CoachProtocolBrainResult(
+                false, null, null, null, CoachProtocolBrainError.Timeout, "Anthropic request timed out");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Anthropic protocol brain failed");
+            return new CoachProtocolBrainResult(
+                false, null, null, null, CoachProtocolBrainError.Unknown, ex.Message);
+        }
+    }
+
+    public static CoachProtocolBrainError ClassifyStatus(HttpStatusCode statusCode)
+    {
+        var code = (int)statusCode;
+        if (code is >= 200 and <= 299)
+        {
+            return CoachProtocolBrainError.None;
+        }
+
+        return statusCode switch
+        {
+            HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => CoachProtocolBrainError.Auth,
+            HttpStatusCode.PaymentRequired => CoachProtocolBrainError.Billing,
+            (HttpStatusCode)429 => CoachProtocolBrainError.RateLimited,
+            HttpStatusCode.RequestTimeout => CoachProtocolBrainError.Timeout,
+            >= HttpStatusCode.InternalServerError => CoachProtocolBrainError.Unknown,
+            _ => CoachProtocolBrainError.Unknown
+        };
+    }
+
+    private static string BuildSystemPrompt() =>
+        """
+        You are Tempo AI Coach — a direct training partner for road racing (5K–marathon).
+        You are not a doctor and do not provide medical advice. Back off volume or flag refer-out for severe niggles; never diagnose.
+
+        Return ONLY a single JSON object (no markdown) matching this shape:
+        {
+          "coachesNotes": "3–5 sentences, max 800 characters, training-partner voice",
+          "days": [ /* exactly 7 Mon–Sun objects */ {
+            "date": "yyyy-MM-dd",
+            "dayType": "rest|easy|quality|long|race|other",
+            "run": { "type": "easy|quality|long|race|other", "distanceM": 0, "structure": null, "paceOrHr": null, "shoeId": null, "notes": null },
+            "strength": null
+          } ],
+          "safetyFlags": [],
+          "memoryProposals": [],
+          "clarifyingQuestion": null,
+          "callouts": []
+        }
+
+        Rules:
+        - Honor unit preference from the packet when describing paces in notes.
+        - Honor CoachConstraint non-negotiables: blackouts = rest; standing schedule presets; secondary_race dates must be run.type=race.
+        - Never initiate mid-week adjust.
+        - Rest days: dayType=rest and run may be null.
+        - coachesNotes is required and must be non-empty (max 800 chars).
+        """;
+
+    private static string? ExtractText(JsonElement root)
+    {
+        if (!root.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var sb = new StringBuilder();
+        foreach (var block in content.EnumerateArray())
+        {
+            if (block.TryGetProperty("type", out var type)
+                && type.GetString() == "text"
+                && block.TryGetProperty("text", out var text))
+            {
+                sb.Append(text.GetString());
+            }
+        }
+
+        return sb.Length == 0 ? null : sb.ToString();
+    }
+
+    private static int? ReadUsage(JsonElement root, string name)
+    {
+        if (root.TryGetProperty("usage", out var usage)
+            && usage.TryGetProperty(name, out var value)
+            && value.TryGetInt32(out var n))
+        {
+            return n;
+        }
+
+        return null;
+    }
+}

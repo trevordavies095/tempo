@@ -122,6 +122,10 @@ _Avoid_: Workout overview notes edit, weekly-recap stats card, CoachConstraint (
 Assemble a Tempo-owned context packet (goal, active constraints, L1 with live shoes/HR overlay, empty L2/L3, check-in), redact name/email/GPS/route (fail closed), show category summary + inspect redacted JSON, then athlete consent. Persisted as peelable `CoachPrivacyPreflight` (redacted payload only; `ConsentedAt` required before generate). Does not call Anthropic.
 _Avoid_: generate job, live provider send, WorkoutRoute export
 
+**Coach generate job**:
+Import-job-shaped background job (`CoachJob`) that calls a fakeable protocol brain with a consented redacted packet, validates the weekly commit (schema + non-negotiables; ≤1 schema LM repair), and writes a peelable `CoachWeek` draft plus privacy receipt. One active coach job (not mutexed with ImportJob). Typed errors: rate_limited | auth | billing | timeout | unknown | validation. Review/apply is a later slice.
+_Avoid_: ImportJob, live Anthropic in tests, committed-week apply
+
 **Intervals.icu sync**:
 Hosted poller plus on-demand wake. Lists recent running activities, fetches original FIT/GPX, feeds Workout intake with overlay identity `source = intervals_icu`. Not backfill, not a webhook, not client-held secrets.
 _Avoid_: ImportJob, backfill, webhook (as this product)

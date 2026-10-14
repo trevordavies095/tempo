@@ -29,6 +29,8 @@ public class TempoDbContext : DbContext
     public DbSet<CoachConstraint> CoachConstraints { get; set; }
     public DbSet<CoachCheckIn> CoachCheckIns { get; set; }
     public DbSet<CoachPrivacyPreflight> CoachPrivacyPreflights { get; set; }
+    public DbSet<CoachJob> CoachJobs { get; set; }
+    public DbSet<CoachWeek> CoachWeeks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -228,6 +230,25 @@ public class TempoDbContext : DbContext
             entity.Property(e => e.PrivacyReportJson).IsRequired().HasColumnType("jsonb");
             entity.Property(e => e.PayloadHash).IsRequired().HasMaxLength(64);
             entity.HasIndex(e => e.WeekStartDate).IsUnique();
+        });
+
+        modelBuilder.Entity<CoachJob>(entity =>
+        {
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(32);
+            entity.Property(e => e.ErrorCode).HasMaxLength(32);
+            entity.Property(e => e.ErrorMessage).HasMaxLength(2000);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.WeekStartDate);
+            entity.HasIndex(e => e.CreatedAt);
+        });
+
+        modelBuilder.Entity<CoachWeek>(entity =>
+        {
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(32);
+            entity.Property(e => e.CommitJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.PayloadHash).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.RedactedPayloadJson).IsRequired().HasColumnType("jsonb");
+            entity.HasIndex(e => new { e.WeekStartDate, e.Status });
         });
     }
 }

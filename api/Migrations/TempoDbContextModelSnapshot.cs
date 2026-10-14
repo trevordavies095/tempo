@@ -240,6 +240,63 @@ namespace Tempo.Api.Migrations
                     b.ToTable("CoachGoals");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.CoachJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int?>("InputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OutputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("PreflightId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ResultWeekId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("SchemaRepairAttempted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateOnly>("WeekStartDate")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("WeekStartDate");
+
+                    b.ToTable("CoachJobs");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.CoachMemoryLayer", b =>
                 {
                     b.Property<Guid>("Id")
@@ -368,6 +425,52 @@ namespace Tempo.Api.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("CoachProviderConnections");
+                });
+
+            modelBuilder.Entity("Tempo.Api.Models.CoachWeek", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CommitJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("PreflightId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RedactedPayloadJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("WeekStartDate")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WeekStartDate", "Status");
+
+                    b.ToTable("CoachWeeks");
                 });
 
             modelBuilder.Entity("Tempo.Api.Models.ImportJob", b =>
