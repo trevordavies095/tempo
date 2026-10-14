@@ -278,7 +278,7 @@ function CheckInPageContent() {
 
             {error && <p className="text-sm text-danger">{error}</p>}
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
               <Button
                 type="button"
                 onClick={() => saveMutation.mutate()}
@@ -286,6 +286,11 @@ function CheckInPageContent() {
               >
                 {saveMutation.isPending ? 'Saving...' : 'Save check-in'}
               </Button>
+              <Link href={`/coach/preflight?referenceDate=${encodeURIComponent(referenceDate)}`}>
+                <Button type="button" variant="secondary">
+                  Privacy pre-flight
+                </Button>
+              </Link>
               {data?.saved && (
                 <p className="text-sm text-muted self-center">Saved for this week</p>
               )}

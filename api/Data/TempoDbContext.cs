@@ -28,6 +28,7 @@ public class TempoDbContext : DbContext
     public DbSet<CoachMemoryLayer> CoachMemoryLayers { get; set; }
     public DbSet<CoachConstraint> CoachConstraints { get; set; }
     public DbSet<CoachCheckIn> CoachCheckIns { get; set; }
+    public DbSet<CoachPrivacyPreflight> CoachPrivacyPreflights { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -218,6 +219,14 @@ public class TempoDbContext : DbContext
             entity.Property(e => e.Niggles).HasMaxLength(2000);
             entity.Property(e => e.LifeConstraints).HasMaxLength(2000);
             entity.Property(e => e.RunNotesJson).IsRequired().HasColumnType("jsonb");
+            entity.HasIndex(e => e.WeekStartDate).IsUnique();
+        });
+
+        modelBuilder.Entity<CoachPrivacyPreflight>(entity =>
+        {
+            entity.Property(e => e.RedactedPayloadJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.PrivacyReportJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.PayloadHash).IsRequired().HasMaxLength(64);
             entity.HasIndex(e => e.WeekStartDate).IsUnique();
         });
     }

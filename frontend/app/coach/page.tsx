@@ -99,6 +99,11 @@ function CoachPageContent() {
                 <Link href="/coach/check-in">
                   <Button type="button">Weekly check-in</Button>
                 </Link>
+                <Link href="/coach/preflight">
+                  <Button type="button" variant="secondary">
+                    Privacy pre-flight
+                  </Button>
+                </Link>
                 <Link href="/coach/constraints">
                   <Button type="button" variant="secondary">
                     Non-negotiables

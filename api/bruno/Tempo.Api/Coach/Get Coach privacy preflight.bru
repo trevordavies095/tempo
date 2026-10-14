@@ -1,0 +1,11 @@
+meta {
+  name: Get Coach privacy preflight
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{baseUrl}}/coach/privacy/preflight/{{preflightId}}
+  body: none
+  auth: inherit
+}

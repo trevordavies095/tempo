@@ -221,6 +221,7 @@ builder.Services.AddHttpClient(AnthropicCoachClient.HttpClientName, client =>
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddScoped<IAnthropicCoachClient, AnthropicCoachClient>();
+builder.Services.AddScoped<CoachContextPacketAssembler>();
 builder.Services.AddSingleton<IntervalsIcuSyncQueue>();
 builder.Services.AddScoped<IntervalsIcuSyncService>();
 if (!builder.Environment.IsEnvironment("Testing"))

@@ -118,6 +118,10 @@ _Avoid_: User.OnboardingCompleted (as the coach-complete flag), Settings Integra
 Peelable weekly form for a Monday–Sunday week (`timezoneOffsetMinutes` / `referenceDate`, shared weekly-recap week math). Auto-fills runs from Tempo; optional subjective feel / niggles / one-week life constraints; per-run notes overlay `Workout.Notes` without write-back. Empty weeks allowed. Light adherence hints vs a committed coach plan when one exists (empty until plan slices land). Not assemble, not generate, not a Workout edit.
 _Avoid_: Workout overview notes edit, weekly-recap stats card, CoachConstraint (standing non-negotiables)
 
+**Coach privacy pre-flight**:
+Assemble a Tempo-owned context packet (goal, active constraints, L1 with live shoes/HR overlay, empty L2/L3, check-in), redact name/email/GPS/route (fail closed), show category summary + inspect redacted JSON, then athlete consent. Persisted as peelable `CoachPrivacyPreflight` (redacted payload only; `ConsentedAt` required before generate). Does not call Anthropic.
+_Avoid_: generate job, live provider send, WorkoutRoute export
+
 **Intervals.icu sync**:
 Hosted poller plus on-demand wake. Lists recent running activities, fetches original FIT/GPX, feeds Workout intake with overlay identity `source = intervals_icu`. Not backfill, not a webhook, not client-held secrets.
 _Avoid_: ImportJob, backfill, webhook (as this product)

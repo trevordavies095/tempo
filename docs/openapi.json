@@ -669,6 +669,138 @@
         ]
       }
     },
+    "/coach/privacy/preflight": {
+      "post": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Assemble and redact coach context packet for privacy pre-flight",
+        "description": "Builds a Tempo-owned context packet for the Mon–Sun week, redacts name/email/GPS/route, and persists a peelable CoachPrivacyPreflight (ConsentedAt null). Fails closed with 400 if redaction cannot complete. Does not call Anthropic. 404 when Coach is unavailable or the athlete has not opted in.",
+        "operationId": "PostCoachPrivacyPreflight",
+        "parameters": [
+          {
+            "name": "timezoneOffsetMinutes",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "referenceDate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachPrivacyPreflightDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/coach/privacy/preflight/{id}": {
+      "get": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Get a privacy pre-flight by id",
+        "description": "Returns the stored redacted payload, privacy report, and consent status. 404 when missing or Coach unavailable.",
+        "operationId": "GetCoachPrivacyPreflight",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachPrivacyPreflightDocument"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/coach/privacy/preflight/{id}/consent": {
+      "post": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Consent to send the redacted packet",
+        "description": "Sets ConsentedAt so a later generate job may use this pre-flight. Does not call Anthropic. Idempotent if already consented.",
+        "operationId": "PostCoachPrivacyPreflightConsent",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachPrivacyPreflightDocument"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -3580,6 +3712,88 @@
             "format": "int32"
           },
           "workoutDate": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachPrivacyPreflightDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "weekStartDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "weekEndDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "referenceDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "timezoneOffsetMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "report": {
+            "$ref": "#/components/schemas/CoachPrivacyReport"
+          },
+          "redactedPayload": {
+            "nullable": true
+          },
+          "payloadHash": {
+            "type": "string",
+            "nullable": true
+          },
+          "consented": {
+            "type": "boolean"
+          },
+          "assembledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "consentedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachPrivacyReport": {
+        "type": "object",
+        "properties": {
+          "included": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoachPrivacyReportItem"
+            },
+            "nullable": true
+          },
+          "stripped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoachPrivacyReportItem"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachPrivacyReportItem": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "nullable": true
+          },
+          "detail": {
             "type": "string",
             "nullable": true
           }

@@ -1764,6 +1764,87 @@ export async function putCoachCheckIn(body: PutCoachCheckInRequest): Promise<Coa
   return response.json();
 }
 
+export interface CoachPrivacyReportItem {
+  category: string;
+  detail: string;
+}
+
+export interface CoachPrivacyReport {
+  included: CoachPrivacyReportItem[];
+  stripped: CoachPrivacyReportItem[];
+}
+
+export interface CoachPrivacyPreflight {
+  id: string;
+  weekStartDate: string;
+  weekEndDate: string;
+  referenceDate: string;
+  timezoneOffsetMinutes: number;
+  report: CoachPrivacyReport;
+  redactedPayload: unknown;
+  payloadHash: string;
+  consented: boolean;
+  assembledAt: string;
+  consentedAt: string | null;
+}
+
+export async function postCoachPrivacyPreflight(
+  timezoneOffsetMinutes?: number,
+  referenceDate?: string
+): Promise<CoachPrivacyPreflight> {
+  const searchParams = new URLSearchParams();
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+  if (referenceDate) {
+    searchParams.set('referenceDate', referenceDate);
+  }
+  const qs = searchParams.toString();
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/privacy/preflight${qs ? `?${qs}` : ''}`,
+    {
+      method: 'POST',
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to assemble privacy pre-flight: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachPrivacyPreflight(id: string): Promise<CoachPrivacyPreflight> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/privacy/preflight/${id}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get privacy pre-flight: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function consentCoachPrivacyPreflight(id: string): Promise<CoachPrivacyPreflight> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/privacy/preflight/${id}/consent`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to consent privacy pre-flight: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export interface IntervalsIcuConnectionStatus {
   connected: boolean;
   enabled: boolean | null;
