@@ -1283,10 +1283,103 @@ export interface CoachProviderStatus {
   lastError: string | null;
 }
 
+export interface CoachGoal {
+  type: 'race' | 'pr' | string;
+  distance: string;
+  distanceM: number;
+  raceDate: string | null;
+  targetTimeS: number | null;
+  notes: string | null;
+}
+
+export interface CoachLayer1HrZone {
+  zoneNumber: number;
+  minBpm: number;
+  maxBpm: number;
+}
+
+export interface CoachLayer1HrZones {
+  calculationMethod: string;
+  age: number | null;
+  restingHeartRateBpm: number | null;
+  maxHeartRateBpm: number | null;
+  zones: CoachLayer1HrZone[];
+}
+
+export interface CoachLayer1Paces {
+  easySecPerKm: number;
+  tempoSecPerKm: number;
+  thresholdSecPerKm: number;
+  intervalSecPerKm: number;
+}
+
+export interface CoachLayer1Shoe {
+  id: string;
+  brand: string;
+  model: string;
+}
+
+export interface CoachLayer1RaceStatus {
+  goalType: string;
+  distance: string;
+  distanceM: number;
+  raceDate: string | null;
+  targetTimeS: number | null;
+  notes: string | null;
+}
+
+export interface CoachLayer1 {
+  hrZones: CoachLayer1HrZones;
+  paces: CoachLayer1Paces;
+  shoes: CoachLayer1Shoe[];
+  defaultShoeId: string | null;
+  raceStatus: CoachLayer1RaceStatus;
+  completedAt: string;
+}
+
 export interface CoachHome {
   title: string;
   disclaimer: string;
   nextSteps: string[];
+  onboardingCompleted: boolean;
+  goal: CoachGoal | null;
+}
+
+export interface CoachOnboardingStatus {
+  completed: boolean;
+  goal: CoachGoal | null;
+  layer1: CoachLayer1 | null;
+  disclaimer: string;
+}
+
+export interface CoachOnboardingPrefill {
+  unitPreference: string;
+  hrZones: CoachLayer1HrZones;
+  shoes: CoachLayer1Shoe[];
+  defaultShoeId: string | null;
+  bestEfforts: Array<{
+    distance: string;
+    distanceM: number;
+    timeS: number;
+    workoutDate: string;
+  }>;
+  suggestedPaces: CoachLayer1Paces | null;
+  goalDistances: string[];
+  disclaimer: string;
+}
+
+export interface CompleteCoachOnboardingRequest {
+  goal: {
+    type: 'race' | 'pr';
+    distance: string;
+    raceDate?: string | null;
+    targetTimeS?: number | null;
+    notes?: string | null;
+  };
+  paces: CoachLayer1Paces;
+  hrZones?: CoachLayer1HrZones;
+  shoes?: CoachLayer1Shoe[];
+  defaultShoeId?: string | null;
 }
 
 export const COACH_ANTHROPIC_MODELS = [
@@ -1406,6 +1499,53 @@ export async function getCoachHome(): Promise<CoachHome> {
 
   if (!response.ok) {
     throw new Error(`Failed to get Coach home: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachOnboarding(): Promise<CoachOnboardingStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/onboarding`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get Coach onboarding: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachOnboardingPrefill(): Promise<CoachOnboardingPrefill> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/onboarding/prefill`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get Coach onboarding prefill: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function completeCoachOnboarding(
+  body: CompleteCoachOnboardingRequest
+): Promise<CoachOnboardingStatus> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/onboarding`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to complete Coach onboarding: ${response.status}`);
   }
 
   return response.json();

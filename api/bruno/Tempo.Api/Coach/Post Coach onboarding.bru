@@ -1,0 +1,29 @@
+meta {
+  name: Post Coach onboarding
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/coach/onboarding
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "goal": {
+      "type": "race",
+      "distance": "Half-Marathon",
+      "raceDate": "2027-01-09",
+      "targetTimeS": 5400,
+      "notes": "A-goal"
+    },
+    "paces": {
+      "easySecPerKm": 360,
+      "tempoSecPerKm": 310,
+      "thresholdSecPerKm": 280,
+      "intervalSecPerKm": 265
+    }
+  }
+}

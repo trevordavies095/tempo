@@ -98,6 +98,75 @@ namespace Tempo.Api.Migrations
                     b.ToTable("BestEfforts");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.CoachGoal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Distance")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<double>("DistanceM")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateOnly?>("RaceDate")
+                        .HasColumnType("date");
+
+                    b.Property<int?>("TargetTimeS")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CoachGoals");
+                });
+
+            modelBuilder.Entity("Tempo.Api.Models.CoachMemoryLayer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Document")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Layer")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Layer")
+                        .IsUnique();
+
+                    b.ToTable("CoachMemoryLayers");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.CoachPreferences", b =>
                 {
                     b.Property<Guid>("Id")

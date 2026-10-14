@@ -24,6 +24,8 @@ public class TempoDbContext : DbContext
     public DbSet<IntervalsIcuConnection> IntervalsIcuConnections { get; set; }
     public DbSet<CoachPreferences> CoachPreferences { get; set; }
     public DbSet<CoachProviderConnection> CoachProviderConnections { get; set; }
+    public DbSet<CoachGoal> CoachGoals { get; set; }
+    public DbSet<CoachMemoryLayer> CoachMemoryLayers { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -180,6 +182,20 @@ public class TempoDbContext : DbContext
             entity.Property(e => e.ApiKeyCiphertext).IsRequired();
             entity.Property(e => e.ModelId).IsRequired().HasMaxLength(100);
             entity.Property(e => e.LastError).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<CoachGoal>(entity =>
+        {
+            entity.Property(e => e.Type).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Distance).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Notes).HasMaxLength(2000);
+        });
+
+        modelBuilder.Entity<CoachMemoryLayer>(entity =>
+        {
+            entity.Property(e => e.Layer).IsRequired().HasMaxLength(10);
+            entity.HasIndex(e => e.Layer).IsUnique();
+            entity.Property(e => e.Document).IsRequired().HasColumnType("jsonb");
         });
     }
 }

@@ -12,6 +12,16 @@ import { Button } from '@/components/ui/Button';
 import { getCoachHome } from '@/lib/api';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 
+function formatDuration(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function CoachPageContent() {
   const router = useRouter();
   const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
@@ -46,6 +56,10 @@ function CoachPageContent() {
     homeQuery.data?.disclaimer ??
     'Tempo AI Coach is not a doctor and does not provide medical advice. It offers training suggestions only.';
 
+  const onboardingDone = homeQuery.data?.onboardingCompleted === true;
+  const goal = homeQuery.data?.goal;
+  const needsProvider = homeQuery.data?.nextSteps.includes('Connect your Anthropic API key');
+
   return (
     <PageShell
       density="control"
@@ -70,16 +84,52 @@ function CoachPageContent() {
                 ? homeQuery.error.message
                 : 'Failed to load Coach home'}
             </p>
+          ) : onboardingDone && goal ? (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold text-ink">Primary goal</h2>
+                <p className="text-sm text-muted mt-1">
+                  {goal.type === 'race' ? 'Race' : 'PR'} · {goal.distance}
+                  {goal.raceDate ? ` · ${goal.raceDate}` : ''}
+                  {goal.targetTimeS ? ` · ${formatDuration(goal.targetTimeS)}` : ''}
+                </p>
+                {goal.notes && <p className="text-sm text-muted mt-2">{goal.notes}</p>}
+              </div>
+              <p className="text-sm text-muted">
+                Weekly check-in and plan generate land in later slices.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Link href="/coach/onboarding">
+                  <Button type="button" variant="secondary">
+                    Review onboarding
+                  </Button>
+                </Link>
+                {needsProvider && (
+                  <Link href="/settings">
+                    <Button type="button">Connect Anthropic key</Button>
+                  </Link>
+                )}
+              </div>
+            </div>
           ) : (
             <EmptyState
-              title="Coach is ready"
-              description="Next up: connect your Anthropic API key, then complete coach onboarding. Those steps land in later slices."
+              title="Finish coach setup"
+              description={
+                needsProvider
+                  ? 'Connect your Anthropic API key, then complete coach onboarding so Layer 1 and your primary goal are ready for the weekly loop.'
+                  : 'Complete coach onboarding to save your primary goal and Layer 1 (HR zones, paces, shoes).'
+              }
               action={
                 <div className="flex flex-wrap gap-2">
-                  <Link href="/settings">
-                    <Button type="button" variant="secondary">
-                      Coach settings
-                    </Button>
+                  {needsProvider && (
+                    <Link href="/settings">
+                      <Button type="button" variant="secondary">
+                        Coach settings
+                      </Button>
+                    </Link>
+                  )}
+                  <Link href="/coach/onboarding">
+                    <Button type="button">Start coach onboarding</Button>
                   </Link>
                 </div>
               }

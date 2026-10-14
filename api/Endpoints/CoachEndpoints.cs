@@ -94,8 +94,10 @@ public static class CoachEndpoints
             .Produces(404)
             .WithSummary("Get Coach home shell")
             .WithDescription(
-                "Empty Coach home when host-enabled and athlete opted in. " +
+                "Coach home when host-enabled and athlete opted in. " +
                 "404 when Coach is unavailable or the athlete has not opted in.");
+
+        CoachOnboardingEndpoints.Map(group);
     }
 
     private static async Task<IResult> GetCoachSettings(TempoDbContext db, CoachConfig coachConfig)
@@ -343,20 +345,40 @@ public static class CoachEndpoints
         }
 
         var providerConnected = await db.CoachProviderConnections.AsNoTracking().AnyAsync();
+        var onboardingComplete =
+            await db.CoachGoals.AsNoTracking().AnyAsync() &&
+            await db.CoachMemoryLayers.AsNoTracking()
+                .AnyAsync(l => l.Layer == CoachOnboardingEndpoints.Layer1Key);
+
         var nextSteps = new List<string>();
         if (!providerConnected)
         {
             nextSteps.Add("Connect your Anthropic API key");
         }
 
-        nextSteps.Add("Complete coach onboarding");
+        if (!onboardingComplete)
+        {
+            nextSteps.Add("Complete coach onboarding");
+        }
+
+        CoachGoalDocument? goal = null;
+        if (onboardingComplete)
+        {
+            var goalRow = await db.CoachGoals.AsNoTracking().FirstOrDefaultAsync();
+            if (goalRow != null)
+            {
+                goal = CoachOnboardingEndpoints.ToGoalDocument(goalRow);
+            }
+        }
 
         return Results.Ok(new CoachHomeDocument(
             Title: "AI Coach",
             Disclaimer:
                 "Tempo AI Coach is not a doctor and does not provide medical advice. " +
                 "It offers training suggestions only. Seek a qualified professional for pain, injury, or health concerns.",
-            NextSteps: nextSteps));
+            NextSteps: nextSteps,
+            OnboardingCompleted: onboardingComplete,
+            Goal: goal));
     }
 
     private static CoachSettingsDocument ToSettingsDocument(bool optedIn, CoachProviderConnection? provider) =>
@@ -392,4 +414,9 @@ public record PutCoachProviderRequest(string? ApiKey, string? ModelId);
 
 public record TestCoachProviderRequest(string? ApiKey);
 
-public record CoachHomeDocument(string Title, string Disclaimer, IReadOnlyList<string> NextSteps);
+public record CoachHomeDocument(
+    string Title,
+    string Disclaimer,
+    IReadOnlyList<string> NextSteps,
+    bool OnboardingCompleted,
+    CoachGoalDocument? Goal);

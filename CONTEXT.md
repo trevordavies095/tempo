@@ -98,13 +98,25 @@ _Avoid_: UserSettings toggle, onboarding flag
 Instance-level 0-or-1 peelable row for the athlete’s BYO Anthropic API key (ciphertext) and curated model id. Encrypted with HKDF purpose `tempo-coach-anthropic-api-key`. Never echoed after save. Optional athlete-data-free Test connection. Remove-key does not touch Coach preferences / opt-in. Not UserSettings, not Intervals.icu connection.
 _Avoid_: UserSettings, Tempo ApiKey, Intervals.icu connection
 
+**CoachGoal**:
+Primary AI Coach target: `race` (distance + date + optional time) or `pr` (distance + target time), plus optional notes. Peelable `CoachGoals` row (0-or-1 in v1). Mapped into Layer 1 `raceStatus` at onboarding complete. Not a Workout, not a Run type.
+_Avoid_: Workout race, calendar event, B-race (those are CoachConstraints)
+
+**Coach memory layer (L1)**:
+Peelable JSON document on `CoachMemoryLayers` (`Layer = L1`) holding confirmed HR zones, training paces, shoe snapshots, and `raceStatus` mirroring CoachGoal. Prefills from Tempo; athlete confirms paces before persist. No FK into Workouts/Shoes/UserSettings — assemble later overlays live Tempo shoes/HR. L2/L3 reserved for later slices.
+_Avoid_: UserSettings, User.OnboardingCompleted, core Tempo schema
+
+**Coach onboarding**:
+Command-center wizard after Tempo Onboarding (`User.OnboardingCompleted`) and Coach opt-in: primary CoachGoal + confirmed Layer 1. Distinct from Tempo first-run Onboarding. Surfaces not-medical-advice copy.
+_Avoid_: User.OnboardingCompleted (as the coach-complete flag), Settings Integrations
+
 **Intervals.icu sync**:
 Hosted poller plus on-demand wake. Lists recent running activities, fetches original FIT/GPX, feeds Workout intake with overlay identity `source = intervals_icu`. Not backfill, not a webhook, not client-held secrets.
 _Avoid_: ImportJob, backfill, webhook (as this product)
 
 **Onboarding**:
-Hard-gated first-run wizard on the command center after registration (optional Tempo export restore, essentials, optional Strava bulk). Driven by `User.OnboardingCompleted` (account flag, not UserSettings). Day-to-day Import stays GPX/FIT; late ZIPs use Settings → Migrate / restore.
-_Avoid_: setup wizard as UserSettings, re-run setup from Settings
+Hard-gated first-run wizard on the command center after registration (optional Tempo export restore, essentials, optional Strava bulk). Driven by `User.OnboardingCompleted` (account flag, not UserSettings). Prerequisite for Coach onboarding; not the coach wizard itself. Day-to-day Import stays GPX/FIT; late ZIPs use Settings → Migrate / restore.
+_Avoid_: setup wizard as UserSettings, re-run setup from Settings, Coach onboarding
 
 **Run type**:
 Classification of a Workout (Easy, Workout, Long Run, Race, and the same set the product already uses).

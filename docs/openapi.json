@@ -273,7 +273,7 @@
           "Coach"
         ],
         "summary": "Get Coach home shell",
-        "description": "Empty Coach home when host-enabled and athlete opted in. 404 when Coach is unavailable or the athlete has not opted in.",
+        "description": "Coach home when host-enabled and athlete opted in. 404 when Coach is unavailable or the athlete has not opted in.",
         "operationId": "GetCoachHome",
         "responses": {
           "200": {
@@ -285,6 +285,109 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/coach/onboarding": {
+      "get": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Get Coach onboarding status, goal, and Layer 1",
+        "description": "Returns whether coach onboarding is completed (goal + L1 present), the primary CoachGoal, and the Layer 1 document. 404 when Coach is unavailable or the athlete has not opted in.",
+        "operationId": "GetCoachOnboarding",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachOnboardingDocument"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Complete Coach onboarding",
+        "description": "Upserts primary CoachGoal and Layer 1 from athlete-confirmed values. Paces must be confirmed (all four fields required). Requires Tempo onboardingCompleted. Not medical advice.",
+        "operationId": "PostCoachOnboarding",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteCoachOnboardingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachOnboardingDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/coach/onboarding/prefill": {
+      "get": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Prefill Coach onboarding from Tempo",
+        "description": "Returns HR zones, shoes, best efforts, unit preference, and suggested paces from Tempo. Does not persist. Requires Tempo onboardingCompleted. 404 when Coach is unavailable or the athlete has not opted in.",
+        "operationId": "GetCoachOnboardingPrefill",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachOnboardingPrefillDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
           },
           "404": {
             "description": "Not Found"
@@ -2634,6 +2737,64 @@
         },
         "additionalProperties": false
       },
+      "CoachGoalDocument": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "distance": {
+            "type": "string",
+            "nullable": true
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "raceDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetTimeS": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachGoalRequest": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "distance": {
+            "type": "string",
+            "nullable": true
+          },
+          "raceDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetTimeS": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CoachHomeDocument": {
         "type": "object",
         "properties": {
@@ -2650,6 +2811,274 @@
             "items": {
               "type": "string"
             },
+            "nullable": true
+          },
+          "onboardingCompleted": {
+            "type": "boolean"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/CoachGoalDocument"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachLayer1Document": {
+        "type": "object",
+        "properties": {
+          "hrZones": {
+            "$ref": "#/components/schemas/CoachLayer1HrZones"
+          },
+          "paces": {
+            "$ref": "#/components/schemas/CoachLayer1Paces"
+          },
+          "shoes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoachLayer1Shoe"
+            },
+            "nullable": true
+          },
+          "defaultShoeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "raceStatus": {
+            "$ref": "#/components/schemas/CoachLayer1RaceStatus"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Layer 1 JSON document persisted on CoachMemoryLayer (layer = L1).\nAssemble later overlays live Tempo shoes + HR zones; this is the onboarding snapshot."
+      },
+      "CoachLayer1HrZone": {
+        "type": "object",
+        "properties": {
+          "zoneNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "minBpm": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxBpm": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachLayer1HrZones": {
+        "type": "object",
+        "properties": {
+          "calculationMethod": {
+            "type": "string",
+            "nullable": true
+          },
+          "age": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "restingHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoachLayer1HrZone"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachLayer1Paces": {
+        "type": "object",
+        "properties": {
+          "easySecPerKm": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tempoSecPerKm": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "thresholdSecPerKm": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "intervalSecPerKm": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachLayer1RaceStatus": {
+        "type": "object",
+        "properties": {
+          "goalType": {
+            "type": "string",
+            "nullable": true
+          },
+          "distance": {
+            "type": "string",
+            "nullable": true
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "raceDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetTimeS": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachLayer1Shoe": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "brand": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachOnboardingDocument": {
+        "type": "object",
+        "properties": {
+          "completed": {
+            "type": "boolean"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/CoachGoalDocument"
+          },
+          "layer1": {
+            "$ref": "#/components/schemas/CoachLayer1Document"
+          },
+          "disclaimer": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachOnboardingPrefillDocument": {
+        "type": "object",
+        "properties": {
+          "unitPreference": {
+            "type": "string",
+            "nullable": true
+          },
+          "hrZones": {
+            "$ref": "#/components/schemas/CoachLayer1HrZones"
+          },
+          "shoes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoachLayer1Shoe"
+            },
+            "nullable": true
+          },
+          "defaultShoeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "bestEfforts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoachPrefillBestEffort"
+            },
+            "nullable": true
+          },
+          "suggestedPaces": {
+            "$ref": "#/components/schemas/CoachLayer1Paces"
+          },
+          "goalDistances": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "disclaimer": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachPacesRequest": {
+        "type": "object",
+        "properties": {
+          "easySecPerKm": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tempoSecPerKm": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "thresholdSecPerKm": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "intervalSecPerKm": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachPrefillBestEffort": {
+        "type": "object",
+        "properties": {
+          "distance": {
+            "type": "string",
+            "nullable": true
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "timeS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "workoutDate": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -2691,6 +3120,33 @@
           },
           "modelId": {
             "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompleteCoachOnboardingRequest": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "$ref": "#/components/schemas/CoachGoalRequest"
+          },
+          "paces": {
+            "$ref": "#/components/schemas/CoachPacesRequest"
+          },
+          "hrZones": {
+            "$ref": "#/components/schemas/CoachLayer1HrZones"
+          },
+          "shoes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoachLayer1Shoe"
+            },
+            "nullable": true
+          },
+          "defaultShoeId": {
+            "type": "string",
+            "format": "uuid",
             "nullable": true
           }
         },
