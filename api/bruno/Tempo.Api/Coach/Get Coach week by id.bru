@@ -1,0 +1,11 @@
+meta {
+  name: Get Coach week by id
+  type: http
+  seq: 23
+}
+
+get {
+  url: {{baseUrl}}/coach/weeks/00000000-0000-0000-0000-000000000000?timezoneOffsetMinutes=0
+  body: none
+  auth: inherit
+}

@@ -2624,6 +2624,108 @@ export async function getCoachPlanDaysOrNull(
   return response.json();
 }
 
+export interface CoachWeekListItem {
+  id: string;
+  weekStartDate: string;
+  weekEndDate: string;
+  status: string;
+  isAdjustment: boolean;
+  feelScore: number | null;
+  plannedDistanceM: number;
+  actualDistanceM: number;
+}
+
+export interface CoachWeeksListResponse {
+  items: CoachWeekListItem[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+export interface CoachWeekHistoryDetail {
+  id: string;
+  weekStartDate: string;
+  status: string;
+  commit: CoachWeeklyCommit;
+  preflightId: string;
+  jobId: string;
+  payloadHash: string;
+  createdAt: string;
+  updatedAt: string;
+  isAdjustment: boolean;
+  adjustmentId?: string | null;
+  lockedThroughDate?: string | null;
+  adjustmentCategory?: string | null;
+  adjustmentStatus?: string | null;
+  applyRecord?: CoachWeekApplyRecord | null;
+  days: CoachPlanDay[];
+  privacyReceipt: CoachWeekPrivacyReceipt;
+}
+
+export async function getCoachWeeks(params?: {
+  page?: number;
+  pageSize?: number;
+  timezoneOffsetMinutes?: number;
+}): Promise<CoachWeeksListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.page !== undefined) {
+    searchParams.set('page', params.page.toString());
+  }
+  if (params?.pageSize !== undefined) {
+    searchParams.set('pageSize', params.pageSize.toString());
+  }
+  if (params?.timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', params.timezoneOffsetMinutes.toString());
+  }
+  const qs = searchParams.toString();
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/weeks${qs ? `?${qs}` : ''}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to list coach weeks: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachWeekById(
+  weekId: string,
+  timezoneOffsetMinutes?: number
+): Promise<CoachWeekHistoryDetail> {
+  const searchParams = new URLSearchParams();
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+  const qs = searchParams.toString();
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/weeks/${weekId}${qs ? `?${qs}` : ''}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (response.status === 404) {
+    throw new Error('Week not found');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get coach week: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function startCoachAdjust(params: {
   weekStartDate: string;
   reason: string;

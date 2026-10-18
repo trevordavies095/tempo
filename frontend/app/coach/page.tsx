@@ -156,10 +156,10 @@ function CommittedPlanSection({
             )}
           </div>
           <Link
-            href={`/coach/weeks/${week.id}/receipt`}
+            href={`/coach/history/${week.id}`}
             className="text-sm text-muted underline"
           >
-            Privacy receipt
+            What was sent
           </Link>
         </div>
         <p className="text-sm text-ink whitespace-pre-wrap">{commit.coachesNotes}</p>
