@@ -110,6 +110,9 @@ function CheckInPageContent() {
   const [job, setJob] = useState<CoachJob | null>(null);
   const [jobPolling, setJobPolling] = useState(false);
   const skipAutosaveUntil = useRef(0);
+  /** Bumps on every local edit; compared to mutateGen so in-flight saves don't clear newer dirty. */
+  const dirtyGen = useRef(0);
+  const mutateGen = useRef(0);
 
   const checkInQuery = useQuery({
     queryKey: ['coach-check-in', referenceDate, timezoneOffsetMinutes],
@@ -145,6 +148,8 @@ function CheckInPageContent() {
     setRunRpes(rpes);
     setHydratedKey(key);
     setDirty(false);
+    dirtyGen.current = 0;
+    mutateGen.current = 0;
     skipAutosaveUntil.current = Date.now() + AUTOSAVE_MS + 50;
   }, [data, hydratedKey]);
 
@@ -152,6 +157,8 @@ function CheckInPageContent() {
     setHydratedKey(null);
     setPreview(null);
     setDirty(false);
+    dirtyGen.current = 0;
+    mutateGen.current = 0;
     setSaveStatus('idle');
   }, [referenceDate]);
 
@@ -179,11 +186,18 @@ function CheckInPageContent() {
 
   const saveMutation = useMutation({
     mutationFn: () => putCoachCheckIn(buildBody()),
-    onMutate: () => setSaveStatus('saving'),
+    onMutate: () => {
+      mutateGen.current = dirtyGen.current;
+      setSaveStatus('saving');
+    },
     onSuccess: async (saved) => {
       setError(null);
-      setDirty(false);
-      setSaveStatus('saved');
+      if (dirtyGen.current === mutateGen.current) {
+        setDirty(false);
+        setSaveStatus('saved');
+      } else {
+        setSaveStatus('idle');
+      }
       await queryClient.setQueryData(
         ['coach-check-in', referenceDate, timezoneOffsetMinutes],
         saved
@@ -207,14 +221,15 @@ function CheckInPageContent() {
 
   useEffect(() => {
     if (!dirty || !hydratedKey) return;
-    if (Date.now() < skipAutosaveUntil.current) return;
+    // Always schedule: delay past hydrate skip window so early edits are not dropped forever.
+    const delay = Math.max(AUTOSAVE_MS, skipAutosaveUntil.current - Date.now());
     const handle = window.setTimeout(() => {
-      if (!saveMutation.isPending) {
-        saveMutation.mutate();
-      }
-    }, AUTOSAVE_MS);
+      if (saveMutation.isPending) return;
+      saveMutation.mutate();
+    }, delay);
     return () => window.clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce on field dirtiness only
+    // isPending in deps: when an in-flight save ends while still dirty, reschedule.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce on field dirtiness + pending
   }, [
     dirty,
     hydratedKey,
@@ -225,9 +240,11 @@ function CheckInPageContent() {
     questionForCoach,
     runNotes,
     runRpes,
+    saveMutation.isPending,
   ]);
 
   const markDirty = () => {
+    dirtyGen.current += 1;
     setDirty(true);
     setSaveStatus('idle');
   };
