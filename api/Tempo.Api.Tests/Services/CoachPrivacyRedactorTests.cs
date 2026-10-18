@@ -107,7 +107,31 @@ public class CoachPrivacyRedactorTests
                     "Never schedule quality the day after travel for testuser",
                     ["obs"])
             ]),
-            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, []));
+            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, []),
+            RecentTraining: new CoachPacketRecentTraining(
+            [
+                new CoachPacketRecentTrainingWeek(
+                    "2026-10-12",
+                    "2026-10-18",
+                    1,
+                    5000,
+                    1800,
+                    0,
+                    0,
+                    null,
+                    [
+                        new CoachPacketRecentTrainingRun(
+                            Guid.NewGuid(),
+                            new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc),
+                            5000,
+                            1800,
+                            140,
+                            160,
+                            null,
+                            null,
+                            "testuser easy day — leak@example.com")
+                    ])
+            ]));
 
         var ok = CoachPrivacyRedactor.TryRedact(
             packet,
@@ -126,6 +150,10 @@ public class CoachPrivacyRedactorTests
             i.Category == "layer2" && i.Detail.Contains("1 episodes selected of 1"));
         report.Included.Should().Contain(i =>
             i.Category == "layer3" && i.Detail.Contains("1 active standing rules"));
+        report.Included.Should().Contain(i =>
+            i.Category == "recentTraining" && i.Detail.Contains("1 Mon–Sun weeks") && i.Detail.Contains("1 runs"));
+        report.Stripped.Should().Contain(s => s.Category == "hrStreams");
+        report.Stripped.Should().Contain(s => s.Category == "similarRoutes");
     }
 
     [Fact]
@@ -165,13 +193,103 @@ public class CoachPrivacyRedactorTests
                 Selection: new CoachPacketLayer2Selection(8, "2026-10-11"),
                 TotalEpisodeCount: 1),
             Layer3: new CoachPacketLayer3([]),
-            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, []));
+            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, []),
+            RecentTraining: new CoachPacketRecentTraining([]));
 
         var ok = CoachPrivacyRedactor.TryRedact(packet, out var json, out _, out var error);
 
         ok.Should().BeFalse();
         json.Should().BeEmpty();
         error.Should().Contain("residual GPS");
+    }
+
+    [Fact]
+    public void TryRedact_FailsClosed_WhenGpsInRecentTrainingNotes()
+    {
+        var packet = new CoachContextPacket(
+            Meta: new CoachPacketMeta(
+                "2026-10-19",
+                "2026-10-25",
+                "2026-10-12",
+                "2026-10-18",
+                "2026-10-19",
+                "2026-10-25",
+                "2026-10-13",
+                0,
+                "metric",
+                DateTime.UtcNow),
+            Goal: null,
+            Constraints: [],
+            Layer1: new CoachPacketLayer1(
+                new CoachLayer1HrZones("AgeBased", 30, null, 190, []),
+                new CoachLayer1Paces(0, 0, 0, 0),
+                [],
+                null,
+                new CoachLayer1RaceStatus("none", "", 0, null, null, null)),
+            Layer2: new CoachPacketLayer2([], [], new CoachPacketLayer2Selection(8, "2026-10-11")),
+            Layer3: new CoachPacketLayer3([]),
+            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, []),
+            RecentTraining: new CoachPacketRecentTraining(
+            [
+                new CoachPacketRecentTrainingWeek(
+                    "2026-10-12",
+                    "2026-10-18",
+                    1,
+                    5000,
+                    1800,
+                    0,
+                    0,
+                    null,
+                    [
+                        new CoachPacketRecentTrainingRun(
+                            Guid.NewGuid(),
+                            new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc),
+                            5000,
+                            1800,
+                            null,
+                            null,
+                            null,
+                            null,
+                            "Started near [42.3601, -71.0589]")
+                    ])
+            ]));
+
+        var ok = CoachPrivacyRedactor.TryRedact(packet, out var json, out _, out var error);
+
+        ok.Should().BeFalse();
+        json.Should().BeEmpty();
+        error.Should().Contain("residual GPS");
+    }
+
+    [Fact]
+    public void ExtractRecentTrainingSummary_FromRedactedPayload()
+    {
+        const string json = """
+            {
+              "recentTraining": {
+                "weeks": [
+                  {
+                    "weekStartDate": "2026-09-21",
+                    "weekEndDate": "2026-09-27",
+                    "runCount": 0,
+                    "runs": []
+                  },
+                  {
+                    "weekStartDate": "2026-10-12",
+                    "weekEndDate": "2026-10-18",
+                    "runCount": 1,
+                    "runs": [{ "workoutId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }]
+                  }
+                ]
+              }
+            }
+            """;
+
+        var weeks = CoachPrivacyRedactor.ExtractRecentTrainingSummary(json);
+        weeks.Should().HaveCount(2);
+        weeks[0].RunCount.Should().Be(0);
+        weeks[1].RunCount.Should().Be(1);
+        weeks[1].WorkoutIds.Should().Contain("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     }
 
     [Fact]

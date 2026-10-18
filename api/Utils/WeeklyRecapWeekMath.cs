@@ -95,6 +95,29 @@ public static class WeeklyRecapWeekMath
     }
 
     /// <summary>
+    /// Recent-training window: <paramref name="priorWeekCount"/> prior Mon–Sun weeks plus the check-in week,
+    /// oldest → newest (W−N … check-in).
+    /// </summary>
+    public static IReadOnlyList<MondaySundayWeek> BuildRecentTrainingWeeks(
+        MondaySundayWeek checkInWeek,
+        int priorWeekCount,
+        int? timezoneOffsetMinutes)
+    {
+        var prior = Math.Max(0, priorWeekCount);
+        var weeks = new List<MondaySundayWeek>(prior + 1);
+        for (var i = prior; i >= 0; i--)
+        {
+            var monday = checkInWeek.WeekStartLocal.Date.AddDays(-7 * i);
+            weeks.Add(ResolveMondaySundayWeek(
+                utcNow: DateTime.SpecifyKind(monday, DateTimeKind.Utc),
+                timezoneOffsetMinutes,
+                referenceLocalDate: monday));
+        }
+
+        return weeks;
+    }
+
+    /// <summary>
     /// Builds Monday–Sunday week boundaries and UTC query ranges for weekly-recap.
     /// Current range is week-to-date capped at UTC now.
     /// </summary>

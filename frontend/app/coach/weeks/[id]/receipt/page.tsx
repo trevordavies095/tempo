@@ -92,6 +92,19 @@ function ReceiptPageInner() {
                 hash {receiptQuery.data.payloadHash}
               </p>
             </Card>
+            {receiptQuery.data.recentTraining && receiptQuery.data.recentTraining.length > 0 && (
+              <Card>
+                <h2 className="text-lg font-semibold text-ink mb-2">Recent training sent</h2>
+                <ul className="space-y-1 text-sm text-muted">
+                  {receiptQuery.data.recentTraining.map((w) => (
+                    <li key={w.weekStartDate}>
+                      {w.weekStartDate} → {w.weekEndDate}: {w.runCount} run
+                      {w.runCount === 1 ? '' : 's'}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
             <Card>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <h2 className="text-lg font-semibold text-ink">Redacted payload</h2>

@@ -190,6 +190,12 @@ public class CoachContextPacketAssembler
 
         var adjustment = await BuildAdjustmentAsync(planStartDate, cancellationToken);
 
+        var recentTraining = await BuildRecentTrainingAsync(
+            checkInWeek,
+            timezoneOffsetMinutes,
+            noteOverlays,
+            cancellationToken);
+
         return new CoachContextPacket(
             Meta: new CoachPacketMeta(
                 WeekStartDate: planStart,
@@ -208,7 +214,109 @@ public class CoachContextPacketAssembler
             Layer2: layer2,
             Layer3: layer3,
             CheckIn: checkIn,
+            RecentTraining: recentTraining,
             Adjustment: adjustment);
+    }
+
+    private async Task<CoachPacketRecentTraining> BuildRecentTrainingAsync(
+        WeeklyRecapWeekMath.MondaySundayWeek checkInWeek,
+        int timezoneOffsetMinutes,
+        IReadOnlyDictionary<Guid, string?> checkInNoteOverlays,
+        CancellationToken cancellationToken)
+    {
+        var priorCount = Math.Max(0, _coachConfig.RecentTrainingPriorWeekCount);
+        var weeks = WeeklyRecapWeekMath.BuildRecentTrainingWeeks(
+            checkInWeek,
+            priorCount,
+            timezoneOffsetMinutes);
+
+        var windowStartUtc = weeks[0].FullWeekRange.StartUtc;
+        var windowEndUtc = weeks[^1].FullWeekRange.EndUtc;
+
+        var raw = await _db.Workouts.AsNoTracking()
+            .Where(w => w.StartedAt >= windowStartUtc && w.StartedAt <= windowEndUtc)
+            .OrderBy(w => w.StartedAt)
+            .Select(w => new
+            {
+                w.Id,
+                w.StartedAt,
+                w.DistanceM,
+                w.DurationS,
+                w.ElevGainM,
+                w.RelativeEffort,
+                w.AvgHeartRateBpm,
+                w.MaxHeartRateBpm,
+                w.Rpe,
+                w.ShoeId,
+                w.RunType,
+                w.Notes
+            })
+            .ToListAsync(cancellationToken);
+
+        var rows = raw.Select(w => new CoachRecentTrainingRollups.WorkoutRow(
+            w.Id,
+            w.StartedAt,
+            w.DistanceM,
+            w.DurationS,
+            w.ElevGainM,
+            w.RelativeEffort,
+            w.AvgHeartRateBpm,
+            w.MaxHeartRateBpm,
+            w.Rpe,
+            w.ShoeId,
+            w.RunType,
+            w.Notes)).ToList();
+
+        var checkInMonday = checkInWeek.WeekStartLocal.Date;
+        var buckets = new List<CoachPacketRecentTrainingWeek>(weeks.Count);
+        foreach (var week in weeks)
+        {
+            var start = week.FullWeekRange.StartUtc;
+            var end = week.FullWeekRange.EndUtc;
+            var inWeek = rows.Where(r => r.StartedAt >= start && r.StartedAt <= end).ToList();
+            var rollup = CoachRecentTrainingRollups.Compute(inWeek);
+            var isCheckInWeek = week.WeekStartLocal.Date == checkInMonday;
+
+            var runDocs = inWeek.Select(r =>
+            {
+                string? notes = null;
+                if (isCheckInWeek)
+                {
+                    if (checkInNoteOverlays.TryGetValue(r.Id, out var overlay))
+                    {
+                        notes = overlay;
+                    }
+                    else
+                    {
+                        notes = r.Notes;
+                    }
+                }
+
+                return new CoachPacketRecentTrainingRun(
+                    WorkoutId: r.Id,
+                    StartedAt: r.StartedAt,
+                    DistanceM: r.DistanceM,
+                    DurationS: r.DurationS,
+                    AvgHeartRateBpm: r.AvgHeartRateBpm,
+                    MaxHeartRateBpm: r.MaxHeartRateBpm,
+                    Rpe: r.Rpe,
+                    ShoeId: r.ShoeId,
+                    Notes: notes);
+            }).ToList();
+
+            buckets.Add(new CoachPacketRecentTrainingWeek(
+                WeekStartDate: week.WeekStartLocal.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                WeekEndDate: week.WeekEndLocal.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                RunCount: rollup.RunCount,
+                DistanceM: rollup.DistanceM,
+                DurationS: rollup.DurationS,
+                ElevationGainM: rollup.ElevationGainM,
+                RelativeEffortSum: rollup.RelativeEffortSum,
+                EasyRunAvgHeartRateBpm: rollup.EasyRunAvgHeartRateBpm,
+                Runs: runDocs));
+        }
+
+        return new CoachPacketRecentTraining(Weeks: buckets);
     }
 
     private static CoachPacketEpisode ToPacketEpisode(CoachEpisode episode) =>
@@ -357,7 +465,34 @@ public sealed record CoachContextPacket(
     CoachPacketLayer2 Layer2,
     CoachPacketLayer3 Layer3,
     CoachPacketCheckIn CheckIn,
+    CoachPacketRecentTraining RecentTraining,
     CoachPacketAdjustment? Adjustment = null);
+
+/// <summary>W−N…check-in week training diet (oldest → newest).</summary>
+public sealed record CoachPacketRecentTraining(
+    IReadOnlyList<CoachPacketRecentTrainingWeek> Weeks);
+
+public sealed record CoachPacketRecentTrainingWeek(
+    string WeekStartDate,
+    string WeekEndDate,
+    int RunCount,
+    double DistanceM,
+    long DurationS,
+    double ElevationGainM,
+    int RelativeEffortSum,
+    double? EasyRunAvgHeartRateBpm,
+    IReadOnlyList<CoachPacketRecentTrainingRun> Runs);
+
+public sealed record CoachPacketRecentTrainingRun(
+    Guid WorkoutId,
+    DateTime StartedAt,
+    double DistanceM,
+    int DurationS,
+    byte? AvgHeartRateBpm,
+    byte? MaxHeartRateBpm,
+    byte? Rpe,
+    Guid? ShoeId,
+    string? Notes);
 
 public sealed record CoachPacketLayer2(
     IReadOnlyList<CoachPacketEpisode> PriorWeek,

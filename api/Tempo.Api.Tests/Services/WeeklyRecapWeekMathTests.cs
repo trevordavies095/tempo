@@ -91,4 +91,23 @@ public class WeeklyRecapWeekMathTests
         plan.WeekStartLocal.Date.Should().Be(new DateTime(2026, 10, 19));
         plan.WeekEndLocal.Date.Should().Be(new DateTime(2026, 10, 25));
     }
+
+    [Fact]
+    public void BuildRecentTrainingWeeks_PriorThree_EndsAtCheckInMonday()
+    {
+        var checkIn = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
+            new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc),
+            timezoneOffsetMinutes: 0,
+            referenceLocalDate: new DateTime(2026, 10, 12));
+
+        var weeks = WeeklyRecapWeekMath.BuildRecentTrainingWeeks(checkIn, priorWeekCount: 3, timezoneOffsetMinutes: 0);
+
+        weeks.Should().HaveCount(4);
+        weeks.Select(w => w.WeekStartLocal.Date).Should().Equal(
+            new DateTime(2026, 9, 21),
+            new DateTime(2026, 9, 28),
+            new DateTime(2026, 10, 5),
+            new DateTime(2026, 10, 12));
+        weeks[^1].WeekEndLocal.Date.Should().Be(new DateTime(2026, 10, 18));
+    }
 }

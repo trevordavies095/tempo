@@ -176,6 +176,74 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
     }
 
     [Fact]
+    public async Task Assemble_IncludesRecentTraining_AcrossWeeks_WithEmptyBucket()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+        await SaveEmptyCheckInAsync(client, "2026-10-13");
+
+        const string secretName = "ShouldNeverAppearInPacket";
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            // W−3: 2026-09-21…27
+            var w3 = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2026, 9, 22, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1500,
+                name: secretName);
+            w3.ElevGainM = 40;
+            w3.RelativeEffort = 20;
+            // W−2: 2026-09-28…10-04 — leave empty
+            // W−1: 2026-10-05…11
+            var w1 = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2026, 10, 7, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 10000,
+                durationS: 3000,
+                name: secretName);
+            w1.AvgHeartRateBpm = 145;
+            w1.MaxHeartRateBpm = 160;
+            w1.Rpe = 6;
+            // Check-in week: 2026-10-12…18
+            var w0 = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 8000,
+                durationS: 2400,
+                name: secretName);
+            w0.Notes = "check-in week run";
+            await db.SaveChangesAsync();
+        }
+
+        var assemble = await client.PostAsync(
+            "/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate=2026-10-13",
+            null);
+        assemble.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await assemble.Content.ReadFromJsonAsync<PreflightResponse>(JsonOptions);
+        doc.Should().NotBeNull();
+        doc!.Report.Included.Should().Contain(i => i.Category == "recentTraining");
+        doc.Report.Stripped.Should().Contain(s => s.Category == "hrStreams");
+
+        var payloadJson = JsonSerializer.Serialize(doc.RedactedPayload);
+        payloadJson.Should().NotContain(secretName);
+        using var payload = JsonDocument.Parse(payloadJson);
+        var weeks = payload.RootElement.GetProperty("recentTraining").GetProperty("weeks");
+        weeks.GetArrayLength().Should().Be(4);
+        weeks[0].GetProperty("weekStartDate").GetString().Should().Be("2026-09-21");
+        weeks[0].GetProperty("runCount").GetInt32().Should().Be(1);
+        weeks[1].GetProperty("weekStartDate").GetString().Should().Be("2026-09-28");
+        weeks[1].GetProperty("runCount").GetInt32().Should().Be(0);
+        weeks[1].GetProperty("runs").GetArrayLength().Should().Be(0);
+        weeks[2].GetProperty("runCount").GetInt32().Should().Be(1);
+        weeks[3].GetProperty("weekStartDate").GetString().Should().Be("2026-10-12");
+        weeks[3].GetProperty("runCount").GetInt32().Should().Be(1);
+        weeks[3].GetProperty("runs")[0].GetProperty("notes").GetString().Should().Be("check-in week run");
+        weeks[3].GetProperty("runs")[0].TryGetProperty("name", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Assemble_IncludesSelectedEpisodesAndActiveRules_ScrubsUsername()
     {
         var client = await AuthenticatedClientAsync();

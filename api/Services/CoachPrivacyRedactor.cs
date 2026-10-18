@@ -213,6 +213,9 @@ public static partial class CoachPrivacyRedactor
         var layer2Detail = "Layer 2 memory (empty until later slices)";
         var layer3Detail = "Layer 3 rules (empty until later slices)";
 
+        var recentTrainingDetail =
+            "Recent Tempo training weeks (empty until assembled)";
+
         if (packet is CoachContextPacket typed)
         {
             selectedEpisodeIds.AddRange(typed.Layer2.PriorWeek.Select(e => e.Id));
@@ -227,6 +230,20 @@ public static partial class CoachPrivacyRedactor
                 $"{selected} episodes selected of {total} — text you accepted or wrote, scrubbed of name/email/coordinates";
             layer3Detail =
                 $"{selectedRuleIds.Count} active standing rules — text you accepted or wrote, scrubbed of name/email/coordinates";
+
+            var weeks = typed.RecentTraining.Weeks;
+            if (weeks.Count > 0)
+            {
+                var runCount = weeks.Sum(w => w.RunCount);
+                var start = weeks[0].WeekStartDate;
+                var end = weeks[^1].WeekEndDate;
+                recentTrainingDetail =
+                    $"{weeks.Count} Mon–Sun weeks ({start}→{end}), {runCount} runs — distance/duration/HR/RPE/shoe ids and notes; no titles or GPS";
+            }
+            else
+            {
+                recentTrainingDetail = "0 recent-training weeks";
+            }
         }
 
         var included = new List<CoachPrivacyReportItem>
@@ -238,6 +255,7 @@ public static partial class CoachPrivacyRedactor
             new("layer2", layer2Detail),
             new("layer3", layer3Detail),
             new("checkIn", "Subjective fields and run metrics/notes without workout names or GPS"),
+            new("recentTraining", recentTrainingDetail),
             new("adjustment", "Athlete-started mid-week adjust reason, category, and locked/remaining days")
         };
 
@@ -246,6 +264,8 @@ public static partial class CoachPrivacyRedactor
             new("athleteIdentity", "Name, email, and username fields"),
             new("workoutNames", "Workout display names (never assembled into provider packet)"),
             new("gpsRoutes", "GPS coordinates, routes, and GeoJSON"),
+            new("hrStreams", "Heart-rate time series (never assembled into provider packet)"),
+            new("similarRoutes", "Similar-route analysis (never assembled into provider packet)"),
             new("rawFiles", "Raw GPX/FIT/Strava/HealthKit blobs")
         };
 
@@ -332,6 +352,62 @@ public static partial class CoachPrivacyRedactor
             rules.Distinct(StringComparer.Ordinal).ToList());
     }
 
+    /// <summary>
+    /// Extracts recentTraining week ranges, run counts, and workout ids from redacted packet JSON.
+    /// </summary>
+    public static IReadOnlyList<CoachRecentTrainingWeekReceipt> ExtractRecentTrainingSummary(
+        string? redactedPayloadJson)
+    {
+        var weeks = new List<CoachRecentTrainingWeekReceipt>();
+        if (string.IsNullOrWhiteSpace(redactedPayloadJson))
+        {
+            return weeks;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(redactedPayloadJson);
+            if (!doc.RootElement.TryGetProperty("recentTraining", out var recent)
+                || !recent.TryGetProperty("weeks", out var weeksArr)
+                || weeksArr.ValueKind != JsonValueKind.Array)
+            {
+                return weeks;
+            }
+
+            foreach (var week in weeksArr.EnumerateArray())
+            {
+                var start = week.TryGetProperty("weekStartDate", out var s) ? s.GetString() ?? "" : "";
+                var end = week.TryGetProperty("weekEndDate", out var e) ? e.GetString() ?? "" : "";
+                var runCount = week.TryGetProperty("runCount", out var rc) && rc.TryGetInt32(out var n) ? n : 0;
+                var workoutIds = new List<string>();
+                if (week.TryGetProperty("runs", out var runs) && runs.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var run in runs.EnumerateArray())
+                    {
+                        if (run.TryGetProperty("workoutId", out var idEl))
+                        {
+                            var id = idEl.ValueKind == JsonValueKind.String
+                                ? idEl.GetString()
+                                : idEl.ToString();
+                            if (!string.IsNullOrWhiteSpace(id))
+                            {
+                                workoutIds.Add(id);
+                            }
+                        }
+                    }
+                }
+
+                weeks.Add(new CoachRecentTrainingWeekReceipt(start, end, runCount, workoutIds));
+            }
+        }
+        catch (JsonException)
+        {
+            // Caller gets empty list when payload is unusable.
+        }
+
+        return weeks;
+    }
+
     private static void CollectIds(JsonElement parent, string arrayName, List<string> sink)
     {
         if (!parent.TryGetProperty(arrayName, out var arr) || arr.ValueKind != JsonValueKind.Array)
@@ -371,3 +447,9 @@ public sealed record CoachPrivacyReport(
     IReadOnlyList<string> SelectedRuleIds);
 
 public sealed record CoachPrivacyReportItem(string Category, string Detail);
+
+public sealed record CoachRecentTrainingWeekReceipt(
+    string WeekStartDate,
+    string WeekEndDate,
+    int RunCount,
+    IReadOnlyList<string> WorkoutIds);

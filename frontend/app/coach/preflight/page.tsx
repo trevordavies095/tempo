@@ -245,7 +245,8 @@ function PreflightPageInner() {
                   />
                   <span>
                     I have reviewed the summary (and inspected the payload if I chose). I consent to
-                    send this redacted packet to Anthropic using my BYO key when I generate a plan.
+                    send this redacted packet — including the multi-week recent training window — to
+                    Anthropic using my BYO key when I generate a plan.
                   </span>
                 </label>
                 <div className="mt-4">

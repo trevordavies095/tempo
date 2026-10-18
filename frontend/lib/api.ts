@@ -2222,12 +2222,22 @@ export interface CoachAdjustment {
   updatedAt: string;
 }
 
+export interface CoachRecentTrainingWeekReceipt {
+  weekStartDate: string;
+  weekEndDate: string;
+  runCount: number;
+  workoutIds: string[];
+}
+
 export interface CoachWeekPrivacyReceipt {
   weekId: string;
   weekStartDate: string;
   status: string;
   payloadHash: string;
   redactedPayload: unknown;
+  selectedEpisodeIds?: string[];
+  selectedRuleIds?: string[];
+  recentTraining?: CoachRecentTrainingWeekReceipt[];
 }
 
 export interface CoachSafetyAcknowledgment {

@@ -186,9 +186,10 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
         Obey active Layer 3 rules in the plan (soft guidance). CoachConstraint non-negotiables are hard.
 
         Weekly ritual week split (meta.checkInWeek* vs meta.planWeek*):
-        - checkIn describes completed training for week N (feel, niggles, runs). It is authoritative for subjective context.
+        - checkIn describes completed training for week N (feel, niggles, runs). It is authoritative for subjective feel/niggles.
+        - recentTraining is short Tempo history (W−N…check-in week): week rollups + redacted run lists. Empty weeks are real rest — acknowledge when relevant.
         - days[] must be exactly the seven dates of the upcoming plan week N+1 (meta.planWeekStartDate through planWeekEndDate).
-        - Do not invent workouts missing from check-in. Empty/rest check-in weeks are valid — acknowledge them in coachesNotes when relevant.
+        - Do not invent workouts missing from checkIn or recentTraining.
         - Mid-week Adjust (packet.adjustment present) still replans only remainingDates within the plan week; it does not require a new check-in.
 
         Rules:
