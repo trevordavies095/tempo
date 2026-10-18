@@ -365,7 +365,7 @@ function RunRow({
 
 function CheckInPageFallback() {
   return (
-    <PageShell density="compact">
+    <PageShell density="control" title="Weekly check-in">
       <p className="text-sm text-muted">Loading check-in…</p>
     </PageShell>
   );
