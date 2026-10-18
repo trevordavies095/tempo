@@ -6,9 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { AskForChangesDialog } from '@/components/coach/AskForChangesDialog';
+import { CoachSetupForm } from '@/components/coach/CoachSetupForm';
 import {
   deleteCoachDraftWeek,
   getCoachCheckIn,
@@ -446,46 +446,21 @@ export default function CoachPage() {
                     Ask for changes
                   </Button>
                 )}
-                <Button href="/coach/constraints" variant="secondary">
-                  Fixed dates & schedule
+                <Button href="/coach/settings" variant="secondary">
+                  Coach settings
                 </Button>
-                <Button href="/coach/memory" variant="secondary">
-                  What your coach knows about you
-                </Button>
-                <Button href="/coach/onboarding" variant="secondary">
-                  Profile & goal
-                </Button>
-                {needsProvider && (
-                  <Button href="/settings" variant="secondary">
-                    Connect Anthropic key
-                  </Button>
-                )}
               </div>
             </div>
           ) : (
-            <EmptyState
-              title="Finish coach setup"
-              description={
-                needsProvider
-                  ? 'Connect your Anthropic API key, then complete coach setup so your paces & zones and primary goal are ready for the weekly loop.'
-                  : 'Complete coach setup to save your primary goal and your paces & zones (HR zones, paces, shoes).'
+            <CoachSetupForm
+              disclaimer={
+                homeQuery.data?.disclaimer ??
+                'Tempo AI Coach is not a doctor and does not provide medical advice. It offers training suggestions only. Seek a qualified professional for pain, injury, or health concerns.'
               }
-              action={
-                <div className="flex flex-wrap gap-2">
-                  {needsProvider && (
-                    <Button href="/settings" variant="secondary">
-                      Coach settings
-                    </Button>
-                  )}
-                  <Button href="/coach/onboarding">Start coaching</Button>
-                  <Button href="/coach/constraints" variant="secondary">
-                    Fixed dates & schedule
-                  </Button>
-                  <Button href="/coach/memory" variant="secondary">
-                    What your coach knows about you
-                  </Button>
-                </div>
-              }
+              providerConnected={!needsProvider}
+              onComplete={() => {
+                void homeQuery.refetch();
+              }}
             />
           )}
         </Card>

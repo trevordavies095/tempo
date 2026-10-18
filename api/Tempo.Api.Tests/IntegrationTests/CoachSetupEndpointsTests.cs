@@ -239,6 +239,108 @@ public class CoachSetupEndpointsTests : IClassFixture<CoachProviderSettingsTestF
         (await assertDb.CoachPrivacyPreflights.CountAsync()).Should().Be(0);
     }
 
+    [Fact]
+    public async Task DeleteAll_WipesIncludingProviderAndPreferences_CoreIntact()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        (await client.PostAsync("/settings/coach/opt-in", null)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.PutAsJsonAsync("/settings/coach/provider", new { apiKey = "sk-ant-wipe-me" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await client.PostAsJsonAsync("/coach/onboarding", new
+        {
+            goal = new
+            {
+                type = "race",
+                distance = "Half-Marathon",
+                raceDate = "2027-01-09"
+            },
+            paces = new
+            {
+                easySecPerKm = 360,
+                tempoSecPerKm = 310,
+                thresholdSecPerKm = 280,
+                intervalSecPerKm = 265
+            }
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await client.PostAsJsonAsync("/coach/memory/notes", new
+        {
+            text = "Keep mornings easy",
+            date = "2026-09-01"
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        Guid shoeId;
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var shoe = await TestDataSeeder.SeedShoeAsync(db, "Nike", "Pegasus");
+            shoeId = shoe.Id;
+            if (await db.UserSettings.CountAsync() == 0)
+            {
+                await TestDataSeeder.SeedUserSettingsAsync(db);
+            }
+        }
+
+        (await client.DeleteAsync("/settings/coach")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            (await db.CoachPreferences.CountAsync()).Should().Be(0);
+            (await db.CoachProviderConnections.CountAsync()).Should().Be(0);
+            (await db.CoachGoals.CountAsync()).Should().Be(0);
+            (await db.CoachEpisodes.CountAsync()).Should().Be(0);
+            (await db.CoachRules.CountAsync()).Should().Be(0);
+            (await db.CoachMemoryLayers.CountAsync()).Should().Be(0);
+            (await db.Shoes.CountAsync(s => s.Id == shoeId)).Should().Be(1);
+            (await db.UserSettings.CountAsync()).Should().BeGreaterThan(0);
+        }
+
+        var settings = await client.GetFromJsonAsync<CoachSettingsResponse>("/settings/coach", JsonOptions);
+        settings!.OptedIn.Should().BeFalse();
+        settings.ProviderConnected.Should().BeFalse();
+
+        (await client.GetAsync("/coach")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task OptOut_DoesNotWipeCoachData()
+    {
+        var client = await AuthenticatedClientAsync();
+        (await client.PostAsync("/settings/coach/opt-in", null)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.PutAsJsonAsync("/settings/coach/provider", new { apiKey = "sk-ant-keep" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.PostAsJsonAsync("/coach/onboarding", new
+        {
+            goal = new
+            {
+                type = "race",
+                distance = "Half-Marathon",
+                raceDate = "2027-01-09"
+            },
+            paces = new
+            {
+                easySecPerKm = 360,
+                tempoSecPerKm = 310,
+                thresholdSecPerKm = 280,
+                intervalSecPerKm = 265
+            }
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await client.PostAsync("/settings/coach/opt-out", null)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            (await db.CoachPreferences.SingleAsync()).OptedIn.Should().BeFalse();
+            (await db.CoachProviderConnections.CountAsync()).Should().Be(1);
+            (await db.CoachGoals.CountAsync()).Should().Be(1);
+            (await db.CoachMemoryLayers.CountAsync()).Should().BeGreaterThan(0);
+        }
+    }
+
     private class CoachSettingsResponse
     {
         public bool Available { get; set; }

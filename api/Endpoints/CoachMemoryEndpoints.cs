@@ -90,6 +90,17 @@ public static class CoachMemoryEndpoints
             .Produces(404)
             .WithSummary("Unretire a Coach rule")
             .WithDescription("Sets Status=active. Idempotent if already active.");
+
+        group.MapPost("/memory/notes", CreateMemoryNote)
+            .WithName("CreateCoachMemoryNote")
+            .Accepts<CreateCoachMemoryNoteRequest>("application/json")
+            .Produces<CoachMemoryNoteDocument>(200)
+            .Produces(400)
+            .Produces(404)
+            .WithSummary("Tell your coach something")
+            .WithDescription(
+                "Dated text becomes an athlete episode (milestone). " +
+                "Undated text becomes an athlete rule in coaching_preferences.");
     }
 
     private static async Task<IResult> ListEpisodes(
@@ -401,6 +412,105 @@ public static class CoachMemoryEndpoints
         return Results.Ok(ToRuleDocument(row));
     }
 
+    private static async Task<IResult> CreateMemoryNote(
+        [FromBody] CreateCoachMemoryNoteRequest? request,
+        TempoDbContext db,
+        CoachConfig coachConfig)
+    {
+        if (!await IsCoachAvailableAsync(db, coachConfig))
+        {
+            return Results.NotFound();
+        }
+
+        if (request == null)
+        {
+            return Results.BadRequest(new { error = "Request body is required" });
+        }
+
+        var text = (request.Text ?? string.Empty).Trim();
+        if (text.Length == 0)
+        {
+            return Results.BadRequest(new { error = "text is required" });
+        }
+
+        if (text.Length > CoachMemoryProposalValidator.MaxEpisodeSummaryLength)
+        {
+            return Results.BadRequest(new
+            {
+                error = $"text must be at most {CoachMemoryProposalValidator.MaxEpisodeSummaryLength} characters"
+            });
+        }
+
+        DateOnly? date = null;
+        if (!string.IsNullOrWhiteSpace(request.Date))
+        {
+            if (!DateOnly.TryParse(
+                    request.Date,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var parsed))
+            {
+                return Results.BadRequest(new { error = "date must be yyyy-MM-dd" });
+            }
+
+            date = parsed;
+        }
+
+        if (date is { } episodeDate)
+        {
+            var existingIds = (await db.CoachEpisodes.AsNoTracking().Select(e => e.Id).ToListAsync())
+                .ToHashSet(StringComparer.Ordinal);
+            var id = CoachMemoryIds.EpisodeId(
+                episodeDate,
+                CoachEpisodeCategories.Milestone,
+                text,
+                existingIds);
+            var now = DateTime.UtcNow;
+            var row = new CoachEpisode
+            {
+                Id = id,
+                Date = episodeDate,
+                Category = CoachEpisodeCategories.Milestone,
+                Summary = text,
+                SourceWeekEnding = null,
+                SourceWeekId = null,
+                Source = CoachEpisodeSources.Athlete,
+                Retired = false,
+                CreatedAt = now
+            };
+            db.CoachEpisodes.Add(row);
+            await db.SaveChangesAsync();
+            return Results.Ok(new CoachMemoryNoteDocument(
+                Kind: "episode",
+                Episode: ToEpisodeDocument(row),
+                Rule: null));
+        }
+
+        {
+            var existingIds = (await db.CoachRules.AsNoTracking().Select(r => r.Id).ToListAsync())
+                .ToHashSet(StringComparer.Ordinal);
+            var id = CoachMemoryIds.RuleId(text, existingIds);
+            var now = DateTime.UtcNow;
+            var row = new CoachRule
+            {
+                Id = id,
+                TargetLayer = CoachRuleTargetLayers.CoachingPreferences,
+                RuleText = text,
+                Status = CoachRuleStatuses.Active,
+                Evidence = [],
+                Source = CoachRuleSources.Athlete,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            db.CoachRules.Add(row);
+            await db.SaveChangesAsync();
+            return Results.Ok(new CoachMemoryNoteDocument(
+                Kind: "rule",
+                Episode: null,
+                Rule: ToRuleDocument(row)));
+        }
+    }
+
     internal static CoachEpisodeDocument ToEpisodeDocument(CoachEpisode row) =>
         new(
             Id: row.Id,
@@ -465,3 +575,10 @@ public record CreateCoachRuleRequest(
     string? TargetLayer,
     string? RuleText,
     IReadOnlyList<string>? Evidence);
+
+public record CreateCoachMemoryNoteRequest(string? Text, string? Date);
+
+public record CoachMemoryNoteDocument(
+    string Kind,
+    CoachEpisodeDocument? Episode,
+    CoachRuleDocument? Rule);

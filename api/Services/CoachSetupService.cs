@@ -25,6 +25,30 @@ public sealed class CoachSetupService
     /// </summary>
     public async Task ResetSetupAsync(CancellationToken cancellationToken = default)
     {
+        await WipePeelableAsync(cancellationToken);
+
+        var prefs = await _db.CoachPreferences.FirstOrDefaultAsync(cancellationToken);
+        if (prefs != null && prefs.SeedMemoryNudgeDismissed)
+        {
+            prefs.SeedMemoryNudgeDismissed = false;
+            prefs.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Full peel: interrupts jobs, deletes every coach table row including provider ciphertext
+    /// and preferences (opt-in). Core workouts, shoes, and UserSettings are untouched.
+    /// </summary>
+    public async Task DeleteAllAsync(CancellationToken cancellationToken = default)
+    {
+        await WipePeelableAsync(cancellationToken);
+        await _db.CoachProviderConnections.ExecuteDeleteAsync(cancellationToken);
+        await _db.CoachPreferences.ExecuteDeleteAsync(cancellationToken);
+    }
+
+    private async Task WipePeelableAsync(CancellationToken cancellationToken)
+    {
         await _jobs.InterruptIncompleteJobsAsync(cancellationToken);
 
         await _db.CoachJobs.ExecuteDeleteAsync(cancellationToken);
@@ -37,13 +61,5 @@ public sealed class CoachSetupService
         await _db.CoachRules.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachMemoryLayers.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachGoals.ExecuteDeleteAsync(cancellationToken);
-
-        var prefs = await _db.CoachPreferences.FirstOrDefaultAsync(cancellationToken);
-        if (prefs != null && prefs.SeedMemoryNudgeDismissed)
-        {
-            prefs.SeedMemoryNudgeDismissed = false;
-            prefs.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync(cancellationToken);
-        }
     }
 }

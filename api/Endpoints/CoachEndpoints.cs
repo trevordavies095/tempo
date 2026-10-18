@@ -90,6 +90,16 @@ public static class CoachEndpoints
                 "Keeps CoachPreferences (opt-in) and the Anthropic provider connection. " +
                 "404 when Coach__Enabled is false.");
 
+        group.MapDelete("/coach", DeleteAllCoachData)
+            .WithName("DeleteAllCoachData")
+            .Produces(204)
+            .Produces(404)
+            .WithSummary("Delete all Coach data")
+            .WithDescription(
+                "Full peel: interrupts jobs, then removes every coach table row including provider ciphertext " +
+                "and preferences (opt-in). Core workouts, shoes, and UserSettings remain. " +
+                "404 when Coach__Enabled is false. Distinct from opt-out (non-destructive).");
+
         return group;
     }
 
@@ -380,6 +390,19 @@ public static class CoachEndpoints
         return Results.NoContent();
     }
 
+    private static async Task<IResult> DeleteAllCoachData(
+        CoachConfig coachConfig,
+        CoachSetupService setupService)
+    {
+        if (!coachConfig.Enabled)
+        {
+            return Results.NotFound();
+        }
+
+        await setupService.DeleteAllAsync();
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> GetCoachHome(TempoDbContext db, CoachConfig coachConfig)
     {
         if (!coachConfig.Enabled)
@@ -420,16 +443,6 @@ public static class CoachEndpoints
             }
         }
 
-        var showSeedMemoryNudge = false;
-        if (!row.SeedMemoryNudgeDismissed)
-        {
-            var hasEpisodes = await db.CoachEpisodes.AsNoTracking().AnyAsync();
-            var hasRules = await db.CoachRules.AsNoTracking().AnyAsync();
-            var hasCommittedWeek = await db.CoachWeeks.AsNoTracking()
-                .AnyAsync(w => w.Status == CoachWeekStatuses.Committed);
-            showSeedMemoryNudge = !hasEpisodes && !hasRules && !hasCommittedWeek;
-        }
-
         return Results.Ok(new CoachHomeDocument(
             Title: "AI Coach",
             Disclaimer:
@@ -437,9 +450,7 @@ public static class CoachEndpoints
                 "It offers training suggestions only. Seek a qualified professional for pain, injury, or health concerns.",
             NextSteps: nextSteps,
             OnboardingCompleted: onboardingComplete,
-            Goal: goal,
-            PendingMemoryUpgradeNotice: row.PendingMemoryUpgradeNotice,
-            ShowSeedMemoryNudge: showSeedMemoryNudge));
+            Goal: goal));
     }
 
     private static async Task<IResult> DismissMemoryUpgradeNotice(TempoDbContext db, CoachConfig coachConfig)
@@ -526,6 +537,4 @@ public record CoachHomeDocument(
     string Disclaimer,
     IReadOnlyList<string> NextSteps,
     bool OnboardingCompleted,
-    CoachGoalDocument? Goal,
-    bool PendingMemoryUpgradeNotice = false,
-    bool ShowSeedMemoryNudge = false);
+    CoachGoalDocument? Goal);

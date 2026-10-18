@@ -279,86 +279,94 @@ public class CoachMemoryEndpointsTests : IClassFixture<CoachEnabledTestFactory>
     }
 
     [Fact]
-    public async Task Home_ShowSeedMemoryNudge_TrueWhenEmpty()
+    public async Task MemoryNote_Dated_CreatesMilestoneEpisode()
     {
         var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
-        var home = await client.GetFromJsonAsync<HomeResponse>("/coach", JsonOptions);
-        home!.ShowSeedMemoryNudge.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task Home_ShowSeedMemoryNudge_FalseAfterDismiss()
-    {
-        var client = await AuthenticatedClientAsync();
-        await OptInAsync(client);
-
-        (await client.PostAsync("/coach/memory-seed-nudge/dismiss", null))
-            .StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-        var home = await client.GetFromJsonAsync<HomeResponse>("/coach", JsonOptions);
-        home!.ShowSeedMemoryNudge.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task Home_ShowSeedMemoryNudge_FalseAfterEpisode()
-    {
-        var client = await AuthenticatedClientAsync();
-        await OptInAsync(client);
-
-        (await client.PostAsJsonAsync("/coach/memory/episodes", new
+        var response = await client.PostAsJsonAsync("/coach/memory/notes", new
         {
-            date = "2026-09-20",
-            category = "issue",
-            summary = "Past Achilles flare"
-        })).StatusCode.Should().Be(HttpStatusCode.OK);
+            text = "Boston qualifier attempt",
+            date = "2026-09-15"
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<MemoryNoteResponse>(JsonOptions);
+        body!.Kind.Should().Be("episode");
+        body.Episode.Should().NotBeNull();
+        body.Episode!.Category.Should().Be("milestone");
+        body.Episode.Summary.Should().Be("Boston qualifier attempt");
+        body.Episode.Source.Should().Be(CoachEpisodeSources.Athlete);
+        body.Episode.Date.Should().Be("2026-09-15");
+        body.Rule.Should().BeNull();
 
-        var home = await client.GetFromJsonAsync<HomeResponse>("/coach", JsonOptions);
-        home!.ShowSeedMemoryNudge.Should().BeFalse();
+        var list = await client.GetFromJsonAsync<List<EpisodeResponse>>(
+            "/coach/memory/episodes",
+            JsonOptions);
+        list!.Should().Contain(e => e.Id == body.Episode.Id);
     }
 
     [Fact]
-    public async Task Home_ShowSeedMemoryNudge_FalseAfterCommittedWeek()
+    public async Task MemoryNote_Undated_CreatesCoachingPreferencesRule()
     {
         var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
-        using (var scope = _factory.Decorated.Services.CreateScope())
+        var response = await client.PostAsJsonAsync("/coach/memory/notes", new
         {
-            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            db.CoachWeeks.Add(new CoachWeek
-            {
-                WeekStartDate = new DateOnly(2026, 10, 12),
-                Status = CoachWeekStatuses.Committed,
-                CommitJson = "{}",
-                PreflightId = Guid.NewGuid(),
-                JobId = Guid.NewGuid(),
-                PayloadHash = new string('a', 64),
-                RedactedPayloadJson = "{}",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            });
-            await db.SaveChangesAsync();
-        }
+            text = "Prefer morning long runs"
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<MemoryNoteResponse>(JsonOptions);
+        body!.Kind.Should().Be("rule");
+        body.Rule.Should().NotBeNull();
+        body.Rule!.TargetLayer.Should().Be("coaching_preferences");
+        body.Rule.RuleText.Should().Be("Prefer morning long runs");
+        body.Rule.Source.Should().Be(CoachRuleSources.Athlete);
+        body.Episode.Should().BeNull();
 
-        var home = await client.GetFromJsonAsync<HomeResponse>("/coach", JsonOptions);
-        home!.ShowSeedMemoryNudge.Should().BeFalse();
+        var list = await client.GetFromJsonAsync<List<RuleResponse>>(
+            "/coach/memory/rules",
+            JsonOptions);
+        list!.Should().Contain(r => r.Id == body.Rule.Id);
     }
 
     [Fact]
-    public async Task SetupReset_ClearsSeedMemoryNudgeDismissed()
+    public async Task MemoryNote_EmptyText_ReturnsBadRequest()
     {
         var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
 
-        (await client.PostAsync("/coach/memory-seed-nudge/dismiss", null))
-            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await client.PostAsJsonAsync("/coach/memory/notes", new { text = "  " }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 
-        (await client.DeleteAsync("/settings/coach/setup")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    [Fact]
+    public async Task MemoryNote_RetireUnretire_StillWorks()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
 
-        var home = await client.GetFromJsonAsync<HomeResponse>("/coach", JsonOptions);
-        home!.ShowSeedMemoryNudge.Should().BeTrue();
+        var created = await client.PostAsJsonAsync("/coach/memory/notes", new
+        {
+            text = "Temporary note",
+            date = "2026-10-01"
+        });
+        var body = await created.Content.ReadFromJsonAsync<MemoryNoteResponse>(JsonOptions);
+        var id = body!.Episode!.Id;
+
+        (await client.PostAsync($"/coach/memory/episodes/{id}/retire", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var active = await client.GetFromJsonAsync<List<EpisodeResponse>>(
+            "/coach/memory/episodes",
+            JsonOptions);
+        active!.Should().NotContain(e => e.Id == id);
+
+        (await client.PostAsync($"/coach/memory/episodes/{id}/unretire", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var again = await client.GetFromJsonAsync<List<EpisodeResponse>>(
+            "/coach/memory/episodes",
+            JsonOptions);
+        again!.Should().Contain(e => e.Id == id);
     }
 
     private sealed class EpisodeResponse
@@ -381,8 +389,10 @@ public class CoachMemoryEndpointsTests : IClassFixture<CoachEnabledTestFactory>
         public string Source { get; set; } = "";
     }
 
-    private sealed class HomeResponse
+    private sealed class MemoryNoteResponse
     {
-        public bool ShowSeedMemoryNudge { get; set; }
+        public string Kind { get; set; } = "";
+        public EpisodeResponse? Episode { get; set; }
+        public RuleResponse? Rule { get; set; }
     }
 }

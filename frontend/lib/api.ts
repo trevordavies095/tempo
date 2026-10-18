@@ -1343,8 +1343,6 @@ export interface CoachHome {
   nextSteps: string[];
   onboardingCompleted: boolean;
   goal: CoachGoal | null;
-  pendingMemoryUpgradeNotice?: boolean;
-  showSeedMemoryNudge?: boolean;
 }
 
 export type CoachEpisodeCategory =
@@ -1603,6 +1601,19 @@ export async function deleteCoachSetup(): Promise<void> {
   if (!response.ok && response.status !== 204) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to reset Coach setup: ${response.status}`);
+  }
+}
+
+/** Full peel: removes all coach data including provider key and opt-in. */
+export async function deleteAllCoachData(): Promise<void> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/coach`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+
+  if (!response.ok && response.status !== 204) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to delete all Coach data: ${response.status}`);
   }
 }
 
@@ -1872,6 +1883,35 @@ export async function createCoachRule(body: CreateCoachRuleRequest): Promise<Coa
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to create Coach rule: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface CoachMemoryNoteResult {
+  kind: 'episode' | 'rule' | string;
+  episode: CoachEpisode | null;
+  rule: CoachRule | null;
+}
+
+/** Dated → milestone episode; undated → coaching_preferences rule. */
+export async function createCoachMemoryNote(body: {
+  text: string;
+  date?: string | null;
+}): Promise<CoachMemoryNoteResult> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/memory/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      text: body.text,
+      date: body.date?.trim() || null,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to save memory note: ${response.status}`);
   }
 
   return response.json();
