@@ -1,10 +1,9 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -18,11 +17,12 @@ import {
 } from '@/lib/api';
 import {
   addDaysIso,
+  formatCoachDate,
+  formatCoachJobError,
   formatWeekRangeLabel,
   planWeekStartFromCheckInMonday,
   resolveDefaultCheckInReferenceDate,
 } from '@/lib/coachWeek';
-import { useCoachFeature } from '@/hooks/useCoachFeature';
 
 const fieldClass =
   'w-full rounded-tempo border border-border bg-canvas px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-volt';
@@ -40,16 +40,13 @@ function mondayOfContainingWeek(isoDate: string): string {
 }
 
 function PreflightPageInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
   const isAdjustMode = searchParams.get('mode') === 'adjust';
   const isAdvanced = searchParams.get('advanced') === '1';
   const queryReferenceDate = searchParams.get('referenceDate');
   const initialRef = queryReferenceDate || resolveDefaultCheckInReferenceDate(new Date());
   const [referenceDate, setReferenceDate] = useState(initialRef);
-  // Happy path: ritual linked with referenceDate, not adjust, not advanced — no date picker.
   const isHappyPath = Boolean(queryReferenceDate) && !isAdjustMode && !isAdvanced;
   const [preflight, setPreflight] = useState<CoachPrivacyPreflight | null>(null);
   const [inspectOpen, setInspectOpen] = useState(false);
@@ -90,26 +87,20 @@ function PreflightPageInner() {
         const deadline = Date.now() + 180_000;
         while (current.status !== 'ready' && current.status !== 'failed') {
           if (Date.now() > deadline) {
-            throw new Error('Generate timed out while polling');
+            throw new Error('Timed out while waiting for your coach.');
           }
           await new Promise((r) => setTimeout(r, 500));
           current = await getCoachJob(started.id);
           setJob(current);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Generate failed');
+        setError(err instanceof Error ? err.message : 'Send to coach failed');
       } finally {
         setJobPolling(false);
       }
     },
     onError: (err: Error) => setError(err.message),
   });
-
-  useEffect(() => {
-    if (isFetched && !showCoachNav) {
-      router.replace('/dashboard');
-    }
-  }, [isFetched, showCoachNav, router]);
 
   const prettyPayload = useMemo(() => {
     if (!preflight?.redactedPayload) return '';
@@ -120,42 +111,20 @@ function PreflightPageInner() {
     }
   }, [preflight]);
 
-  if (settingsLoading || !isFetched) {
-    return (
-      <PageShell density="control" title="Privacy pre-flight">
-        <Card>
-          <p className="text-sm text-muted">Loading...</p>
-        </Card>
-      </PageShell>
-    );
-  }
-
-  if (!showCoachNav) {
-    return null;
-  }
-
   return (
     <PageShell
       density="control"
-      title={isAdjustMode ? 'Adjust privacy pre-flight' : 'Privacy pre-flight'}
+      title="What your coach will see"
       subtitle={
         isAdjustMode
-          ? 'Re-confirm the redacted packet before mid-week Adjust generate'
+          ? 'Re-confirm the redacted packet before asking for mid-week changes'
           : 'Review what leaves your instance before any Anthropic call'
       }
       leading={
-        <div className="mb-4 space-y-3">
+        <div className="mb-4">
           <Link href="/coach" className="text-sm text-muted hover:text-ink">
-            ← Coach
+            ← Week
           </Link>
-          <div
-            className="rounded-tempo border border-border bg-canvas p-4 text-sm text-muted"
-            role="note"
-          >
-            Tempo AI Coach is not a doctor and does not provide medical advice. Nothing is sent to
-            Anthropic until you consent to this redacted packet
-            {isAdjustMode ? ' for mid-week Adjust' : ''}.
-          </div>
         </div>
       }
     >
@@ -197,13 +166,14 @@ function PreflightPageInner() {
               onClick={() => assembleMutation.mutate()}
               disabled={assembleMutation.isPending}
             >
-              {assembleMutation.isPending ? 'Assembling...' : 'Assemble redacted packet'}
+              {assembleMutation.isPending ? 'Building…' : 'Show what will be sent'}
             </Button>
-            <Link href={`/coach/check-in?referenceDate=${encodeURIComponent(referenceDate)}`}>
-              <Button type="button" variant="secondary">
-                Edit check-in
-              </Button>
-            </Link>
+            <Button
+              href={`/coach/check-in?referenceDate=${encodeURIComponent(referenceDate)}`}
+              variant="secondary"
+            >
+              Edit check-in
+            </Button>
           </div>
         </Card>
 
@@ -216,17 +186,19 @@ function PreflightPageInner() {
               <p className="text-sm text-ink">
                 Check-in:{' '}
                 <span className="text-muted">
-                  {preflight.checkInWeekStartDate} → {preflight.checkInWeekEndDate}
+                  {formatWeekRangeLabel(
+                    preflight.checkInWeekStartDate,
+                    preflight.checkInWeekEndDate
+                  )}
                 </span>
               </p>
               <p className="text-sm text-ink mt-1">
                 Plan:{' '}
                 <span className="text-muted">
-                  {preflight.planWeekStartDate} → {preflight.planWeekEndDate}
+                  {formatWeekRangeLabel(preflight.planWeekStartDate, preflight.planWeekEndDate)}
                 </span>
                 {preflight.consented ? ' · consented' : ' · not yet consented'}
               </p>
-              <p className="text-xs text-muted mt-2 font-mono">hash {preflight.payloadHash}</p>
             </Card>
 
             <Card>
@@ -234,7 +206,7 @@ function PreflightPageInner() {
               <ul className="space-y-2 mb-6">
                 {preflight.report.included.map((item) => (
                   <li key={`in-${item.category}`} className="text-sm text-ink">
-                    <span className="font-medium">{item.category}</span>
+                    <span className="font-medium">{item.category.replaceAll('_', ' ')}</span>
                     <span className="text-muted"> — {item.detail}</span>
                   </li>
                 ))}
@@ -243,7 +215,7 @@ function PreflightPageInner() {
               <ul className="space-y-2">
                 {preflight.report.stripped.map((item) => (
                   <li key={`out-${item.category}`} className="text-sm text-ink">
-                    <span className="font-medium">{item.category}</span>
+                    <span className="font-medium">{item.category.replaceAll('_', ' ')}</span>
                     <span className="text-muted"> — {item.detail}</span>
                   </li>
                 ))}
@@ -252,13 +224,13 @@ function PreflightPageInner() {
 
             <Card>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <h2 className="text-lg font-semibold text-ink">Inspect payload</h2>
+                <h2 className="text-lg font-semibold text-ink">Inspect JSON</h2>
                 <Button
                   type="button"
                   variant="secondary"
                   onClick={() => setInspectOpen((o) => !o)}
                 >
-                  {inspectOpen ? 'Hide JSON' : 'Show redacted JSON'}
+                  {inspectOpen ? 'Hide JSON' : 'Inspect JSON'}
                 </Button>
               </div>
               {inspectOpen && (
@@ -280,7 +252,7 @@ function PreflightPageInner() {
                   <span>
                     I have reviewed the summary (and inspected the payload if I chose). I consent to
                     send this redacted packet — including the multi-week recent training window — to
-                    Anthropic using my BYO key when I generate a plan.
+                    Anthropic using my BYO key when I send to coach.
                   </span>
                 </label>
                 <div className="mt-4">
@@ -296,8 +268,8 @@ function PreflightPageInner() {
             ) : (
               <Card>
                 <p className="text-sm text-ink mb-4">
-                  Consent recorded. Generate sends this redacted packet to Anthropic with your BYO
-                  key and stores a draft week for review.
+                  Consent recorded. Send to coach sends this redacted packet to Anthropic with your
+                  BYO key and stores a draft week for review.
                 </p>
                 <div className="flex flex-wrap gap-2 items-center">
                   <Button
@@ -306,44 +278,44 @@ function PreflightPageInner() {
                     onClick={() => generateMutation.mutate(preflight.id)}
                   >
                     {generateMutation.isPending || jobPolling
-                      ? 'Generating...'
+                      ? 'Sending...'
                       : isAdjustMode
-                        ? 'Generate adjust draft'
-                        : 'Generate weekly plan'}
+                        ? 'Send to coach'
+                        : 'Send to coach'}
                   </Button>
-                  <Link href="/coach">
-                    <Button type="button" variant="secondary">
-                      Back to Coach
-                    </Button>
-                  </Link>
+                  <Button href="/coach" variant="secondary">
+                    Back to Week
+                  </Button>
                 </div>
                 {job && (
                   <div className="mt-4 text-sm text-muted space-y-1">
                     <p>
-                      Job status: <span className="text-ink">{job.status}</span>
-                      {job.inputTokens != null && (
-                        <>
-                          {' '}
-                          · tokens in {job.inputTokens} / out {job.outputTokens ?? 0}
-                        </>
-                      )}
+                      Status:{' '}
+                      <span className="text-ink">
+                        {job.status === 'ready'
+                          ? 'Ready'
+                          : job.status === 'failed'
+                            ? 'Failed'
+                            : job.status === 'running'
+                              ? 'Working…'
+                              : job.status}
+                      </span>
                     </p>
                     {job.status === 'ready' && (
                       <p className="text-ink">
-                        Draft ready for week {job.weekStartDate}.{' '}
+                        Draft ready for {formatCoachDate(job.weekStartDate)}.{' '}
                         <Link
                           href={`/coach/review?weekStartDate=${encodeURIComponent(job.weekStartDate)}`}
                           className="underline"
                         >
-                          Review and apply
+                          Review and accept
                         </Link>
                         .
                       </p>
                     )}
                     {job.status === 'failed' && (
                       <p className="text-danger">
-                        {job.errorCode ? `[${job.errorCode}] ` : ''}
-                        {job.errorMessage || 'Generate failed'}
+                        {formatCoachJobError(job.errorCode, job.errorMessage)}
                       </p>
                     )}
                   </div>
@@ -357,11 +329,11 @@ function PreflightPageInner() {
   );
 }
 
-function PreflightPageContent() {
+export default function CoachPreflightPage() {
   return (
     <Suspense
       fallback={
-        <PageShell density="control" title="Privacy pre-flight">
+        <PageShell density="control" title="What your coach will see">
           <Card>
             <p className="text-sm text-muted">Loading...</p>
           </Card>
@@ -370,13 +342,5 @@ function PreflightPageContent() {
     >
       <PreflightPageInner />
     </Suspense>
-  );
-}
-
-export default function CoachPreflightPage() {
-  return (
-    <AuthGuard>
-      <PreflightPageContent />
-    </AuthGuard>
   );
 }

@@ -1,15 +1,14 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { startCoachAdjust, type CoachAdjustCategory } from '@/lib/api';
-import { useCoachFeature } from '@/hooks/useCoachFeature';
+import { formatCoachDate } from '@/lib/coachWeek';
 
 const fieldClass =
   'w-full rounded-tempo border border-border bg-canvas px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-volt';
@@ -32,7 +31,6 @@ function localDateIso(d = new Date()): string {
 function AdjustPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
   const weekStartDate = searchParams.get('weekStartDate') ?? '';
   const [reason, setReason] = useState('');
   const [category, setCategory] = useState<CoachAdjustCategory | ''>('');
@@ -40,12 +38,6 @@ function AdjustPageInner() {
 
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
   const referenceDate = localDateIso();
-
-  useEffect(() => {
-    if (isFetched && !showCoachNav) {
-      router.replace('/dashboard');
-    }
-  }, [isFetched, showCoachNav, router]);
 
   const startMutation = useMutation({
     mutationFn: () =>
@@ -68,27 +60,13 @@ function AdjustPageInner() {
     onError: (err: Error) => setError(err.message),
   });
 
-  if (settingsLoading || !isFetched) {
-    return (
-      <PageShell density="control" title="Adjust week">
-        <Card>
-          <p className="text-sm text-muted">Loading...</p>
-        </Card>
-      </PageShell>
-    );
-  }
-
-  if (!showCoachNav) {
-    return null;
-  }
-
   if (!weekStartDate) {
     return (
-      <PageShell density="control" title="Adjust week">
+      <PageShell density="control" title="Ask for changes">
         <Card>
-          <p className="text-sm text-danger">Missing weekStartDate.</p>
+          <p className="text-sm text-danger">Missing week.</p>
           <Link href="/coach" className="text-sm underline mt-2 inline-block">
-            Back to Coach
+            Back to Week
           </Link>
         </Card>
       </PageShell>
@@ -98,30 +76,22 @@ function AdjustPageInner() {
   return (
     <PageShell
       density="control"
-      title="Adjust week"
-      subtitle={`Week of ${weekStartDate}`}
+      title="Ask for changes"
+      subtitle={`Week of ${formatCoachDate(weekStartDate)}`}
       leading={
-        <div className="space-y-3 mb-4">
+        <div className="mb-4">
           <Link href="/coach" className="text-sm text-muted underline">
-            ← Coach
+            ← Week
           </Link>
-          <div
-            className="rounded-tempo border border-border bg-canvas p-4 text-sm text-muted"
-            role="note"
-          >
-            Tempo AI Coach is not a doctor and does not provide medical advice. For severe niggles it
-            may suggest backing off or referring out — it will not diagnose. Starting Adjust does not
-            call Anthropic until you complete privacy pre-flight and generate.
-          </div>
         </div>
       }
     >
       <div className="w-full space-y-6">
         <Card>
-          <h2 className="text-lg font-semibold text-ink mb-2">Why are you adjusting?</h2>
+          <h2 className="text-lg font-semibold text-ink mb-2">What changed?</h2>
           <p className="text-sm text-muted mb-4">
             Required free-text reason. Only remaining days will be replanned; elapsed days stay
-            historical.
+            historical. Nothing is sent until you confirm what your coach will see.
           </p>
           <label className="block text-sm text-muted space-y-1 mb-4">
             <span>Reason</span>
@@ -155,13 +125,13 @@ function AdjustPageInner() {
               disabled={!reason.trim() || startMutation.isPending}
               onClick={() => startMutation.mutate()}
             >
-              {startMutation.isPending ? 'Starting...' : 'Continue to privacy pre-flight'}
+              {startMutation.isPending
+                ? 'Starting...'
+                : 'Continue to what your coach will see'}
             </Button>
-            <Link href="/coach">
-              <Button type="button" variant="secondary">
-                Cancel
-              </Button>
-            </Link>
+            <Button href="/coach" variant="secondary">
+              Cancel
+            </Button>
           </div>
         </Card>
       </div>
@@ -169,11 +139,11 @@ function AdjustPageInner() {
   );
 }
 
-function AdjustPageContent() {
+export default function CoachAdjustPage() {
   return (
     <Suspense
       fallback={
-        <PageShell density="control" title="Adjust week">
+        <PageShell density="control" title="Ask for changes">
           <Card>
             <p className="text-sm text-muted">Loading...</p>
           </Card>
@@ -182,13 +152,5 @@ function AdjustPageContent() {
     >
       <AdjustPageInner />
     </Suspense>
-  );
-}
-
-export default function CoachAdjustPage() {
-  return (
-    <AuthGuard>
-      <AdjustPageContent />
-    </AuthGuard>
   );
 }

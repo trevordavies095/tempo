@@ -225,7 +225,7 @@ export function CoachSection() {
       <p className="text-sm text-muted mb-4">
         Optional weekly coaching loop using your own Anthropic API key. Off until you opt in.
         Disabling hides Coach without deleting coach data. The key is stored encrypted and never
-        shown again. Tempo AI Coach is not a doctor and does not provide medical advice.
+        shown again.
       </p>
 
       {isLoading ? (
@@ -365,7 +365,7 @@ export function CoachSection() {
               {!confirmReset ? (
                 <>
                   <p className="text-sm text-muted">
-                    Clears goal, Layer 1, constraints, check-ins, plans, and jobs. Keeps Coach
+                    Clears goal, paces & zones, fixed dates, check-ins, plans, and jobs. Keeps Coach
                     enabled and your Anthropic API key.
                   </p>
                   <Button
@@ -384,7 +384,7 @@ export function CoachSection() {
               ) : (
                 <div className="rounded-tempo border border-border bg-canvas p-3 space-y-3">
                   <p className="text-sm text-ink">
-                    Keeps your API key and Coach enabled. Deletes goal, Layer 1, constraints,
+                    Keeps your API key and Coach enabled. Deletes goal, paces & zones, fixed dates,
                     check-ins, plans, and jobs. This cannot be undone.
                   </p>
                   <div className="flex flex-wrap gap-2">

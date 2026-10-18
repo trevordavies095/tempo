@@ -1,10 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -22,8 +20,12 @@ import {
   type CoachEpisodeCategory,
   type CoachRuleTargetLayer,
 } from '@/lib/api';
-import { useCoachFeature } from '@/hooks/useCoachFeature';
-import { categoryLabel, targetLayerLabel } from '@/lib/coachMemoryDisplay';
+import {
+  categoryLabel,
+  memorySourceLabel,
+  targetLayerLabel,
+} from '@/lib/coachMemoryDisplay';
+import { formatCoachDate } from '@/lib/coachWeek';
 
 const fieldClass =
   'w-full rounded-tempo border border-border bg-canvas px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-volt';
@@ -48,8 +50,8 @@ const RULE_LAYERS: CoachRuleTargetLayer[] = [
 ];
 
 const TAB_ITEMS = [
-  { id: 'episodes' as const, label: 'Episodes' },
-  { id: 'rules' as const, label: 'Rules' },
+  { id: 'episodes' as const, label: 'Events' },
+  { id: 'rules' as const, label: 'Preferences' },
 ];
 
 function todayIso(): string {
@@ -61,9 +63,7 @@ function todayIso(): string {
 }
 
 function MemoryPageContent() {
-  const router = useRouter();
   const queryClient = useQueryClient();
-  const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
 
   const [tab, setTab] = useState<'episodes' | 'rules'>('episodes');
   const [showRetiredEpisodes, setShowRetiredEpisodes] = useState(false);
@@ -86,13 +86,11 @@ function MemoryPageContent() {
         includeRetired: showRetiredEpisodes,
         category: categoryFilter || undefined,
       }),
-    enabled: showCoachNav,
   });
 
   const rulesQuery = useQuery({
     queryKey: ['coach-rules', showRetiredRules],
     queryFn: () => listCoachRules({ includeRetired: showRetiredRules }),
-    enabled: showCoachNav,
   });
 
   const createEpisodeMutation = useMutation({
@@ -149,14 +147,8 @@ function MemoryPageContent() {
     onError: (err: Error) => setError(err.message),
   });
 
-  useEffect(() => {
-    if (isFetched && !showCoachNav) {
-      router.replace('/dashboard');
-    }
-  }, [isFetched, showCoachNav, router]);
-
   const episodes = episodesQuery.data ?? [];
-  const rules = rulesQuery.data ?? [];
+  const rules = useMemo(() => rulesQuery.data ?? [], [rulesQuery.data]);
 
   const rulesByLayer = useMemo(() => {
     const groups: Record<string, typeof rules> = {};
@@ -184,29 +176,15 @@ function MemoryPageContent() {
     !showRetiredRules &&
     !categoryFilter;
 
-  if (settingsLoading || !isFetched) {
-    return (
-      <PageShell density="control" title="Memory">
-        <Card>
-          <p className="text-sm text-muted">Loading...</p>
-        </Card>
-      </PageShell>
-    );
-  }
-
-  if (!showCoachNav) {
-    return null;
-  }
-
   return (
     <PageShell
       density="control"
-      title="Memory"
-      subtitle="Episodes and standing rules your coach remembers"
+      title="What your coach knows about you"
+      subtitle="Events and preferences your coach remembers"
       leading={
         <div className="mb-4">
           <Link href="/coach" className="text-sm text-muted hover:text-ink">
-            ← Coach
+            ← Week
           </Link>
         </div>
       }
@@ -215,8 +193,8 @@ function MemoryPageContent() {
         {memoryEmpty && (
           <Card>
             <EmptyState
-              title="Seed your coach's memory"
-              description="Add a past injury, a race result, or a rule you already know about yourself. Significant events and reusable standing rules help future weeks — ordinary easy weeks do not need to live here."
+              title="Tell your coach something"
+              description="Add a past injury, a race result, or a preference you already know about yourself. Significant events and reusable preferences help future weeks — ordinary easy weeks do not need to live here."
             />
           </Card>
         )}
@@ -231,12 +209,12 @@ function MemoryPageContent() {
           items={TAB_ITEMS}
           value={tab}
           onChange={setTab}
-          aria-label="Memory layers"
+          aria-label="What your coach knows"
         >
           {tab === 'episodes' && (
             <div className="space-y-6">
               <Card>
-                <h2 className="text-lg font-semibold text-ink mb-2">Add episode</h2>
+                <h2 className="text-lg font-semibold text-ink mb-2">Add event</h2>
                 <p className="text-xs text-muted mb-4">{PRIVACY_NOTICE}</p>
                 <div className="space-y-3">
                   <label className="block text-sm text-muted space-y-1">
@@ -282,14 +260,14 @@ function MemoryPageContent() {
                     }
                     onClick={() => createEpisodeMutation.mutate()}
                   >
-                    {createEpisodeMutation.isPending ? 'Saving...' : 'Add episode'}
+                    {createEpisodeMutation.isPending ? 'Saving...' : 'Add event'}
                   </Button>
                 </div>
               </Card>
 
               <Card>
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <h2 className="text-lg font-semibold text-ink">Episodes</h2>
+                  <h2 className="text-lg font-semibold text-ink">Events</h2>
                   <div className="flex flex-wrap items-center gap-3 text-sm">
                     <label className="flex items-center gap-2 text-muted">
                       <span>Category</span>
@@ -312,7 +290,7 @@ function MemoryPageContent() {
                         checked={showRetiredEpisodes}
                         onChange={(e) => setShowRetiredEpisodes(e.target.checked)}
                       />
-                      Show retired
+                      Show removed
                     </label>
                   </div>
                 </div>
@@ -320,7 +298,7 @@ function MemoryPageContent() {
                 {episodesQuery.isLoading ? (
                   <p className="text-sm text-muted">Loading...</p>
                 ) : episodes.length === 0 ? (
-                  <p className="text-sm text-muted">No episodes yet.</p>
+                  <p className="text-sm text-muted">No events yet.</p>
                 ) : (
                   <ul className="space-y-3">
                     {episodes.map((ep) => (
@@ -336,9 +314,9 @@ function MemoryPageContent() {
                               <span className="rounded-tempo border border-border px-2 py-0.5">
                                 {categoryLabel(ep.category)}
                               </span>
-                              <span>{ep.date}</span>
-                              <span>{ep.source}</span>
-                              {ep.retired && <span>retired</span>}
+                              <span>{formatCoachDate(ep.date)}</span>
+                              <span>{memorySourceLabel(ep.source)}</span>
+                              {ep.retired && <span>removed</span>}
                             </div>
                             <p className="text-sm text-ink">{ep.summary}</p>
                           </div>
@@ -353,7 +331,7 @@ function MemoryPageContent() {
                               })
                             }
                           >
-                            {ep.retired ? 'Unretire' : 'Retire'}
+                            {ep.retired ? 'Restore' : 'Remove'}
                           </Button>
                         </div>
                       </li>
@@ -367,11 +345,11 @@ function MemoryPageContent() {
           {tab === 'rules' && (
             <div className="space-y-6">
               <Card>
-                <h2 className="text-lg font-semibold text-ink mb-2">Add standing rule</h2>
+                <h2 className="text-lg font-semibold text-ink mb-2">Add preference</h2>
                 <p className="text-xs text-muted mb-4">{PRIVACY_NOTICE}</p>
                 <div className="space-y-3">
                   <label className="block text-sm text-muted space-y-1">
-                    <span>Target layer</span>
+                    <span>Category</span>
                     <select
                       className={fieldClass}
                       value={ruleLayer}
@@ -410,28 +388,28 @@ function MemoryPageContent() {
                     disabled={createRuleMutation.isPending || ruleText.trim().length === 0}
                     onClick={() => createRuleMutation.mutate()}
                   >
-                    {createRuleMutation.isPending ? 'Saving...' : 'Add rule'}
+                    {createRuleMutation.isPending ? 'Saving...' : 'Add preference'}
                   </Button>
                 </div>
               </Card>
 
               <Card>
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <h2 className="text-lg font-semibold text-ink">Standing rules</h2>
+                  <h2 className="text-lg font-semibold text-ink">Preferences</h2>
                   <label className="flex items-center gap-2 text-sm text-muted">
                     <input
                       type="checkbox"
                       checked={showRetiredRules}
                       onChange={(e) => setShowRetiredRules(e.target.checked)}
                     />
-                    Show retired
+                    Show removed
                   </label>
                 </div>
 
                 {rulesQuery.isLoading ? (
                   <p className="text-sm text-muted">Loading...</p>
                 ) : rules.length === 0 ? (
-                  <p className="text-sm text-muted">No standing rules yet.</p>
+                  <p className="text-sm text-muted">No preferences yet.</p>
                 ) : (
                   <div className="space-y-6">
                     {Object.entries(rulesByLayer).map(([layer, layerRules]) => {
@@ -456,8 +434,8 @@ function MemoryPageContent() {
                                   <div className="flex flex-wrap items-start justify-between gap-2">
                                     <div className="min-w-0 space-y-1">
                                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted uppercase tracking-wide">
-                                        <span>{rule.source}</span>
-                                        {retired && <span>retired</span>}
+                                        <span>{memorySourceLabel(rule.source)}</span>
+                                        {retired && <span>removed</span>}
                                       </div>
                                       <p className="text-sm text-ink">{rule.ruleText}</p>
                                       {(rule.evidence?.length ?? 0) > 0 && (
@@ -482,7 +460,7 @@ function MemoryPageContent() {
                                         })
                                       }
                                     >
-                                      {retired ? 'Unretire' : 'Retire'}
+                                      {retired ? 'Restore' : 'Remove'}
                                     </Button>
                                   </div>
                                 </li>
@@ -504,9 +482,5 @@ function MemoryPageContent() {
 }
 
 export default function CoachMemoryPage() {
-  return (
-    <AuthGuard>
-      <MemoryPageContent />
-    </AuthGuard>
-  );
+  return <MemoryPageContent />;
 }

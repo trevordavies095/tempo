@@ -4,7 +4,6 @@ import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -16,7 +15,6 @@ import {
   type CoachWeeklyCommit,
   type CoachWeeklyCommitDay,
 } from '@/lib/api';
-import { useCoachFeature } from '@/hooks/useCoachFeature';
 import { useSettings, type UnitPreference } from '@/lib/settings';
 import {
   formatCoachDistance,
@@ -25,11 +23,13 @@ import {
 } from '@/lib/coachDistance';
 import {
   categoryLabel,
+  dayTypeLabel,
   formatLayer1PatchPrimary,
   operationLabel,
   shouldShowMemoryCard,
   targetLayerLabel,
 } from '@/lib/coachMemoryDisplay';
+import { formatCoachDate } from '@/lib/coachWeek';
 
 const fieldClass =
   'w-full rounded-tempo border border-border bg-canvas px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-volt';
@@ -195,7 +195,6 @@ function ReviewPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
   const { unitPreference } = useSettings();
   const weekStartDate = searchParams.get('weekStartDate') ?? '';
 
@@ -210,23 +209,18 @@ function ReviewPageInner() {
   const draftQuery = useQuery({
     queryKey: ['coach-draft-week', weekStartDate],
     queryFn: () => getCoachDraftWeek(weekStartDate),
-    enabled: showCoachNav && Boolean(weekStartDate),
+    enabled: Boolean(weekStartDate),
   });
 
   const lockedThroughDate = draftQuery.data?.lockedThroughDate ?? null;
   const isAdjustment = Boolean(draftQuery.data?.isAdjustment);
 
   useEffect(() => {
-    if (isFetched && !showCoachNav) {
-      router.replace('/dashboard');
-    }
-  }, [isFetched, showCoachNav, router]);
-
-  useEffect(() => {
     if (!draftQuery.data?.commit) {
       return;
     }
     const normalized = normalizeCommit(draftQuery.data.commit);
+    /* eslint-disable react-hooks/set-state-in-effect -- hydrate editor from draft query */
     setCommit(normalized);
     const initial: Record<number, { acknowledged: boolean; response: string }> = {};
     normalized.safetyFlags.forEach((_, i) => {
@@ -237,6 +231,7 @@ function ReviewPageInner() {
     setAcceptedEpisodes(new Set());
     setAcceptedRules(new Set());
     setArchiveNotesAsRecap(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [draftQuery.data]);
 
   const distanceUnitLabel = unitPreference === 'imperial' ? 'mi' : 'km';
@@ -301,27 +296,13 @@ function ReviewPageInner() {
     onError: (err: Error) => setError(err.message),
   });
 
-  if (settingsLoading || !isFetched) {
-    return (
-      <PageShell density="control" title="Review weekly plan">
-        <Card>
-          <p className="text-sm text-muted">Loading...</p>
-        </Card>
-      </PageShell>
-    );
-  }
-
-  if (!showCoachNav) {
-    return null;
-  }
-
   if (!weekStartDate) {
     return (
       <PageShell density="control" title="Review weekly plan">
         <Card>
-          <p className="text-sm text-danger">Missing weekStartDate.</p>
+          <p className="text-sm text-danger">Missing week.</p>
           <Link href="/coach" className="text-sm underline mt-2 inline-block">
-            Back to Coach
+            Back to Week
           </Link>
         </Card>
       </PageShell>
@@ -331,23 +312,18 @@ function ReviewPageInner() {
   return (
     <PageShell
       density="control"
-      title={isAdjustment ? 'Review adjust draft' : 'Review weekly plan'}
-      subtitle={`Week of ${weekStartDate}`}
+      title={isAdjustment ? 'Review change draft' : 'Review weekly plan'}
+      subtitle={`Week of ${formatCoachDate(weekStartDate)}`}
       leading={
-        <div className="space-y-3 mb-4">
+        <div className="mb-4">
           <Link href="/coach" className="text-sm text-muted underline">
-            ← Coach
+            ← Week
           </Link>
-          <div
-            className="rounded-tempo border border-border bg-canvas p-4 text-sm text-muted"
-            role="note"
-          >
-            Tempo AI Coach is not a doctor and does not provide medical advice. It offers training
-            suggestions only.
-            {isAdjustment
-              ? ' Elapsed days are locked historical; only remaining days are editable.'
-              : ''}
-          </div>
+          {isAdjustment && (
+            <p className="text-sm text-muted mt-2">
+              Elapsed days are locked; only remaining days are editable.
+            </p>
+          )}
         </div>
       }
     >
@@ -365,7 +341,7 @@ function ReviewPageInner() {
                 : 'Failed to load draft'}
             </p>
             <Link href="/coach/preflight" className="text-sm underline mt-2 inline-block">
-              Generate a plan
+              Send to coach
             </Link>
           </Card>
         )}
@@ -376,7 +352,7 @@ function ReviewPageInner() {
               <Card>
                 <h2 className="text-lg font-semibold text-ink mb-2">Safety flags</h2>
                 <p className="text-sm text-muted mb-4">
-                  Acknowledge each flag before applying. Flags that require a response need a short
+                  Acknowledge each flag before accepting. Flags that require a response need a short
                   note.
                 </p>
                 <ul className="space-y-4">
@@ -464,10 +440,12 @@ function ReviewPageInner() {
                     }`}
                   >
                     <div className="flex flex-wrap items-center gap-3">
-                      <p className="text-sm font-medium text-ink min-w-[7rem]">{day.date}</p>
+                      <p className="text-sm font-medium text-ink min-w-[7rem]">
+                        {formatCoachDate(day.date)}
+                      </p>
                       {locked && (
                         <span className="rounded-tempo border border-border px-2 py-0.5 text-xs text-muted">
-                          Locked · Adjustment
+                          Locked
                         </span>
                       )}
                       <select
@@ -484,7 +462,7 @@ function ReviewPageInner() {
                       >
                         {DAY_TYPES.map((t) => (
                           <option key={t} value={t}>
-                            {t}
+                            {dayTypeLabel(t)}
                           </option>
                         ))}
                       </select>
@@ -577,15 +555,17 @@ function ReviewPageInner() {
 
             {shouldShowMemoryCard(commit) && (
               <Card>
-                <h2 className="text-lg font-semibold text-ink mb-2">Memory</h2>
+                <h2 className="text-lg font-semibold text-ink mb-2">
+                  What your coach wants to remember
+                </h2>
                 <p className="text-sm text-muted mb-4">
-                  Rejected by default. Opt in only to lasting memory changes you want kept.
-                  Invalid proposals cannot be accepted.
+                  Off by default. Turn on Keep only for lasting notes you want your coach to keep.
+                  Invalid proposals cannot be kept.
                 </p>
 
                 {commit.layer1Patches.length > 0 && (
                   <section className="mb-5">
-                    <h3 className="text-sm font-semibold text-ink mb-2">Athlete state</h3>
+                    <h3 className="text-sm font-semibold text-ink mb-2">Your paces & zones</h3>
                     <ul className="space-y-3">
                       {commit.layer1Patches.map((patch, i) => {
                         const validityOk = patch.validity?.ok !== false;
@@ -614,10 +594,6 @@ function ReviewPageInner() {
                             {patch.rationale ? (
                               <span className="mt-0.5 block text-muted">{patch.rationale}</span>
                             ) : null}
-                            <details className="mt-1 text-xs text-muted">
-                              <summary className="cursor-pointer">Show path</summary>
-                              <code className="mt-1 block break-all">{patch.fieldPath}</code>
-                            </details>
                           </MemoryProposalRow>
                         );
                       })}
@@ -627,7 +603,7 @@ function ReviewPageInner() {
 
                 {commit.layer2EpisodeDrafts.length > 0 && (
                   <section className="mb-5">
-                    <h3 className="text-sm font-semibold text-ink mb-2">Episodes</h3>
+                    <h3 className="text-sm font-semibold text-ink mb-2">Notes about you</h3>
                     <ul className="space-y-3">
                       {commit.layer2EpisodeDrafts.map((draft, i) => {
                         const validityOk = draft.validity?.ok !== false;
@@ -652,7 +628,9 @@ function ReviewPageInner() {
                           >
                             <div className="flex flex-wrap items-center gap-2 mb-1">
                               <Chip>{categoryLabel(draft.category)}</Chip>
-                              <span className="text-xs text-muted">{draft.date}</span>
+                              <span className="text-xs text-muted">
+                                {draft.date ? formatCoachDate(draft.date) : ''}
+                              </span>
                             </div>
                             <span>{draft.summary}</span>
                           </MemoryProposalRow>
@@ -664,7 +642,7 @@ function ReviewPageInner() {
 
                 {commit.layer3RuleProposals.length > 0 && (
                   <section className="mb-5">
-                    <h3 className="text-sm font-semibold text-ink mb-2">Standing rules</h3>
+                    <h3 className="text-sm font-semibold text-ink mb-2">Ongoing preferences</h3>
                     <ul className="space-y-3">
                       {commit.layer3RuleProposals.map((proposal, i) => {
                         const validityOk = proposal.validity?.ok !== false;
@@ -705,7 +683,7 @@ function ReviewPageInner() {
                             {proposal.ruleText?.trim() ? (
                               <p className={showDiff ? 'mt-1' : undefined}>{proposal.ruleText}</p>
                             ) : op === 'retire' ? (
-                              <p className="text-muted italic">Retire this rule</p>
+                              <p className="text-muted italic">Remove this preference</p>
                             ) : null}
                             {(proposal.evidence?.length ?? 0) > 0 && (
                               <details className="mt-1 text-xs text-muted">
@@ -732,10 +710,8 @@ function ReviewPageInner() {
                     onChange={(e) => setArchiveNotesAsRecap(e.target.checked)}
                   />
                   <span>
-                    Archive this week&apos;s Coach&apos;s Notes to memory
-                    <span className="block text-xs text-muted">
-                      Creates a recap episode from coachesNotes (default off).
-                    </span>
+                    Keep this week&apos;s Coach&apos;s Notes as a recap
+                    <span className="block text-xs text-muted">Off by default.</span>
                   </span>
                 </label>
               </Card>
@@ -743,8 +719,8 @@ function ReviewPageInner() {
 
             {commit.clarifyingQuestion && (
               <Card>
-                <h2 className="text-lg font-semibold text-ink mb-2">Clarifying question</h2>
-                <p className="text-sm text-muted mb-1">Advisory only — does not block apply.</p>
+                <h2 className="text-lg font-semibold text-ink mb-2">Your coach asked</h2>
+                <p className="text-sm text-muted mb-1">Advisory only — does not block accept.</p>
                 <p className="text-sm text-ink">{commit.clarifyingQuestion}</p>
               </Card>
             )}
@@ -769,13 +745,11 @@ function ReviewPageInner() {
                 disabled={!safetyReady || saveMutation.isPending || applyMutation.isPending}
                 onClick={() => applyMutation.mutate()}
               >
-                {applyMutation.isPending ? 'Applying...' : 'Apply week'}
+                {applyMutation.isPending ? 'Accepting...' : 'Accept plan'}
               </Button>
-              <Link href="/coach">
-                <Button type="button" variant="secondary">
-                  Cancel
-                </Button>
-              </Link>
+              <Button href="/coach" variant="secondary">
+                Cancel
+              </Button>
             </div>
           </>
         )}
@@ -784,7 +758,7 @@ function ReviewPageInner() {
   );
 }
 
-function ReviewPageContent() {
+export default function CoachReviewPage() {
   return (
     <Suspense
       fallback={
@@ -797,13 +771,5 @@ function ReviewPageContent() {
     >
       <ReviewPageInner />
     </Suspense>
-  );
-}
-
-export default function CoachReviewPage() {
-  return (
-    <AuthGuard>
-      <ReviewPageContent />
-    </AuthGuard>
   );
 }

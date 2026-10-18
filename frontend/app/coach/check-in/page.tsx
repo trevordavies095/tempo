@@ -2,9 +2,8 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -13,8 +12,10 @@ import {
   putCoachCheckIn,
   type CoachCheckInRun,
 } from '@/lib/api';
-import { resolveDefaultCheckInReferenceDate } from '@/lib/coachWeek';
-import { useCoachFeature } from '@/hooks/useCoachFeature';
+import {
+  formatWeekRangeLabel,
+  resolveDefaultCheckInReferenceDate,
+} from '@/lib/coachWeek';
 import { useSettings } from '@/lib/settings';
 import { formatDistance, formatDuration } from '@/lib/format';
 
@@ -36,11 +37,9 @@ function shiftReferenceDate(isoDate: string, deltaDays: number): string {
 }
 
 function CheckInPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { unitPreference } = useSettings();
-  const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
   const initialRef =
     searchParams.get('referenceDate') || resolveDefaultCheckInReferenceDate(new Date());
@@ -55,7 +54,6 @@ function CheckInPageContent() {
   const checkInQuery = useQuery({
     queryKey: ['coach-check-in', referenceDate, timezoneOffsetMinutes],
     queryFn: () => getCoachCheckIn(timezoneOffsetMinutes, referenceDate),
-    enabled: showCoachNav,
   });
 
   const data = checkInQuery.data;
@@ -64,6 +62,8 @@ function CheckInPageContent() {
     if (!data) return;
     const key = `${data.weekStartDate}:${data.updatedAt ?? 'unsaved'}`;
     if (hydratedKey === key) return;
+    // Sync form fields from the loaded check-in document.
+    /* eslint-disable react-hooks/set-state-in-effect -- hydrate editable fields from query */
     setOverallFeel(data.overallFeel ?? '');
     setNiggles(data.niggles ?? '');
     setLifeConstraints(data.lifeConstraints ?? '');
@@ -73,9 +73,12 @@ function CheckInPageContent() {
     }
     setRunNotes(notes);
     setHydratedKey(key);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [data, hydratedKey]);
 
   useEffect(() => {
+    // Reset hydration when the week picker changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clear hydrate key on week change
     setHydratedKey(null);
   }, [referenceDate]);
 
@@ -107,30 +110,10 @@ function CheckInPageContent() {
     onError: (err: Error) => setError(err.message),
   });
 
-  useEffect(() => {
-    if (isFetched && !showCoachNav) {
-      router.replace('/dashboard');
-    }
-  }, [isFetched, showCoachNav, router]);
-
   const weekLabel = useMemo(() => {
     if (!data) return null;
-    return `${data.weekStartDate} → ${data.weekEndDate}`;
+    return formatWeekRangeLabel(data.weekStartDate, data.weekEndDate);
   }, [data]);
-
-  if (settingsLoading || !isFetched) {
-    return (
-      <PageShell density="control" title="Weekly check-in">
-        <Card>
-          <p className="text-sm text-muted">Loading...</p>
-        </Card>
-      </PageShell>
-    );
-  }
-
-  if (!showCoachNav) {
-    return null;
-  }
 
   return (
     <PageShell
@@ -140,7 +123,7 @@ function CheckInPageContent() {
       leading={
         <div className="mb-4">
           <Link href="/coach" className="text-sm text-muted hover:text-ink">
-            ← Coach
+            ← Week
           </Link>
         </div>
       }
@@ -294,11 +277,12 @@ function CheckInPageContent() {
               >
                 {saveMutation.isPending ? 'Saving...' : 'Save check-in'}
               </Button>
-              <Link href={`/coach/preflight?referenceDate=${encodeURIComponent(referenceDate)}`}>
-                <Button type="button" variant="secondary">
-                  Privacy pre-flight
-                </Button>
-              </Link>
+              <Button
+                href={`/coach/preflight?referenceDate=${encodeURIComponent(referenceDate)}`}
+                variant="secondary"
+              >
+                What your coach will see
+              </Button>
               {data?.saved && (
                 <p className="text-sm text-muted self-center">Saved for this week</p>
               )}
@@ -329,7 +313,7 @@ function RunRow({
         <div>
           <p className="text-sm font-medium text-ink">{title}</p>
           <p className="text-xs text-muted">
-            {started.toLocaleString(undefined, {
+            {started.toLocaleString('en-GB', {
               weekday: 'short',
               month: 'short',
               day: 'numeric',
@@ -373,10 +357,8 @@ function CheckInPageFallback() {
 
 export default function CoachCheckInPage() {
   return (
-    <AuthGuard>
-      <Suspense fallback={<CheckInPageFallback />}>
-        <CheckInPageContent />
-      </Suspense>
-    </AuthGuard>
+    <Suspense fallback={<CheckInPageFallback />}>
+      <CheckInPageContent />
+    </Suspense>
   );
 }

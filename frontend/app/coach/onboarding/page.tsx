@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -20,7 +19,7 @@ import {
   type CoachLayer1Paces,
   type CoachOnboardingStatus,
 } from '@/lib/api';
-import { useCoachFeature } from '@/hooks/useCoachFeature';
+import { formatCoachDate } from '@/lib/coachWeek';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings, type UnitPreference } from '@/lib/settings';
 import {
@@ -118,7 +117,6 @@ function CoachOnboardingContent() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { unitPreference } = useSettings();
-  const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
 
   const [step, setStep] = useState<Step>('disclaimer');
   const [isEditing, setIsEditing] = useState(false);
@@ -141,19 +139,19 @@ function CoachOnboardingContent() {
   const statusQuery = useQuery({
     queryKey: ['coach-onboarding'],
     queryFn: getCoachOnboarding,
-    enabled: showCoachNav,
+
   });
 
   const prefillQuery = useQuery({
     queryKey: ['coach-onboarding-prefill'],
     queryFn: getCoachOnboardingPrefill,
-    enabled: showCoachNav && !!user?.onboardingCompleted && step !== 'done',
+    enabled: !!user?.onboardingCompleted && step !== 'done',
   });
 
   const constraintsQuery = useQuery({
     queryKey: ['coach-constraints', 'active'],
     queryFn: () => listCoachConstraints('active'),
-    enabled: showCoachNav && (step === 'constraints' || isEditing),
+    enabled: step === 'constraints' || isEditing,
   });
 
   const saveConstraintMutation = useMutation({
@@ -214,12 +212,6 @@ function CoachOnboardingContent() {
     setConstraintDraft(emptyConstraintDraft());
     setStep('done');
   }
-
-  useEffect(() => {
-    if (isFetched && !showCoachNav) {
-      router.replace('/dashboard');
-    }
-  }, [isFetched, showCoachNav, router]);
 
   useEffect(() => {
     if (user && !user.onboardingCompleted) {
@@ -337,9 +329,9 @@ function CoachOnboardingContent() {
     }
   }
 
-  if (settingsLoading || !isFetched || statusQuery.isLoading) {
+  if (statusQuery.isLoading) {
     return (
-      <PageShell density="control" title="Coach onboarding">
+      <PageShell density="control" title="Profile & goal">
         <Card>
           <p className="text-sm text-muted">Loading...</p>
         </Card>
@@ -347,23 +339,18 @@ function CoachOnboardingContent() {
     );
   }
 
-  if (!showCoachNav) {
-    return null;
-  }
-
   const activeConstraints = constraintsQuery.data ?? [];
 
   return (
     <PageShell
       density="control"
-      title="Coach onboarding"
-      subtitle="Layer 1 + primary goal"
+      title="Profile & goal"
+      subtitle="Your paces & zones and primary goal"
       leading={
-        <div
-          className="rounded-tempo border border-border bg-canvas p-4 text-sm text-muted mb-4"
-          role="note"
-        >
-          {disclaimer}
+        <div className="mb-4">
+          <Link href="/coach" className="text-sm text-muted hover:text-ink">
+            ← Week
+          </Link>
         </div>
       }
     >
@@ -372,9 +359,7 @@ function CoachOnboardingContent() {
           <Card>
             <h2 className="text-lg font-semibold text-ink mb-2">Before you continue</h2>
             <p className="text-sm text-muted mb-4">
-              AI Coach suggests training plans only. It is not medical advice and is not a
-              substitute for a coach, doctor, or physical therapist. Stop and seek care for
-              pain, injury, or health concerns.
+              {disclaimer}
             </p>
             <Button type="button" onClick={() => setStep('goal')}>
               I understand — set my goal
@@ -481,7 +466,7 @@ function CoachOnboardingContent() {
                     setStep('constraints');
                   }}
                 >
-                  Non-negotiables
+                  Fixed dates & schedule
                 </Button>
               </div>
               {submitError && <p className="text-sm text-danger">{submitError}</p>}
@@ -494,7 +479,7 @@ function CoachOnboardingContent() {
             <Card>
               <div className="flex items-center justify-between gap-2 mb-2">
                 <h2 className="text-lg font-semibold text-ink">
-                  {editingConstraintId ? 'Edit non-negotiable' : 'Non-negotiables (optional)'}
+                  {editingConstraintId ? 'Edit fixed date' : 'Fixed dates & schedule (optional)'}
                 </h2>
                 {editingConstraintId && (
                   <Button
@@ -511,8 +496,7 @@ function CoachOnboardingContent() {
                 )}
               </div>
               <p className="text-sm text-muted mb-4">
-                Changes save immediately. You can also manage them later under Coach →
-                Non-negotiables.
+                Changes save immediately. You can also manage them later under Fixed dates & schedule.
               </p>
               <ConstraintFormFields value={constraintDraft} onChange={setConstraintDraft} />
               <div className="mt-3 flex flex-wrap gap-2">
@@ -525,14 +509,14 @@ function CoachOnboardingContent() {
                     ? 'Saving...'
                     : editingConstraintId
                       ? 'Save changes'
-                      : 'Add non-negotiable'}
+                      : 'Add fixed date'}
                 </Button>
               </div>
               {constraintError && <p className="text-sm text-danger mt-2">{constraintError}</p>}
             </Card>
 
             <Card>
-              <h2 className="text-lg font-semibold text-ink mb-4">Your constraints</h2>
+              <h2 className="text-lg font-semibold text-ink mb-4">Your fixed dates</h2>
               {constraintsQuery.isLoading ? (
                 <p className="text-sm text-muted">Loading...</p>
               ) : constraintsQuery.isError ? (
@@ -542,7 +526,7 @@ function CoachOnboardingContent() {
                     : 'Failed to load constraints'}
                 </p>
               ) : activeConstraints.length === 0 ? (
-                <p className="text-sm text-muted">No constraints yet.</p>
+                <p className="text-sm text-muted">No fixed dates yet.</p>
               ) : (
                 <ul className="space-y-3 mb-4">
                   {activeConstraints.map((c) => (
@@ -569,7 +553,7 @@ function CoachOnboardingContent() {
                           onClick={() => retireConstraintMutation.mutate(c.id)}
                           disabled={retireConstraintMutation.isPending}
                         >
-                          Retire
+                          Remove
                         </Button>
                       </div>
                     </li>
@@ -584,7 +568,7 @@ function CoachOnboardingContent() {
                   Skip
                 </Button>
                 <Button type="button" onClick={() => setStep('confirm')}>
-                  Continue to Layer 1
+                  Continue to your paces & zones
                 </Button>
               </div>
             </Card>
@@ -593,10 +577,10 @@ function CoachOnboardingContent() {
 
         {step === 'confirm' && (
           <Card>
-            <h2 className="text-lg font-semibold text-ink mb-2">Confirm Layer 1</h2>
+            <h2 className="text-lg font-semibold text-ink mb-2">Confirm your paces & zones</h2>
             <p className="text-sm text-muted mb-4">
               {isEditing
-                ? 'Values below are your saved Layer 1 — edit paces before saving. Existing weekly plans are not changed automatically.'
+                ? 'Values below are your saved paces & zones — edit paces before saving. Existing weekly plans are not changed automatically.'
                 : 'Prefills come from Tempo. Suggested paces average your Race workouts from the last ~4 months (normalized across distances) — edit them before saving. Nothing is trusted blindly.'}
             </p>
 
@@ -682,7 +666,7 @@ function CoachOnboardingContent() {
                       ? 'Saving...'
                       : isEditing
                         ? 'Save'
-                        : 'Complete coach onboarding'}
+                        : 'Start coaching'}
                   </Button>
                 </div>
                 {submitError && <p className="text-sm text-danger">{submitError}</p>}
@@ -693,11 +677,11 @@ function CoachOnboardingContent() {
 
         {step === 'done' && (
           <Card>
-            <h2 className="text-lg font-semibold text-ink mb-2">Coach onboarding complete</h2>
+            <h2 className="text-lg font-semibold text-ink mb-2">You&apos;re set up</h2>
             {statusQuery.data?.goal && (
               <p className="text-sm text-muted mb-4">
                 Goal: {statusQuery.data.goal.type} · {statusQuery.data.goal.distance}
-                {statusQuery.data.goal.raceDate ? ` · ${statusQuery.data.goal.raceDate}` : ''}
+                {statusQuery.data.goal.raceDate ? ` · ${formatCoachDate(statusQuery.data.goal.raceDate)}` : ''}
                 {statusQuery.data.goal.targetTimeS
                   ? ` · ${formatDuration(statusQuery.data.goal.targetTimeS)}`
                   : ''}
@@ -705,17 +689,15 @@ function CoachOnboardingContent() {
             )}
             {justSavedEdit && (
               <p className="text-sm text-muted mb-4">
-                Saved. Existing weekly plans are unchanged — regenerate if you want them to use
+                Saved. Existing weekly plans are unchanged — send to coach again if you want them to use
                 these inputs.
               </p>
             )}
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="secondary" onClick={startEditing}>
-                Edit onboarding
+                Edit profile & goal
               </Button>
-              <Link href="/coach">
-                <Button type="button">Back to Coach</Button>
-              </Link>
+              <Button href="/coach">Back to Week</Button>
             </div>
           </Card>
         )}
@@ -725,9 +707,5 @@ function CoachOnboardingContent() {
 }
 
 export default function CoachOnboardingPage() {
-  return (
-    <AuthGuard>
-      <CoachOnboardingContent />
-    </AuthGuard>
-  );
+  return <CoachOnboardingContent />;
 }

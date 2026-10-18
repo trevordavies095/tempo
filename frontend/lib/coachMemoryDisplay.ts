@@ -108,9 +108,34 @@ export function operationLabel(operation: string): string {
 
 export function categoryLabel(category: string): string {
   if (!category) {
-    return 'episode';
+    return 'Note';
   }
   return category.replaceAll('_', ' ');
+}
+
+const DAY_TYPE_LABELS: Record<string, string> = {
+  rest: 'Rest',
+  easy: 'Easy',
+  quality: 'Quality',
+  long: 'Long',
+  race: 'Race',
+  other: 'Other',
+};
+
+/** Athlete-facing day-type label (enum value stays in form values). */
+export function dayTypeLabel(dayType: string): string {
+  return DAY_TYPE_LABELS[dayType] ?? dayType.replaceAll('_', ' ');
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  athlete: 'from you',
+  coach: 'from your coach',
+  system: 'from Tempo',
+};
+
+/** Athlete-facing source tag for memory items. */
+export function memorySourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? source.replaceAll('_', ' ');
 }
 
 export function hasMemoryChannels(commit: CoachWeeklyCommit): boolean {
@@ -182,7 +207,7 @@ export function buildAppliedMemoryLines(
       const id = applyRecord.appliedEpisodeIds?.[pos];
       lines.push({
         key: `l2-id-${index}`,
-        text: id ? `Episode ${id}` : `Episode #${index + 1}`,
+        text: id ? `Note ${id}` : `Note #${index + 1}`,
       });
     });
 
@@ -221,8 +246,8 @@ export function buildAppliedMemoryLines(
       lines.push({
         key: 'recap',
         text: applyRecord.recapEpisodeId
-          ? `Recap episode ${applyRecord.recapEpisodeId}`
-          : "Archived Coach's Notes as a recap episode",
+          ? `Recap note ${applyRecord.recapEpisodeId}`
+          : "Kept Coach's Notes as a recap",
       });
     }
   }

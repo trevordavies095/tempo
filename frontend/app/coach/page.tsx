@@ -1,17 +1,13 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AuthGuard } from '@/components/AuthGuard';
+import { useQuery } from '@tanstack/react-query';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import {
-  dismissCoachMemoryUpgradeNotice,
-  dismissCoachSeedMemoryNudge,
   getCoachCheckIn,
   getCoachCommittedWeekOrNull,
   getCoachDraftWeekOrNull,
@@ -19,15 +15,16 @@ import {
   type CoachWeekDraft,
   type CoachWeeklyCommitDay,
 } from '@/lib/api';
-import { useCoachFeature } from '@/hooks/useCoachFeature';
 import { useSettings } from '@/lib/settings';
 import { formatCoachRunSummary } from '@/lib/coachDistance';
 import {
   applyRecordHasAcceptedMemory,
   buildAppliedMemoryLines,
+  dayTypeLabel,
 } from '@/lib/coachMemoryDisplay';
 import {
   addDaysIso,
+  formatCoachDate,
   formatWeekRangeLabel,
   planWeekStartFromCheckInMonday,
   resolveDefaultCheckInReferenceDate,
@@ -79,11 +76,13 @@ function DayCard({
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-sm font-medium text-ink">{day.date}</p>
-        <span className="text-xs uppercase tracking-wide text-muted">{day.dayType}</span>
+        <p className="text-sm font-medium text-ink">{formatCoachDate(day.date)}</p>
+        <span className="text-xs uppercase tracking-wide text-muted">
+          {dayTypeLabel(day.dayType)}
+        </span>
         {showAdjustmentBadge && (
           <span className="rounded-tempo border border-border px-2 py-0.5 text-xs text-muted">
-            Adjustment
+            Adjusted
           </span>
         )}
         {elapsed && (
@@ -186,11 +185,11 @@ function CommittedPlanSection({
         </div>
         {showAdjust && (
           <div className="mt-4">
-            <Link
+            <Button
               href={`/coach/adjust?weekStartDate=${encodeURIComponent(week.weekStartDate)}`}
             >
-              <Button type="button">Adjust remaining days</Button>
-            </Link>
+              Ask for changes
+            </Button>
           </div>
         )}
       </Card>
@@ -199,7 +198,7 @@ function CommittedPlanSection({
         <Card>
           <details>
             <summary className="cursor-pointer text-lg font-semibold text-ink">
-              Applied to memory
+              What your coach kept
             </summary>
             <ul className="mt-3 space-y-2 text-sm text-ink">
               {appliedMemoryLines.map((line) => (
@@ -232,10 +231,7 @@ function memoryLinesForWeek(
   return buildAppliedMemoryLines(week.commit, week.applyRecord, unitPreference, legacy);
 }
 
-function CoachPageContent() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
+export default function CoachPage() {
   const { unitPreference } = useSettings();
 
   const weekStartDate = useMemo(() => localMondayIso(), []);
@@ -246,23 +242,11 @@ function CoachPageContent() {
   const homeQuery = useQuery({
     queryKey: ['coach-home'],
     queryFn: getCoachHome,
-    enabled: showCoachNav,
-  });
-
-  const dismissUpgradeNotice = useMutation({
-    mutationFn: dismissCoachMemoryUpgradeNotice,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['coach-home'] }),
-  });
-
-  const dismissSeedNudge = useMutation({
-    mutationFn: dismissCoachSeedMemoryNudge,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['coach-home'] }),
   });
 
   const ritualCheckInQuery = useQuery({
     queryKey: ['coach-check-in', ritualRef, timezoneOffsetMinutes],
     queryFn: () => getCoachCheckIn(timezoneOffsetMinutes, ritualRef),
-    enabled: showCoachNav,
   });
 
   const planWeekStart = ritualCheckInQuery.data?.weekStartDate
@@ -272,40 +256,30 @@ function CoachPageContent() {
   const ritualDraftQuery = useQuery({
     queryKey: ['coach-draft-week', planWeekStart],
     queryFn: () => getCoachDraftWeekOrNull(planWeekStart!),
-    enabled: showCoachNav && Boolean(planWeekStart),
+    enabled: Boolean(planWeekStart),
   });
 
   const ritualCommittedQuery = useQuery({
     queryKey: ['coach-committed-week', planWeekStart],
     queryFn: () => getCoachCommittedWeekOrNull(planWeekStart!),
-    enabled: showCoachNav && Boolean(planWeekStart),
+    enabled: Boolean(planWeekStart),
   });
 
-  // Calendar "this week" (today's Monday) — follow the live plan.
   const draftQuery = useQuery({
     queryKey: ['coach-draft-week', weekStartDate],
     queryFn: () => getCoachDraftWeekOrNull(weekStartDate),
-    enabled: showCoachNav,
   });
 
   const committedQuery = useQuery({
     queryKey: ['coach-committed-week', weekStartDate],
     queryFn: () => getCoachCommittedWeekOrNull(weekStartDate),
-    enabled: showCoachNav,
   });
-
-  useEffect(() => {
-    if (isFetched && !showCoachNav) {
-      router.replace('/dashboard');
-    }
-  }, [isFetched, showCoachNav, router]);
 
   const committed = committedQuery.data;
   const ritualDraft = ritualDraftQuery.data;
   const ritualCommitted = ritualCommittedQuery.data;
   const ritualCheckIn = ritualCheckInQuery.data;
 
-  // Must stay above the early returns below (rules-of-hooks).
   const calendarMemoryLines = useMemo(
     () => memoryLinesForWeek(committed, unitPreference),
     [committed, unitPreference]
@@ -314,24 +288,6 @@ function CoachPageContent() {
     () => memoryLinesForWeek(ritualCommitted, unitPreference),
     [ritualCommitted, unitPreference]
   );
-
-  if (settingsLoading || !isFetched) {
-    return (
-      <PageShell density="control" title="AI Coach">
-        <Card>
-          <p className="text-sm text-muted">Loading...</p>
-        </Card>
-      </PageShell>
-    );
-  }
-
-  if (!showCoachNav) {
-    return null;
-  }
-
-  const disclaimer =
-    homeQuery.data?.disclaimer ??
-    'Tempo AI Coach is not a doctor and does not provide medical advice. It offers training suggestions only.';
 
   const onboardingDone = homeQuery.data?.onboardingCompleted === true;
   const goal = homeQuery.data?.goal;
@@ -346,12 +302,10 @@ function CoachPageContent() {
   const planRangeLabel =
     planWeekStart && planEndIso ? formatWeekRangeLabel(planWeekStart, planEndIso) : null;
 
-  // Ritual plan week may be next Mon–Sun while "this week" is still the check-in week.
   const planIsFutureWeek = Boolean(planWeekStart && planWeekStart !== weekStartDate);
   const upcomingCommitted =
     planIsFutureWeek && ritualCommitted?.commit ? ritualCommitted : null;
   const calendarCommitted = committed?.commit ? committed : null;
-  // Same Mon–Sun as the ritual plan: show once as "This week".
   const thisWeekCommitted =
     !planIsFutureWeek && ritualCommitted?.commit
       ? ritualCommitted
@@ -365,64 +319,8 @@ function CoachPageContent() {
       density="control"
       title={homeQuery.data?.title ?? 'AI Coach'}
       subtitle="Weekly coaching loop"
-      leading={
-        <div
-          className="rounded-tempo border border-border bg-canvas p-4 text-sm text-muted mb-4"
-          role="note"
-        >
-          {disclaimer}
-        </div>
-      }
     >
       <div className="w-full space-y-8">
-        {homeQuery.data?.pendingMemoryUpgradeNotice && (
-          <Card>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-ink">Regenerate your weekly draft</h2>
-                <p className="text-sm text-muted mt-1">
-                  Coach memory upgraded to typed Layer 1/2/3 channels. Any open draft was discarded —
-                  generate a new weekly plan when you are ready.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={dismissUpgradeNotice.isPending}
-                onClick={() => dismissUpgradeNotice.mutate()}
-              >
-                Dismiss
-              </Button>
-            </div>
-          </Card>
-        )}
-
-        {homeQuery.data?.showSeedMemoryNudge && (
-          <Card>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-ink">Seed your coach&apos;s memory</h2>
-                <p className="text-sm text-muted mt-1">
-                  Add a past injury, race result, or standing rule you already know about yourself
-                  before the first weekly plan.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Link href="/coach/memory">
-                  <Button type="button">Open Memory</Button>
-                </Link>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={dismissSeedNudge.isPending}
-                  onClick={() => dismissSeedNudge.mutate()}
-                >
-                  Dismiss
-                </Button>
-              </div>
-            </div>
-          </Card>
-        )}
         <Card>
           {homeQuery.isLoading ? (
             <p className="text-sm text-muted">Loading...</p>
@@ -438,51 +336,41 @@ function CoachPageContent() {
                 <h2 className="text-lg font-semibold text-ink">Primary goal</h2>
                 <p className="text-sm text-muted mt-1">
                   {goal.type === 'race' ? 'Race' : 'PR'} · {goal.distance}
-                  {goal.raceDate ? ` · ${goal.raceDate}` : ''}
+                  {goal.raceDate ? ` · ${formatCoachDate(goal.raceDate)}` : ''}
                   {goal.targetTimeS ? ` · ${formatDuration(goal.targetTimeS)}` : ''}
                 </p>
                 {goal.notes && <p className="text-sm text-muted mt-2">{goal.notes}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
                 {draft && (
-                  <Link
+                  <Button
                     href={`/coach/review?weekStartDate=${encodeURIComponent(draft.weekStartDate)}`}
+                    variant="secondary"
                   >
-                    <Button type="button" variant="secondary">
-                      {draft.isAdjustment ? 'Review adjust draft' : 'Review this week draft'}
-                    </Button>
-                  </Link>
+                    {draft.isAdjustment ? 'Review change draft' : 'Review this week draft'}
+                  </Button>
                 )}
                 {committed && !draft && (
-                  <Link
+                  <Button
                     href={`/coach/adjust?weekStartDate=${encodeURIComponent(committed.weekStartDate)}`}
+                    variant="secondary"
                   >
-                    <Button type="button" variant="secondary">
-                      Adjust this week
-                    </Button>
-                  </Link>
+                    Ask for changes
+                  </Button>
                 )}
-                <Link href="/coach/constraints">
-                  <Button type="button" variant="secondary">
-                    Non-negotiables
-                  </Button>
-                </Link>
-                <Link href="/coach/memory">
-                  <Button type="button" variant="secondary">
-                    Memory
-                  </Button>
-                </Link>
-                <Link href="/coach/onboarding">
-                  <Button type="button" variant="secondary">
-                    Review onboarding
-                  </Button>
-                </Link>
+                <Button href="/coach/constraints" variant="secondary">
+                  Fixed dates & schedule
+                </Button>
+                <Button href="/coach/memory" variant="secondary">
+                  What your coach knows about you
+                </Button>
+                <Button href="/coach/onboarding" variant="secondary">
+                  Profile & goal
+                </Button>
                 {needsProvider && (
-                  <Link href="/settings">
-                    <Button type="button" variant="secondary">
-                      Connect Anthropic key
-                    </Button>
-                  </Link>
+                  <Button href="/settings" variant="secondary">
+                    Connect Anthropic key
+                  </Button>
                 )}
               </div>
             </div>
@@ -491,31 +379,23 @@ function CoachPageContent() {
               title="Finish coach setup"
               description={
                 needsProvider
-                  ? 'Connect your Anthropic API key, then complete coach onboarding so Layer 1 and your primary goal are ready for the weekly loop.'
-                  : 'Complete coach onboarding to save your primary goal and Layer 1 (HR zones, paces, shoes).'
+                  ? 'Connect your Anthropic API key, then complete coach setup so your paces & zones and primary goal are ready for the weekly loop.'
+                  : 'Complete coach setup to save your primary goal and your paces & zones (HR zones, paces, shoes).'
               }
               action={
                 <div className="flex flex-wrap gap-2">
                   {needsProvider && (
-                    <Link href="/settings">
-                      <Button type="button" variant="secondary">
-                        Coach settings
-                      </Button>
-                    </Link>
+                    <Button href="/settings" variant="secondary">
+                      Coach settings
+                    </Button>
                   )}
-                  <Link href="/coach/onboarding">
-                    <Button type="button">Start coach onboarding</Button>
-                  </Link>
-                  <Link href="/coach/constraints">
-                    <Button type="button" variant="secondary">
-                      Non-negotiables
-                    </Button>
-                  </Link>
-                  <Link href="/coach/memory">
-                    <Button type="button" variant="secondary">
-                      Memory
-                    </Button>
-                  </Link>
+                  <Button href="/coach/onboarding">Start coaching</Button>
+                  <Button href="/coach/constraints" variant="secondary">
+                    Fixed dates & schedule
+                  </Button>
+                  <Button href="/coach/memory" variant="secondary">
+                    What your coach knows about you
+                  </Button>
                 </div>
               }
             />
@@ -526,7 +406,7 @@ function CoachPageContent() {
           <Card>
             <h2 className="text-lg font-semibold text-ink mb-1">Weekly ritual</h2>
             <p className="text-sm text-muted mb-4">
-              Check in on last week, then generate next week&apos;s plan.
+              Check in on last week, then send next week&apos;s plan to your coach.
             </p>
             {ritualCheckInQuery.isLoading || (ritualCheckIn?.saved && !planWeekStart) ? (
               <p className="text-sm text-muted">Loading ritual…</p>
@@ -538,11 +418,9 @@ function CoachPageContent() {
               </p>
             ) : !ritualCheckIn?.saved ? (
               <div className="space-y-3">
-                <Link href="/coach/check-in">
-                  <Button type="button">
-                    Check in on {checkInRangeLabel ?? 'this week'}
-                  </Button>
-                </Link>
+                <Button href="/coach/check-in">
+                  Check in on {checkInRangeLabel ?? 'this week'}
+                </Button>
                 <p className="text-sm text-muted">
                   <Link href="/coach/check-in" className="underline hover:text-ink">
                     Different week…
@@ -552,15 +430,13 @@ function CoachPageContent() {
             ) : ritualDraft ? (
               <div className="space-y-3">
                 <p className="text-sm text-muted">
-                  Draft ready for {planRangeLabel ?? ritualDraft.weekStartDate}.
+                  Draft ready for {planRangeLabel ?? formatCoachDate(ritualDraft.weekStartDate)}.
                 </p>
-                <Link
+                <Button
                   href={`/coach/review?weekStartDate=${encodeURIComponent(ritualDraft.weekStartDate)}`}
                 >
-                  <Button type="button">
-                    {ritualDraft.isAdjustment ? 'Review adjust draft' : 'Review draft'}
-                  </Button>
-                </Link>
+                  {ritualDraft.isAdjustment ? 'Review change draft' : 'Review draft'}
+                </Button>
               </div>
             ) : ritualCommitted ? (
               <div className="space-y-3">
@@ -569,27 +445,22 @@ function CoachPageContent() {
                   {planRangeLabel ? ` (${planRangeLabel})` : ''}.
                 </p>
                 <div className="flex flex-wrap gap-3">
-                  <a href="#coach-next-week">
-                    <Button type="button">View plan</Button>
-                  </a>
-                  <Link
+                  <Button href="/coach#coach-next-week">View plan</Button>
+                  <Button
                     href={`/coach/adjust?weekStartDate=${encodeURIComponent(ritualCommitted.weekStartDate)}`}
+                    variant="secondary"
                   >
-                    <Button type="button" variant="secondary">
-                      Adjust
-                    </Button>
-                  </Link>
+                    Ask for changes
+                  </Button>
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
-                <Link
+                <Button
                   href={`/coach/preflight?referenceDate=${encodeURIComponent(ritualRef)}`}
                 >
-                  <Button type="button">
-                    Generate {planRangeLabel ?? 'next week'}
-                  </Button>
-                </Link>
+                  Send to coach · {planRangeLabel ?? 'next week'}
+                </Button>
                 <p className="text-sm text-muted">
                   Check-in saved for {checkInRangeLabel}. Plan week is derived automatically.
                 </p>
@@ -597,7 +468,7 @@ function CoachPageContent() {
             )}
             <p className="text-sm text-muted mt-4">
               <Link href="/coach/preflight?advanced=1" className="underline hover:text-ink">
-                Generate for another week…
+                Send for another week…
               </Link>
             </p>
           </Card>
@@ -640,13 +511,5 @@ function CoachPageContent() {
         )}
       </div>
     </PageShell>
-  );
-}
-
-export default function CoachPage() {
-  return (
-    <AuthGuard>
-      <CoachPageContent />
-    </AuthGuard>
   );
 }

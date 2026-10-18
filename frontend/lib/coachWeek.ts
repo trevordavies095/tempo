@@ -42,12 +42,45 @@ export function planWeekStartFromCheckInMonday(checkInMonday: string): string {
 export function formatWeekRangeLabel(startIso: string, endIso: string): string {
   const start = parseLocalIso(startIso);
   const end = parseLocalIso(endIso);
-  const startLabel = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  const endLabel = end.toLocaleDateString(undefined, {
+  const startLabel = start.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  const endLabel = end.toLocaleDateString('en-GB', {
     month: start.getMonth() === end.getMonth() ? undefined : 'short',
     day: 'numeric',
   });
   return `${startLabel}–${endLabel}`;
+}
+
+/** Athlete-facing day label, e.g. "Mon 19 Oct". */
+export function formatCoachDate(iso: string): string {
+  const date = parseLocalIso(iso);
+  return date.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+/** Map coach job error codes to plain sentences for the UI. */
+export function formatCoachJobError(
+  errorCode: string | null | undefined,
+  errorMessage: string | null | undefined
+): string {
+  const message = errorMessage?.trim();
+  if (message) {
+    return message;
+  }
+  switch (errorCode) {
+    case 'provider_error':
+      return 'The coach could not reach Anthropic. Check your API key and try again.';
+    case 'redaction_failed':
+      return 'The privacy packet could not be built. Nothing was sent.';
+    case 'validation_failed':
+      return 'The draft failed validation. Try again or ask for changes.';
+    case 'cancelled':
+      return 'This job was cancelled.';
+    default:
+      return errorCode ? 'Something went wrong. Try again.' : 'Something went wrong. Try again.';
+  }
 }
 
 function parseLocalIso(iso: string): Date {
