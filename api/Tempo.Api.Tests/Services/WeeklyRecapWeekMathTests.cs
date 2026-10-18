@@ -46,4 +46,35 @@ public class WeeklyRecapWeekMathTests
         ctx.CurrentRange.EndUtc.Should().Be(utcNow);
         ctx.CurrentRange.EndUtc.Should().BeBefore(full.FullWeekRange.EndUtc);
     }
+
+    [Theory]
+    [InlineData(2026, 8, 1, 2026, 7, 27)] // Sat → current Mon–Sun
+    [InlineData(2026, 8, 2, 2026, 7, 27)] // Sun → current Mon–Sun
+    [InlineData(2026, 8, 3, 2026, 7, 27)] // Mon → last completed Mon–Sun
+    [InlineData(2026, 8, 5, 2026, 8, 3)]  // Wed → current Mon–Sun
+    public void ResolveDefaultCheckInWeek_MatchesTempoCliWeekdayRules(
+        int year,
+        int month,
+        int day,
+        int expectedYear,
+        int expectedMonth,
+        int expectedDay)
+    {
+        var utcNow = new DateTime(year, month, day, 15, 0, 0, DateTimeKind.Utc);
+        var week = WeeklyRecapWeekMath.ResolveDefaultCheckInWeek(utcNow, timezoneOffsetMinutes: 0);
+
+        week.WeekStartLocal.Date.Should().Be(new DateTime(expectedYear, expectedMonth, expectedDay));
+        week.WeekStartLocal.DayOfWeek.Should().Be(DayOfWeek.Monday);
+    }
+
+    [Fact]
+    public void ResolveMondaySundayWeek_NullReferenceOnMonday_StillCurrentWeek()
+    {
+        // Regression: weekly-recap null semantics stay "week containing today" even on Monday.
+        var utcNow = new DateTime(2026, 8, 3, 15, 0, 0, DateTimeKind.Utc); // Monday
+        var week = WeeklyRecapWeekMath.ResolveMondaySundayWeek(utcNow, timezoneOffsetMinutes: 0, referenceLocalDate: null);
+
+        week.WeekStartLocal.Date.Should().Be(new DateTime(2026, 8, 3));
+        week.WeekEndLocal.Date.Should().Be(new DateTime(2026, 8, 9));
+    }
 }

@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
@@ -13,6 +13,7 @@ import {
   putCoachCheckIn,
   type CoachCheckInRun,
 } from '@/lib/api';
+import { resolveDefaultCheckInReferenceDate } from '@/lib/coachWeek';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 import { useSettings } from '@/lib/settings';
 import { formatDistance, formatDuration } from '@/lib/format';
@@ -36,11 +37,14 @@ function shiftReferenceDate(isoDate: string, deltaDays: number): string {
 
 function CheckInPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { unitPreference } = useSettings();
   const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
-  const [referenceDate, setReferenceDate] = useState(() => localDateInputValue(new Date()));
+  const initialRef =
+    searchParams.get('referenceDate') || resolveDefaultCheckInReferenceDate(new Date());
+  const [referenceDate, setReferenceDate] = useState(initialRef);
   const [overallFeel, setOverallFeel] = useState('');
   const [niggles, setNiggles] = useState('');
   const [lifeConstraints, setLifeConstraints] = useState('');
@@ -355,10 +359,20 @@ function RunRow({
   );
 }
 
+function CheckInPageFallback() {
+  return (
+    <PageShell density="compact">
+      <p className="text-sm text-muted">Loading check-in…</p>
+    </PageShell>
+  );
+}
+
 export default function CoachCheckInPage() {
   return (
     <AuthGuard>
-      <CheckInPageContent />
+      <Suspense fallback={<CheckInPageFallback />}>
+        <CheckInPageContent />
+      </Suspense>
     </AuthGuard>
   );
 }

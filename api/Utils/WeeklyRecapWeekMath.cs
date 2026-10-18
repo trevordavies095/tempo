@@ -50,6 +50,23 @@ public static class WeeklyRecapWeekMath
     }
 
     /// <summary>
+    /// Default Coach check-in week when no reference date is supplied (tempo-cli port):
+    /// Sat–Sun and Tue–Fri → current Mon–Sun; Monday → last completed Mon–Sun.
+    /// Uses <paramref name="timezoneOffsetMinutes"/> only (no IANA).
+    /// </summary>
+    public static MondaySundayWeek ResolveDefaultCheckInWeek(
+        DateTime utcNow,
+        int? timezoneOffsetMinutes)
+    {
+        var localToday = ResolveLocalAnchorDate(utcNow, timezoneOffsetMinutes, referenceLocalDate: null);
+        // Monday → anchor on Sunday of the week just finished (last completed Mon–Sun).
+        var anchor = localToday.DayOfWeek == DayOfWeek.Monday
+            ? localToday.AddDays(-1)
+            : localToday;
+        return ResolveMondaySundayWeek(utcNow, timezoneOffsetMinutes, anchor);
+    }
+
+    /// <summary>
     /// Builds Monday–Sunday week boundaries and UTC query ranges for weekly-recap.
     /// Current range is week-to-date capped at UTC now.
     /// </summary>

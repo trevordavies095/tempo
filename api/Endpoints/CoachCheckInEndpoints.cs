@@ -24,7 +24,8 @@ public static class CoachCheckInEndpoints
             .Produces(404)
             .WithSummary("Get weekly Coach check-in with Tempo autofill")
             .WithDescription(
-                "Returns the Mon–Sun check-in for timezoneOffsetMinutes + referenceDate (yyyy-MM-dd). " +
+                "Returns the Mon–Sun check-in for timezoneOffsetMinutes + optional referenceDate (yyyy-MM-dd). " +
+                "When referenceDate is omitted: Sat–Sun and Tue–Fri default to the current Mon–Sun; Monday defaults to the last completed Mon–Sun. " +
                 "Runs autofill from Tempo workouts in the full week window; saved note overlays apply without writing Workout.Notes. " +
                 "adherenceHints compare the committed coach plan (when present) to logged Tempo runs. " +
                 "404 when Coach is unavailable or the athlete has not opted in.");
@@ -300,10 +301,14 @@ public static class CoachCheckInEndpoints
             referenceLocalDate = parsed.Date;
         }
 
-        week = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
-            DateTime.UtcNow,
-            timezoneOffsetMinutes,
-            referenceLocalDate);
+        week = referenceLocalDate.HasValue
+            ? WeeklyRecapWeekMath.ResolveMondaySundayWeek(
+                DateTime.UtcNow,
+                timezoneOffsetMinutes,
+                referenceLocalDate)
+            : WeeklyRecapWeekMath.ResolveDefaultCheckInWeek(
+                DateTime.UtcNow,
+                timezoneOffsetMinutes);
         return true;
     }
 
