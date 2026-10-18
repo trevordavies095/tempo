@@ -59,6 +59,19 @@ public static class CoachGenerateEndpoints
             .WithDescription(
                 "Removes the draft CoachWeek for weekStartDate. Cancels a Started adjustment tied to that week. " +
                 "404 when no draft exists.");
+
+        group.MapPost("/weeks/draft/ask-for-changes", PostAskForChangesDraft)
+            .WithName("PostCoachDraftAskForChanges")
+            .Accepts<PostCoachDraftAskForChangesRequest>("application/json")
+            .Produces<CoachJobDocument>(202)
+            .Produces(400)
+            .Produces(404)
+            .Produces(409)
+            .WithSummary("Ask for changes on a draft week")
+            .WithDescription(
+                "Re-assembles the privacy packet with athleteFeedback (note + previous draft summary), " +
+                "records consent, and enqueues a generate job that replaces the draft. " +
+                "409 when a job is active or the week is committed; 404 when no draft exists.");
     }
 
     private static async Task<IResult> PostGenerate(
@@ -184,6 +197,83 @@ public static class CoachGenerateEndpoints
         return Results.NoContent();
     }
 
+    private static async Task<IResult> PostAskForChangesDraft(
+        [FromBody] PostCoachDraftAskForChangesRequest? request,
+        TempoDbContext db,
+        CoachConfig coachConfig,
+        CoachPrivacyPreflightService preflightService,
+        CoachJobService jobService)
+    {
+        if (!await IsCoachAvailableAsync(db, coachConfig))
+        {
+            return Results.NotFound();
+        }
+
+        if (request == null)
+        {
+            return Results.BadRequest(new { error = "Request body is required" });
+        }
+
+        if (!DateOnly.TryParse(
+                request.WeekStartDate,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var planMonday))
+        {
+            return Results.BadRequest(new { error = "weekStartDate must be yyyy-MM-dd" });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Note))
+        {
+            return Results.BadRequest(new { error = "note is required" });
+        }
+
+        var committed = await db.CoachWeeks.AsNoTracking()
+            .AnyAsync(w => w.WeekStartDate == planMonday && w.Status == CoachWeekStatuses.Committed);
+        if (committed)
+        {
+            return Results.Conflict(new
+            {
+                error =
+                    $"Plan week {planMonday:yyyy-MM-dd} is already committed. Use Ask for changes on the committed plan."
+            });
+        }
+
+        var draft = await db.CoachWeeks.AsNoTracking()
+            .FirstOrDefaultAsync(w => w.WeekStartDate == planMonday && w.Status == CoachWeekStatuses.Draft);
+        if (draft == null)
+        {
+            return Results.NotFound(new { error = "No draft week found for weekStartDate" });
+        }
+
+        // Capture previous draft before StartGenerateAsync deletes it.
+        var previousCommitJson = draft.CommitJson;
+        var offset = request.TimezoneOffsetMinutes ?? 0;
+
+        var (preflight, assembleError, assembleStatus) = await preflightService.AssembleDraftAskForChangesAsync(
+            planMonday,
+            request.Note,
+            previousCommitJson,
+            offset);
+        if (preflight == null)
+        {
+            return assembleStatus switch
+            {
+                400 => Results.BadRequest(new { error = assembleError }),
+                _ => Results.BadRequest(new { error = assembleError ?? "Failed to assemble privacy packet" })
+            };
+        }
+
+        var (job, jobError, jobStatus) = await jobService.StartGenerateAsync(preflight.Id);
+        return jobStatus switch
+        {
+            202 when job != null => Results.Json(ToJobDocument(job), statusCode: 202),
+            404 => Results.NotFound(new { error = jobError }),
+            409 => Results.Conflict(new { error = jobError }),
+            _ => Results.BadRequest(new { error = jobError })
+        };
+    }
+
     private static CoachJobDocument ToJobDocument(CoachJob job) =>
         new(
             Id: job.Id,
@@ -215,6 +305,11 @@ public static class CoachGenerateEndpoints
 }
 
 public sealed record PostCoachGenerateRequest(Guid? PreflightId);
+
+public sealed record PostCoachDraftAskForChangesRequest(
+    string? WeekStartDate,
+    string? Note,
+    int? TimezoneOffsetMinutes = null);
 
 public sealed record CoachJobDocument(
     Guid Id,

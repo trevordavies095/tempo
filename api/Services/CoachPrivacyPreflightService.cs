@@ -58,6 +58,7 @@ public sealed class CoachPrivacyPreflightService
             timezoneOffsetMinutes,
             referenceLocal: DateOnly.FromDateTime(checkInWeek.ReferenceLocalDate),
             recordConsent,
+            athleteFeedback: null,
             cancellationToken);
     }
 
@@ -67,9 +68,14 @@ public sealed class CoachPrivacyPreflightService
         int timezoneOffsetMinutes,
         DateOnly referenceLocal,
         bool recordConsent,
+        CoachPacketAthleteFeedback? athleteFeedback = null,
         CancellationToken cancellationToken = default)
     {
         var packet = await _assembler.AssembleAsync(checkInWeek, planWeek, timezoneOffsetMinutes, cancellationToken);
+        if (athleteFeedback != null)
+        {
+            packet = packet with { AthleteFeedback = athleteFeedback };
+        }
 
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         var redactContext = new CoachRedactionContext(Username: user?.Username);
@@ -112,6 +118,92 @@ public sealed class CoachPrivacyPreflightService
 
         await _db.SaveChangesAsync(cancellationToken);
         return (row, null, 200);
+    }
+
+    /// <summary>
+    /// Draft Ask-for-changes: re-assemble plan week with athleteFeedback, consent, ready for enqueue.
+    /// </summary>
+    public async Task<(CoachPrivacyPreflight? Preflight, string? Error, int StatusCode)> AssembleDraftAskForChangesAsync(
+        DateOnly planMonday,
+        string note,
+        string previousDraftCommitJson,
+        int timezoneOffsetMinutes,
+        CancellationToken cancellationToken = default)
+    {
+        var planWeek = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
+            utcNow: DateTime.SpecifyKind(planMonday.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc),
+            timezoneOffsetMinutes,
+            referenceLocalDate: planMonday.ToDateTime(TimeOnly.MinValue));
+        var checkInWeek = WeeklyRecapWeekMath.ResolveCheckInWeekFromPlan(planWeek, timezoneOffsetMinutes);
+        var checkInMonday = DateOnly.FromDateTime(checkInWeek.WeekStartLocal);
+
+        var hasCheckIn = await _db.CoachCheckIns.AsNoTracking()
+            .AnyAsync(c => c.WeekStartDate == checkInMonday, cancellationToken);
+        if (!hasCheckIn)
+        {
+            return (
+                null,
+                $"Save a Coach check-in for {checkInMonday:yyyy-MM-dd} before generating the plan for {planMonday:yyyy-MM-dd}.",
+                400);
+        }
+
+        if (!TryBuildAthleteFeedback(note, previousDraftCommitJson, out var feedback, out var feedbackError))
+        {
+            return (null, feedbackError, 400);
+        }
+
+        return await AssembleAndPersistAsync(
+            checkInWeek,
+            planWeek,
+            timezoneOffsetMinutes,
+            referenceLocal: DateOnly.FromDateTime(checkInWeek.ReferenceLocalDate),
+            recordConsent: true,
+            athleteFeedback: feedback,
+            cancellationToken);
+    }
+
+    public static bool TryBuildAthleteFeedback(
+        string note,
+        string commitJson,
+        out CoachPacketAthleteFeedback? feedback,
+        out string? error)
+    {
+        feedback = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(note))
+        {
+            error = "note is required";
+            return false;
+        }
+
+        CoachWeeklyCommit? commit;
+        try
+        {
+            commit = JsonSerializer.Deserialize<CoachWeeklyCommit>(commitJson, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            error = "Draft commit could not be parsed";
+            return false;
+        }
+
+        if (commit == null)
+        {
+            error = "Draft commit is empty";
+            return false;
+        }
+
+        var days = commit.Days.Select(d => new CoachPacketPreviousDraftDay(
+            Date: d.Date,
+            DayType: d.DayType,
+            DistanceM: d.Run?.DistanceM,
+            Structure: d.Run?.Structure)).ToList();
+
+        feedback = new CoachPacketAthleteFeedback(
+            Note: note.Trim(),
+            PreviousDraft: new CoachPacketPreviousDraft(days, commit.CoachesNotes ?? string.Empty));
+        return true;
     }
 
     private static string Sha256Hex(string value)

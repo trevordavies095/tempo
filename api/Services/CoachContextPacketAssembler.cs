@@ -222,7 +222,8 @@ public class CoachContextPacketAssembler
             Layer3: layer3,
             CheckIn: checkIn,
             RecentTraining: recentTraining,
-            Adjustment: adjustment);
+            Adjustment: adjustment,
+            AthleteFeedback: null);
     }
 
     private async Task<CoachPacketRecentTraining> BuildRecentTrainingAsync(
@@ -473,7 +474,23 @@ public sealed record CoachContextPacket(
     CoachPacketLayer3 Layer3,
     CoachPacketCheckIn CheckIn,
     CoachPacketRecentTraining RecentTraining,
-    CoachPacketAdjustment? Adjustment = null);
+    CoachPacketAdjustment? Adjustment = null,
+    CoachPacketAthleteFeedback? AthleteFeedback = null);
+
+/// <summary>Athlete-requested changes to a previous draft (Ask for changes on draft).</summary>
+public sealed record CoachPacketAthleteFeedback(
+    string Note,
+    CoachPacketPreviousDraft PreviousDraft);
+
+public sealed record CoachPacketPreviousDraft(
+    IReadOnlyList<CoachPacketPreviousDraftDay> Days,
+    string CoachesNotes);
+
+public sealed record CoachPacketPreviousDraftDay(
+    string Date,
+    string DayType,
+    double? DistanceM,
+    string? Structure);
 
 /// <summary>W−N…check-in week training diet (oldest → newest).</summary>
 public sealed record CoachPacketRecentTraining(

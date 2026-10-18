@@ -192,6 +192,7 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
         - days[] must be exactly the seven dates of the upcoming plan week N+1 (meta.planWeekStartDate through planWeekEndDate).
         - Do not invent workouts missing from checkIn or recentTraining.
         - Mid-week Adjust (packet.adjustment present) still replans only remainingDates within the plan week; it does not require a new check-in.
+        - When packet.athleteFeedback is present: the athlete asked for changes to the previous draft. Honour note unless it violates safety or fixed dates. Use previousDraft (day summary + coachesNotes) as the base; still emit a full valid 7-day commit for the plan week.
 
         Rules:
         - Honor unit preference from the packet when describing paces in notes.

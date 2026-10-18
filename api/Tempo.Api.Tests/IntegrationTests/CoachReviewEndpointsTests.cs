@@ -555,6 +555,47 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     }
 
     [Fact]
+    public async Task Apply_ShoeId_RoundTripsThroughEdit()
+    {
+        Guid shoeId;
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var shoe = await TestDataSeeder.SeedShoeAsync(db, "Nike", "Pegasus");
+            shoeId = shoe.Id;
+        }
+
+        var (client, commit) = await GenerateDraftAsync();
+        var edited = JsonNode.Parse(commit.GetRawText())!.AsObject();
+        // Monday (index 0) is easy with a run in the default commit.
+        edited["days"]![0]!["run"]!["shoeId"] = shoeId.ToString();
+
+        var put = await client.PutAsJsonAsync("/coach/weeks/draft", new
+        {
+            weekStartDate = "2026-10-19",
+            commit = edited
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var apply = await client.PostAsJsonAsync(
+            "/coach/weeks/draft/apply",
+            CoachWeeklyCommitSchemaTests.EmptyApplyBody());
+        apply.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var committed = await client.GetAsync("/coach/weeks/committed?weekStartDate=2026-10-19");
+        committed.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await committed.Content.ReadAsStringAsync();
+        body.Should().Contain(shoeId.ToString());
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var week = await db.CoachWeeks.SingleAsync(w => w.Status == CoachWeekStatuses.Committed);
+            week.CommitJson.Should().Contain(shoeId.ToString());
+        }
+    }
+
+    [Fact]
     public async Task SetupReset_WipesEpisodesAndRules()
     {
         var client = await AuthenticatedClientAsync();

@@ -355,6 +355,191 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task AskForChangesDraft_ReplacesDraft_WithAthleteFeedbackInPacket()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        var preflightId = await ConsentPreflightAsync(client);
+        var firstCommit = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            weekStart: PlanMonday,
+            notes: "Original draft notes for previousDraft");
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true, firstCommit, 1, 1, CoachProtocolBrainError.None, null));
+        var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
+        var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        var job = await PollUntilTerminalAsync(client, started!.Id);
+        job.Status.Should().Be("ready");
+
+        Guid firstDraftId;
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var draft = await db.CoachWeeks.SingleAsync(w => w.WeekStartDate == PlanMonday);
+            firstDraftId = draft.Id;
+        }
+
+        string? capturedPacket = null;
+        _factory.Brain.Reset();
+        _factory.Brain.Handler = (packet, _) =>
+        {
+            capturedPacket = packet;
+            var revised = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+                weekStart: PlanMonday,
+                notes: "Revised after athlete feedback");
+            return new CoachProtocolBrainResult(true, revised, 5, 6, CoachProtocolBrainError.None, null);
+        };
+
+        var ask = await client.PostAsJsonAsync("/coach/weeks/draft/ask-for-changes", new
+        {
+            weekStartDate = PlanMonday.ToString("yyyy-MM-dd"),
+            note = "Make Tuesday a rest day",
+            timezoneOffsetMinutes = 0
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var askJob = await ask.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        askJob.Should().NotBeNull();
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var preflight = await db.CoachPrivacyPreflights.AsNoTracking()
+                .SingleAsync(p => p.WeekStartDate == PlanMonday);
+            preflight.ConsentedAt.Should().NotBeNull();
+            preflight.Id.Should().Be(askJob!.PreflightId);
+        }
+
+        var terminal = await PollUntilTerminalAsync(client, askJob!.Id);
+        terminal.Status.Should().Be("ready");
+        _factory.Brain.CallCount.Should().Be(1);
+        capturedPacket.Should().NotBeNull();
+        capturedPacket.Should().Contain("athleteFeedback");
+        capturedPacket.Should().Contain("Make Tuesday a rest day");
+        capturedPacket.Should().Contain("previousDraft");
+        capturedPacket.Should().Contain("Original draft notes for previousDraft");
+
+        var week = await client.GetAsync($"/coach/weeks/draft?weekStartDate={PlanMonday:yyyy-MM-dd}");
+        week.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var draft = await db.CoachWeeks.SingleAsync(w => w.WeekStartDate == PlanMonday);
+            draft.Id.Should().NotBe(firstDraftId);
+            draft.CommitJson.Should().Contain("Revised after athlete feedback");
+        }
+    }
+
+    [Fact]
+    public async Task AskForChangesDraft_EmptyNote_ReturnsBadRequest()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        var preflightId = await ConsentPreflightAsync(client);
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true, CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: PlanMonday), 1, 1,
+            CoachProtocolBrainError.None, null));
+        var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
+        var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        await PollUntilTerminalAsync(client, started!.Id);
+
+        var ask = await client.PostAsJsonAsync("/coach/weeks/draft/ask-for-changes", new
+        {
+            weekStartDate = PlanMonday.ToString("yyyy-MM-dd"),
+            note = "   "
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _factory.Brain.CallCount.Should().Be(1); // only the initial generate
+    }
+
+    [Fact]
+    public async Task AskForChangesDraft_NoDraft_ReturnsNotFound()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+        await SaveEmptyCheckInAsync(client);
+
+        var ask = await client.PostAsJsonAsync("/coach/weeks/draft/ask-for-changes", new
+        {
+            weekStartDate = PlanMonday.ToString("yyyy-MM-dd"),
+            note = "Swap long to Sunday"
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        _factory.Brain.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AskForChangesDraft_WhenCommitted_ReturnsConflict()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        var preflightId = await ConsentPreflightAsync(client);
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true, CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: PlanMonday), 1, 1,
+            CoachProtocolBrainError.None, null));
+        var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
+        var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        await PollUntilTerminalAsync(client, started!.Id);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var week = await db.CoachWeeks.SingleAsync(w => w.WeekStartDate == PlanMonday);
+            week.Status = Tempo.Api.Models.CoachWeekStatuses.Committed;
+            await db.SaveChangesAsync();
+        }
+
+        _factory.Brain.Reset();
+        var ask = await client.PostAsJsonAsync("/coach/weeks/draft/ask-for-changes", new
+        {
+            weekStartDate = PlanMonday.ToString("yyyy-MM-dd"),
+            note = "Too late"
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        _factory.Brain.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AskForChangesDraft_WhenJobActive_ReturnsConflict()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        var preflightId = await ConsentPreflightAsync(client);
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true, CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: PlanMonday), 1, 1,
+            CoachProtocolBrainError.None, null));
+        var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
+        var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        await PollUntilTerminalAsync(client, started!.Id);
+
+        // Leave a queued job active without a worker finishing it.
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            db.CoachJobs.Add(new Tempo.Api.Models.CoachJob
+            {
+                Status = Tempo.Api.Models.CoachJobStatuses.Queued,
+                Kind = Tempo.Api.Models.CoachJobKinds.Generate,
+                WeekStartDate = PlanMonday,
+                PreflightId = preflightId,
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        _factory.Brain.Reset();
+        var ask = await client.PostAsJsonAsync("/coach/weeks/draft/ask-for-changes", new
+        {
+            weekStartDate = PlanMonday.ToString("yyyy-MM-dd"),
+            note = "While busy"
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        _factory.Brain.CallCount.Should().Be(0);
+    }
+
     private sealed class PreflightResponse
     {
         public Guid Id { get; set; }

@@ -1,0 +1,19 @@
+meta {
+  name: Post Coach draft ask for changes
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{baseUrl}}/coach/weeks/draft/ask-for-changes
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "weekStartDate": "2026-10-19",
+    "note": "Make Tuesday a rest day and move the long to Sunday",
+    "timezoneOffsetMinutes": 0
+  }
+}

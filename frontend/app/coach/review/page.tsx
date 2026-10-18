@@ -7,11 +7,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Dialog } from '@/components/ui/Dialog';
+import { ShoeSelector } from '@/components/ShoeSelector';
 import {
   applyCoachDraftWeek,
+  deleteCoachDraftWeek,
   getCoachDraftWeek,
+  getCoachHome,
+  getCoachJob,
+  getCoachPrivacyPreflight,
+  postCoachDraftAskForChanges,
   putCoachDraftWeek,
   type CoachDayType,
+  type CoachJob,
   type CoachWeeklyCommit,
   type CoachWeeklyCommitDay,
 } from '@/lib/api';
@@ -29,12 +37,28 @@ import {
   shouldShowMemoryCard,
   targetLayerLabel,
 } from '@/lib/coachMemoryDisplay';
-import { formatCoachDate } from '@/lib/coachWeek';
+import {
+  formatCoachDate,
+  formatCoachJobError,
+  pollCoachJobUntilSettled,
+} from '@/lib/coachWeek';
 
 const fieldClass =
   'w-full rounded-tempo border border-border bg-canvas px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-volt';
 
 const DAY_TYPES: CoachDayType[] = ['rest', 'easy', 'quality', 'long', 'race', 'other'];
+
+function localTodayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function timezoneOffsetMinutes(): number {
+  return -new Date().getTimezoneOffset();
+}
 
 function metersToDisplay(meters: number, unit: UnitPreference): string {
   const normalized = normalizePlannedDistanceM(meters);
@@ -50,6 +74,10 @@ function displayToMeters(value: string, unit: UnitPreference): number {
     return 0;
   }
   return normalizePlannedDistanceM(unit === 'imperial' ? n * 1609.344 : n * 1000);
+}
+
+function stepMeters(unit: UnitPreference): number {
+  return unit === 'imperial' ? 0.5 * 1609.344 : 500;
 }
 
 function normalizeCommit(raw: CoachWeeklyCommit): CoachWeeklyCommit {
@@ -140,6 +168,8 @@ function MemoryProposalRow({
         onChange={(e) => onToggle(e.target.checked)}
       />
       <label htmlFor={id} className={`min-w-0 flex-1 text-sm ${validityOk ? 'text-ink' : 'text-muted'}`}>
+        <span className="font-medium">Keep</span>
+        <span className="mx-1.5 text-muted">·</span>
         {children}
         {!validityOk && validityReason && (
           <span className="mt-1 block text-xs text-danger">{validityReason}</span>
@@ -191,20 +221,57 @@ function updateDay(
   return { ...commit, days };
 }
 
+function swapDayContent(commit: CoachWeeklyCommit, a: number, b: number): CoachWeeklyCommit {
+  if (a === b || a < 0 || b < 0 || a >= commit.days.length || b >= commit.days.length) {
+    return commit;
+  }
+  const days = commit.days.map((d) => ({ ...d, run: d.run ? { ...d.run } : null }));
+  const dayA = days[a];
+  const dayB = days[b];
+  const contentA = { dayType: dayA.dayType, run: dayA.run, strength: dayA.strength };
+  const contentB = { dayType: dayB.dayType, run: dayB.run, strength: dayB.strength };
+  days[a] = { ...dayA, ...contentB };
+  days[b] = { ...dayB, ...contentA };
+  return { ...commit, days };
+}
+
+function nudgeDistance(
+  commit: CoachWeeklyCommit,
+  index: number,
+  deltaM: number,
+  unit: UnitPreference
+): CoachWeeklyCommit {
+  const day = commit.days[index];
+  if (!day || day.dayType === 'rest' || !day.run) {
+    return commit;
+  }
+  const next = Math.max(0, normalizePlannedDistanceM(day.run.distanceM + deltaM));
+  // Re-snap after display round-trip so stepper lands on clean half-units.
+  const display = metersToDisplay(next, unit);
+  return updateDay(commit, index, {
+    runPatch: { distanceM: displayToMeters(display, unit) },
+  });
+}
+
 function ReviewPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { unitPreference } = useSettings();
   const weekStartDate = searchParams.get('weekStartDate') ?? '';
+  const todayIso = localTodayIso();
 
   const [commit, setCommit] = useState<CoachWeeklyCommit | null>(null);
   const [acks, setAcks] = useState<Record<number, { acknowledged: boolean; response: string }>>({});
   const [acceptedL1, setAcceptedL1] = useState<Set<number>>(new Set());
   const [acceptedEpisodes, setAcceptedEpisodes] = useState<Set<number>>(new Set());
   const [acceptedRules, setAcceptedRules] = useState<Set<number>>(new Set());
-  const [archiveNotesAsRecap, setArchiveNotesAsRecap] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [swapSource, setSwapSource] = useState<number | null>(null);
+  const [askOpen, setAskOpen] = useState(false);
+  const [askNote, setAskNote] = useState('');
+  const [askInspectOpen, setAskInspectOpen] = useState(false);
+  const [askJob, setAskJob] = useState<CoachJob | null>(null);
 
   const draftQuery = useQuery({
     queryKey: ['coach-draft-week', weekStartDate],
@@ -212,8 +279,23 @@ function ReviewPageInner() {
     enabled: Boolean(weekStartDate),
   });
 
+  const homeQuery = useQuery({
+    queryKey: ['coach-home'],
+    queryFn: getCoachHome,
+  });
+
+  const preflightId = draftQuery.data?.preflightId ?? null;
+  const preflightQuery = useQuery({
+    queryKey: ['coach-privacy-preflight', preflightId],
+    queryFn: () => getCoachPrivacyPreflight(preflightId as string),
+    enabled: Boolean(preflightId) && askOpen && askInspectOpen,
+  });
+
   const lockedThroughDate = draftQuery.data?.lockedThroughDate ?? null;
   const isAdjustment = Boolean(draftQuery.data?.isAdjustment);
+  const disclaimer =
+    homeQuery.data?.disclaimer ??
+    'Tempo AI Coach is not medical advice. Back off or seek care for pain or illness.';
 
   useEffect(() => {
     if (!draftQuery.data?.commit) {
@@ -230,11 +312,12 @@ function ReviewPageInner() {
     setAcceptedL1(new Set());
     setAcceptedEpisodes(new Set());
     setAcceptedRules(new Set());
-    setArchiveNotesAsRecap(false);
+    setSwapSource(null);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [draftQuery.data]);
 
   const distanceUnitLabel = unitPreference === 'imperial' ? 'mi' : 'km';
+  const step = stepMeters(unitPreference);
 
   const safetyReady = useMemo(() => {
     if (!commit) {
@@ -252,19 +335,8 @@ function ReviewPageInner() {
     });
   }, [commit, acks]);
 
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (!commit) {
-        throw new Error('No draft loaded');
-      }
-      return putCoachDraftWeek(weekStartDate, commit);
-    },
-    onSuccess: () => {
-      setError(null);
-      queryClient.invalidateQueries({ queryKey: ['coach-draft-week', weekStartDate] });
-    },
-    onError: (err: Error) => setError(err.message),
-  });
+  const isDayLocked = (date: string) =>
+    Boolean(lockedThroughDate) && date <= (lockedThroughDate as string);
 
   const applyMutation = useMutation({
     mutationFn: async () => {
@@ -282,7 +354,7 @@ function ReviewPageInner() {
         acceptedLayer1PatchIndexes: Array.from(acceptedL1).sort((a, b) => a - b),
         acceptedEpisodeIndexes: Array.from(acceptedEpisodes).sort((a, b) => a - b),
         acceptedRuleProposalIndexes: Array.from(acceptedRules).sort((a, b) => a - b),
-        archiveNotesAsRecap,
+        archiveNotesAsRecap: false,
       });
     },
     onSuccess: async () => {
@@ -295,6 +367,57 @@ function ReviewPageInner() {
     },
     onError: (err: Error) => setError(err.message),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteCoachDraftWeek(weekStartDate),
+    onSuccess: async () => {
+      setError(null);
+      await queryClient.invalidateQueries({ queryKey: ['coach-draft-week'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-job-current'] });
+      router.push('/coach');
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const askMutation = useMutation({
+    mutationFn: async () => {
+      if (!commit) {
+        throw new Error('No draft loaded');
+      }
+      const note = askNote.trim();
+      if (!note) {
+        throw new Error('Add a short note about what to change');
+      }
+      await putCoachDraftWeek(weekStartDate, commit);
+      const started = await postCoachDraftAskForChanges({
+        weekStartDate,
+        note,
+        timezoneOffsetMinutes: timezoneOffsetMinutes(),
+      });
+      const settled = await pollCoachJobUntilSettled(started, (job) => getCoachJob(job.id), {
+        onUpdate: setAskJob,
+      });
+      if (settled.status === 'failed') {
+        throw new Error(formatCoachJobError(settled.errorCode, settled.errorMessage));
+      }
+      return settled;
+    },
+    onSuccess: async () => {
+      setError(null);
+      setAskOpen(false);
+      setAskNote('');
+      setAskInspectOpen(false);
+      setAskJob(null);
+      await queryClient.invalidateQueries({ queryKey: ['coach-draft-week', weekStartDate] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-job-current'] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const busy =
+    applyMutation.isPending || deleteMutation.isPending || askMutation.isPending;
 
   if (!weekStartDate) {
     return (
@@ -327,7 +450,7 @@ function ReviewPageInner() {
         </div>
       }
     >
-      <div className="w-full space-y-6">
+      <div className="w-full space-y-6 pb-28">
         {draftQuery.isLoading && (
           <Card>
             <p className="text-sm text-muted">Loading draft...</p>
@@ -430,124 +553,228 @@ function ReviewPageInner() {
               <h2 className="text-lg font-semibold text-ink mb-4">Plan</h2>
               <div className="space-y-4">
                 {commit.days.map((day, i) => {
-                  const locked =
-                    Boolean(lockedThroughDate) && day.date <= (lockedThroughDate as string);
+                  const locked = isDayLocked(day.date);
+                  const isToday = day.date === todayIso;
+                  const isRest = day.dayType === 'rest';
                   return (
-                  <div
-                    key={day.date}
-                    className={`rounded-tempo border border-border p-3 space-y-3 ${
-                      locked ? 'opacity-60 bg-canvas' : ''
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-center gap-3">
-                      <p className="text-sm font-medium text-ink min-w-[7rem]">
-                        {formatCoachDate(day.date)}
-                      </p>
-                      {locked && (
-                        <span className="rounded-tempo border border-border px-2 py-0.5 text-xs text-muted">
-                          Locked
-                        </span>
-                      )}
-                      <select
-                        className={fieldClass + ' max-w-[10rem]'}
-                        value={day.dayType}
-                        disabled={locked}
-                        onChange={(e) =>
-                          setCommit((c) =>
-                            c
-                              ? updateDay(c, i, { dayType: e.target.value as CoachDayType })
-                              : c
-                          )
-                        }
-                      >
-                        {DAY_TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {dayTypeLabel(t)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    {day.dayType !== 'rest' && day.run && (
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="text-sm text-muted space-y-1">
-                          <span>Distance ({distanceUnitLabel})</span>
-                          <input
-                            className={fieldClass}
-                            type="number"
-                            min={0}
-                            step={0.1}
-                            disabled={locked}
-                            value={metersToDisplay(day.run.distanceM, unitPreference)}
-                            onChange={(e) =>
-                              setCommit((c) =>
-                                c
-                                  ? updateDay(c, i, {
-                                      runPatch: {
-                                        distanceM: displayToMeters(e.target.value, unitPreference),
-                                      },
-                                    })
-                                  : c
-                              )
-                            }
-                          />
-                          <span className="text-xs">
-                            {formatCoachDistance(day.run.distanceM, unitPreference)}
+                    <div
+                      key={day.date}
+                      className={`rounded-tempo border border-border p-3 space-y-3 ${
+                        locked ? 'opacity-60 bg-canvas' : ''
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-ink min-w-[7rem]">
+                          {formatCoachDate(day.date)}
+                        </p>
+                        {isToday && (
+                          <span className="rounded-tempo border border-volt px-2 py-0.5 text-xs text-ink">
+                            Today
                           </span>
-                        </label>
-                        <label className="text-sm text-muted space-y-1">
-                          <span>Structure</span>
-                          <input
-                            className={fieldClass}
-                            disabled={locked}
-                            value={day.run.structure ?? ''}
-                            onChange={(e) =>
-                              setCommit((c) =>
-                                c
-                                  ? updateDay(c, i, {
-                                      runPatch: { structure: e.target.value || null },
-                                    })
-                                  : c
-                              )
-                            }
-                          />
-                        </label>
-                        <label className="text-sm text-muted space-y-1">
-                          <span>Pace / HR</span>
-                          <input
-                            className={fieldClass}
-                            disabled={locked}
-                            value={day.run.paceOrHr ?? ''}
-                            onChange={(e) =>
-                              setCommit((c) =>
-                                c
-                                  ? updateDay(c, i, {
-                                      runPatch: { paceOrHr: e.target.value || null },
-                                    })
-                                  : c
-                              )
-                            }
-                          />
-                        </label>
-                        <label className="text-sm text-muted space-y-1">
-                          <span>Notes</span>
-                          <input
-                            className={fieldClass}
-                            disabled={locked}
-                            value={day.run.notes ?? ''}
-                            onChange={(e) =>
-                              setCommit((c) =>
-                                c
-                                  ? updateDay(c, i, {
-                                      runPatch: { notes: e.target.value || null },
-                                    })
-                                  : c
-                              )
-                            }
-                          />
-                        </label>
+                        )}
+                        {locked && (
+                          <span className="rounded-tempo border border-border px-2 py-0.5 text-xs text-muted">
+                            Locked
+                          </span>
+                        )}
+                        <span className="text-sm text-muted">{dayTypeLabel(day.dayType)}</span>
+                        {!isRest && day.run && (
+                          <span className="text-sm text-muted">
+                            · {formatCoachDistance(day.run.distanceM, unitPreference)}
+                          </span>
+                        )}
                       </div>
-                    )}
-                  </div>
+
+                      {!locked && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {swapSource === i ? (
+                            <label className="flex items-center gap-2 text-sm text-muted">
+                              <span>Swap with</span>
+                              <select
+                                className={fieldClass + ' w-auto max-w-[12rem]'}
+                                defaultValue=""
+                                onChange={(e) => {
+                                  const target = Number.parseInt(e.target.value, 10);
+                                  if (Number.isFinite(target)) {
+                                    setCommit((c) => (c ? swapDayContent(c, i, target) : c));
+                                  }
+                                  setSwapSource(null);
+                                }}
+                              >
+                                <option value="" disabled>
+                                  Choose day…
+                                </option>
+                                {commit.days.map((other, j) =>
+                                  j === i || isDayLocked(other.date) ? null : (
+                                    <option key={other.date} value={j}>
+                                      {formatCoachDate(other.date)}
+                                    </option>
+                                  )
+                                )}
+                              </select>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => setSwapSource(null)}
+                              >
+                                Cancel
+                              </Button>
+                            </label>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={() => setSwapSource(i)}
+                            >
+                              Swap
+                            </Button>
+                          )}
+                          {!isRest && (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={() =>
+                                setCommit((c) =>
+                                  c ? updateDay(c, i, { dayType: 'rest' }) : c
+                                )
+                              }
+                            >
+                              Make rest
+                            </Button>
+                          )}
+                          {!isRest && day.run && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                aria-label={`Decrease distance by 0.5 ${distanceUnitLabel}`}
+                                onClick={() =>
+                                  setCommit((c) =>
+                                    c ? nudgeDistance(c, i, -step, unitPreference) : c
+                                  )
+                                }
+                              >
+                                −
+                              </Button>
+                              <span className="min-w-[4.5rem] text-center text-sm text-ink">
+                                {metersToDisplay(day.run.distanceM, unitPreference)}{' '}
+                                {distanceUnitLabel}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                aria-label={`Increase distance by 0.5 ${distanceUnitLabel}`}
+                                onClick={() =>
+                                  setCommit((c) =>
+                                    c ? nudgeDistance(c, i, step, unitPreference) : c
+                                  )
+                                }
+                              >
+                                +
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {!locked && !isRest && day.run && (
+                        <details className="text-sm">
+                          <summary className="cursor-pointer text-muted select-none">
+                            Edit details
+                          </summary>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            <label className="text-sm text-muted space-y-1">
+                              <span>Day type</span>
+                              <select
+                                className={fieldClass}
+                                value={day.dayType}
+                                disabled={locked}
+                                onChange={(e) =>
+                                  setCommit((c) =>
+                                    c
+                                      ? updateDay(c, i, {
+                                          dayType: e.target.value as CoachDayType,
+                                        })
+                                      : c
+                                  )
+                                }
+                              >
+                                {DAY_TYPES.map((t) => (
+                                  <option key={t} value={t}>
+                                    {dayTypeLabel(t)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="text-sm text-muted space-y-1">
+                              <span>Structure</span>
+                              <input
+                                className={fieldClass}
+                                disabled={locked}
+                                value={day.run.structure ?? ''}
+                                onChange={(e) =>
+                                  setCommit((c) =>
+                                    c
+                                      ? updateDay(c, i, {
+                                          runPatch: { structure: e.target.value || null },
+                                        })
+                                      : c
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="text-sm text-muted space-y-1">
+                              <span>Pace / HR</span>
+                              <input
+                                className={fieldClass}
+                                disabled={locked}
+                                value={day.run.paceOrHr ?? ''}
+                                onChange={(e) =>
+                                  setCommit((c) =>
+                                    c
+                                      ? updateDay(c, i, {
+                                          runPatch: { paceOrHr: e.target.value || null },
+                                        })
+                                      : c
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="text-sm text-muted space-y-1">
+                              <span>Notes</span>
+                              <input
+                                className={fieldClass}
+                                disabled={locked}
+                                value={day.run.notes ?? ''}
+                                onChange={(e) =>
+                                  setCommit((c) =>
+                                    c
+                                      ? updateDay(c, i, {
+                                          runPatch: { notes: e.target.value || null },
+                                        })
+                                      : c
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="text-sm text-muted space-y-1 sm:col-span-2">
+                              <span>Shoe</span>
+                              <ShoeSelector
+                                className={fieldClass}
+                                value={day.run.shoeId}
+                                onChange={(shoeId) =>
+                                  setCommit((c) =>
+                                    c
+                                      ? updateDay(c, i, { runPatch: { shoeId } })
+                                      : c
+                                  )
+                                }
+                              />
+                            </label>
+                          </div>
+                        </details>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -701,27 +928,6 @@ function ReviewPageInner() {
                     </ul>
                   </section>
                 )}
-
-                <label className="mt-2 flex items-start gap-2 text-sm text-ink">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={archiveNotesAsRecap}
-                    onChange={(e) => setArchiveNotesAsRecap(e.target.checked)}
-                  />
-                  <span>
-                    Keep this week&apos;s Coach&apos;s Notes as a recap
-                    <span className="block text-xs text-muted">Off by default.</span>
-                  </span>
-                </label>
-              </Card>
-            )}
-
-            {commit.clarifyingQuestion && (
-              <Card>
-                <h2 className="text-lg font-semibold text-ink mb-2">Your coach asked</h2>
-                <p className="text-sm text-muted mb-1">Advisory only — does not block accept.</p>
-                <p className="text-sm text-ink">{commit.clarifyingQuestion}</p>
               </Card>
             )}
 
@@ -730,30 +936,139 @@ function ReviewPageInner() {
                 <p className="text-sm text-danger">{error}</p>
               </Card>
             )}
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={saveMutation.isPending || applyMutation.isPending}
-                onClick={() => saveMutation.mutate()}
-              >
-                {saveMutation.isPending ? 'Saving...' : 'Save edits'}
-              </Button>
-              <Button
-                type="button"
-                disabled={!safetyReady || saveMutation.isPending || applyMutation.isPending}
-                onClick={() => applyMutation.mutate()}
-              >
-                {applyMutation.isPending ? 'Accepting...' : 'Accept plan'}
-              </Button>
-              <Button href="/coach" variant="secondary">
-                Cancel
-              </Button>
-            </div>
           </>
         )}
       </div>
+
+      {commit && (
+        <div className="fixed bottom-0 inset-x-0 z-40 border-t border-border bg-raised/95 backdrop-blur supports-[backdrop-filter]:bg-raised/80">
+          <div className="mx-auto max-w-3xl px-4 py-3 space-y-2">
+            {commit.clarifyingQuestion && (
+              <p className="text-sm text-muted">
+                <span className="font-medium text-ink">Your coach asked:</span>{' '}
+                {commit.clarifyingQuestion}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => deleteMutation.mutate()}
+              >
+                {deleteMutation.isPending ? 'Starting over…' : 'Start over'}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => {
+                  setAskOpen(true);
+                  setError(null);
+                }}
+              >
+                Ask for changes
+              </Button>
+              <Button
+                type="button"
+                disabled={!safetyReady || busy}
+                onClick={() => applyMutation.mutate()}
+              >
+                {applyMutation.isPending ? 'Accepting…' : 'Accept plan'}
+              </Button>
+              <p className="text-xs text-muted max-w-sm">{disclaimer}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Dialog
+        open={askOpen}
+        onClose={() => {
+          if (askMutation.isPending) {
+            return;
+          }
+          setAskOpen(false);
+          setAskInspectOpen(false);
+        }}
+        title="Ask for changes"
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={askMutation.isPending}
+              onClick={() => {
+                setAskOpen(false);
+                setAskInspectOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={askMutation.isPending || !askNote.trim()}
+              onClick={() => askMutation.mutate()}
+            >
+              {askMutation.isPending ? 'Sending…' : 'Send to coach'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <label className="block text-sm text-muted space-y-1">
+            <span>What should change?</span>
+            <textarea
+              className={fieldClass + ' min-h-[96px]'}
+              value={askNote}
+              onChange={(e) => setAskNote(e.target.value)}
+              placeholder="e.g. Make Tuesday a rest day and move the long to Sunday"
+              disabled={askMutation.isPending}
+            />
+          </label>
+          <p className="text-sm text-muted">
+            Sends your note, a summary of this draft, and the usual redacted training packet.{' '}
+            <button
+              type="button"
+              className="underline text-ink"
+              onClick={() => setAskInspectOpen((o) => !o)}
+            >
+              {askInspectOpen ? 'Hide what\'s sent' : 'See what\'s sent'}
+            </button>
+          </p>
+          {askInspectOpen && (
+            <div className="rounded-tempo border border-border bg-canvas p-3 text-xs text-muted space-y-2 max-h-48 overflow-auto">
+              {preflightQuery.isLoading && <p>Loading last packet…</p>}
+              {preflightQuery.isError && (
+                <p>Could not load the previous packet. Your note will still be included on Send.</p>
+              )}
+              {preflightQuery.data && (
+                <>
+                  <p className="text-ink">
+                    Last send plus your note and this draft&apos;s day summary. Categories:
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    {preflightQuery.data.report.included.map((item) => (
+                      <li key={item.category}>
+                        <span className="text-ink">{item.category}</span> — {item.detail}
+                      </li>
+                    ))}
+                    <li>
+                      <span className="text-ink">athleteFeedback</span> — your note and previous
+                      draft day summary
+                    </li>
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+          {askJob && askJob.status !== 'ready' && askJob.status !== 'failed' && (
+            <p className="text-sm text-muted" aria-live="polite">
+              {askJob.status === 'running' ? 'Coach is working…' : 'Queued…'}
+            </p>
+          )}
+        </div>
+      </Dialog>
     </PageShell>
   );
 }

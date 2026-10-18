@@ -2049,6 +2049,31 @@ export async function deleteCoachDraftWeek(weekStartDate: string): Promise<void>
   }
 }
 
+export interface PostCoachDraftAskForChangesRequest {
+  weekStartDate: string;
+  note: string;
+  timezoneOffsetMinutes?: number;
+}
+
+/** Re-generate a draft with athlete feedback (consent + enqueue in one call). */
+export async function postCoachDraftAskForChanges(
+  body: PostCoachDraftAskForChangesRequest
+): Promise<CoachJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/weeks/draft/ask-for-changes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to ask for draft changes: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export interface CoachPrivacyReportItem {
   category: string;
   detail: string;

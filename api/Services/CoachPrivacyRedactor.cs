@@ -256,7 +256,8 @@ public static partial class CoachPrivacyRedactor
             new("layer3", layer3Detail),
             new("checkIn", "Subjective fields and run metrics/notes without workout names or GPS"),
             new("recentTraining", recentTrainingDetail),
-            new("adjustment", "Athlete-started mid-week adjust reason, category, and locked/remaining days")
+            new("adjustment", "Athlete-started mid-week adjust reason, category, and locked/remaining days"),
+            new("athleteFeedback", "Athlete note requesting draft changes plus previous-draft day summary")
         };
 
         var strippedItems = new List<CoachPrivacyReportItem>
