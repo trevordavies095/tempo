@@ -160,6 +160,28 @@ function CoachPageContent() {
     }
   }, [isFetched, showCoachNav, router]);
 
+  const committed = committedQuery.data;
+
+  // Must stay above the early returns below (rules-of-hooks).
+  const appliedMemoryLines = useMemo(() => {
+    if (!committed?.commit) {
+      return [];
+    }
+    const legacy =
+      committed.commit.memoryProposals && committed.commit.memoryProposals.length > 0
+        ? committed.commit.memoryProposals
+        : null;
+    if (!applyRecordHasAcceptedMemory(committed.applyRecord) && !legacy) {
+      return [];
+    }
+    return buildAppliedMemoryLines(
+      committed.commit,
+      committed.applyRecord,
+      unitPreference,
+      legacy
+    );
+  }, [committed, unitPreference]);
+
   if (settingsLoading || !isFetched) {
     return (
       <PageShell density="control" title="AI Coach">
@@ -181,7 +203,6 @@ function CoachPageContent() {
   const onboardingDone = homeQuery.data?.onboardingCompleted === true;
   const goal = homeQuery.data?.goal;
   const needsProvider = homeQuery.data?.nextSteps.includes('Connect your Anthropic API key');
-  const committed = committedQuery.data;
   const draft = draftQuery.data;
   const lockedThrough = committed?.lockedThroughDate ?? draft?.lockedThroughDate ?? null;
   const showAdjustmentBadge = Boolean(
@@ -192,25 +213,6 @@ function CoachPageContent() {
     ? lastPrescribedNonRestDate(committed.commit.days)
     : null;
   const showGenerateNudge = Boolean(lastNonRest && lastNonRest <= todayIso && !draft);
-
-  const appliedMemoryLines = useMemo(() => {
-    if (!committed?.commit) {
-      return [];
-    }
-    const legacy =
-      committed.commit.memoryProposals && committed.commit.memoryProposals.length > 0
-        ? committed.commit.memoryProposals
-        : null;
-    if (!applyRecordHasAcceptedMemory(committed.applyRecord) && !legacy) {
-      return [];
-    }
-    return buildAppliedMemoryLines(
-      committed.commit,
-      committed.applyRecord,
-      unitPreference,
-      legacy
-    );
-  }, [committed, unitPreference]);
 
   return (
     <PageShell
