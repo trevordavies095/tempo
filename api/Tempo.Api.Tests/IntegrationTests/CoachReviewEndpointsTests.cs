@@ -338,6 +338,88 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         var recap = await db.CoachEpisodes.SingleAsync(e => e.Category == CoachEpisodeCategories.Recap);
         recap.Summary.Should().Contain("Keep the long easy");
         recap.Date.Should().Be(new DateOnly(2026, 10, 18));
+
+        var committed = await client.GetAsync("/coach/weeks/committed?weekStartDate=2026-10-12");
+        committed.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var committedDoc = JsonDocument.Parse(await committed.Content.ReadAsStringAsync());
+        var root = committedDoc.RootElement;
+        root.TryGetProperty("applyRecord", out var applyRecord).Should().BeTrue();
+        applyRecord.ValueKind.Should().Be(JsonValueKind.Object);
+        applyRecord.GetProperty("archiveNotesAsRecap").GetBoolean().Should().BeTrue();
+        applyRecord.GetProperty("acceptedLayer1PatchIndexes").EnumerateArray().Select(e => e.GetInt32())
+            .Should().Equal(0);
+        applyRecord.GetProperty("acceptedRuleProposalIndexes").EnumerateArray().Select(e => e.GetInt32())
+            .Should().Equal(0);
+        applyRecord.GetProperty("appliedLayer1Paths").EnumerateArray().Select(e => e.GetString())
+            .Should().Contain("paces.easySecPerKm");
+        applyRecord.GetProperty("appliedRuleIds").GetArrayLength().Should().Be(1);
+        applyRecord.GetProperty("recapEpisodeId").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task DraftGet_ApplyRecord_IsNull()
+    {
+        var (client, _) = await GenerateDraftAsync();
+
+        var draft = await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-12");
+        draft.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await draft.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("applyRecord", out var applyRecord).Should().BeTrue();
+        applyRecord.ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task DraftGet_ReviseProposal_IncludesCurrentRuleText()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            db.CoachRules.Add(new CoachRule
+            {
+                Id = "rule_heat_mp",
+                TargetLayer = CoachRuleTargetLayers.DataInterpretationNotes,
+                RuleText = "Afternoon MP costs ~2x recovery in heat",
+                Status = CoachRuleStatuses.Active,
+                Evidence = ["Aug 11 PM"],
+                Source = CoachRuleSources.Athlete,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            layer3RuleProposals:
+            [
+                new
+                {
+                    operation = "revise",
+                    ruleText = "Afternoon MP costs ~2x recovery when solar load is high",
+                    evidence = new[] { "Aug 11 PM", "Aug 15 AM" },
+                    targetRuleId = "rule_heat_mp",
+                    targetLayer = "data_interpretation_notes"
+                }
+            ]);
+
+        var preflightId = await ConsentPreflightAsync(client);
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true, commitJson, 10, 20, CoachProtocolBrainError.None, null));
+        var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
+        generate.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        var job = await PollUntilTerminalAsync(client, started!.Id);
+        job.Status.Should().Be("ready");
+
+        var week = await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-12");
+        week.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await week.Content.ReadAsStringAsync());
+        var proposal = doc.RootElement.GetProperty("commit").GetProperty("layer3RuleProposals")[0];
+        proposal.GetProperty("validity").GetProperty("ok").GetBoolean().Should().BeTrue();
+        proposal.GetProperty("currentRuleText").GetString()
+            .Should().Be("Afternoon MP costs ~2x recovery in heat");
     }
 
     [Fact]

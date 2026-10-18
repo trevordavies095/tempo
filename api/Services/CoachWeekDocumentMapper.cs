@@ -25,6 +25,8 @@ public static class CoachWeekDocumentMapper
             commit = null;
         }
 
+        var applyRecord = DeserializeApplyRecord(week.ApplyRecordJson);
+
         var isAdjustment = adjustment != null
             && (adjustment.Status == CoachAdjustmentStatuses.Started
                 || adjustment.Status == CoachAdjustmentStatuses.Applied);
@@ -43,6 +45,24 @@ public static class CoachWeekDocumentMapper
             AdjustmentId: adjustment?.Id,
             LockedThroughDate: adjustment?.LockedThroughDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             AdjustmentCategory: adjustment?.Category,
-            AdjustmentStatus: adjustment?.Status);
+            AdjustmentStatus: adjustment?.Status,
+            ApplyRecord: applyRecord);
+    }
+
+    private static object? DeserializeApplyRecord(string? applyRecordJson)
+    {
+        if (string.IsNullOrWhiteSpace(applyRecordJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<object>(applyRecordJson, JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

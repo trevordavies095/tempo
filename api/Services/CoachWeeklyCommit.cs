@@ -115,5 +115,11 @@ public sealed class CoachLayer3RuleProposal
     /// <summary>data_interpretation_notes | key_learnings | coaching_preferences</summary>
     public string TargetLayer { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Snapshot of the active target rule's text at stamp time (revise/retire only).
+    /// Lets review UI show a diff without a Memory list API.
+    /// </summary>
+    public string? CurrentRuleText { get; set; }
+
     public CoachProposalValidity? Validity { get; set; }
 }

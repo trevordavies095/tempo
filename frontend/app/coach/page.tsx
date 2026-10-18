@@ -19,6 +19,10 @@ import {
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 import { useSettings } from '@/lib/settings';
 import { formatDistance } from '@/lib/format';
+import {
+  applyRecordHasAcceptedMemory,
+  buildAppliedMemoryLines,
+} from '@/lib/coachMemoryDisplay';
 
 function formatDuration(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
@@ -182,6 +186,25 @@ function CoachPageContent() {
     ? lastPrescribedNonRestDate(committed.commit.days)
     : null;
   const showGenerateNudge = Boolean(lastNonRest && lastNonRest <= todayIso && !draft);
+
+  const appliedMemoryLines = useMemo(() => {
+    if (!committed?.commit) {
+      return [];
+    }
+    const legacy =
+      committed.commit.memoryProposals && committed.commit.memoryProposals.length > 0
+        ? committed.commit.memoryProposals
+        : null;
+    if (!applyRecordHasAcceptedMemory(committed.applyRecord) && !legacy) {
+      return [];
+    }
+    return buildAppliedMemoryLines(
+      committed.commit,
+      committed.applyRecord,
+      unitPreference,
+      legacy
+    );
+  }, [committed, unitPreference]);
 
   return (
     <PageShell
@@ -398,6 +421,23 @@ function CoachPageContent() {
                 </div>
               )}
             </Card>
+
+            {appliedMemoryLines.length > 0 && (
+              <Card>
+                <details>
+                  <summary className="cursor-pointer text-lg font-semibold text-ink">
+                    Applied to memory
+                  </summary>
+                  <ul className="mt-3 space-y-2 text-sm text-ink">
+                    {appliedMemoryLines.map((line) => (
+                      <li key={line.key} className="border-l-2 border-border pl-3">
+                        {line.text}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </Card>
+            )}
           </>
         )}
       </div>

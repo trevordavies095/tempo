@@ -1945,17 +1945,9 @@ export interface CoachLayer3RuleProposal {
   evidence: string[];
   targetRuleId: string | null;
   targetLayer: string;
+  /** Snapshot of active target rule text at stamp time (revise/retire). */
+  currentRuleText?: string | null;
   validity?: CoachProposalValidity | null;
-}
-
-/** Flat adapter row for the thin issue-12 review checklist (grouped UI = issue 14). */
-export interface CoachMemoryChecklistItem {
-  channel: 'l1' | 'l2' | 'l3';
-  channelIndex: number;
-  label: string;
-  detail: string;
-  validityOk: boolean;
-  validityReason: string | null;
 }
 
 export interface CoachWeeklyCommit {
@@ -1967,6 +1959,21 @@ export interface CoachWeeklyCommit {
   layer3RuleProposals: CoachLayer3RuleProposal[];
   clarifyingQuestion: string | null;
   callouts: string[];
+  /** Legacy slice-1 shape; present only on older committed weeks. */
+  memoryProposals?: Array<{ layer?: string; path?: string; summary?: string }> | null;
+}
+
+export interface CoachWeekApplyRecord {
+  appliedAt: string;
+  safetyAcknowledgments: CoachSafetyAcknowledgment[];
+  acceptedLayer1PatchIndexes: number[];
+  acceptedEpisodeIndexes: number[];
+  acceptedRuleProposalIndexes: number[];
+  archiveNotesAsRecap: boolean;
+  appliedLayer1Paths: string[];
+  appliedEpisodeIds: string[];
+  appliedRuleIds: string[];
+  recapEpisodeId: string | null;
 }
 
 export interface CoachWeekDraft {
@@ -1984,6 +1991,7 @@ export interface CoachWeekDraft {
   lockedThroughDate?: string | null;
   adjustmentCategory?: string | null;
   adjustmentStatus?: string | null;
+  applyRecord?: CoachWeekApplyRecord | null;
 }
 
 export interface CoachAdjustment {

@@ -68,8 +68,31 @@ public static class CoachMemoryProposalValidator
 
         foreach (var proposal in commit.Layer3RuleProposals)
         {
+            StampCurrentRuleText(proposal, activeRulesById);
             proposal.Validity = ValidateRuleProposal(proposal, activeRulesById);
         }
+    }
+
+    /// <summary>
+    /// For revise/retire against an active rule, snapshot rule text for review diffs.
+    /// Cleared for promote and unresolved targets.
+    /// </summary>
+    internal static void StampCurrentRuleText(
+        CoachLayer3RuleProposal proposal,
+        IReadOnlyDictionary<string, CoachRule> activeRulesById)
+    {
+        var operation = (proposal.Operation ?? string.Empty).Trim().ToLowerInvariant();
+        if (operation is not ("revise" or "retire")
+            || string.IsNullOrWhiteSpace(proposal.TargetRuleId))
+        {
+            proposal.CurrentRuleText = null;
+            return;
+        }
+
+        var id = proposal.TargetRuleId.Trim();
+        proposal.CurrentRuleText = activeRulesById.TryGetValue(id, out var rule)
+            ? rule.RuleText
+            : null;
     }
 
     public static CoachProposalValidity ValidateLayer1Patch(CoachLayer1Patch patch)
@@ -179,6 +202,8 @@ public static class CoachMemoryProposalValidator
 
         if (operation == "promote")
         {
+            proposal.CurrentRuleText = null;
+
             if (!string.IsNullOrWhiteSpace(proposal.TargetRuleId))
             {
                 return Invalid("promote requires targetRuleId to be null");

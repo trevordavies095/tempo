@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,13 +13,19 @@ import {
   getCoachDraftWeek,
   putCoachDraftWeek,
   type CoachDayType,
-  type CoachMemoryChecklistItem,
   type CoachWeeklyCommit,
   type CoachWeeklyCommitDay,
 } from '@/lib/api';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 import { useSettings, type UnitPreference } from '@/lib/settings';
 import { formatDistance } from '@/lib/format';
+import {
+  categoryLabel,
+  formatLayer1PatchPrimary,
+  operationLabel,
+  shouldShowMemoryCard,
+  targetLayerLabel,
+} from '@/lib/coachMemoryDisplay';
 
 const fieldClass =
   'w-full rounded-tempo border border-border bg-canvas px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-volt';
@@ -87,48 +93,58 @@ function normalizeCommit(raw: CoachWeeklyCommit): CoachWeeklyCommit {
       evidence: p.evidence ?? [],
       targetRuleId: p.targetRuleId ?? null,
       targetLayer: p.targetLayer ?? '',
+      currentRuleText: p.currentRuleText ?? null,
       validity: p.validity
         ? { ok: Boolean(p.validity.ok), reason: p.validity.reason ?? null }
         : null,
     })),
     clarifyingQuestion: raw.clarifyingQuestion ?? null,
     callouts: (raw.callouts ?? []).slice(0, 5),
+    memoryProposals: raw.memoryProposals ?? null,
   };
 }
 
-function buildMemoryChecklist(commit: CoachWeeklyCommit): CoachMemoryChecklistItem[] {
-  const items: CoachMemoryChecklistItem[] = [];
-  commit.layer1Patches.forEach((p, i) => {
-    items.push({
-      channel: 'l1',
-      channelIndex: i,
-      label: `L1 · ${p.fieldPath}`,
-      detail: p.rationale || `${String(p.oldValue)} → ${String(p.newValue)}`,
-      validityOk: p.validity?.ok !== false,
-      validityReason: p.validity?.reason ?? null,
-    });
-  });
-  commit.layer2EpisodeDrafts.forEach((d, i) => {
-    items.push({
-      channel: 'l2',
-      channelIndex: i,
-      label: `L2 · ${d.category} · ${d.date}`,
-      detail: d.summary,
-      validityOk: d.validity?.ok !== false,
-      validityReason: d.validity?.reason ?? null,
-    });
-  });
-  commit.layer3RuleProposals.forEach((p, i) => {
-    items.push({
-      channel: 'l3',
-      channelIndex: i,
-      label: `L3 · ${p.operation} · ${p.targetLayer}`,
-      detail: p.ruleText || p.targetRuleId || '',
-      validityOk: p.validity?.ok !== false,
-      validityReason: p.validity?.reason ?? null,
-    });
-  });
-  return items;
+function MemoryProposalRow({
+  id,
+  validityOk,
+  validityReason,
+  accepted,
+  onToggle,
+  children,
+}: {
+  id: string;
+  validityOk: boolean;
+  validityReason: string | null;
+  accepted: boolean;
+  onToggle: (checked: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <li className={`flex items-start gap-2 ${validityOk ? '' : 'opacity-60'}`}>
+      <input
+        id={id}
+        type="checkbox"
+        className="mt-1"
+        disabled={!validityOk}
+        checked={accepted}
+        onChange={(e) => onToggle(e.target.checked)}
+      />
+      <label htmlFor={id} className={`min-w-0 flex-1 text-sm ${validityOk ? 'text-ink' : 'text-muted'}`}>
+        {children}
+        {!validityOk && validityReason && (
+          <span className="mt-1 block text-xs text-danger">{validityReason}</span>
+        )}
+      </label>
+    </li>
+  );
+}
+
+function Chip({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-tempo border border-border bg-canvas px-2 py-0.5 text-xs uppercase tracking-wide text-muted">
+      {children}
+    </span>
+  );
 }
 
 function updateDay(
@@ -549,68 +565,156 @@ function ReviewPageInner() {
               </div>
             </Card>
 
-            <Card>
-                <h2 className="text-lg font-semibold text-ink mb-2">Memory proposals</h2>
+            {shouldShowMemoryCard(commit) && (
+              <Card>
+                <h2 className="text-lg font-semibold text-ink mb-2">Memory</h2>
                 <p className="text-sm text-muted mb-4">
                   Rejected by default. Opt in only to lasting memory changes you want kept.
                   Invalid proposals cannot be accepted.
                 </p>
-                <ul className="space-y-3">
-                  {buildMemoryChecklist(commit).map((item) => {
-                    const key = `${item.channel}-${item.channelIndex}`;
-                    const accepted =
-                      item.channel === 'l1'
-                        ? acceptedL1.has(item.channelIndex)
-                        : item.channel === 'l2'
-                          ? acceptedEpisodes.has(item.channelIndex)
-                          : acceptedRules.has(item.channelIndex);
-                    const setAccepted =
-                      item.channel === 'l1'
-                        ? setAcceptedL1
-                        : item.channel === 'l2'
-                          ? setAcceptedEpisodes
-                          : setAcceptedRules;
-                    return (
-                      <li key={key} className="flex items-start gap-2">
-                        <input
-                          id={`memory-${key}`}
-                          type="checkbox"
-                          className="mt-1"
-                          disabled={!item.validityOk}
-                          checked={accepted}
-                          onChange={(e) => {
-                            setAccepted((prev) => {
-                              const next = new Set(prev);
-                              if (e.target.checked) {
-                                next.add(item.channelIndex);
-                              } else {
-                                next.delete(item.channelIndex);
-                              }
-                              return next;
-                            });
-                          }}
-                        />
-                        <label
-                          htmlFor={`memory-${key}`}
-                          className={`text-sm ${item.validityOk ? 'text-ink' : 'text-muted'}`}
-                        >
-                          <span className="text-xs uppercase tracking-wide text-muted">
-                            {item.label}
-                          </span>
-                          <br />
-                          {item.detail}
-                          {!item.validityOk && item.validityReason && (
-                            <>
-                              <br />
-                              <span className="text-xs text-danger">{item.validityReason}</span>
-                            </>
-                          )}
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <label className="mt-4 flex items-start gap-2 text-sm text-ink">
+
+                {commit.layer1Patches.length > 0 && (
+                  <section className="mb-5">
+                    <h3 className="text-sm font-semibold text-ink mb-2">Athlete state</h3>
+                    <ul className="space-y-3">
+                      {commit.layer1Patches.map((patch, i) => {
+                        const validityOk = patch.validity?.ok !== false;
+                        return (
+                          <MemoryProposalRow
+                            key={`l1-${i}`}
+                            id={`memory-l1-${i}`}
+                            validityOk={validityOk}
+                            validityReason={patch.validity?.reason ?? null}
+                            accepted={acceptedL1.has(i)}
+                            onToggle={(checked) => {
+                              setAcceptedL1((prev) => {
+                                const next = new Set(prev);
+                                if (checked) {
+                                  next.add(i);
+                                } else {
+                                  next.delete(i);
+                                }
+                                return next;
+                              });
+                            }}
+                          >
+                            <span className="font-medium">
+                              {formatLayer1PatchPrimary(patch, unitPreference)}
+                            </span>
+                            {patch.rationale ? (
+                              <span className="mt-0.5 block text-muted">{patch.rationale}</span>
+                            ) : null}
+                            <details className="mt-1 text-xs text-muted">
+                              <summary className="cursor-pointer">Show path</summary>
+                              <code className="mt-1 block break-all">{patch.fieldPath}</code>
+                            </details>
+                          </MemoryProposalRow>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                )}
+
+                {commit.layer2EpisodeDrafts.length > 0 && (
+                  <section className="mb-5">
+                    <h3 className="text-sm font-semibold text-ink mb-2">Episodes</h3>
+                    <ul className="space-y-3">
+                      {commit.layer2EpisodeDrafts.map((draft, i) => {
+                        const validityOk = draft.validity?.ok !== false;
+                        return (
+                          <MemoryProposalRow
+                            key={`l2-${i}`}
+                            id={`memory-l2-${i}`}
+                            validityOk={validityOk}
+                            validityReason={draft.validity?.reason ?? null}
+                            accepted={acceptedEpisodes.has(i)}
+                            onToggle={(checked) => {
+                              setAcceptedEpisodes((prev) => {
+                                const next = new Set(prev);
+                                if (checked) {
+                                  next.add(i);
+                                } else {
+                                  next.delete(i);
+                                }
+                                return next;
+                              });
+                            }}
+                          >
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <Chip>{categoryLabel(draft.category)}</Chip>
+                              <span className="text-xs text-muted">{draft.date}</span>
+                            </div>
+                            <span>{draft.summary}</span>
+                          </MemoryProposalRow>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                )}
+
+                {commit.layer3RuleProposals.length > 0 && (
+                  <section className="mb-5">
+                    <h3 className="text-sm font-semibold text-ink mb-2">Standing rules</h3>
+                    <ul className="space-y-3">
+                      {commit.layer3RuleProposals.map((proposal, i) => {
+                        const validityOk = proposal.validity?.ok !== false;
+                        const op = proposal.operation.toLowerCase();
+                        const showDiff =
+                          (op === 'revise' || op === 'retire') &&
+                          Boolean(proposal.currentRuleText?.trim());
+                        return (
+                          <MemoryProposalRow
+                            key={`l3-${i}`}
+                            id={`memory-l3-${i}`}
+                            validityOk={validityOk}
+                            validityReason={proposal.validity?.reason ?? null}
+                            accepted={acceptedRules.has(i)}
+                            onToggle={(checked) => {
+                              setAcceptedRules((prev) => {
+                                const next = new Set(prev);
+                                if (checked) {
+                                  next.add(i);
+                                } else {
+                                  next.delete(i);
+                                }
+                                return next;
+                              });
+                            }}
+                          >
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <Chip>{operationLabel(proposal.operation)}</Chip>
+                              <Chip>{targetLayerLabel(proposal.targetLayer)}</Chip>
+                            </div>
+                            {showDiff && (
+                              <p className="text-muted">
+                                <span className="line-through">
+                                  &ldquo;{proposal.currentRuleText}&rdquo;
+                                </span>
+                              </p>
+                            )}
+                            {proposal.ruleText?.trim() ? (
+                              <p className={showDiff ? 'mt-1' : undefined}>{proposal.ruleText}</p>
+                            ) : op === 'retire' ? (
+                              <p className="text-muted italic">Retire this rule</p>
+                            ) : null}
+                            {(proposal.evidence?.length ?? 0) > 0 && (
+                              <details className="mt-1 text-xs text-muted">
+                                <summary className="cursor-pointer">Evidence</summary>
+                                <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                                  {proposal.evidence.map((item, ei) => (
+                                    <li key={`${ei}-${item}`}>{item}</li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
+                          </MemoryProposalRow>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                )}
+
+                <label className="mt-2 flex items-start gap-2 text-sm text-ink">
                   <input
                     type="checkbox"
                     className="mt-1"
@@ -625,6 +729,7 @@ function ReviewPageInner() {
                   </span>
                 </label>
               </Card>
+            )}
 
             {commit.clarifyingQuestion && (
               <Card>

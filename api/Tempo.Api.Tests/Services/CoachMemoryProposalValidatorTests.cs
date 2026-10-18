@@ -112,6 +112,96 @@ public class CoachMemoryProposalValidatorTests
         commit.Layer1Patches[0].Validity!.Ok.Should().BeTrue();
     }
 
+    [Fact]
+    public void Stamp_Revise_StampsCurrentRuleText_FromActiveRule()
+    {
+        var active = new CoachRule
+        {
+            Id = "rule_heat_mp",
+            TargetLayer = CoachRuleTargetLayers.DataInterpretationNotes,
+            RuleText = "Afternoon MP costs ~2x recovery in heat",
+            Status = CoachRuleStatuses.Active,
+            Evidence = ["Aug 11 PM"],
+            Source = CoachRuleSources.Coach
+        };
+        var commit = Parse(CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            layer3RuleProposals:
+            [
+                new
+                {
+                    operation = "revise",
+                    ruleText = "Afternoon MP costs ~2x recovery when solar load is high",
+                    evidence = new[] { "Aug 11 PM", "Aug 15 AM" },
+                    targetRuleId = active.Id,
+                    targetLayer = "data_interpretation_notes"
+                }
+            ]));
+
+        CoachMemoryProposalValidator.Stamp(
+            commit,
+            WeekStart,
+            new HashSet<string>(),
+            new Dictionary<string, CoachRule> { [active.Id] = active });
+
+        var proposal = commit.Layer3RuleProposals[0];
+        proposal.Validity!.Ok.Should().BeTrue();
+        proposal.CurrentRuleText.Should().Be(active.RuleText);
+    }
+
+    [Fact]
+    public void Stamp_Promote_ClearsCurrentRuleText()
+    {
+        var commit = Parse(CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            layer3RuleProposals:
+            [
+                new
+                {
+                    operation = "promote",
+                    ruleText = "New standing rule",
+                    evidence = new[] { "obs" },
+                    targetRuleId = (string?)null,
+                    targetLayer = "key_learnings"
+                }
+            ]));
+        commit.Layer3RuleProposals[0].CurrentRuleText = "stale";
+
+        CoachMemoryProposalValidator.Stamp(
+            commit,
+            WeekStart,
+            new HashSet<string>(),
+            new Dictionary<string, CoachRule>());
+
+        commit.Layer3RuleProposals[0].Validity!.Ok.Should().BeTrue();
+        commit.Layer3RuleProposals[0].CurrentRuleText.Should().BeNull();
+    }
+
+    [Fact]
+    public void Stamp_ReviseMissingTarget_ClearsCurrentRuleText()
+    {
+        var commit = Parse(CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            layer3RuleProposals:
+            [
+                new
+                {
+                    operation = "revise",
+                    ruleText = "Updated",
+                    evidence = new[] { "obs" },
+                    targetRuleId = "rule_missing",
+                    targetLayer = "key_learnings"
+                }
+            ]));
+        commit.Layer3RuleProposals[0].CurrentRuleText = "stale";
+
+        CoachMemoryProposalValidator.Stamp(
+            commit,
+            WeekStart,
+            new HashSet<string>(),
+            new Dictionary<string, CoachRule>());
+
+        commit.Layer3RuleProposals[0].CurrentRuleText.Should().BeNull();
+        commit.Layer3RuleProposals[0].Validity!.Ok.Should().BeFalse();
+    }
+
     private static CoachWeeklyCommit Parse(string json)
     {
         var error = CoachWeeklyCommitSchema.TryParseAndValidate(json, WeekStart, out var commit);
