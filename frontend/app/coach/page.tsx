@@ -16,6 +16,7 @@ import {
   getCoachCommittedWeekOrNull,
   getCoachDraftWeekOrNull,
   getCoachHome,
+  type CoachWeekDraft,
   type CoachWeeklyCommitDay,
 } from '@/lib/api';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
@@ -106,6 +107,128 @@ function DayCard({
   );
 }
 
+function CommittedPlanSection({
+  sectionId,
+  heading,
+  week,
+  todayIso,
+  unitPreference,
+  showAdjust,
+  appliedMemoryLines,
+}: {
+  sectionId?: string;
+  heading: string;
+  week: CoachWeekDraft;
+  todayIso: string;
+  unitPreference: 'metric' | 'imperial';
+  showAdjust: boolean;
+  appliedMemoryLines: { key: string; text: string }[];
+}) {
+  const lockedThrough = week.lockedThroughDate ?? null;
+  const showAdjustmentBadge = Boolean(
+    week.isAdjustment || week.adjustmentStatus === 'applied'
+  );
+  const commit = week.commit;
+
+  return (
+    <div id={sectionId} className="space-y-8 scroll-mt-6">
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+          <div>
+            <h2 className="text-lg font-semibold text-ink">Coach&apos;s Notes</h2>
+            <p className="text-sm text-muted mt-1">{heading}</p>
+            {showAdjustmentBadge && (
+              <p className="text-xs uppercase tracking-wide text-muted mt-1">Adjusted week</p>
+            )}
+          </div>
+          <Link
+            href={`/coach/weeks/${week.id}/receipt`}
+            className="text-sm text-muted underline"
+          >
+            Privacy receipt
+          </Link>
+        </div>
+        <p className="text-sm text-ink whitespace-pre-wrap">{commit.coachesNotes}</p>
+        {(commit.callouts?.length ?? 0) > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {commit.callouts!.map((chip, i) => (
+              <span
+                key={`${chip}-${i}`}
+                className="rounded-tempo border border-border px-2 py-1 text-xs text-muted"
+              >
+                {chip}
+              </span>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <h2 className="text-lg font-semibold text-ink mb-4">{heading}</h2>
+        <div className="space-y-3">
+          {commit.days.map((day) => {
+            const elapsed = lockedThrough
+              ? day.date <= lockedThrough
+              : day.date < todayIso;
+            return (
+              <DayCard
+                key={day.date}
+                day={day}
+                elapsed={elapsed}
+                showAdjustmentBadge={showAdjustmentBadge && elapsed}
+                unitPreference={unitPreference}
+              />
+            );
+          })}
+        </div>
+        {showAdjust && (
+          <div className="mt-4">
+            <Link
+              href={`/coach/adjust?weekStartDate=${encodeURIComponent(week.weekStartDate)}`}
+            >
+              <Button type="button">Adjust remaining days</Button>
+            </Link>
+          </div>
+        )}
+      </Card>
+
+      {appliedMemoryLines.length > 0 && (
+        <Card>
+          <details>
+            <summary className="cursor-pointer text-lg font-semibold text-ink">
+              Applied to memory
+            </summary>
+            <ul className="mt-3 space-y-2 text-sm text-ink">
+              {appliedMemoryLines.map((line) => (
+                <li key={line.key} className="border-l-2 border-border pl-3">
+                  {line.text}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function memoryLinesForWeek(
+  week: CoachWeekDraft | null | undefined,
+  unitPreference: 'metric' | 'imperial'
+) {
+  if (!week?.commit) {
+    return [];
+  }
+  const legacy =
+    week.commit.memoryProposals && week.commit.memoryProposals.length > 0
+      ? week.commit.memoryProposals
+      : null;
+  if (!applyRecordHasAcceptedMemory(week.applyRecord) && !legacy) {
+    return [];
+  }
+  return buildAppliedMemoryLines(week.commit, week.applyRecord, unitPreference, legacy);
+}
+
 function CoachPageContent() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -180,24 +303,14 @@ function CoachPageContent() {
   const ritualCheckIn = ritualCheckInQuery.data;
 
   // Must stay above the early returns below (rules-of-hooks).
-  const appliedMemoryLines = useMemo(() => {
-    if (!committed?.commit) {
-      return [];
-    }
-    const legacy =
-      committed.commit.memoryProposals && committed.commit.memoryProposals.length > 0
-        ? committed.commit.memoryProposals
-        : null;
-    if (!applyRecordHasAcceptedMemory(committed.applyRecord) && !legacy) {
-      return [];
-    }
-    return buildAppliedMemoryLines(
-      committed.commit,
-      committed.applyRecord,
-      unitPreference,
-      legacy
-    );
-  }, [committed, unitPreference]);
+  const calendarMemoryLines = useMemo(
+    () => memoryLinesForWeek(committed, unitPreference),
+    [committed, unitPreference]
+  );
+  const upcomingMemoryLines = useMemo(
+    () => memoryLinesForWeek(ritualCommitted, unitPreference),
+    [ritualCommitted, unitPreference]
+  );
 
   if (settingsLoading || !isFetched) {
     return (
@@ -221,10 +334,6 @@ function CoachPageContent() {
   const goal = homeQuery.data?.goal;
   const needsProvider = homeQuery.data?.nextSteps.includes('Connect your Anthropic API key');
   const draft = draftQuery.data;
-  const lockedThrough = committed?.lockedThroughDate ?? draft?.lockedThroughDate ?? null;
-  const showAdjustmentBadge = Boolean(
-    committed?.isAdjustment || draft?.isAdjustment || committed?.adjustmentStatus === 'applied'
-  );
 
   const checkInRangeLabel =
     ritualCheckIn?.weekStartDate && ritualCheckIn?.weekEndDate
@@ -233,6 +342,20 @@ function CoachPageContent() {
   const planEndIso = planWeekStart ? addDaysIso(planWeekStart, 6) : null;
   const planRangeLabel =
     planWeekStart && planEndIso ? formatWeekRangeLabel(planWeekStart, planEndIso) : null;
+
+  // Ritual plan week may be next Mon–Sun while "this week" is still the check-in week.
+  const planIsFutureWeek = Boolean(planWeekStart && planWeekStart !== weekStartDate);
+  const upcomingCommitted =
+    planIsFutureWeek && ritualCommitted?.commit ? ritualCommitted : null;
+  const calendarCommitted = committed?.commit ? committed : null;
+  // Same Mon–Sun as the ritual plan: show once as "This week".
+  const thisWeekCommitted =
+    !planIsFutureWeek && ritualCommitted?.commit
+      ? ritualCommitted
+      : calendarCommitted;
+  const planLoading =
+    committedQuery.isLoading ||
+    (Boolean(planWeekStart) && ritualCommittedQuery.isLoading);
 
   return (
     <PageShell
@@ -442,11 +565,18 @@ function CoachPageContent() {
                   Next week is set
                   {planRangeLabel ? ` (${planRangeLabel})` : ''}.
                 </p>
-                <Link
-                  href={`/coach/adjust?weekStartDate=${encodeURIComponent(ritualCommitted.weekStartDate)}`}
-                >
-                  <Button type="button">Adjust</Button>
-                </Link>
+                <div className="flex flex-wrap gap-3">
+                  <a href="#coach-next-week">
+                    <Button type="button">View plan</Button>
+                  </a>
+                  <Link
+                    href={`/coach/adjust?weekStartDate=${encodeURIComponent(ritualCommitted.weekStartDate)}`}
+                  >
+                    <Button type="button" variant="secondary">
+                      Adjust
+                    </Button>
+                  </Link>
+                </div>
               </div>
             ) : (
               <div className="space-y-3">
@@ -470,90 +600,40 @@ function CoachPageContent() {
           </Card>
         )}
 
-        {committedQuery.isLoading && (
+        {planLoading && (
           <Card>
             <p className="text-sm text-muted">Loading committed week...</p>
           </Card>
         )}
 
-        {committed && committed.commit && (
-          <>
-            <Card>
-              <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
-                <div>
-                  <h2 className="text-lg font-semibold text-ink">Coach&apos;s Notes</h2>
-                  {showAdjustmentBadge && (
-                    <p className="text-xs uppercase tracking-wide text-muted mt-1">Adjusted week</p>
-                  )}
-                </div>
-                <Link
-                  href={`/coach/weeks/${committed.id}/receipt`}
-                  className="text-sm text-muted underline"
-                >
-                  Privacy receipt
-                </Link>
-              </div>
-              <p className="text-sm text-ink whitespace-pre-wrap">{committed.commit.coachesNotes}</p>
-              {(committed.commit.callouts?.length ?? 0) > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {committed.commit.callouts.map((chip, i) => (
-                    <span
-                      key={`${chip}-${i}`}
-                      className="rounded-tempo border border-border px-2 py-1 text-xs text-muted"
-                    >
-                      {chip}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </Card>
+        {upcomingCommitted && (
+          <CommittedPlanSection
+            sectionId="coach-next-week"
+            heading={
+              planRangeLabel ? `Next week (${planRangeLabel})` : 'Next week'
+            }
+            week={upcomingCommitted}
+            todayIso={todayIso}
+            unitPreference={unitPreference}
+            showAdjust={!ritualDraft}
+            appliedMemoryLines={upcomingMemoryLines}
+          />
+        )}
 
-            <Card>
-              <h2 className="text-lg font-semibold text-ink mb-4">This week</h2>
-              <div className="space-y-3">
-                {committed.commit.days.map((day) => {
-                  const elapsed = lockedThrough
-                    ? day.date <= lockedThrough
-                    : day.date < todayIso;
-                  return (
-                    <DayCard
-                      key={day.date}
-                      day={day}
-                      elapsed={elapsed}
-                      showAdjustmentBadge={showAdjustmentBadge && elapsed}
-                      unitPreference={unitPreference}
-                    />
-                  );
-                })}
-              </div>
-              {!draft && (
-                <div className="mt-4">
-                  <Link
-                    href={`/coach/adjust?weekStartDate=${encodeURIComponent(committed.weekStartDate)}`}
-                  >
-                    <Button type="button">Adjust remaining days</Button>
-                  </Link>
-                </div>
-              )}
-            </Card>
-
-            {appliedMemoryLines.length > 0 && (
-              <Card>
-                <details>
-                  <summary className="cursor-pointer text-lg font-semibold text-ink">
-                    Applied to memory
-                  </summary>
-                  <ul className="mt-3 space-y-2 text-sm text-ink">
-                    {appliedMemoryLines.map((line) => (
-                      <li key={line.key} className="border-l-2 border-border pl-3">
-                        {line.text}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              </Card>
-            )}
-          </>
+        {thisWeekCommitted && (
+          <CommittedPlanSection
+            sectionId={upcomingCommitted ? 'coach-this-week' : 'coach-next-week'}
+            heading="This week"
+            week={thisWeekCommitted}
+            todayIso={todayIso}
+            unitPreference={unitPreference}
+            showAdjust={!draft && !upcomingCommitted}
+            appliedMemoryLines={
+              planIsFutureWeek ? calendarMemoryLines : upcomingMemoryLines.length
+                ? upcomingMemoryLines
+                : calendarMemoryLines
+            }
+          />
         )}
       </div>
     </PageShell>
