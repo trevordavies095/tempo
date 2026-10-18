@@ -24,6 +24,7 @@ import {
   applyRecordHasAcceptedMemory,
   buildAppliedMemoryLines,
 } from '@/lib/coachMemoryDisplay';
+import { resolveDefaultCheckInReferenceDate } from '@/lib/coachWeek';
 
 function formatDuration(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
@@ -51,13 +52,6 @@ function localDateIso(d = new Date()): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const dayNum = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${dayNum}`;
-}
-
-function addDaysIso(iso: string, days: number): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + days);
-  return localDateIso(dt);
 }
 
 function lastPrescribedNonRestDate(days: CoachWeeklyCommitDay[]): string | null {
@@ -124,7 +118,6 @@ function CoachPageContent() {
 
   const weekStartDate = useMemo(() => localMondayIso(), []);
   const todayIso = useMemo(() => localDateIso(), []);
-  const nextWeekStart = useMemo(() => addDaysIso(weekStartDate, 7), [weekStartDate]);
 
   const homeQuery = useQuery({
     queryKey: ['coach-home'],
@@ -391,7 +384,9 @@ function CoachPageContent() {
               you&apos;re ready — this is guidance only and does not unlock Adjust.
             </p>
             <div className="mt-3">
-              <Link href={`/coach/preflight?referenceDate=${encodeURIComponent(nextWeekStart)}`}>
+              <Link
+                href={`/coach/preflight?referenceDate=${encodeURIComponent(resolveDefaultCheckInReferenceDate())}`}
+              >
                 <Button type="button" variant="secondary">
                   Generate next week
                 </Button>

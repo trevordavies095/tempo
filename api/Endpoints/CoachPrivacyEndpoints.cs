@@ -29,9 +29,11 @@ public static class CoachPrivacyEndpoints
             .Produces(404)
             .WithSummary("Assemble and redact coach context packet for privacy pre-flight")
             .WithDescription(
-                "Builds a Tempo-owned context packet for the Mon–Sun week, redacts name/email/GPS/route, " +
-                "and persists a peelable CoachPrivacyPreflight (ConsentedAt null). " +
-                "Fails closed with 400 if redaction cannot complete. Does not call Anthropic. " +
+                "Builds a Tempo-owned context packet for the weekly ritual (check-in week N → plan week N+1) " +
+                "or mid-week Adjust (plan week containing referenceDate). " +
+                "Ritual assemble requires a persisted Coach check-in for week N. " +
+                "Redacts name/email/GPS/route and persists a peelable CoachPrivacyPreflight (ConsentedAt null). " +
+                "Fails closed with 400 if the check-in gate fails or redaction cannot complete. Does not call Anthropic. " +
                 "404 when Coach is unavailable or the athlete has not opted in.");
 
         group.MapGet("/privacy/preflight/{id:guid}", GetPreflight)
@@ -65,13 +67,51 @@ public static class CoachPrivacyEndpoints
             return Results.NotFound();
         }
 
-        if (!TryResolveWeek(timezoneOffsetMinutes, referenceDate, out var week, out var weekError))
+        if (!TryResolveContainingWeek(timezoneOffsetMinutes, referenceDate, out var containingWeek, out var weekError))
         {
             return Results.BadRequest(new { error = weekError });
         }
 
         var offset = timezoneOffsetMinutes ?? 0;
-        var packet = await assembler.AssembleAsync(week, offset);
+        var containingMonday = DateOnly.FromDateTime(containingWeek.WeekStartLocal);
+
+        var startedAdjust = await db.CoachAdjustments.AsNoTracking()
+            .AnyAsync(
+                a => a.WeekStartDate == containingMonday && a.Status == CoachAdjustmentStatuses.Started);
+
+        WeeklyRecapWeekMath.MondaySundayWeek checkInWeek;
+        WeeklyRecapWeekMath.MondaySundayWeek planWeek;
+
+        if (startedAdjust)
+        {
+            // Adjust: referenceDate identifies the plan week; no check-in gate.
+            planWeek = containingWeek;
+            checkInWeek = WeeklyRecapWeekMath.ResolveCheckInWeekFromPlan(planWeek, offset);
+        }
+        else
+        {
+            // Ritual: referenceDate (or issue-16 default) identifies check-in week N; plan = N+7.
+            if (!TryResolveCheckInWeek(timezoneOffsetMinutes, referenceDate, out checkInWeek, out weekError))
+            {
+                return Results.BadRequest(new { error = weekError });
+            }
+
+            planWeek = WeeklyRecapWeekMath.ResolvePlanWeekFromCheckIn(checkInWeek, offset);
+            var checkInMonday = DateOnly.FromDateTime(checkInWeek.WeekStartLocal);
+            var planMonday = DateOnly.FromDateTime(planWeek.WeekStartLocal);
+            var hasCheckIn = await db.CoachCheckIns.AsNoTracking()
+                .AnyAsync(c => c.WeekStartDate == checkInMonday);
+            if (!hasCheckIn)
+            {
+                return Results.BadRequest(new
+                {
+                    error =
+                        $"Save a Coach check-in for {checkInMonday:yyyy-MM-dd} before generating the plan for {planMonday:yyyy-MM-dd}."
+                });
+            }
+        }
+
+        var packet = await assembler.AssembleAsync(checkInWeek, planWeek, offset);
 
         var user = await db.Users.AsNoTracking().FirstOrDefaultAsync();
         var redactContext = new CoachRedactionContext(Username: user?.Username);
@@ -92,16 +132,18 @@ public static class CoachPrivacyEndpoints
             return Results.BadRequest(new { error = "Redaction failed: name fields must not appear in packet" });
         }
 
-        var weekStartDate = DateOnly.FromDateTime(week.WeekStartLocal);
-        var referenceLocal = DateOnly.FromDateTime(week.ReferenceLocalDate);
+        var planStartDate = DateOnly.FromDateTime(planWeek.WeekStartLocal);
+        var checkInStartDate = DateOnly.FromDateTime(checkInWeek.WeekStartLocal);
+        var referenceLocal = DateOnly.FromDateTime(
+            startedAdjust ? planWeek.ReferenceLocalDate : checkInWeek.ReferenceLocalDate);
         var reportJson = JsonSerializer.Serialize(report, JsonOptions);
         var hash = Sha256Hex(redactedJson);
         var now = DateTime.UtcNow;
 
-        var row = await db.CoachPrivacyPreflights.FirstOrDefaultAsync(p => p.WeekStartDate == weekStartDate);
+        var row = await db.CoachPrivacyPreflights.FirstOrDefaultAsync(p => p.WeekStartDate == planStartDate);
         if (row == null)
         {
-            row = new CoachPrivacyPreflight { WeekStartDate = weekStartDate };
+            row = new CoachPrivacyPreflight { WeekStartDate = planStartDate };
             db.CoachPrivacyPreflights.Add(row);
         }
 
@@ -116,8 +158,12 @@ public static class CoachPrivacyEndpoints
 
         await db.SaveChangesAsync();
 
-        var weekEnd = week.WeekEndLocal.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        return Results.Ok(ToDocument(row, weekEnd));
+        return Results.Ok(ToDocument(
+            row,
+            checkInStartDate,
+            DateOnly.FromDateTime(checkInWeek.WeekEndLocal.Date),
+            planStartDate,
+            DateOnly.FromDateTime(planWeek.WeekEndLocal.Date)));
     }
 
     private static async Task<IResult> GetPreflight(
@@ -136,8 +182,7 @@ public static class CoachPrivacyEndpoints
             return Results.NotFound();
         }
 
-        var weekEnd = row.WeekStartDate.AddDays(6).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        return Results.Ok(ToDocument(row, weekEnd));
+        return Results.Ok(ToDocumentFromRow(row));
     }
 
     private static async Task<IResult> PostConsent(
@@ -159,11 +204,24 @@ public static class CoachPrivacyEndpoints
         row.ConsentedAt ??= DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var weekEnd = row.WeekStartDate.AddDays(6).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        return Results.Ok(ToDocument(row, weekEnd));
+        return Results.Ok(ToDocumentFromRow(row));
     }
 
-    private static CoachPrivacyPreflightDocument ToDocument(CoachPrivacyPreflight row, string weekEndDate)
+    private static CoachPrivacyPreflightDocument ToDocumentFromRow(CoachPrivacyPreflight row)
+    {
+        var planStart = row.WeekStartDate;
+        var planEnd = planStart.AddDays(6);
+        var checkInStart = planStart.AddDays(-7);
+        var checkInEnd = checkInStart.AddDays(6);
+        return ToDocument(row, checkInStart, checkInEnd, planStart, planEnd);
+    }
+
+    private static CoachPrivacyPreflightDocument ToDocument(
+        CoachPrivacyPreflight row,
+        DateOnly checkInStart,
+        DateOnly checkInEnd,
+        DateOnly planStart,
+        DateOnly planEnd)
     {
         var report = JsonSerializer.Deserialize<CoachPrivacyReport>(row.PrivacyReportJson, JsonOptions)
                      ?? new CoachPrivacyReport([], [], [], []);
@@ -177,10 +235,19 @@ public static class CoachPrivacyEndpoints
             payload = null;
         }
 
+        var planStartStr = planStart.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var planEndStr = planEnd.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var checkInStartStr = checkInStart.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var checkInEndStr = checkInEnd.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
         return new CoachPrivacyPreflightDocument(
             Id: row.Id,
-            WeekStartDate: row.WeekStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            WeekEndDate: weekEndDate,
+            WeekStartDate: planStartStr,
+            WeekEndDate: planEndStr,
+            CheckInWeekStartDate: checkInStartStr,
+            CheckInWeekEndDate: checkInEndStr,
+            PlanWeekStartDate: planStartStr,
+            PlanWeekEndDate: planEndStr,
             ReferenceDate: row.ReferenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             TimezoneOffsetMinutes: row.TimezoneOffsetMinutes,
             Report: report,
@@ -197,7 +264,10 @@ public static class CoachPrivacyEndpoints
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    private static bool TryResolveWeek(
+    /// <summary>
+    /// Week containing referenceDate (or local today) — used to detect Adjust on that Monday.
+    /// </summary>
+    private static bool TryResolveContainingWeek(
         int? timezoneOffsetMinutes,
         string? referenceDate,
         out WeeklyRecapWeekMath.MondaySundayWeek week,
@@ -205,26 +275,66 @@ public static class CoachPrivacyEndpoints
     {
         week = null!;
         error = null;
-        DateTime? referenceLocalDate = null;
-        if (!string.IsNullOrWhiteSpace(referenceDate))
+        if (!TryParseReferenceDate(referenceDate, out var referenceLocalDate, out error))
         {
-            if (!DateTime.TryParse(
-                    referenceDate,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                    out var parsed))
-            {
-                error = "Invalid referenceDate; use yyyy-MM-dd.";
-                return false;
-            }
-
-            referenceLocalDate = parsed.Date;
+            return false;
         }
 
         week = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
             DateTime.UtcNow,
             timezoneOffsetMinutes,
             referenceLocalDate);
+        return true;
+    }
+
+    /// <summary>
+    /// Check-in week for the ritual: explicit referenceDate, or issue-16 default when omitted.
+    /// </summary>
+    private static bool TryResolveCheckInWeek(
+        int? timezoneOffsetMinutes,
+        string? referenceDate,
+        out WeeklyRecapWeekMath.MondaySundayWeek week,
+        out string? error)
+    {
+        week = null!;
+        error = null;
+        if (!TryParseReferenceDate(referenceDate, out var referenceLocalDate, out error))
+        {
+            return false;
+        }
+
+        week = referenceLocalDate.HasValue
+            ? WeeklyRecapWeekMath.ResolveMondaySundayWeek(
+                DateTime.UtcNow,
+                timezoneOffsetMinutes,
+                referenceLocalDate)
+            : WeeklyRecapWeekMath.ResolveDefaultCheckInWeek(DateTime.UtcNow, timezoneOffsetMinutes);
+        return true;
+    }
+
+    private static bool TryParseReferenceDate(
+        string? referenceDate,
+        out DateTime? referenceLocalDate,
+        out string? error)
+    {
+        referenceLocalDate = null;
+        error = null;
+        if (string.IsNullOrWhiteSpace(referenceDate))
+        {
+            return true;
+        }
+
+        if (!DateTime.TryParse(
+                referenceDate,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed))
+        {
+            error = "Invalid referenceDate; use yyyy-MM-dd.";
+            return false;
+        }
+
+        referenceLocalDate = parsed.Date;
         return true;
     }
 
@@ -244,6 +354,10 @@ public sealed record CoachPrivacyPreflightDocument(
     Guid Id,
     string WeekStartDate,
     string WeekEndDate,
+    string CheckInWeekStartDate,
+    string CheckInWeekEndDate,
+    string PlanWeekStartDate,
+    string PlanWeekEndDate,
     string ReferenceDate,
     int TimezoneOffsetMinutes,
     CoachPrivacyReport Report,

@@ -77,8 +77,23 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         await db.SaveChangesAsync();
     }
 
+    private static async Task SaveEmptyCheckInAsync(HttpClient client, string referenceDate = "2026-10-13")
+    {
+        var put = await client.PutAsJsonAsync("/coach/check-in", new
+        {
+            referenceDate,
+            timezoneOffsetMinutes = 0,
+            overallFeel = (string?)null,
+            niggles = (string?)null,
+            lifeConstraints = (string?)null,
+            runNotes = Array.Empty<object>()
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private static async Task<Guid> ConsentPreflightAsync(HttpClient client, string referenceDate = "2026-10-13")
     {
+        await SaveEmptyCheckInAsync(client, referenceDate);
         var assemble = await client.PostAsync(
             $"/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate={referenceDate}",
             null);
@@ -124,7 +139,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 
         var preflightId = await ConsentPreflightAsync(client);
 
-        commitJson ??= CoachWeeklyCommitSchemaTests.BuildCommitJson();
+        commitJson ??= CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: new DateOnly(2026, 10, 19));
         _factory.Brain.Results.Add(new CoachProtocolBrainResult(
             true, commitJson, 10, 20, CoachProtocolBrainError.None, null));
 
@@ -134,7 +149,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         var job = await PollUntilTerminalAsync(client, started!.Id);
         job.Status.Should().Be("ready");
 
-        var week = await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-12");
+        var week = await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-19");
         week.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await week.Content.ReadAsStringAsync());
         return (client, doc.RootElement.GetProperty("commit").Clone());
@@ -150,7 +165,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 
         var put = await client.PutAsJsonAsync("/coach/weeks/draft", new
         {
-            weekStartDate = "2026-10-12",
+            weekStartDate = "2026-10-19",
             commit = edited
         });
         put.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -162,9 +177,9 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         var applied = await apply.Content.ReadFromJsonAsync<WeekResponse>(JsonOptions);
         applied!.Status.Should().Be("committed");
 
-        (await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-12"))
+        (await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-19"))
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var committed = await client.GetAsync("/coach/weeks/committed?weekStartDate=2026-10-12");
+        var committed = await client.GetAsync("/coach/weeks/committed?weekStartDate=2026-10-19");
         committed.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var scope = _factory.Decorated.Services.CreateScope();
@@ -179,6 +194,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     public async Task Apply_UnackedSafety_ReturnsBadRequest()
     {
         var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            weekStart: new DateOnly(2026, 10, 19),
             safetyFlags:
             [
                 new
@@ -198,7 +214,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 
         var applyNoResponse = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
         {
-            weekStartDate = "2026-10-12",
+            weekStartDate = "2026-10-19",
             safetyAcknowledgments = new[]
             {
                 new { index = 0, acknowledged = true, response = (string?)null }
@@ -210,7 +226,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         });
         applyNoResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        (await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-12"))
+        (await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-19"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -218,11 +234,12 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     public async Task Apply_MemoryDefaultReject_AndAcceptEpisode()
     {
         var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            weekStart: new DateOnly(2026, 10, 19),
             layer2EpisodeDrafts:
             [
                 new
                 {
-                    date = "2026-10-12",
+                    date = "2026-10-19",
                     category = "milestone",
                     summary = "Travel blackout week noted"
                 }
@@ -247,12 +264,12 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
             true,
             CoachWeeklyCommitSchemaTests.BuildCommitJson(
                 notes: "Next week plan.",
-                weekStart: new DateOnly(2026, 10, 19),
+                weekStart: new DateOnly(2026, 10, 26),
                 layer2EpisodeDrafts:
                 [
                     new
                     {
-                        date = "2026-10-19",
+                        date = "2026-10-26",
                         category = "milestone",
                         summary = "Travel blackout week noted"
                     }
@@ -268,7 +285,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 
         var acceptApply = await client2.PostAsJsonAsync("/coach/weeks/draft/apply", new
         {
-            weekStartDate = "2026-10-19",
+            weekStartDate = "2026-10-26",
             safetyAcknowledgments = Array.Empty<object>(),
             acceptedLayer1PatchIndexes = Array.Empty<int>(),
             acceptedEpisodeIndexes = new[] { 0 },
@@ -291,6 +308,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     public async Task Apply_AcceptsL1Patch_PromoteRule_AndRecap()
     {
         var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            weekStart: new DateOnly(2026, 10, 19),
             layer1Patches:
             [
                 new
@@ -316,7 +334,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 
         var apply = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
         {
-            weekStartDate = "2026-10-12",
+            weekStartDate = "2026-10-19",
             safetyAcknowledgments = Array.Empty<object>(),
             acceptedLayer1PatchIndexes = new[] { 0 },
             acceptedEpisodeIndexes = Array.Empty<int>(),
@@ -337,9 +355,9 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 
         var recap = await db.CoachEpisodes.SingleAsync(e => e.Category == CoachEpisodeCategories.Recap);
         recap.Summary.Should().Contain("Keep the long easy");
-        recap.Date.Should().Be(new DateOnly(2026, 10, 18));
+        recap.Date.Should().Be(new DateOnly(2026, 10, 25));
 
-        var committed = await client.GetAsync("/coach/weeks/committed?weekStartDate=2026-10-12");
+        var committed = await client.GetAsync("/coach/weeks/committed?weekStartDate=2026-10-19");
         committed.StatusCode.Should().Be(HttpStatusCode.OK);
         using var committedDoc = JsonDocument.Parse(await committed.Content.ReadAsStringAsync());
         var root = committedDoc.RootElement;
@@ -361,7 +379,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     {
         var (client, _) = await GenerateDraftAsync();
 
-        var draft = await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-12");
+        var draft = await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-19");
         draft.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await draft.Content.ReadAsStringAsync());
         doc.RootElement.TryGetProperty("applyRecord", out var applyRecord).Should().BeTrue();
@@ -392,6 +410,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         }
 
         var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            weekStart: new DateOnly(2026, 10, 19),
             layer3RuleProposals:
             [
                 new
@@ -413,7 +432,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         var job = await PollUntilTerminalAsync(client, started!.Id);
         job.Status.Should().Be("ready");
 
-        var week = await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-12");
+        var week = await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-19");
         week.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await week.Content.ReadAsStringAsync());
         var proposal = doc.RootElement.GetProperty("commit").GetProperty("layer3RuleProposals")[0];
@@ -426,6 +445,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     public async Task Apply_InvalidProposalAccept_Returns409()
     {
         var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            weekStart: new DateOnly(2026, 10, 19),
             layer1Patches:
             [
                 new
@@ -442,7 +462,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 
         var apply = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
         {
-            weekStartDate = "2026-10-12",
+            weekStartDate = "2026-10-19",
             safetyAcknowledgments = Array.Empty<object>(),
             acceptedLayer1PatchIndexes = new[] { 0 },
             acceptedEpisodeIndexes = Array.Empty<int>(),
@@ -456,6 +476,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     public async Task JobLand_StampsInvalidMemory_WithoutFailingWeek()
     {
         var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            weekStart: new DateOnly(2026, 10, 19),
             layer3RuleProposals:
             [
                 new
@@ -471,7 +492,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         commit.GetProperty("layer3RuleProposals")[0].GetProperty("validity").GetProperty("ok")
             .GetBoolean().Should().BeFalse();
 
-        (await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-12"))
+        (await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-19"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -486,7 +507,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 
         (await client.PutAsJsonAsync("/coach/weeks/draft", new
         {
-            weekStartDate = "2026-10-12",
+            weekStartDate = "2026-10-19",
             commit
         })).StatusCode.Should().Be(HttpStatusCode.Conflict);
 
@@ -496,7 +517,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 
         var preflightId = await ConsentPreflightAsync(client);
         _factory.Brain.Results.Add(new CoachProtocolBrainResult(
-            true, CoachWeeklyCommitSchemaTests.BuildCommitJson(), 1, 1, CoachProtocolBrainError.None, null));
+            true, CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: new DateOnly(2026, 10, 19)), 1, 1, CoachProtocolBrainError.None, null));
         var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
         generate.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
@@ -505,6 +526,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     public async Task Apply_WithSafetyAckAndResponse_Succeeds()
     {
         var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            weekStart: new DateOnly(2026, 10, 19),
             safetyFlags:
             [
                 new
@@ -519,7 +541,7 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 
         var apply = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
         {
-            weekStartDate = "2026-10-12",
+            weekStartDate = "2026-10-19",
             safetyAcknowledgments = new[]
             {
                 new { index = 0, acknowledged = true, response = "Understood — will rest and seek care." }

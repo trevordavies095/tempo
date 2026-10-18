@@ -16,6 +16,12 @@ namespace Tempo.Api.Tests.IntegrationTests;
 [Collection("Integration Tests")]
 public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactory>
 {
+    /// <summary>Check-in week N Monday (referenceDate 2026-10-13 falls here).</summary>
+    private static readonly DateOnly CheckInMonday = new(2026, 10, 12);
+
+    /// <summary>Plan week N+1 Monday.</summary>
+    private static readonly DateOnly PlanMonday = new(2026, 10, 19);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -54,16 +60,34 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
             .StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    private static async Task SaveEmptyCheckInAsync(HttpClient client, string referenceDate = "2026-10-13")
+    {
+        var put = await client.PutAsJsonAsync("/coach/check-in", new
+        {
+            referenceDate,
+            timezoneOffsetMinutes = 0,
+            overallFeel = (string?)null,
+            niggles = (string?)null,
+            lifeConstraints = (string?)null,
+            runNotes = Array.Empty<object>()
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private static async Task<Guid> ConsentPreflightAsync(HttpClient client, string referenceDate = "2026-10-13")
     {
+        await SaveEmptyCheckInAsync(client, referenceDate);
         var assemble = await client.PostAsync(
             $"/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate={referenceDate}",
             null);
         assemble.StatusCode.Should().Be(HttpStatusCode.OK);
         var doc = await assemble.Content.ReadFromJsonAsync<PreflightResponse>(JsonOptions);
         doc.Should().NotBeNull();
+        doc!.WeekStartDate.Should().Be(PlanMonday.ToString("yyyy-MM-dd"));
+        doc.CheckInWeekStartDate.Should().Be(CheckInMonday.ToString("yyyy-MM-dd"));
+        doc.PlanWeekStartDate.Should().Be(PlanMonday.ToString("yyyy-MM-dd"));
 
-        var consent = await client.PostAsync($"/coach/privacy/preflight/{doc!.Id}/consent", null);
+        var consent = await client.PostAsync($"/coach/privacy/preflight/{doc.Id}/consent", null);
         consent.StatusCode.Should().Be(HttpStatusCode.OK);
         return doc.Id;
     }
@@ -89,10 +113,27 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
     }
 
     [Fact]
+    public async Task Assemble_WithoutCheckIn_ReturnsBadRequest()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        var assemble = await client.PostAsync(
+            "/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate=2026-10-13",
+            null);
+        assemble.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await assemble.Content.ReadAsStringAsync();
+        body.Should().Contain("Save a Coach check-in");
+        body.Should().Contain("2026-10-12");
+        body.Should().Contain("2026-10-19");
+    }
+
+    [Fact]
     public async Task Generate_WithoutConsent_ReturnsBadRequest()
     {
         var client = await AuthenticatedClientAsync();
         await OptInAndProviderAsync(client);
+        await SaveEmptyCheckInAsync(client);
 
         var assemble = await client.PostAsync(
             "/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate=2026-10-13",
@@ -105,13 +146,13 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
     }
 
     [Fact]
-    public async Task Generate_WithConsent_ReachesReadyDraft()
+    public async Task Generate_WithConsent_ReachesReadyDraft_OnPlanWeek()
     {
         var client = await AuthenticatedClientAsync();
         await OptInAndProviderAsync(client);
         var preflightId = await ConsentPreflightAsync(client);
 
-        var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson();
+        var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: PlanMonday);
         _factory.Brain.Results.Add(new CoachProtocolBrainResult(
             true, commitJson, 10, 20, CoachProtocolBrainError.None, null));
 
@@ -119,15 +160,16 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
         generate.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
         started.Should().NotBeNull();
+        started!.WeekStartDate.Should().Be(PlanMonday.ToString("yyyy-MM-dd"));
 
-        var job = await PollUntilTerminalAsync(client, started!.Id);
+        var job = await PollUntilTerminalAsync(client, started.Id);
         job.Status.Should().Be("ready");
         job.ResultWeekId.Should().NotBeNull();
         job.InputTokens.Should().Be(10);
         job.OutputTokens.Should().Be(20);
         _factory.Brain.CallCount.Should().Be(1);
 
-        var week = await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-12");
+        var week = await client.GetAsync($"/coach/weeks/draft?weekStartDate={PlanMonday:yyyy-MM-dd}");
         week.StatusCode.Should().Be(HttpStatusCode.OK);
         var weekDoc = await week.Content.ReadFromJsonAsync<WeekResponse>(JsonOptions);
         weekDoc!.PayloadHash.Should().NotBeNullOrEmpty();
@@ -144,7 +186,7 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
         _factory.Brain.Results.Add(new CoachProtocolBrainResult(
             true, "{not-json", 1, 1, CoachProtocolBrainError.None, null));
         _factory.Brain.Results.Add(new CoachProtocolBrainResult(
-            true, CoachWeeklyCommitSchemaTests.BuildCommitJson(), 2, 3, CoachProtocolBrainError.None, null));
+            true, CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: PlanMonday), 2, 3, CoachProtocolBrainError.None, null));
 
         var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
         var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
@@ -161,16 +203,17 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
         var client = await AuthenticatedClientAsync();
         await OptInAndProviderAsync(client);
 
-        // Blackout Wednesday — commit schedules easy that day.
+        // Blackout Wednesday of plan week (2026-10-21).
         (await client.PostAsJsonAsync("/coach/constraints", new
         {
             kind = "blackout",
-            startDate = "2026-10-14",
-            endDate = "2026-10-14"
+            startDate = "2026-10-21",
+            endDate = "2026-10-21"
         })).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var preflightId = await ConsentPreflightAsync(client);
         var badCommit = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            weekStart: PlanMonday,
             dayTypeForIndex: i => i == 2 ? "easy" : (i == 6 ? "long" : "rest"));
         _factory.Brain.Results.Add(new CoachProtocolBrainResult(
             true, badCommit, 1, 1, CoachProtocolBrainError.None, null));
@@ -189,12 +232,16 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
     private sealed class PreflightResponse
     {
         public Guid Id { get; set; }
+        public string WeekStartDate { get; set; } = "";
+        public string CheckInWeekStartDate { get; set; } = "";
+        public string PlanWeekStartDate { get; set; } = "";
     }
 
     private sealed class JobResponse
     {
         public Guid Id { get; set; }
         public string Status { get; set; } = "";
+        public string WeekStartDate { get; set; } = "";
         public Guid? ResultWeekId { get; set; }
         public int? InputTokens { get; set; }
         public int? OutputTokens { get; set; }

@@ -185,6 +185,12 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
         Packet layer2/layer3 are the athlete's curated memory and active standing rules.
         Obey active Layer 3 rules in the plan (soft guidance). CoachConstraint non-negotiables are hard.
 
+        Weekly ritual week split (meta.checkInWeek* vs meta.planWeek*):
+        - checkIn describes completed training for week N (feel, niggles, runs). It is authoritative for subjective context.
+        - days[] must be exactly the seven dates of the upcoming plan week N+1 (meta.planWeekStartDate through planWeekEndDate).
+        - Do not invent workouts missing from check-in. Empty/rest check-in weeks are valid — acknowledge them in coachesNotes when relevant.
+        - Mid-week Adjust (packet.adjustment present) still replans only remainingDates within the plan week; it does not require a new check-in.
+
         Rules:
         - Honor unit preference from the packet when describing paces in notes.
         - Honor CoachConstraint non-negotiables: blackouts = rest; standing schedule presets; secondary_race dates must be run.type=race.

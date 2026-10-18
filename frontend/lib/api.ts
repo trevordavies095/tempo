@@ -2012,8 +2012,13 @@ export interface CoachPrivacyReport {
 
 export interface CoachPrivacyPreflight {
   id: string;
+  /** Plan week Monday (job/draft identity). */
   weekStartDate: string;
   weekEndDate: string;
+  checkInWeekStartDate: string;
+  checkInWeekEndDate: string;
+  planWeekStartDate: string;
+  planWeekEndDate: string;
   referenceDate: string;
   timezoneOffsetMinutes: number;
   report: CoachPrivacyReport;

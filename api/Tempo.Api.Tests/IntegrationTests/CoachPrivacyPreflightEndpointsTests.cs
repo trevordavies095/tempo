@@ -50,6 +50,20 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    private static async Task SaveEmptyCheckInAsync(HttpClient client, string referenceDate = "2026-10-13")
+    {
+        var put = await client.PutAsJsonAsync("/coach/check-in", new
+        {
+            referenceDate,
+            timezoneOffsetMinutes = 0,
+            overallFeel = (string?)null,
+            niggles = (string?)null,
+            lifeConstraints = (string?)null,
+            runNotes = Array.Empty<object>()
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Fact]
     public async Task Preflight_WhenHostDisabled_ReturnsNotFound()
     {
@@ -73,7 +87,7 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
     }
 
     [Fact]
-    public async Task AssembleEmptyWeek_ThenConsent()
+    public async Task Assemble_WithoutCheckIn_ReturnsBadRequest()
     {
         var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
@@ -81,10 +95,29 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
         var assemble = await client.PostAsync(
             "/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate=2026-10-13",
             null);
+        assemble.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await assemble.Content.ReadAsStringAsync();
+        body.Should().Contain("Save a Coach check-in");
+    }
+
+    [Fact]
+    public async Task AssembleEmptyWeek_ThenConsent()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+        await SaveEmptyCheckInAsync(client);
+
+        var assemble = await client.PostAsync(
+            "/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate=2026-10-13",
+            null);
         assemble.StatusCode.Should().Be(HttpStatusCode.OK);
         var doc = await assemble.Content.ReadFromJsonAsync<PreflightResponse>(JsonOptions);
         doc.Should().NotBeNull();
-        doc!.WeekStartDate.Should().Be("2026-10-12");
+        doc!.WeekStartDate.Should().Be("2026-10-19");
+        doc.CheckInWeekStartDate.Should().Be("2026-10-12");
+        doc.CheckInWeekEndDate.Should().Be("2026-10-18");
+        doc.PlanWeekStartDate.Should().Be("2026-10-19");
+        doc.PlanWeekEndDate.Should().Be("2026-10-25");
         doc.Consented.Should().BeFalse();
         doc.ConsentedAt.Should().BeNull();
         doc.Report.Included.Should().NotBeEmpty();
@@ -101,6 +134,8 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
         get.StatusCode.Should().Be(HttpStatusCode.OK);
         var again = await get.Content.ReadFromJsonAsync<PreflightResponse>(JsonOptions);
         again!.Consented.Should().BeTrue();
+        again.PlanWeekStartDate.Should().Be("2026-10-19");
+        again.CheckInWeekStartDate.Should().Be("2026-10-12");
     }
 
     [Fact]
@@ -108,6 +143,7 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
     {
         var client = await AuthenticatedClientAsync();
         await OptInAsync(client);
+        await SaveEmptyCheckInAsync(client, "2026-10-14");
 
         const string secretName = "SecretRunNameXYZ";
         using (var scope = _factory.Decorated.Services.CreateScope())
@@ -212,17 +248,25 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
             await db.SaveChangesAsync();
         }
 
+        // Check-in already seeded above for week 2026-10-12.
         var assemble = await client.PostAsync(
             "/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate=2026-10-13",
             null);
         assemble.StatusCode.Should().Be(HttpStatusCode.OK);
         var doc = await assemble.Content.ReadFromJsonAsync<PreflightResponse>(JsonOptions);
         doc.Should().NotBeNull();
+        doc!.CheckInWeekStartDate.Should().Be("2026-10-12");
+        doc.PlanWeekStartDate.Should().Be("2026-10-19");
 
-        var payloadJson = JsonSerializer.Serialize(doc!.RedactedPayload);
+        var payloadJson = JsonSerializer.Serialize(doc.RedactedPayload);
         using var payload = JsonDocument.Parse(payloadJson);
+        var meta = payload.RootElement.GetProperty("meta");
+        meta.GetProperty("checkInWeekStartDate").GetString().Should().Be("2026-10-12");
+        meta.GetProperty("planWeekStartDate").GetString().Should().Be("2026-10-19");
+        // L2 prior-week keyed off check-in week ending (2026-10-18) → prior ending 2026-10-11.
         var layer2 = payload.RootElement.GetProperty("layer2");
         layer2.TryGetProperty("scoresById", out _).Should().BeFalse();
+        layer2.GetProperty("selection").GetProperty("priorWeekEnding").GetString().Should().Be("2026-10-11");
         layer2.GetProperty("priorWeek").EnumerateArray().Select(e => e.GetProperty("id").GetString())
             .Should().Contain("ep_2026-10-10_race_prior");
         layer2.GetProperty("retrieved").EnumerateArray().Select(e => e.GetProperty("id").GetString())
@@ -247,6 +291,10 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
     {
         public Guid Id { get; set; }
         public string WeekStartDate { get; set; } = "";
+        public string CheckInWeekStartDate { get; set; } = "";
+        public string CheckInWeekEndDate { get; set; } = "";
+        public string PlanWeekStartDate { get; set; } = "";
+        public string PlanWeekEndDate { get; set; } = "";
         public bool Consented { get; set; }
         public DateTime? ConsentedAt { get; set; }
         public object? RedactedPayload { get; set; }

@@ -67,7 +67,17 @@ public class CoachPrivacyRedactorTests
     public void TryRedact_ScrubsUsernameAndEmailInMemoryText()
     {
         var packet = new CoachContextPacket(
-            Meta: new CoachPacketMeta("2026-10-12", "2026-10-18", "2026-10-13", 0, "metric", DateTime.UtcNow),
+            Meta: new CoachPacketMeta(
+                "2026-10-19",
+                "2026-10-25",
+                "2026-10-12",
+                "2026-10-18",
+                "2026-10-19",
+                "2026-10-25",
+                "2026-10-13",
+                0,
+                "metric",
+                DateTime.UtcNow),
             Goal: null,
             Constraints: [],
             Layer1: new CoachPacketLayer1(
@@ -122,7 +132,17 @@ public class CoachPrivacyRedactorTests
     public void TryRedact_FailsClosed_WhenGpsInEpisodeSummary()
     {
         var packet = new CoachContextPacket(
-            Meta: new CoachPacketMeta("2026-10-12", "2026-10-18", "2026-10-13", 0, "metric", DateTime.UtcNow),
+            Meta: new CoachPacketMeta(
+                "2026-10-19",
+                "2026-10-25",
+                "2026-10-12",
+                "2026-10-18",
+                "2026-10-19",
+                "2026-10-25",
+                "2026-10-13",
+                0,
+                "metric",
+                DateTime.UtcNow),
             Goal: null,
             Constraints: [],
             Layer1: new CoachPacketLayer1(

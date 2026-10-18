@@ -127,7 +127,7 @@ public class CoachWeeklyCommitSchemaTests
         });
     }
 
-    internal static object EmptyApplyBody(string weekStartDate = "2026-10-12") => new
+    internal static object EmptyApplyBody(string weekStartDate = "2026-10-19") => new
     {
         weekStartDate,
         safetyAcknowledgments = Array.Empty<object>(),

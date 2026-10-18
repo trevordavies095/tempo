@@ -54,8 +54,34 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
             .StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    private static async Task<Guid> ConsentPreflightAsync(HttpClient client, string referenceDate = "2026-10-13")
+    private static async Task SaveEmptyCheckInAsync(HttpClient client, string referenceDate)
     {
+        var put = await client.PutAsJsonAsync("/coach/check-in", new
+        {
+            referenceDate,
+            timezoneOffsetMinutes = 0,
+            overallFeel = (string?)null,
+            niggles = (string?)null,
+            lifeConstraints = (string?)null,
+            runNotes = Array.Empty<object>()
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    /// <summary>
+    /// Ritual assemble: referenceDate identifies check-in week N (requires saved check-in).
+    /// Adjust assemble: pass <paramref name="forAdjust"/> true after StartAdjust — no check-in gate.
+    /// </summary>
+    private static async Task<Guid> ConsentPreflightAsync(
+        HttpClient client,
+        string referenceDate,
+        bool forAdjust = false)
+    {
+        if (!forAdjust)
+        {
+            await SaveEmptyCheckInAsync(client, referenceDate);
+        }
+
         var assemble = await client.PostAsync(
             $"/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate={referenceDate}",
             null);
@@ -92,7 +118,8 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     {
         var client = await AuthenticatedClientAsync();
         await OptInAndProviderAsync(client);
-        var preflightId = await ConsentPreflightAsync(client, referenceDate: "2026-10-13");
+        // Check-in week 2026-10-05 → plan week 2026-10-12 (committed identity under test).
+        var preflightId = await ConsentPreflightAsync(client, referenceDate: "2026-10-06");
 
         _factory.Brain.Results.Add(new CoachProtocolBrainResult(
             true, commitJson, 10, 20, CoachProtocolBrainError.None, null));
@@ -181,7 +208,8 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         adjustment!.LockedThroughDate.Should().Be("2026-10-13");
         _factory.Brain.CallCount.Should().Be(callsAfterCommit);
 
-        var preflightId = await ConsentPreflightAsync(client, referenceDate: "2026-10-14");
+        // Adjust path: no new check-in required.
+        var preflightId = await ConsentPreflightAsync(client, referenceDate: "2026-10-14", forAdjust: true);
 
         // Fake brain mutates every day distance — worker must splice locked Mon/Tue back.
         var mutated = CoachWeeklyCommitSchemaTests.BuildCommitJson(
@@ -250,7 +278,8 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     public async Task PlainRegenerate_StillConflicts_WithoutStartedAdjust()
     {
         var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
-        var preflightId = await ConsentPreflightAsync(client, referenceDate: "2026-10-15");
+        // Same check-in week → same plan week (already committed) → 409 without Adjust.
+        var preflightId = await ConsentPreflightAsync(client, referenceDate: "2026-10-06");
         var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
         generate.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }

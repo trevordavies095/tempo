@@ -67,6 +67,34 @@ public static class WeeklyRecapWeekMath
     }
 
     /// <summary>
+    /// Plan week for the weekly ritual: always the Mon–Sun starting seven days after the check-in Monday.
+    /// </summary>
+    public static MondaySundayWeek ResolvePlanWeekFromCheckIn(
+        MondaySundayWeek checkInWeek,
+        int? timezoneOffsetMinutes)
+    {
+        var planMonday = checkInWeek.WeekStartLocal.Date.AddDays(7);
+        return ResolveMondaySundayWeek(
+            utcNow: DateTime.SpecifyKind(planMonday, DateTimeKind.Utc),
+            timezoneOffsetMinutes,
+            referenceLocalDate: planMonday);
+    }
+
+    /// <summary>
+    /// Check-in week preceding a plan week (plan Monday − 7).
+    /// </summary>
+    public static MondaySundayWeek ResolveCheckInWeekFromPlan(
+        MondaySundayWeek planWeek,
+        int? timezoneOffsetMinutes)
+    {
+        var checkInMonday = planWeek.WeekStartLocal.Date.AddDays(-7);
+        return ResolveMondaySundayWeek(
+            utcNow: DateTime.SpecifyKind(checkInMonday, DateTimeKind.Utc),
+            timezoneOffsetMinutes,
+            referenceLocalDate: checkInMonday);
+    }
+
+    /// <summary>
     /// Builds Monday–Sunday week boundaries and UTC query ranges for weekly-recap.
     /// Current range is week-to-date capped at UTC now.
     /// </summary>

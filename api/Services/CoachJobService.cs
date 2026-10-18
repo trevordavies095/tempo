@@ -44,6 +44,21 @@ public sealed class CoachJobService
                      && a.Status == CoachAdjustmentStatuses.Started,
                 cancellationToken);
 
+        // Ritual generate: require persisted check-in for week N (plan Monday − 7). Adjust skips the gate.
+        if (startedAdjust == null)
+        {
+            var checkInMonday = preflight.WeekStartDate.AddDays(-7);
+            var hasCheckIn = await _db.CoachCheckIns.AsNoTracking()
+                .AnyAsync(c => c.WeekStartDate == checkInMonday, cancellationToken);
+            if (!hasCheckIn)
+            {
+                return (
+                    null,
+                    $"Save a Coach check-in for {checkInMonday:yyyy-MM-dd} before generating the plan for {preflight.WeekStartDate:yyyy-MM-dd}.",
+                    400);
+            }
+        }
+
         var committed = await _db.CoachWeeks.AsNoTracking()
             .AnyAsync(
                 w => w.WeekStartDate == preflight.WeekStartDate

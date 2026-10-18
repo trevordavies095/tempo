@@ -77,4 +77,18 @@ public class WeeklyRecapWeekMathTests
         week.WeekStartLocal.Date.Should().Be(new DateTime(2026, 8, 3));
         week.WeekEndLocal.Date.Should().Be(new DateTime(2026, 8, 9));
     }
+
+    [Fact]
+    public void ResolvePlanWeekFromCheckIn_IsCheckInMondayPlusSeven()
+    {
+        var checkIn = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
+            new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc),
+            timezoneOffsetMinutes: 0,
+            referenceLocalDate: new DateTime(2026, 10, 12));
+
+        var plan = WeeklyRecapWeekMath.ResolvePlanWeekFromCheckIn(checkIn, timezoneOffsetMinutes: 0);
+
+        plan.WeekStartLocal.Date.Should().Be(new DateTime(2026, 10, 19));
+        plan.WeekEndLocal.Date.Should().Be(new DateTime(2026, 10, 25));
+    }
 }

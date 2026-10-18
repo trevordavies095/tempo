@@ -16,17 +16,11 @@ import {
   type CoachJob,
   type CoachPrivacyPreflight,
 } from '@/lib/api';
+import { resolveDefaultCheckInReferenceDate } from '@/lib/coachWeek';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 
 const fieldClass =
   'w-full rounded-tempo border border-border bg-canvas px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-volt';
-
-function localDateInputValue(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 
 function PreflightPageInner() {
   const router = useRouter();
@@ -34,7 +28,8 @@ function PreflightPageInner() {
   const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
   const isAdjustMode = searchParams.get('mode') === 'adjust';
-  const initialRef = searchParams.get('referenceDate') || localDateInputValue(new Date());
+  const initialRef =
+    searchParams.get('referenceDate') || resolveDefaultCheckInReferenceDate(new Date());
   const [referenceDate, setReferenceDate] = useState(initialRef);
   const [preflight, setPreflight] = useState<CoachPrivacyPreflight | null>(null);
   const [inspectOpen, setInspectOpen] = useState(false);
@@ -183,9 +178,18 @@ function PreflightPageInner() {
         {preflight && (
           <>
             <Card>
-              <h2 className="text-lg font-semibold text-ink mb-1">Week</h2>
-              <p className="text-sm text-muted">
-                {preflight.weekStartDate} → {preflight.weekEndDate}
+              <h2 className="text-lg font-semibold text-ink mb-1">Weeks</h2>
+              <p className="text-sm text-ink">
+                Check-in:{' '}
+                <span className="text-muted">
+                  {preflight.checkInWeekStartDate} → {preflight.checkInWeekEndDate}
+                </span>
+              </p>
+              <p className="text-sm text-ink mt-1">
+                Plan:{' '}
+                <span className="text-muted">
+                  {preflight.planWeekStartDate} → {preflight.planWeekEndDate}
+                </span>
                 {preflight.consented ? ' · consented' : ' · not yet consented'}
               </p>
               <p className="text-xs text-muted mt-2 font-mono">hash {preflight.payloadHash}</p>

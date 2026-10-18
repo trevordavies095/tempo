@@ -33,15 +33,22 @@ public class CoachContextPacketAssembler
         _logger = logger;
     }
 
+    /// <summary>
+    /// Assembles a packet for check-in week N and plan week N+1 (or Adjust on plan week P with check-in P−7).
+    /// </summary>
     public async Task<CoachContextPacket> AssembleAsync(
-        WeeklyRecapWeekMath.MondaySundayWeek week,
+        WeeklyRecapWeekMath.MondaySundayWeek checkInWeek,
+        WeeklyRecapWeekMath.MondaySundayWeek planWeek,
         int timezoneOffsetMinutes,
         CancellationToken cancellationToken = default)
     {
-        var weekStartDate = DateOnly.FromDateTime(week.WeekStartLocal);
-        var weekStart = weekStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var weekEnd = week.WeekEndLocal.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var referenceDate = week.ReferenceLocalDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var checkInStartDate = DateOnly.FromDateTime(checkInWeek.WeekStartLocal);
+        var checkInStart = checkInStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var checkInEnd = checkInWeek.WeekEndLocal.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var planStartDate = DateOnly.FromDateTime(planWeek.WeekStartLocal);
+        var planStart = planStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var planEnd = planWeek.WeekEndLocal.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var referenceDate = checkInWeek.ReferenceLocalDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
         var settings = await _db.UserSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         var unitPreference = string.IsNullOrWhiteSpace(settings?.UnitPreference)
@@ -81,9 +88,9 @@ public class CoachContextPacketAssembler
         var layer1 = await BuildLayer1Async(settings, cancellationToken);
 
         var checkInRow = await _db.CoachCheckIns.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.WeekStartDate == weekStartDate, cancellationToken);
+            .FirstOrDefaultAsync(c => c.WeekStartDate == checkInStartDate, cancellationToken);
 
-        var range = week.FullWeekRange;
+        var range = checkInWeek.FullWeekRange;
         var workouts = await _db.Workouts.AsNoTracking()
             .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc)
             .OrderBy(w => w.StartedAt)
@@ -118,14 +125,15 @@ public class CoachContextPacketAssembler
         }).ToList();
 
         var checkIn = new CoachPacketCheckIn(
-            WeekStartDate: weekStart,
-            WeekEndDate: weekEnd,
+            WeekStartDate: checkInStart,
+            WeekEndDate: checkInEnd,
             OverallFeel: checkInRow?.OverallFeel,
             Niggles: checkInRow?.Niggles,
             LifeConstraints: checkInRow?.LifeConstraints,
             Runs: runs);
 
-        var weekEnding = DateOnly.FromDateTime(week.WeekEndLocal.Date);
+        // L2 prior-week selection keys off check-in week ending (not plan week).
+        var weekEnding = DateOnly.FromDateTime(checkInWeek.WeekEndLocal.Date);
         var episodes = await _db.CoachEpisodes.AsNoTracking()
             .Where(e => !e.Retired)
             .OrderByDescending(e => e.Date)
@@ -180,12 +188,16 @@ public class CoachContextPacketAssembler
                 RuleText: r.RuleText,
                 Evidence: r.Evidence ?? [])).ToList());
 
-        var adjustment = await BuildAdjustmentAsync(weekStartDate, cancellationToken);
+        var adjustment = await BuildAdjustmentAsync(planStartDate, cancellationToken);
 
         return new CoachContextPacket(
             Meta: new CoachPacketMeta(
-                WeekStartDate: weekStart,
-                WeekEndDate: weekEnd,
+                WeekStartDate: planStart,
+                WeekEndDate: planEnd,
+                CheckInWeekStartDate: checkInStart,
+                CheckInWeekEndDate: checkInEnd,
+                PlanWeekStartDate: planStart,
+                PlanWeekEndDate: planEnd,
                 ReferenceDate: referenceDate,
                 TimezoneOffsetMinutes: timezoneOffsetMinutes,
                 UnitPreference: unitPreference,
@@ -381,9 +393,17 @@ public sealed record CoachPacketAdjustment(
     IReadOnlyList<object> LockedDays,
     IReadOnlyList<string> RemainingDates);
 
+/// <summary>
+/// Packet week identity. <see cref="WeekStartDate"/>/<see cref="WeekEndDate"/> alias the plan week
+/// (job/draft identity). Check-in and plan ranges are also explicit for the N→N+1 ritual.
+/// </summary>
 public sealed record CoachPacketMeta(
     string WeekStartDate,
     string WeekEndDate,
+    string CheckInWeekStartDate,
+    string CheckInWeekEndDate,
+    string PlanWeekStartDate,
+    string PlanWeekEndDate,
     string ReferenceDate,
     int TimezoneOffsetMinutes,
     string UnitPreference,
