@@ -10,11 +10,6 @@ namespace Tempo.Api.Endpoints;
 
 public static class CoachCheckInEndpoints
 {
-    private const int MaxOverallFeelLength = 500;
-    private const int MaxNigglesLength = 2000;
-    private const int MaxLifeConstraintsLength = 2000;
-    private const int MaxRunNotesLength = 4000;
-
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet("/check-in", GetCheckIn)
@@ -26,8 +21,8 @@ public static class CoachCheckInEndpoints
             .WithDescription(
                 "Returns the Mon–Sun check-in for timezoneOffsetMinutes + optional referenceDate (yyyy-MM-dd). " +
                 "When referenceDate is omitted: Sat–Sun and Tue–Fri default to the current Mon–Sun; Monday defaults to the last completed Mon–Sun. " +
-                "Runs autofill from Tempo workouts in the full week window; saved note overlays apply without writing Workout.Notes. " +
-                "adherenceHints compare the committed coach plan (when present) to logged Tempo runs. " +
+                "Runs autofill from Tempo workouts; saved note/RPE overlays apply without writing Workout rows. " +
+                "Exposes clarifyingQuestion from a committed plan for the check-in week when present. " +
                 "404 when Coach is unavailable or the athlete has not opted in.");
 
         group.MapPut("/check-in", PutCheckIn)
@@ -38,13 +33,27 @@ public static class CoachCheckInEndpoints
             .Produces(404)
             .WithSummary("Save weekly Coach check-in")
             .WithDescription(
-                "Upserts optional subjective fields and per-run note overlays for the week. " +
+                "Upserts optional subjective fields (feelScore, questionForCoach, notes, RPE overlays) for the week. " +
                 "Does not mutate Workout rows. Empty weeks and skipped subjective fields are allowed.");
+
+        group.MapPost("/check-in/send", PostSend)
+            .WithName("PostCoachCheckInSend")
+            .Accepts<PutCoachCheckInRequest>("application/json")
+            .Produces<CoachJobDocument>(202)
+            .Produces(400)
+            .Produces(404)
+            .Produces(409)
+            .WithSummary("Save check-in, consent, and enqueue generate")
+            .WithDescription(
+                "Persists the check-in (same body as PUT), assembles and redacts the packet (fail-closed), " +
+                "records consent, and enqueues a generate job for plan week N+1. Returns the job (202). " +
+                "400 when no provider key or redaction fails; 409 when another coach job is active or the plan week is already committed.");
     }
 
     private static async Task<IResult> GetCheckIn(
         TempoDbContext db,
         CoachConfig coachConfig,
+        CoachCheckInService checkInService,
         [FromQuery] int? timezoneOffsetMinutes = null,
         [FromQuery] string? referenceDate = null)
     {
@@ -53,19 +62,20 @@ public static class CoachCheckInEndpoints
             return Results.NotFound();
         }
 
-        if (!TryResolveWeek(timezoneOffsetMinutes, referenceDate, out var week, out var error))
+        if (!CoachCheckInService.TryResolveWeek(timezoneOffsetMinutes, referenceDate, out var week, out var error))
         {
             return Results.BadRequest(new { error });
         }
 
-        var document = await BuildDocumentAsync(db, week, timezoneOffsetMinutes ?? 0);
+        var document = await checkInService.BuildDocumentAsync(week, timezoneOffsetMinutes ?? 0);
         return Results.Ok(document);
     }
 
     private static async Task<IResult> PutCheckIn(
         [FromBody] PutCoachCheckInRequest? request,
         TempoDbContext db,
-        CoachConfig coachConfig)
+        CoachConfig coachConfig,
+        CoachCheckInService checkInService)
     {
         if (!await IsCoachAvailableAsync(db, coachConfig))
         {
@@ -77,258 +87,102 @@ public static class CoachCheckInEndpoints
             return Results.BadRequest(new { error = "Request body is required" });
         }
 
-        var offset = request.TimezoneOffsetMinutes;
-        DateTime? referenceLocal = null;
-        if (!string.IsNullOrWhiteSpace(request.ReferenceDate))
+        var (document, error, status) = await checkInService.UpsertAsync(request);
+        return status switch
         {
-            if (!DateOnly.TryParse(request.ReferenceDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedRef))
-            {
-                return Results.BadRequest(new { error = "Invalid referenceDate; use yyyy-MM-dd." });
-            }
-
-            referenceLocal = parsedRef.ToDateTime(TimeOnly.MinValue);
-        }
-        else if (!string.IsNullOrWhiteSpace(request.WeekStartDate)
-                 && DateOnly.TryParse(request.WeekStartDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var weekStart))
-        {
-            referenceLocal = weekStart.ToDateTime(TimeOnly.MinValue);
-        }
-
-        if (!TryResolveWeek(offset, referenceLocal?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), out var week, out var error))
-        {
-            return Results.BadRequest(new { error });
-        }
-
-        var overallFeel = NormalizeOptional(request.OverallFeel, MaxOverallFeelLength, "overallFeel", out var fieldError);
-        if (fieldError != null)
-        {
-            return Results.BadRequest(new { error = fieldError });
-        }
-
-        var niggles = NormalizeOptional(request.Niggles, MaxNigglesLength, "niggles", out fieldError);
-        if (fieldError != null)
-        {
-            return Results.BadRequest(new { error = fieldError });
-        }
-
-        var lifeConstraints = NormalizeOptional(request.LifeConstraints, MaxLifeConstraintsLength, "lifeConstraints", out fieldError);
-        if (fieldError != null)
-        {
-            return Results.BadRequest(new { error = fieldError });
-        }
-
-        var runNotes = new List<CoachCheckInRunNote>();
-        if (request.RunNotes != null)
-        {
-            foreach (var note in request.RunNotes)
-            {
-                if (note.WorkoutId == Guid.Empty)
-                {
-                    return Results.BadRequest(new { error = "runNotes.workoutId is required" });
-                }
-
-                var notes = NormalizeOptional(note.Notes, MaxRunNotesLength, "runNotes.notes", out fieldError);
-                if (fieldError != null)
-                {
-                    return Results.BadRequest(new { error = fieldError });
-                }
-
-                // Skip empty overlays so GET can fall back to Workout.Notes
-                if (string.IsNullOrWhiteSpace(notes))
-                {
-                    continue;
-                }
-
-                runNotes.Add(new CoachCheckInRunNote
-                {
-                    WorkoutId = note.WorkoutId,
-                    Notes = notes
-                });
-            }
-        }
-
-        var weekStartDate = DateOnly.FromDateTime(week.WeekStartLocal);
-        var now = DateTime.UtcNow;
-        var row = await db.CoachCheckIns.FirstOrDefaultAsync(c => c.WeekStartDate == weekStartDate);
-        if (row == null)
-        {
-            row = new CoachCheckIn
-            {
-                WeekStartDate = weekStartDate,
-                CreatedAt = now
-            };
-            db.CoachCheckIns.Add(row);
-        }
-
-        row.TimezoneOffsetMinutes = offset ?? 0;
-        row.OverallFeel = overallFeel;
-        row.Niggles = niggles;
-        row.LifeConstraints = lifeConstraints;
-        row.RunNotesJson = CoachCheckInRunNotesJson.Serialize(runNotes);
-        row.UpdatedAt = now;
-
-        await db.SaveChangesAsync();
-
-        // Re-read workouts for response; never touch Workout.Notes
-        var document = await BuildDocumentAsync(db, week, row.TimezoneOffsetMinutes);
-        return Results.Ok(document);
+            200 when document != null => Results.Ok(document),
+            _ => Results.BadRequest(new { error })
+        };
     }
 
-    private static async Task<CoachCheckInDocument> BuildDocumentAsync(
+    private static async Task<IResult> PostSend(
+        [FromBody] PutCoachCheckInRequest? request,
         TempoDbContext db,
-        WeeklyRecapWeekMath.MondaySundayWeek week,
-        int timezoneOffsetMinutes)
+        CoachConfig coachConfig,
+        CoachCheckInService checkInService,
+        CoachPrivacyPreflightService preflightService,
+        CoachJobService jobService)
     {
-        var weekStartDate = DateOnly.FromDateTime(week.WeekStartLocal);
-        var saved = await db.CoachCheckIns.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.WeekStartDate == weekStartDate);
-
-        var range = week.FullWeekRange;
-        var workouts = await db.Workouts.AsNoTracking()
-            .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc)
-            .OrderBy(w => w.StartedAt)
-            .ToListAsync();
-
-        var noteOverlays = CoachCheckInRunNotesJson.Deserialize(saved?.RunNotesJson)
-            .GroupBy(n => n.WorkoutId)
-            .ToDictionary(g => g.Key, g => g.Last().Notes);
-
-        var runs = workouts.Select(w =>
+        if (!await IsCoachAvailableAsync(db, coachConfig))
         {
-            noteOverlays.TryGetValue(w.Id, out var overlay);
-            var hasOverlay = noteOverlays.ContainsKey(w.Id);
-            return new CoachCheckInRunDocument(
-                WorkoutId: w.Id,
-                StartedAt: w.StartedAt,
-                DistanceM: w.DistanceM,
-                DurationS: w.DurationS,
-                AvgHeartRateBpm: w.AvgHeartRateBpm,
-                RunType: w.RunType,
-                Name: w.Name,
-                WorkoutNotes: w.Notes,
-                Notes: hasOverlay ? overlay : w.Notes,
-                NotesEdited: hasOverlay);
-        }).ToList();
+            return Results.NotFound();
+        }
 
-        var settings = await db.UserSettings.AsNoTracking().FirstOrDefaultAsync();
-        var unitPreference = string.IsNullOrWhiteSpace(settings?.UnitPreference)
-            ? "metric"
-            : settings!.UnitPreference;
+        if (request == null)
+        {
+            return Results.BadRequest(new { error = "Request body is required" });
+        }
 
-        var adherenceHints = await BuildAdherenceHintsAsync(db, weekStartDate, workouts);
+        var (document, upsertError, upsertStatus) = await checkInService.UpsertAsync(request);
+        if (document == null || upsertStatus != 200)
+        {
+            return Results.BadRequest(new { error = upsertError ?? "Failed to save check-in" });
+        }
 
-        return new CoachCheckInDocument(
-            WeekStartDate: weekStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            WeekEndDate: week.WeekEndLocal.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            ReferenceDate: week.ReferenceLocalDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            TimezoneOffsetMinutes: timezoneOffsetMinutes,
-            UnitPreference: unitPreference,
-            OverallFeel: saved?.OverallFeel,
-            Niggles: saved?.Niggles,
-            LifeConstraints: saved?.LifeConstraints,
-            Runs: runs,
-            AdherenceHints: adherenceHints,
-            Saved: saved != null,
-            UpdatedAt: saved?.UpdatedAt);
-    }
+        if (!CoachCheckInService.TryResolveWeek(
+                request.TimezoneOffsetMinutes,
+                request.ReferenceDate ?? document.ReferenceDate,
+                out var checkInWeek,
+                out var weekError))
+        {
+            return Results.BadRequest(new { error = weekError });
+        }
 
-    private static async Task<IReadOnlyList<CoachAdherenceHintDocument>> BuildAdherenceHintsAsync(
-        TempoDbContext db,
-        DateOnly weekStartDate,
-        IReadOnlyList<Workout> workouts)
-    {
+        var offset = request.TimezoneOffsetMinutes ?? document.TimezoneOffsetMinutes;
+        var planMonday = DateOnly.FromDateTime(
+            WeeklyRecapWeekMath.ResolvePlanWeekFromCheckIn(checkInWeek, offset).WeekStartLocal);
+
         var committed = await db.CoachWeeks.AsNoTracking()
-            .FirstOrDefaultAsync(w =>
-                w.WeekStartDate == weekStartDate && w.Status == CoachWeekStatuses.Committed);
-        if (committed == null)
+            .AnyAsync(w => w.WeekStartDate == planMonday && w.Status == CoachWeekStatuses.Committed);
+        if (committed)
         {
-            return [];
-        }
-
-        var schemaError = CoachWeeklyCommitSchema.TryParseAndValidate(
-            committed.CommitJson,
-            weekStartDate,
-            out var commit);
-        if (schemaError != null || commit == null)
-        {
-            return [];
-        }
-
-        var planned = commit.Days.Select(d =>
-        {
-            _ = DateOnly.TryParse(d.Date, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date);
-            double? distance = d.Run?.DistanceM;
-            return new CoachAdherenceHints.PlannedDay(date, d.DayType, distance);
-        }).ToList();
-
-        // Workouts are already filtered to the week UTC window; map to local calendar date
-        // using the stored StartedAt date portion (same convention as check-in run list).
-        var actual = workouts
-            .Select(w => new CoachAdherenceHints.ActualRun(
-                DateOnly.FromDateTime(w.StartedAt),
-                w.DistanceM))
-            .ToList();
-
-        return CoachAdherenceHints.Build(planned, actual)
-            .Select(h => new CoachAdherenceHintDocument(
-                h.Code,
-                h.Message,
-                h.Date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)))
-            .ToList();
-    }
-
-    private static bool TryResolveWeek(
-        int? timezoneOffsetMinutes,
-        string? referenceDate,
-        out WeeklyRecapWeekMath.MondaySundayWeek week,
-        out string? error)
-    {
-        week = null!;
-        error = null;
-        DateTime? referenceLocalDate = null;
-        if (!string.IsNullOrWhiteSpace(referenceDate))
-        {
-            if (!DateTime.TryParse(
-                    referenceDate,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                    out var parsed))
+            return Results.Conflict(new
             {
-                error = "Invalid referenceDate; use yyyy-MM-dd.";
-                return false;
-            }
-
-            referenceLocalDate = parsed.Date;
+                error =
+                    $"Plan week {planMonday:yyyy-MM-dd} is already committed. Ask for changes instead of sending a new plan."
+            });
         }
 
-        week = referenceLocalDate.HasValue
-            ? WeeklyRecapWeekMath.ResolveMondaySundayWeek(
-                DateTime.UtcNow,
-                timezoneOffsetMinutes,
-                referenceLocalDate)
-            : WeeklyRecapWeekMath.ResolveDefaultCheckInWeek(
-                DateTime.UtcNow,
-                timezoneOffsetMinutes);
-        return true;
+        var (preflight, assembleError, assembleStatus) = await preflightService.AssembleRitualAsync(
+            checkInWeek,
+            offset,
+            recordConsent: true);
+        if (preflight == null)
+        {
+            return assembleStatus switch
+            {
+                400 => Results.BadRequest(new { error = assembleError }),
+                _ => Results.BadRequest(new { error = assembleError ?? "Failed to assemble privacy packet" })
+            };
+        }
+
+        var (job, jobError, jobStatus) = await jobService.StartGenerateAsync(preflight.Id);
+        return jobStatus switch
+        {
+            202 when job != null => Results.Json(ToJobDocument(job), statusCode: 202),
+            404 => Results.NotFound(new { error = jobError }),
+            409 => Results.Conflict(new { error = jobError }),
+            _ => Results.BadRequest(new { error = jobError })
+        };
     }
 
-    private static string? NormalizeOptional(string? value, int maxLength, string fieldName, out string? error)
-    {
-        error = null;
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        var trimmed = value.Trim();
-        if (trimmed.Length > maxLength)
-        {
-            error = $"{fieldName} must be at most {maxLength} characters";
-            return null;
-        }
-
-        return trimmed;
-    }
+    private static CoachJobDocument ToJobDocument(CoachJob job) =>
+        new(
+            Id: job.Id,
+            Status: job.Status,
+            Kind: string.IsNullOrWhiteSpace(job.Kind) ? CoachJobKinds.Generate : job.Kind,
+            AdjustmentId: job.AdjustmentId,
+            WeekStartDate: job.WeekStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            PreflightId: job.PreflightId,
+            ErrorCode: job.ErrorCode,
+            ErrorMessage: job.ErrorMessage,
+            InputTokens: job.InputTokens,
+            OutputTokens: job.OutputTokens,
+            SchemaRepairAttempted: job.SchemaRepairAttempted,
+            ResultWeekId: job.ResultWeekId,
+            CreatedAt: job.CreatedAt,
+            StartedAt: job.StartedAt,
+            CompletedAt: job.CompletedAt);
 
     private static async Task<bool> IsCoachAvailableAsync(TempoDbContext db, CoachConfig coachConfig)
     {
@@ -349,8 +203,11 @@ public sealed record CoachCheckInDocument(
     int TimezoneOffsetMinutes,
     string UnitPreference,
     string? OverallFeel,
+    byte? FeelScore,
     string? Niggles,
     string? LifeConstraints,
+    string? QuestionForCoach,
+    string? ClarifyingQuestion,
     IReadOnlyList<CoachCheckInRunDocument> Runs,
     IReadOnlyList<CoachAdherenceHintDocument> AdherenceHints,
     bool Saved,
@@ -366,7 +223,10 @@ public sealed record CoachCheckInRunDocument(
     string? Name,
     string? WorkoutNotes,
     string? Notes,
-    bool NotesEdited);
+    bool NotesEdited,
+    byte? WorkoutRpe,
+    byte? Rpe,
+    bool RpeEdited);
 
 public sealed record CoachAdherenceHintDocument(
     string Code,
@@ -378,10 +238,13 @@ public sealed record PutCoachCheckInRequest(
     string? ReferenceDate,
     int? TimezoneOffsetMinutes,
     string? OverallFeel,
+    int? FeelScore,
     string? Niggles,
     string? LifeConstraints,
+    string? QuestionForCoach,
     IReadOnlyList<PutCoachCheckInRunNoteRequest>? RunNotes);
 
 public sealed record PutCoachCheckInRunNoteRequest(
     Guid WorkoutId,
-    string? Notes);
+    string? Notes,
+    int? Rpe);

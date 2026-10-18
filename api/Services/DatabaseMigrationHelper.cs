@@ -70,7 +70,9 @@ public static class DatabaseMigrationHelper
         { ("Workouts", "SplitHeartRateBackfill"), "20260918010157_AddWorkoutSplitHeartRateBackfill" },
         { ("CoachJobs", "Kind"), "20261014104847_AddCoachAdjustmentsAndJobKind" },
         { ("CoachJobs", "AdjustmentId"), "20261014104847_AddCoachAdjustmentsAndJobKind" },
-        { ("CoachPreferences", "PendingMemoryUpgradeNotice"), "20261018134037_AddCoachEpisodesAndRules" }
+        { ("CoachPreferences", "PendingMemoryUpgradeNotice"), "20261018134037_AddCoachEpisodesAndRules" },
+        { ("CoachCheckIns", "FeelScore"), "20261018222335_AddCoachCheckInFeelAndQuestion" },
+        { ("CoachCheckIns", "QuestionForCoach"), "20261018222335_AddCoachCheckInFeelAndQuestion" }
     };
 
     private const string ProductVersion = "10.0.0";

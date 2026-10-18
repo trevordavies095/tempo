@@ -172,12 +172,65 @@ public class CoachCheckInEndpointsTests : IClassFixture<CoachEnabledTestFactory>
         }
     }
 
+    [Fact]
+    public async Task Put_PersistsFeelScoreQuestionAndRunRpe()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+
+        Guid workoutId;
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 8000,
+                durationS: 2400,
+                name: "Easy");
+            workout.Rpe = 5;
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var put = await client.PutAsJsonAsync("/coach/check-in", new
+        {
+            referenceDate = "2026-10-14",
+            timezoneOffsetMinutes = 0,
+            overallFeel = "solid",
+            feelScore = 4,
+            questionForCoach = "Should I add strides?",
+            runNotes = new[]
+            {
+                new { workoutId, notes = (string?)null, rpe = 7 }
+            }
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+        var saved = await put.Content.ReadFromJsonAsync<CheckInResponse>(JsonOptions);
+        saved!.FeelScore.Should().Be(4);
+        saved.QuestionForCoach.Should().Be("Should I add strides?");
+        saved.Runs.Should().ContainSingle();
+        saved.Runs[0].WorkoutRpe.Should().Be(5);
+        saved.Runs[0].Rpe.Should().Be(7);
+        saved.Runs[0].RpeEdited.Should().BeTrue();
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workoutId);
+            workout.Rpe.Should().Be(5);
+        }
+    }
+
     private sealed class CheckInResponse
     {
         public string WeekStartDate { get; set; } = "";
         public string WeekEndDate { get; set; } = "";
         public string? OverallFeel { get; set; }
+        public byte? FeelScore { get; set; }
         public string? LifeConstraints { get; set; }
+        public string? QuestionForCoach { get; set; }
+        public string? ClarifyingQuestion { get; set; }
         public bool Saved { get; set; }
         public List<CheckInRunResponse> Runs { get; set; } = [];
         public List<object> AdherenceHints { get; set; } = [];
@@ -192,5 +245,8 @@ public class CoachCheckInEndpointsTests : IClassFixture<CoachEnabledTestFactory>
         public string? WorkoutNotes { get; set; }
         public string? Notes { get; set; }
         public bool NotesEdited { get; set; }
+        public byte? WorkoutRpe { get; set; }
+        public byte? Rpe { get; set; }
+        public bool RpeEdited { get; set; }
     }
 }

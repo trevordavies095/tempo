@@ -229,6 +229,132 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
         _factory.Brain.CallCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task Send_SavesConsentsEnqueues_AndPacketContainsNewFields()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        string? capturedPacket = null;
+        _factory.Brain.Handler = (packet, _) =>
+        {
+            capturedPacket = packet;
+            var commit = CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: PlanMonday);
+            return new CoachProtocolBrainResult(true, commit, 10, 20, CoachProtocolBrainError.None, null);
+        };
+
+        var send = await client.PostAsJsonAsync("/coach/check-in/send", new
+        {
+            referenceDate = "2026-10-13",
+            timezoneOffsetMinutes = 0,
+            overallFeel = "good week",
+            feelScore = 5,
+            questionForCoach = "Ready for a long?",
+            niggles = (string?)null,
+            lifeConstraints = "quiet weekend",
+            runNotes = Array.Empty<object>()
+        });
+        send.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await send.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        started.Should().NotBeNull();
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var preflight = await db.CoachPrivacyPreflights.AsNoTracking()
+                .SingleAsync(p => p.WeekStartDate == PlanMonday);
+            preflight.ConsentedAt.Should().NotBeNull();
+            preflight.Id.Should().Be(started!.PreflightId);
+        }
+
+        var job = await PollUntilTerminalAsync(client, started!.Id);
+        job.Status.Should().Be("ready");
+        _factory.Brain.CallCount.Should().Be(1);
+        capturedPacket.Should().NotBeNull();
+        capturedPacket.Should().Contain("\"feelScore\": 5");
+        capturedPacket.Should().Contain("Ready for a long?");
+        capturedPacket.Should().Contain("questionForCoach");
+    }
+
+    [Fact]
+    public async Task Send_WithoutProviderKey_ReturnsBadRequest()
+    {
+        var client = await AuthenticatedClientAsync();
+        (await client.PostAsync("/settings/coach/opt-in", null)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var send = await client.PostAsJsonAsync("/coach/check-in/send", new
+        {
+            referenceDate = "2026-10-13",
+            timezoneOffsetMinutes = 0
+        });
+        send.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await send.Content.ReadAsStringAsync();
+        body.Should().Contain("provider");
+        _factory.Brain.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Send_WhenPlanWeekCommitted_ReturnsConflict()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        var preflightId = await ConsentPreflightAsync(client);
+        var commit = CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: PlanMonday);
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true, commit, 1, 1, CoachProtocolBrainError.None, null));
+        var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
+        var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        var job = await PollUntilTerminalAsync(client, started!.Id);
+        job.Status.Should().Be("ready");
+
+        // Apply/commit via direct DB for a committed week (apply endpoint needs more setup).
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var week = await db.CoachWeeks.SingleAsync(w => w.WeekStartDate == PlanMonday);
+            week.Status = Tempo.Api.Models.CoachWeekStatuses.Committed;
+            await db.SaveChangesAsync();
+        }
+
+        _factory.Brain.Reset();
+        var send = await client.PostAsJsonAsync("/coach/check-in/send", new
+        {
+            referenceDate = "2026-10-13",
+            timezoneOffsetMinutes = 0,
+            overallFeel = "again"
+        });
+        send.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await send.Content.ReadAsStringAsync();
+        body.Should().Contain("Ask for changes");
+        _factory.Brain.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DeleteDraft_RemovesDraft_And404WhenMissing()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        var preflightId = await ConsentPreflightAsync(client);
+        var commit = CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: PlanMonday);
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true, commit, 1, 1, CoachProtocolBrainError.None, null));
+        var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
+        var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        var job = await PollUntilTerminalAsync(client, started!.Id);
+        job.Status.Should().Be("ready");
+
+        var del = await client.DeleteAsync($"/coach/weeks/draft?weekStartDate={PlanMonday:yyyy-MM-dd}");
+        del.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        (await client.GetAsync($"/coach/weeks/draft?weekStartDate={PlanMonday:yyyy-MM-dd}"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        (await client.DeleteAsync($"/coach/weeks/draft?weekStartDate={PlanMonday:yyyy-MM-dd}"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     private sealed class PreflightResponse
     {
         public Guid Id { get; set; }
@@ -242,6 +368,7 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
         public Guid Id { get; set; }
         public string Status { get; set; } = "";
         public string WeekStartDate { get; set; } = "";
+        public Guid PreflightId { get; set; }
         public Guid? ResultWeekId { get; set; }
         public int? InputTokens { get; set; }
         public int? OutputTokens { get; set; }

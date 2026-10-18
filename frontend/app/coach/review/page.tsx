@@ -340,8 +340,8 @@ function ReviewPageInner() {
                 ? draftQuery.error.message
                 : 'Failed to load draft'}
             </p>
-            <Link href="/coach/preflight" className="text-sm underline mt-2 inline-block">
-              Send to coach
+            <Link href="/coach/check-in" className="text-sm underline mt-2 inline-block">
+              Back to check-in
             </Link>
           </Card>
         )}

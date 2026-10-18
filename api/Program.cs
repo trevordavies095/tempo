@@ -228,6 +228,8 @@ builder.Services.AddHttpClient(AnthropicCoachProtocolBrain.HttpClientName, clien
 builder.Services.AddScoped<IAnthropicCoachClient, AnthropicCoachClient>();
 builder.Services.AddScoped<ICoachProtocolBrain, AnthropicCoachProtocolBrain>();
 builder.Services.AddScoped<CoachContextPacketAssembler>();
+builder.Services.AddScoped<CoachCheckInService>();
+builder.Services.AddScoped<CoachPrivacyPreflightService>();
 builder.Services.AddSingleton<CoachJobQueue>();
 builder.Services.AddScoped<CoachJobService>();
 builder.Services.AddScoped<CoachSetupService>();

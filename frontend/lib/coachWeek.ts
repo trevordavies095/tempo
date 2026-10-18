@@ -83,6 +83,32 @@ export function formatCoachJobError(
   }
 }
 
+/** Poll a coach job until ready/failed or timeout (used outside React render). */
+export async function pollCoachJobUntilSettled<T extends { status: string }>(
+  started: T,
+  fetchJob: (job: T) => Promise<T>,
+  options?: {
+    timeoutMs?: number;
+    intervalMs?: number;
+    onUpdate?: (job: T) => void;
+  }
+): Promise<T> {
+  const timeoutMs = options?.timeoutMs ?? 180_000;
+  const intervalMs = options?.intervalMs ?? 500;
+  const deadline = Date.now() + timeoutMs;
+  let current = started;
+  options?.onUpdate?.(current);
+  while (current.status !== 'ready' && current.status !== 'failed') {
+    if (Date.now() > deadline) {
+      throw new Error('Timed out while waiting for your coach.');
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+    current = await fetchJob(current);
+    options?.onUpdate?.(current);
+  }
+  return current;
+}
+
 function parseLocalIso(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, m - 1, d);

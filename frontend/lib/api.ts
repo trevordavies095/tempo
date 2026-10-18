@@ -1928,6 +1928,11 @@ export interface CoachCheckInRun {
   workoutNotes: string | null;
   notes: string | null;
   notesEdited: boolean;
+  /** Tempo workout RPE prefill (1–10); never written by check-in. */
+  workoutRpe: number | null;
+  /** Effective RPE for UI (overlay wins, else workoutRpe). */
+  rpe: number | null;
+  rpeEdited: boolean;
 }
 
 export interface CoachCheckIn {
@@ -1937,8 +1942,11 @@ export interface CoachCheckIn {
   timezoneOffsetMinutes: number;
   unitPreference: string;
   overallFeel: string | null;
+  feelScore: number | null;
   niggles: string | null;
   lifeConstraints: string | null;
+  questionForCoach: string | null;
+  clarifyingQuestion: string | null;
   runs: CoachCheckInRun[];
   adherenceHints: CoachAdherenceHint[];
   saved: boolean;
@@ -1950,9 +1958,15 @@ export interface PutCoachCheckInRequest {
   referenceDate?: string | null;
   timezoneOffsetMinutes?: number | null;
   overallFeel?: string | null;
+  feelScore?: number | null;
   niggles?: string | null;
   lifeConstraints?: string | null;
-  runNotes?: Array<{ workoutId: string; notes?: string | null }> | null;
+  questionForCoach?: string | null;
+  runNotes?: Array<{
+    workoutId: string;
+    notes?: string | null;
+    rpe?: number | null;
+  }> | null;
 }
 
 export async function getCoachCheckIn(
@@ -1998,6 +2012,41 @@ export async function putCoachCheckIn(body: PutCoachCheckInRequest): Promise<Coa
   }
 
   return response.json();
+}
+
+export async function sendCoachCheckIn(body: PutCoachCheckInRequest): Promise<CoachJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/check-in/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to send check-in to coach: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteCoachDraftWeek(weekStartDate: string): Promise<void> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/weeks/draft?weekStartDate=${encodeURIComponent(weekStartDate)}`,
+    {
+      method: 'DELETE',
+      credentials: 'include',
+    }
+  );
+
+  if (response.status === 404) {
+    throw new Error('No draft week to delete');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to delete draft week: ${response.status}`);
+  }
 }
 
 export interface CoachPrivacyReportItem {

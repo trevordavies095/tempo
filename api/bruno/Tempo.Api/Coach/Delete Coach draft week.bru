@@ -1,0 +1,11 @@
+meta {
+  name: Delete Coach draft week
+  type: http
+  seq: 16
+}
+
+delete {
+  url: {{baseUrl}}/coach/weeks/draft?weekStartDate=2026-10-19
+  body: none
+  auth: inherit
+}

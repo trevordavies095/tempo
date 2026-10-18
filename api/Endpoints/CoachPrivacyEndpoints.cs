@@ -58,7 +58,7 @@ public static class CoachPrivacyEndpoints
     private static async Task<IResult> PostPreflight(
         TempoDbContext db,
         CoachConfig coachConfig,
-        CoachContextPacketAssembler assembler,
+        CoachPrivacyPreflightService preflightService,
         [FromQuery] int? timezoneOffsetMinutes = null,
         [FromQuery] string? referenceDate = null)
     {
@@ -79,6 +79,8 @@ public static class CoachPrivacyEndpoints
             .AnyAsync(
                 a => a.WeekStartDate == containingMonday && a.Status == CoachAdjustmentStatuses.Started);
 
+        CoachPrivacyPreflight? row;
+        string? assembleError;
         WeeklyRecapWeekMath.MondaySundayWeek checkInWeek;
         WeeklyRecapWeekMath.MondaySundayWeek planWeek;
 
@@ -87,6 +89,13 @@ public static class CoachPrivacyEndpoints
             // Adjust: referenceDate identifies the plan week; no check-in gate.
             planWeek = containingWeek;
             checkInWeek = WeeklyRecapWeekMath.ResolveCheckInWeekFromPlan(planWeek, offset);
+            var referenceLocal = DateOnly.FromDateTime(planWeek.ReferenceLocalDate);
+            (row, assembleError, _) = await preflightService.AssembleAndPersistAsync(
+                checkInWeek,
+                planWeek,
+                offset,
+                referenceLocal,
+                recordConsent: false);
         }
         else
         {
@@ -97,66 +106,19 @@ public static class CoachPrivacyEndpoints
             }
 
             planWeek = WeeklyRecapWeekMath.ResolvePlanWeekFromCheckIn(checkInWeek, offset);
-            var checkInMonday = DateOnly.FromDateTime(checkInWeek.WeekStartLocal);
-            var planMonday = DateOnly.FromDateTime(planWeek.WeekStartLocal);
-            var hasCheckIn = await db.CoachCheckIns.AsNoTracking()
-                .AnyAsync(c => c.WeekStartDate == checkInMonday);
-            if (!hasCheckIn)
-            {
-                return Results.BadRequest(new
-                {
-                    error =
-                        $"Save a Coach check-in for {checkInMonday:yyyy-MM-dd} before generating the plan for {planMonday:yyyy-MM-dd}."
-                });
-            }
+            (row, assembleError, _) = await preflightService.AssembleRitualAsync(
+                checkInWeek,
+                offset,
+                recordConsent: false);
         }
 
-        var packet = await assembler.AssembleAsync(checkInWeek, planWeek, offset);
-
-        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync();
-        var redactContext = new CoachRedactionContext(Username: user?.Username);
-
-        if (!CoachPrivacyRedactor.TryRedact(
-                packet,
-                out var redactedJson,
-                out var report,
-                out var redactError,
-                redactContext))
-        {
-            return Results.BadRequest(new { error = redactError ?? "Redaction failed" });
-        }
-
-        // Defense in depth: a "name" JSON property must never remain in the sendable packet.
-        if (redactedJson.Contains("\"name\":", StringComparison.OrdinalIgnoreCase))
-        {
-            return Results.BadRequest(new { error = "Redaction failed: name fields must not appear in packet" });
-        }
-
-        var planStartDate = DateOnly.FromDateTime(planWeek.WeekStartLocal);
-        var checkInStartDate = DateOnly.FromDateTime(checkInWeek.WeekStartLocal);
-        var referenceLocal = DateOnly.FromDateTime(
-            startedAdjust ? planWeek.ReferenceLocalDate : checkInWeek.ReferenceLocalDate);
-        var reportJson = JsonSerializer.Serialize(report, JsonOptions);
-        var hash = Sha256Hex(redactedJson);
-        var now = DateTime.UtcNow;
-
-        var row = await db.CoachPrivacyPreflights.FirstOrDefaultAsync(p => p.WeekStartDate == planStartDate);
         if (row == null)
         {
-            row = new CoachPrivacyPreflight { WeekStartDate = planStartDate };
-            db.CoachPrivacyPreflights.Add(row);
+            return Results.BadRequest(new { error = assembleError ?? "Redaction failed" });
         }
 
-        row.TimezoneOffsetMinutes = offset;
-        row.ReferenceDate = referenceLocal;
-        row.RedactedPayloadJson = redactedJson;
-        row.PrivacyReportJson = reportJson;
-        row.PayloadHash = hash;
-        row.AssembledAt = now;
-        // Re-assemble clears prior consent — athlete must re-confirm this payload.
-        row.ConsentedAt = null;
-
-        await db.SaveChangesAsync();
+        var checkInStartDate = DateOnly.FromDateTime(checkInWeek.WeekStartLocal);
+        var planStartDate = DateOnly.FromDateTime(planWeek.WeekStartLocal);
 
         return Results.Ok(ToDocument(
             row,

@@ -153,6 +153,9 @@ namespace Tempo.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<byte?>("FeelScore")
+                        .HasColumnType("smallint");
+
                     b.Property<string>("LifeConstraints")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
@@ -164,6 +167,10 @@ namespace Tempo.Api.Migrations
                     b.Property<string>("OverallFeel")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<string>("QuestionForCoach")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<string>("RunNotesJson")
                         .IsRequired()

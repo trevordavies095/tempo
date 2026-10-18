@@ -107,7 +107,7 @@ public class CoachPrivacyRedactorTests
                     "Never schedule quality the day after travel for testuser",
                     ["obs"])
             ]),
-            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, []),
+            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, null, null, []),
             RecentTraining: new CoachPacketRecentTraining(
             [
                 new CoachPacketRecentTrainingWeek(
@@ -193,7 +193,7 @@ public class CoachPrivacyRedactorTests
                 Selection: new CoachPacketLayer2Selection(8, "2026-10-11"),
                 TotalEpisodeCount: 1),
             Layer3: new CoachPacketLayer3([]),
-            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, []),
+            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, null, null, []),
             RecentTraining: new CoachPacketRecentTraining([]));
 
         var ok = CoachPrivacyRedactor.TryRedact(packet, out var json, out _, out var error);
@@ -228,7 +228,7 @@ public class CoachPrivacyRedactorTests
                 new CoachLayer1RaceStatus("none", "", 0, null, null, null)),
             Layer2: new CoachPacketLayer2([], [], new CoachPacketLayer2Selection(8, "2026-10-11")),
             Layer3: new CoachPacketLayer3([]),
-            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, []),
+            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, null, null, []),
             RecentTraining: new CoachPacketRecentTraining(
             [
                 new CoachPacketRecentTrainingWeek(
@@ -342,5 +342,31 @@ public class CoachPrivacyRedactorTests
         doc.RootElement.GetProperty("checkIn").GetProperty("runs")[0].GetProperty("distanceM").GetDouble()
             .Should().Be(10000);
         report.Included.Should().Contain(i => i.Category == "checkIn");
+    }
+
+    [Fact]
+    public void TryRedact_ScrubsEmailInQuestionForCoach()
+    {
+        var packet = new CoachPacketCheckIn(
+            "2026-10-12",
+            "2026-10-18",
+            "felt ok",
+            4,
+            null,
+            null,
+            "email me at athlete@example.com about long run?",
+            []);
+
+        var ok = CoachPrivacyRedactor.TryRedact(
+            new { checkIn = packet },
+            out var json,
+            out _,
+            out var error,
+            new CoachRedactionContext(Username: null, Email: null));
+
+        ok.Should().BeTrue(error);
+        json.Should().Contain("[redacted]");
+        json.Should().NotContain("athlete@example.com");
+        json.Should().Contain("\"feelScore\":4");
     }
 }

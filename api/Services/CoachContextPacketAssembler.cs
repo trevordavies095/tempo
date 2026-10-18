@@ -102,18 +102,19 @@ public class CoachContextPacketAssembler
                 w.DurationS,
                 w.AvgHeartRateBpm,
                 w.RunType,
-                w.Notes
+                w.Notes,
+                w.Rpe
             })
             .ToListAsync(cancellationToken);
 
         var noteOverlays = CoachCheckInRunNotesJson.Deserialize(checkInRow?.RunNotesJson)
             .GroupBy(n => n.WorkoutId)
-            .ToDictionary(g => g.Key, g => g.Last().Notes);
+            .ToDictionary(g => g.Key, g => g.Last());
 
         var runs = workouts.Select(w =>
         {
             noteOverlays.TryGetValue(w.Id, out var overlay);
-            var hasOverlay = noteOverlays.ContainsKey(w.Id);
+            var hasNotesOverlay = overlay != null && overlay.Notes != null;
             return new CoachPacketCheckInRun(
                 WorkoutId: w.Id,
                 StartedAt: w.StartedAt,
@@ -121,15 +122,18 @@ public class CoachContextPacketAssembler
                 DurationS: w.DurationS,
                 AvgHeartRateBpm: w.AvgHeartRateBpm,
                 RunType: w.RunType,
-                Notes: hasOverlay ? overlay : w.Notes);
+                Notes: hasNotesOverlay ? overlay!.Notes : w.Notes,
+                Rpe: overlay?.Rpe ?? w.Rpe);
         }).ToList();
 
         var checkIn = new CoachPacketCheckIn(
             WeekStartDate: checkInStart,
             WeekEndDate: checkInEnd,
             OverallFeel: checkInRow?.OverallFeel,
+            FeelScore: checkInRow?.FeelScore,
             Niggles: checkInRow?.Niggles,
             LifeConstraints: checkInRow?.LifeConstraints,
+            QuestionForCoach: checkInRow?.QuestionForCoach,
             Runs: runs);
 
         // L2 prior-week selection keys off check-in week ending (not plan week).
@@ -190,10 +194,13 @@ public class CoachContextPacketAssembler
 
         var adjustment = await BuildAdjustmentAsync(planStartDate, cancellationToken);
 
+        var noteTextOverlays = noteOverlays.ToDictionary(
+            kv => kv.Key,
+            kv => kv.Value.Notes);
         var recentTraining = await BuildRecentTrainingAsync(
             checkInWeek,
             timezoneOffsetMinutes,
-            noteOverlays,
+            noteTextOverlays,
             cancellationToken);
 
         return new CoachContextPacket(
@@ -574,8 +581,10 @@ public sealed record CoachPacketCheckIn(
     string WeekStartDate,
     string WeekEndDate,
     string? OverallFeel,
+    byte? FeelScore,
     string? Niggles,
     string? LifeConstraints,
+    string? QuestionForCoach,
     IReadOnlyList<CoachPacketCheckInRun> Runs);
 
 public sealed record CoachPacketCheckInRun(
@@ -585,4 +594,5 @@ public sealed record CoachPacketCheckInRun(
     int DurationS,
     byte? AvgHeartRateBpm,
     string? RunType,
-    string? Notes);
+    string? Notes,
+    byte? Rpe);

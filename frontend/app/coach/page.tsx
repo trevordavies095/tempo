@@ -1,17 +1,19 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import {
+  deleteCoachDraftWeek,
   getCoachCheckIn,
   getCoachCommittedWeekOrNull,
   getCoachDraftWeekOrNull,
   getCoachHome,
+  getCurrentCoachJob,
   type CoachWeekDraft,
   type CoachWeeklyCommitDay,
 } from '@/lib/api';
@@ -25,6 +27,7 @@ import {
 import {
   addDaysIso,
   formatCoachDate,
+  formatCoachJobError,
   formatWeekRangeLabel,
   planWeekStartFromCheckInMonday,
   resolveDefaultCheckInReferenceDate,
@@ -233,6 +236,8 @@ function memoryLinesForWeek(
 
 export default function CoachPage() {
   const { unitPreference } = useSettings();
+  const queryClient = useQueryClient();
+  const [ritualError, setRitualError] = useState<string | null>(null);
 
   const weekStartDate = useMemo(() => localMondayIso(), []);
   const todayIso = useMemo(() => localDateIso(), []);
@@ -242,6 +247,15 @@ export default function CoachPage() {
   const homeQuery = useQuery({
     queryKey: ['coach-home'],
     queryFn: getCoachHome,
+  });
+
+  const currentJobQuery = useQuery({
+    queryKey: ['coach-jobs-current'],
+    queryFn: getCurrentCoachJob,
+    refetchInterval: (q) => {
+      const status = q.state.data?.status;
+      return status === 'queued' || status === 'running' ? 1000 : false;
+    },
   });
 
   const ritualCheckInQuery = useQuery({
@@ -275,10 +289,21 @@ export default function CoachPage() {
     queryFn: () => getCoachCommittedWeekOrNull(weekStartDate),
   });
 
+  const deleteDraftMutation = useMutation({
+    mutationFn: (monday: string) => deleteCoachDraftWeek(monday),
+    onSuccess: async () => {
+      setRitualError(null);
+      await queryClient.invalidateQueries({ queryKey: ['coach-draft-week'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-jobs-current'] });
+    },
+    onError: (err: Error) => setRitualError(err.message),
+  });
+
   const committed = committedQuery.data;
   const ritualDraft = ritualDraftQuery.data;
   const ritualCommitted = ritualCommittedQuery.data;
   const ritualCheckIn = ritualCheckInQuery.data;
+  const currentJob = currentJobQuery.data;
 
   const calendarMemoryLines = useMemo(
     () => memoryLinesForWeek(committed, unitPreference),
@@ -408,7 +433,7 @@ export default function CoachPage() {
             <p className="text-sm text-muted mb-4">
               Check in on last week, then send next week&apos;s plan to your coach.
             </p>
-            {ritualCheckInQuery.isLoading || (ritualCheckIn?.saved && !planWeekStart) ? (
+            {ritualCheckInQuery.isLoading || currentJobQuery.isLoading ? (
               <p className="text-sm text-muted">Loading ritual…</p>
             ) : ritualCheckInQuery.isError ? (
               <p className="text-sm text-danger">
@@ -416,33 +441,50 @@ export default function CoachPage() {
                   ? ritualCheckInQuery.error.message
                   : 'Failed to load check-in week'}
               </p>
-            ) : !ritualCheckIn?.saved ? (
-              <div className="space-y-3">
-                <Button href="/coach/check-in">
-                  Check in on {checkInRangeLabel ?? 'this week'}
-                </Button>
-                <p className="text-sm text-muted">
-                  <Link href="/coach/check-in" className="underline hover:text-ink">
-                    Different week…
-                  </Link>
+            ) : currentJob &&
+              (currentJob.status === 'queued' || currentJob.status === 'running') ? (
+              <div className="space-y-2">
+                <p className="text-sm text-ink">Coach is working…</p>
+                <p className="text-xs text-muted">
+                  Plan week {formatCoachDate(currentJob.weekStartDate)}
                 </p>
+              </div>
+            ) : currentJob?.status === 'failed' && !ritualDraft ? (
+              <div className="space-y-3">
+                <p className="text-sm text-danger">
+                  Couldn&apos;t generate —{' '}
+                  {formatCoachJobError(currentJob.errorCode, currentJob.errorMessage)}
+                </p>
+                <Button href={`/coach/check-in?referenceDate=${encodeURIComponent(ritualRef)}`}>
+                  Try again
+                </Button>
               </div>
             ) : ritualDraft ? (
               <div className="space-y-3">
                 <p className="text-sm text-muted">
                   Draft ready for {planRangeLabel ?? formatCoachDate(ritualDraft.weekStartDate)}.
                 </p>
-                <Button
-                  href={`/coach/review?weekStartDate=${encodeURIComponent(ritualDraft.weekStartDate)}`}
-                >
-                  {ritualDraft.isAdjustment ? 'Review change draft' : 'Review draft'}
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    href={`/coach/review?weekStartDate=${encodeURIComponent(ritualDraft.weekStartDate)}`}
+                  >
+                    Review your plan →
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={deleteDraftMutation.isPending}
+                    onClick={() => deleteDraftMutation.mutate(ritualDraft.weekStartDate)}
+                  >
+                    {deleteDraftMutation.isPending ? 'Starting over…' : 'Start over'}
+                  </Button>
+                </div>
               </div>
             ) : ritualCommitted ? (
               <div className="space-y-3">
                 <p className="text-sm text-ink">
-                  Next week is set
-                  {planRangeLabel ? ` (${planRangeLabel})` : ''}.
+                  Committed plan
+                  {planRangeLabel ? ` · ${planRangeLabel}` : ''}.
                 </p>
                 <div className="flex flex-wrap gap-3">
                   <Button href="/coach#coach-next-week">View plan</Button>
@@ -456,21 +498,17 @@ export default function CoachPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                <Button
-                  href={`/coach/preflight?referenceDate=${encodeURIComponent(ritualRef)}`}
-                >
-                  Send to coach · {planRangeLabel ?? 'next week'}
+                <Button href={`/coach/check-in?referenceDate=${encodeURIComponent(ritualRef)}`}>
+                  Check in on {checkInRangeLabel ?? 'this week'}
                 </Button>
                 <p className="text-sm text-muted">
-                  Check-in saved for {checkInRangeLabel}. Plan week is derived automatically.
+                  <Link href="/coach/check-in" className="underline hover:text-ink">
+                    Different week…
+                  </Link>
                 </p>
               </div>
             )}
-            <p className="text-sm text-muted mt-4">
-              <Link href="/coach/preflight?advanced=1" className="underline hover:text-ink">
-                Send for another week…
-              </Link>
-            </p>
+            {ritualError && <p className="text-sm text-danger mt-3">{ritualError}</p>}
           </Card>
         )}
 

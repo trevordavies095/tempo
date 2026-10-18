@@ -7,8 +7,19 @@ import { useMutation } from '@tanstack/react-query';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { startCoachAdjust, type CoachAdjustCategory } from '@/lib/api';
-import { formatCoachDate } from '@/lib/coachWeek';
+import {
+  consentCoachPrivacyPreflight,
+  getCoachJob,
+  postCoachGenerate,
+  postCoachPrivacyPreflight,
+  startCoachAdjust,
+  type CoachAdjustCategory,
+} from '@/lib/api';
+import {
+  formatCoachDate,
+  formatCoachJobError,
+  pollCoachJobUntilSettled,
+} from '@/lib/coachWeek';
 
 const fieldClass =
   'w-full rounded-tempo border border-border bg-canvas px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-volt';
@@ -21,13 +32,6 @@ const CATEGORIES: { value: CoachAdjustCategory | ''; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
-function localDateIso(d = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 function AdjustPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -35,29 +39,56 @@ function AdjustPageInner() {
   const [reason, setReason] = useState('');
   const [category, setCategory] = useState<CoachAdjustCategory | ''>('');
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
 
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
-  const referenceDate = localDateIso();
 
   const startMutation = useMutation({
-    mutationFn: () =>
-      startCoachAdjust({
+    mutationFn: async () => {
+      setProgress('Starting…');
+      await startCoachAdjust({
         weekStartDate,
         reason,
         category: category || null,
         timezoneOffsetMinutes,
-        referenceDate,
-      }),
-    onSuccess: (doc) => {
-      setError(null);
-      const params = new URLSearchParams({
-        mode: 'adjust',
-        weekStartDate: doc.weekStartDate,
-        referenceDate,
+        referenceDate: weekStartDate,
       });
-      router.push(`/coach/preflight?${params.toString()}`);
+
+      setProgress('Building privacy packet…');
+      const preflight = await postCoachPrivacyPreflight(timezoneOffsetMinutes, weekStartDate);
+
+      setProgress('Recording consent…');
+      const consented = await consentCoachPrivacyPreflight(preflight.id);
+
+      setProgress('Sending to coach…');
+      const started = await postCoachGenerate(consented.id);
+      const job = await pollCoachJobUntilSettled(started, (j) => getCoachJob(j.id), {
+        onUpdate: (j) => {
+          setProgress(
+            j.status === 'running'
+              ? 'Coach is working…'
+              : j.status === 'queued'
+                ? 'Queued…'
+                : null
+          );
+        },
+      });
+
+      if (job.status === 'failed') {
+        throw new Error(formatCoachJobError(job.errorCode, job.errorMessage));
+      }
+
+      return job;
     },
-    onError: (err: Error) => setError(err.message),
+    onSuccess: (job) => {
+      setError(null);
+      setProgress(null);
+      router.push(`/coach/review?weekStartDate=${encodeURIComponent(job.weekStartDate)}`);
+    },
+    onError: (err: Error) => {
+      setProgress(null);
+      setError(err.message);
+    },
   });
 
   if (!weekStartDate) {
@@ -91,7 +122,7 @@ function AdjustPageInner() {
           <h2 className="text-lg font-semibold text-ink mb-2">What changed?</h2>
           <p className="text-sm text-muted mb-4">
             Required free-text reason. Only remaining days will be replanned; elapsed days stay
-            historical. Nothing is sent until you confirm what your coach will see.
+            historical. Sending records consent and asks the coach for a new draft.
           </p>
           <label className="block text-sm text-muted space-y-1 mb-4">
             <span>Reason</span>
@@ -119,15 +150,14 @@ function AdjustPageInner() {
             </select>
           </label>
           {error && <p className="text-sm text-danger mb-3">{error}</p>}
+          {progress && <p className="text-sm text-muted mb-3">{progress}</p>}
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               disabled={!reason.trim() || startMutation.isPending}
               onClick={() => startMutation.mutate()}
             >
-              {startMutation.isPending
-                ? 'Starting...'
-                : 'Continue to what your coach will see'}
+              {startMutation.isPending ? 'Sending…' : 'Send to coach'}
             </Button>
             <Button href="/coach" variant="secondary">
               Cancel

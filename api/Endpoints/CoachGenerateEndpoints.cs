@@ -49,6 +49,16 @@ public static class CoachGenerateEndpoints
             .Produces(400)
             .Produces(404)
             .WithSummary("Get the draft weekly commit for a weekStartDate (yyyy-MM-dd)");
+
+        group.MapDelete("/weeks/draft", DeleteDraftWeek)
+            .WithName("DeleteCoachDraftWeek")
+            .Produces(204)
+            .Produces(400)
+            .Produces(404)
+            .WithSummary("Delete a draft week and cancel a started adjustment")
+            .WithDescription(
+                "Removes the draft CoachWeek for weekStartDate. Cancels a Started adjustment tied to that week. " +
+                "404 when no draft exists.");
     }
 
     private static async Task<IResult> PostGenerate(
@@ -134,6 +144,44 @@ public static class CoachGenerateEndpoints
             week.JobId,
             week.Status);
         return Results.Ok(CoachWeekDocumentMapper.ToDocument(week, adjustment));
+    }
+
+    private static async Task<IResult> DeleteDraftWeek(
+        TempoDbContext db,
+        CoachConfig coachConfig,
+        [FromQuery] string? weekStartDate)
+    {
+        if (!await IsCoachAvailableAsync(db, coachConfig))
+        {
+            return Results.NotFound();
+        }
+
+        if (!DateOnly.TryParse(weekStartDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var monday))
+        {
+            return Results.BadRequest(new { error = "weekStartDate must be yyyy-MM-dd" });
+        }
+
+        var drafts = await db.CoachWeeks
+            .Where(w => w.WeekStartDate == monday && w.Status == CoachWeekStatuses.Draft)
+            .ToListAsync();
+        if (drafts.Count == 0)
+        {
+            return Results.NotFound();
+        }
+
+        db.CoachWeeks.RemoveRange(drafts);
+
+        var startedAdjustments = await db.CoachAdjustments
+            .Where(a => a.WeekStartDate == monday && a.Status == CoachAdjustmentStatuses.Started)
+            .ToListAsync();
+        foreach (var adj in startedAdjustments)
+        {
+            adj.Status = CoachAdjustmentStatuses.Cancelled;
+            adj.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync();
+        return Results.NoContent();
     }
 
     private static CoachJobDocument ToJobDocument(CoachJob job) =>
