@@ -144,6 +144,7 @@ public static class CoachEndpoints
         CoachGenerateEndpoints.Map(group);
         CoachReviewEndpoints.Map(group);
         CoachAdjustEndpoints.Map(group);
+        CoachPlanDaysEndpoints.Map(group);
     }
 
     private static async Task<IResult> GetCoachSettings(TempoDbContext db, CoachConfig coachConfig)

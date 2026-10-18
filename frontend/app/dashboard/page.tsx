@@ -10,6 +10,7 @@ import BestEffortsChart from '@/components/BestEffortsChart';
 import WorkoutCard from '@/components/WorkoutCard';
 import YearlyWeeklyChart from '@/components/YearlyWeeklyChart';
 import Pagination from '@/components/Pagination';
+import { CoachTodayCard } from '@/components/coach/CoachTodayCard';
 import { calculateWeekFromInterval, generateIntervalFromWeek } from '@/utils/weekUtils';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
@@ -132,6 +133,7 @@ function DashboardPageContent() {
 
       <div className="w-full flex flex-col md:flex-row gap-6 mb-8">
         <div className="flex flex-col gap-6 md:w-80 flex-shrink-0">
+          <CoachTodayCard />
           <WeeklyStatsWidget />
           <RelativeEffortGraph />
           <BestEffortsChart />

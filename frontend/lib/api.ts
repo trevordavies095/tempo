@@ -2538,6 +2538,92 @@ export async function getCoachCommittedWeekOrNull(
   return response.json();
 }
 
+export interface CoachPlanDayWorkout {
+  id: string;
+  distanceM: number;
+  durationS: number;
+  avgHeartRateBpm: number | null;
+}
+
+export interface CoachPlanDayRun {
+  type: CoachRunType | string;
+  distanceM: number;
+  structure: string | null;
+  paceOrHr: string | null;
+  shoeId: string | null;
+  shoeName: string | null;
+  notes: string | null;
+}
+
+export interface CoachPlanDay {
+  date: string;
+  dayType: CoachDayType | string;
+  run: CoachPlanDayRun | null;
+  workouts: CoachPlanDayWorkout[];
+  adherenceHint: CoachAdherenceHint | null;
+}
+
+export interface CoachPlanDays {
+  days: CoachPlanDay[];
+}
+
+export async function getCoachPlanDays(
+  from: string,
+  to: string,
+  timezoneOffsetMinutes?: number
+): Promise<CoachPlanDays> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('from', from);
+  searchParams.set('to', to);
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/plan-days?${searchParams.toString()}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get coach plan days: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/** Returns null when Coach is unavailable / not opted in (404). */
+export async function getCoachPlanDaysOrNull(
+  from: string,
+  to: string,
+  timezoneOffsetMinutes?: number
+): Promise<CoachPlanDays | null> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('from', from);
+  searchParams.set('to', to);
+  if (timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', timezoneOffsetMinutes.toString());
+  }
+
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/plan-days?${searchParams.toString()}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get coach plan days: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function startCoachAdjust(params: {
   weekStartDate: string;
   reason: string;

@@ -1,0 +1,11 @@
+meta {
+  name: Get Coach plan days
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{baseUrl}}/coach/plan-days?from=2026-10-12&to=2026-10-18&timezoneOffsetMinutes=0
+  body: none
+  auth: inherit
+}

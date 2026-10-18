@@ -229,6 +229,7 @@ builder.Services.AddScoped<IAnthropicCoachClient, AnthropicCoachClient>();
 builder.Services.AddScoped<ICoachProtocolBrain, AnthropicCoachProtocolBrain>();
 builder.Services.AddScoped<CoachContextPacketAssembler>();
 builder.Services.AddScoped<CoachCheckInService>();
+builder.Services.AddScoped<CoachPlanDaysService>();
 builder.Services.AddScoped<CoachPrivacyPreflightService>();
 builder.Services.AddSingleton<CoachJobQueue>();
 builder.Services.AddScoped<CoachJobService>();

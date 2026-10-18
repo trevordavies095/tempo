@@ -8,6 +8,7 @@ import WorkoutDetailHeader from '@/components/WorkoutDetailHeader';
 import { ActivityDetailTabs } from '@/components/ActivityDetailTabs';
 import { RouteComparisonTab } from '@/components/RouteComparisonTab';
 import { WorkoutOverviewPanel } from '@/components/WorkoutOverviewPanel';
+import { CoachPlannedVsActualStrip } from '@/components/coach/CoachPlannedVsActualStrip';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -71,6 +72,8 @@ function WorkoutOverviewPageContent() {
   return (
     <PageShell density="overview" title="Workout overview" leading={backLink}>
       <WorkoutDetailHeader workout={data} />
+
+      <CoachPlannedVsActualStrip workout={data} />
 
       <ActivityDetailTabs
         showComparisonTab={hasMatchedRuns}
