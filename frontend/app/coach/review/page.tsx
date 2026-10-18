@@ -7,8 +7,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Dialog } from '@/components/ui/Dialog';
 import { ShoeSelector } from '@/components/ShoeSelector';
+import { AskForChangesDialog } from '@/components/coach/AskForChangesDialog';
 import {
   applyCoachDraftWeek,
   deleteCoachDraftWeek,
@@ -270,7 +270,6 @@ function ReviewPageInner() {
   const [swapSource, setSwapSource] = useState<number | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const [askNote, setAskNote] = useState('');
-  const [askInspectOpen, setAskInspectOpen] = useState(false);
   const [askJob, setAskJob] = useState<CoachJob | null>(null);
 
   const draftQuery = useQuery({
@@ -288,7 +287,7 @@ function ReviewPageInner() {
   const preflightQuery = useQuery({
     queryKey: ['coach-privacy-preflight', preflightId],
     queryFn: () => getCoachPrivacyPreflight(preflightId as string),
-    enabled: Boolean(preflightId) && askOpen && askInspectOpen,
+    enabled: Boolean(preflightId) && askOpen,
   });
 
   const lockedThroughDate = draftQuery.data?.lockedThroughDate ?? null;
@@ -407,7 +406,6 @@ function ReviewPageInner() {
       setError(null);
       setAskOpen(false);
       setAskNote('');
-      setAskInspectOpen(false);
       setAskJob(null);
       await queryClient.invalidateQueries({ queryKey: ['coach-draft-week', weekStartDate] });
       await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
@@ -974,7 +972,11 @@ function ReviewPageInner() {
                 disabled={!safetyReady || busy}
                 onClick={() => applyMutation.mutate()}
               >
-                {applyMutation.isPending ? 'Accepting…' : 'Accept plan'}
+                {applyMutation.isPending
+                  ? 'Accepting…'
+                  : isAdjustment
+                    ? 'Accept changes'
+                    : 'Accept plan'}
               </Button>
               <p className="text-xs text-muted max-w-sm">{disclaimer}</p>
             </div>
@@ -982,93 +984,52 @@ function ReviewPageInner() {
         </div>
       )}
 
-      <Dialog
+      <AskForChangesDialog
         open={askOpen}
         onClose={() => {
-          if (askMutation.isPending) {
-            return;
+          if (!askMutation.isPending) {
+            setAskOpen(false);
           }
-          setAskOpen(false);
-          setAskInspectOpen(false);
         }}
-        title="Ask for changes"
-        footer={
-          <>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={askMutation.isPending}
-              onClick={() => {
-                setAskOpen(false);
-                setAskInspectOpen(false);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              disabled={askMutation.isPending || !askNote.trim()}
-              onClick={() => askMutation.mutate()}
-            >
-              {askMutation.isPending ? 'Sending…' : 'Send to coach'}
-            </Button>
-          </>
+        note={askNote}
+        onNoteChange={setAskNote}
+        noteLabel="What should change?"
+        notePlaceholder="e.g. Make Tuesday a rest day and move the long to Sunday"
+        whatsSentLine="Sends your note, a summary of this draft, and the usual redacted training packet."
+        inspectContent={
+          preflightQuery.isLoading ? (
+            <p>Loading last packet…</p>
+          ) : preflightQuery.isError ? (
+            <p>Could not load the previous packet. Your note will still be included on Send.</p>
+          ) : preflightQuery.data ? (
+            <>
+              <p className="text-ink">
+                Last send plus your note and this draft&apos;s day summary. Categories:
+              </p>
+              <ul className="list-disc pl-4 space-y-1">
+                {preflightQuery.data.report.included.map((item) => (
+                  <li key={item.category}>
+                    <span className="text-ink">{item.category}</span> — {item.detail}
+                  </li>
+                ))}
+                <li>
+                  <span className="text-ink">athleteFeedback</span> — your note and previous draft
+                  day summary
+                </li>
+              </ul>
+            </>
+          ) : null
         }
-      >
-        <div className="space-y-4">
-          <label className="block text-sm text-muted space-y-1">
-            <span>What should change?</span>
-            <textarea
-              className={fieldClass + ' min-h-[96px]'}
-              value={askNote}
-              onChange={(e) => setAskNote(e.target.value)}
-              placeholder="e.g. Make Tuesday a rest day and move the long to Sunday"
-              disabled={askMutation.isPending}
-            />
-          </label>
-          <p className="text-sm text-muted">
-            Sends your note, a summary of this draft, and the usual redacted training packet.{' '}
-            <button
-              type="button"
-              className="underline text-ink"
-              onClick={() => setAskInspectOpen((o) => !o)}
-            >
-              {askInspectOpen ? 'Hide what\'s sent' : 'See what\'s sent'}
-            </button>
-          </p>
-          {askInspectOpen && (
-            <div className="rounded-tempo border border-border bg-canvas p-3 text-xs text-muted space-y-2 max-h-48 overflow-auto">
-              {preflightQuery.isLoading && <p>Loading last packet…</p>}
-              {preflightQuery.isError && (
-                <p>Could not load the previous packet. Your note will still be included on Send.</p>
-              )}
-              {preflightQuery.data && (
-                <>
-                  <p className="text-ink">
-                    Last send plus your note and this draft&apos;s day summary. Categories:
-                  </p>
-                  <ul className="list-disc pl-4 space-y-1">
-                    {preflightQuery.data.report.included.map((item) => (
-                      <li key={item.category}>
-                        <span className="text-ink">{item.category}</span> — {item.detail}
-                      </li>
-                    ))}
-                    <li>
-                      <span className="text-ink">athleteFeedback</span> — your note and previous
-                      draft day summary
-                    </li>
-                  </ul>
-                </>
-              )}
-            </div>
-          )}
-          {askJob && askJob.status !== 'ready' && askJob.status !== 'failed' && (
-            <p className="text-sm text-muted" aria-live="polite">
-              {askJob.status === 'running' ? 'Coach is working…' : 'Queued…'}
-            </p>
-          )}
-        </div>
-      </Dialog>
+        sending={askMutation.isPending}
+        progressLabel={
+          askJob && askJob.status !== 'ready' && askJob.status !== 'failed'
+            ? askJob.status === 'running'
+              ? 'Coach is working…'
+              : 'Queued…'
+            : null
+        }
+        onSend={() => askMutation.mutate()}
+      />
     </PageShell>
   );
 }

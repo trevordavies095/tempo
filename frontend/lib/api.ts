@@ -2501,7 +2501,6 @@ export async function getCoachCommittedWeekOrNull(
 export async function startCoachAdjust(params: {
   weekStartDate: string;
   reason: string;
-  category?: CoachAdjustCategory | null;
   timezoneOffsetMinutes?: number;
   referenceDate?: string;
 }): Promise<CoachAdjustment> {
@@ -2512,7 +2511,6 @@ export async function startCoachAdjust(params: {
     body: JSON.stringify({
       weekStartDate: params.weekStartDate,
       reason: params.reason,
-      category: params.category ?? null,
       timezoneOffsetMinutes: params.timezoneOffsetMinutes ?? 0,
       referenceDate: params.referenceDate ?? undefined,
     }),
@@ -2521,6 +2519,32 @@ export async function startCoachAdjust(params: {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to start adjust: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface PostCoachCommittedAskForChangesRequest {
+  weekStartDate: string;
+  note: string;
+  timezoneOffsetMinutes?: number;
+  referenceDate?: string;
+}
+
+/** One-shot adjust: start adjustment + consent + enqueue. */
+export async function postCoachCommittedAskForChanges(
+  body: PostCoachCommittedAskForChangesRequest
+): Promise<CoachJob> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/weeks/committed/ask-for-changes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to ask for committed-plan changes: ${response.status}`);
   }
 
   return response.json();

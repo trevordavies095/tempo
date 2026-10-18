@@ -2,18 +2,24 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
+import { AskForChangesDialog } from '@/components/coach/AskForChangesDialog';
 import {
   deleteCoachDraftWeek,
   getCoachCheckIn,
   getCoachCommittedWeekOrNull,
   getCoachDraftWeekOrNull,
   getCoachHome,
+  getCoachJob,
+  getCoachWeekPrivacyReceipt,
   getCurrentCoachJob,
+  postCoachCommittedAskForChanges,
+  type CoachJob,
   type CoachWeekDraft,
   type CoachWeeklyCommitDay,
 } from '@/lib/api';
@@ -30,6 +36,7 @@ import {
   formatCoachJobError,
   formatWeekRangeLabel,
   planWeekStartFromCheckInMonday,
+  pollCoachJobUntilSettled,
   resolveDefaultCheckInReferenceDate,
 } from '@/lib/coachWeek';
 
@@ -119,6 +126,7 @@ function CommittedPlanSection({
   todayIso,
   unitPreference,
   showAdjust,
+  onAskForChanges,
   appliedMemoryLines,
 }: {
   sectionId?: string;
@@ -127,6 +135,7 @@ function CommittedPlanSection({
   todayIso: string;
   unitPreference: 'metric' | 'imperial';
   showAdjust: boolean;
+  onAskForChanges?: (week: CoachWeekDraft) => void;
   appliedMemoryLines: { key: string; text: string }[];
 }) {
   const lockedThrough = week.lockedThroughDate ?? null;
@@ -186,11 +195,9 @@ function CommittedPlanSection({
             );
           })}
         </div>
-        {showAdjust && (
+        {showAdjust && onAskForChanges && (
           <div className="mt-4">
-            <Button
-              href={`/coach/adjust?weekStartDate=${encodeURIComponent(week.weekStartDate)}`}
-            >
+            <Button type="button" onClick={() => onAskForChanges(week)}>
               Ask for changes
             </Button>
           </div>
@@ -235,9 +242,14 @@ function memoryLinesForWeek(
 }
 
 export default function CoachPage() {
+  const router = useRouter();
   const { unitPreference } = useSettings();
   const queryClient = useQueryClient();
   const [ritualError, setRitualError] = useState<string | null>(null);
+  const [askWeek, setAskWeek] = useState<CoachWeekDraft | null>(null);
+  const [askNote, setAskNote] = useState('');
+  const [askJob, setAskJob] = useState<CoachJob | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
 
   const weekStartDate = useMemo(() => localMondayIso(), []);
   const todayIso = useMemo(() => localDateIso(), []);
@@ -298,6 +310,56 @@ export default function CoachPage() {
     },
     onError: (err: Error) => setRitualError(err.message),
   });
+
+  const askReceiptQuery = useQuery({
+    queryKey: ['coach-week-privacy-receipt', askWeek?.id],
+    queryFn: () => getCoachWeekPrivacyReceipt(askWeek!.id),
+    enabled: Boolean(askWeek?.id),
+  });
+
+  const askMutation = useMutation({
+    mutationFn: async () => {
+      if (!askWeek) {
+        throw new Error('No committed week selected');
+      }
+      const note = askNote.trim();
+      if (!note) {
+        throw new Error('Add a short note about what changed');
+      }
+      const started = await postCoachCommittedAskForChanges({
+        weekStartDate: askWeek.weekStartDate,
+        note,
+        timezoneOffsetMinutes,
+        referenceDate: todayIso,
+      });
+      const settled = await pollCoachJobUntilSettled(started, (job) => getCoachJob(job.id), {
+        onUpdate: setAskJob,
+      });
+      if (settled.status === 'failed') {
+        throw new Error(formatCoachJobError(settled.errorCode, settled.errorMessage));
+      }
+      return settled;
+    },
+    onSuccess: async (job) => {
+      setAskError(null);
+      setAskWeek(null);
+      setAskNote('');
+      setAskJob(null);
+      await queryClient.invalidateQueries({ queryKey: ['coach-draft-week'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-committed-week'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-jobs-current'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
+      router.push(`/coach/review?weekStartDate=${encodeURIComponent(job.weekStartDate)}`);
+    },
+    onError: (err: Error) => setAskError(err.message),
+  });
+
+  const openAskForChanges = (week: CoachWeekDraft) => {
+    setAskWeek(week);
+    setAskNote('');
+    setAskError(null);
+    setAskJob(null);
+  };
 
   const committed = committedQuery.data;
   const ritualDraft = ritualDraftQuery.data;
@@ -377,8 +439,9 @@ export default function CoachPage() {
                 )}
                 {committed && !draft && (
                   <Button
-                    href={`/coach/adjust?weekStartDate=${encodeURIComponent(committed.weekStartDate)}`}
+                    type="button"
                     variant="secondary"
+                    onClick={() => openAskForChanges(committed)}
                   >
                     Ask for changes
                   </Button>
@@ -489,8 +552,9 @@ export default function CoachPage() {
                 <div className="flex flex-wrap gap-3">
                   <Button href="/coach#coach-next-week">View plan</Button>
                   <Button
-                    href={`/coach/adjust?weekStartDate=${encodeURIComponent(ritualCommitted.weekStartDate)}`}
+                    type="button"
                     variant="secondary"
+                    onClick={() => openAskForChanges(ritualCommitted)}
                   >
                     Ask for changes
                   </Button>
@@ -528,6 +592,7 @@ export default function CoachPage() {
             todayIso={todayIso}
             unitPreference={unitPreference}
             showAdjust={!ritualDraft}
+            onAskForChanges={openAskForChanges}
             appliedMemoryLines={upcomingMemoryLines}
           />
         )}
@@ -540,6 +605,7 @@ export default function CoachPage() {
             todayIso={todayIso}
             unitPreference={unitPreference}
             showAdjust={!draft && !upcomingCommitted}
+            onAskForChanges={openAskForChanges}
             appliedMemoryLines={
               planIsFutureWeek ? calendarMemoryLines : upcomingMemoryLines.length
                 ? upcomingMemoryLines
@@ -547,7 +613,65 @@ export default function CoachPage() {
             }
           />
         )}
+
+        {askError && (
+          <Card>
+            <p className="text-sm text-danger">{askError}</p>
+          </Card>
+        )}
       </div>
+
+      <AskForChangesDialog
+        open={Boolean(askWeek)}
+        onClose={() => {
+          if (!askMutation.isPending) {
+            setAskWeek(null);
+          }
+        }}
+        note={askNote}
+        onNoteChange={setAskNote}
+        noteLabel="What changed?"
+        whatsSentLine="Sends your note and the usual redacted training packet for this week (elapsed days stay locked)."
+        inspectContent={
+          askReceiptQuery.isLoading ? (
+            <p>Loading last packet…</p>
+          ) : askReceiptQuery.isError ? (
+            <p>
+              Could not load the previous receipt. Your note will still be included on Send.
+            </p>
+          ) : askReceiptQuery.data ? (
+            <>
+              <p className="text-ink">
+                Prior send for this week (hash {askReceiptQuery.data.payloadHash.slice(0, 12)}…)
+                plus your note and an adjustment block for remaining days.
+              </p>
+              {(askReceiptQuery.data.recentTraining?.length ?? 0) > 0 && (
+                <ul className="list-disc pl-4 space-y-1">
+                  {askReceiptQuery.data.recentTraining!.map((w) => (
+                    <li key={w.weekStartDate}>
+                      {w.weekStartDate}–{w.weekEndDate}: {w.runCount} runs
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <p>
+              Your note, locked/remaining day context, and the redacted training packet leave on
+              Send.
+            </p>
+          )
+        }
+        sending={askMutation.isPending}
+        progressLabel={
+          askJob && askJob.status !== 'ready' && askJob.status !== 'failed'
+            ? askJob.status === 'running'
+              ? 'Coach is working…'
+              : 'Queued…'
+            : null
+        }
+        onSend={() => askMutation.mutate()}
+      />
     </PageShell>
   );
 }

@@ -112,6 +112,9 @@ public sealed class CoachJobService
     public Task<CoachJob?> GetAsync(Guid id, CancellationToken cancellationToken = default)
         => _db.CoachJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
 
+    public Task<CoachJob?> GetActiveJobAsync(CancellationToken cancellationToken = default) =>
+        FindActiveJobAsync(cancellationToken);
+
     public async Task<CoachJob?> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
         var active = await FindActiveJobAsync(cancellationToken);

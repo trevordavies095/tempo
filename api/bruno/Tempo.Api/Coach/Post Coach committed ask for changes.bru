@@ -1,0 +1,20 @@
+meta {
+  name: Post Coach committed ask for changes
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/coach/weeks/committed/ask-for-changes
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "weekStartDate": "2026-10-12",
+    "note": "Travel day moved quality session — shift remaining days",
+    "timezoneOffsetMinutes": 0,
+    "referenceDate": "2026-10-14"
+  }
+}

@@ -167,7 +167,6 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         {
             weekStartDate = "2026-10-12",
             reason = "   ",
-            category = "niggle",
             timezoneOffsetMinutes = 0,
             referenceDate = "2026-10-15"
         });
@@ -176,7 +175,7 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     }
 
     [Fact]
-    public async Task Adjust_RemainingDaysSplice_ArchivesPriorCommitted()
+    public async Task AskForChangesCommitted_LocksElapsedDays_Consents_AndSplicesOnApply()
     {
         var originalJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
             notes: "Original committed week notes.",
@@ -185,43 +184,51 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         var callsAfterCommit = _factory.Brain.CallCount;
 
         Guid priorCommittedId;
+        string priorCommitJson;
         using (var scope = _factory.Decorated.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            priorCommittedId = await db.CoachWeeks
-                .Where(w => w.Status == CoachWeekStatuses.Committed)
-                .Select(w => w.Id)
-                .SingleAsync();
+            var prior = await db.CoachWeeks.SingleAsync(w => w.Status == CoachWeekStatuses.Committed);
+            priorCommittedId = prior.Id;
+            priorCommitJson = prior.CommitJson;
         }
 
-        // Mid-week (Wed 2026-10-14): Mon/Tue locked (through 2026-10-13).
-        var start = await client.PostAsJsonAsync("/coach/weeks/committed/adjust", new
-        {
-            weekStartDate = "2026-10-12",
-            reason = "Travel day moved quality session",
-            category = "life",
-            timezoneOffsetMinutes = 0,
-            referenceDate = "2026-10-14"
-        });
-        start.StatusCode.Should().Be(HttpStatusCode.OK);
-        var adjustment = await start.Content.ReadFromJsonAsync<AdjustResponse>(JsonOptions);
-        adjustment!.LockedThroughDate.Should().Be("2026-10-13");
-        _factory.Brain.CallCount.Should().Be(callsAfterCommit);
-
-        // Adjust path: no new check-in required.
-        var preflightId = await ConsentPreflightAsync(client, referenceDate: "2026-10-14", forAdjust: true);
-
         // Fake brain mutates every day distance — worker must splice locked Mon/Tue back.
+        // Use 5500 (not near a round km) so planned-distance normalization does not snap it.
         var mutated = CoachWeeklyCommitSchemaTests.BuildCommitJson(
             notes: "Adjusted remaining week after travel.",
-            distanceMForIndex: _ => 9999);
+            distanceMForIndex: _ => 5500);
         _factory.Brain.Results.Add(new CoachProtocolBrainResult(
             true, mutated, 5, 5, CoachProtocolBrainError.None, null));
 
-        var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
-        generate.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        // Mid-week (Wed 2026-10-14): Mon/Tue locked (through 2026-10-13).
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "Travel day moved quality session",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14"
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await ask.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        started.Should().NotBeNull();
         started!.Kind.Should().Be("adjust");
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var preflight = await db.CoachPrivacyPreflights.AsNoTracking()
+                .SingleAsync(p => p.Id == started.PreflightId);
+            preflight.ConsentedAt.Should().NotBeNull();
+            preflight.RedactedPayloadJson.Should().Contain("adjustment");
+            preflight.RedactedPayloadJson.Should().Contain("Travel day moved quality session");
+
+            var adj = await db.CoachAdjustments.SingleAsync(a => a.Status == CoachAdjustmentStatuses.Started);
+            adj.Category.Should().BeNull();
+            adj.LockedThroughDate.Should().Be(new DateOnly(2026, 10, 13));
+            adj.Reason.Should().Be("Travel day moved quality session");
+        }
+
         var job = await PollUntilTerminalAsync(client, started.Id);
         job.Status.Should().Be("ready");
         _factory.Brain.CallCount.Should().Be(callsAfterCommit + 1);
@@ -235,7 +242,35 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         var days = draftDoc.RootElement.GetProperty("commit").GetProperty("days");
         days[0].GetProperty("run")!.GetProperty("distanceM").GetDouble().Should().Be(8000); // Mon locked
         days[1].GetProperty("dayType").GetString().Should().Be("rest"); // Tue rest locked
-        days[2].GetProperty("run")!.GetProperty("distanceM").GetDouble().Should().Be(9999); // Wed remaining
+        days[2].GetProperty("run")!.GetProperty("distanceM").GetDouble().Should().Be(5500); // Wed remaining
+
+        // Locked days identical to source committed plan (Mon/Tue) — content, not JSON whitespace.
+        using (var priorDoc = JsonDocument.Parse(priorCommitJson))
+        {
+            var priorDays = priorDoc.RootElement.GetProperty("days");
+            for (var i = 0; i < 2; i++)
+            {
+                days[i].GetProperty("dayType").GetString()
+                    .Should().Be(priorDays[i].GetProperty("dayType").GetString());
+                var draftRun = days[i].TryGetProperty("run", out var dr) && dr.ValueKind != JsonValueKind.Null
+                    ? dr
+                    : (JsonElement?)null;
+                var priorRun = priorDays[i].TryGetProperty("run", out var pr) && pr.ValueKind != JsonValueKind.Null
+                    ? pr
+                    : (JsonElement?)null;
+                if (draftRun is null)
+                {
+                    priorRun.Should().BeNull();
+                    continue;
+                }
+
+                priorRun.Should().NotBeNull();
+                draftRun.Value.GetProperty("distanceM").GetDouble()
+                    .Should().Be(priorRun!.Value.GetProperty("distanceM").GetDouble());
+                draftRun.Value.GetProperty("type").GetString()
+                    .Should().Be(priorRun.Value.GetProperty("type").GetString());
+            }
+        }
 
         var apply = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
         {
@@ -258,9 +293,9 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
             committed.Id.Should().NotBe(priorCommittedId);
             committed.CommitJson.Should().Contain("Adjusted remaining week");
             committed.CommitJson.Should().Contain("8000");
-            committed.CommitJson.Should().Contain("9999");
+            committed.CommitJson.Should().Contain("5500");
 
-            var adj = await db.CoachAdjustments.SingleAsync(a => a.Id == adjustment.Id);
+            var adj = await db.CoachAdjustments.SingleAsync(a => a.Id == started.AdjustmentId);
             adj.Status.Should().Be(CoachAdjustmentStatuses.Applied);
         }
 
@@ -272,6 +307,103 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         var receipt = await client.GetAsync(
             $"/coach/weeks/{committedDoc.RootElement.GetProperty("id").GetGuid()}/privacy-receipt");
         receipt.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task AskForChangesCommitted_EmptyNote_ReturnsBadRequest()
+    {
+        var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "  ",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14"
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _factory.Brain.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task AskForChangesCommitted_NoCommitted_ReturnsNotFound()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "Need a change",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14"
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        _factory.Brain.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AskForChangesCommitted_WhenAdjustmentStarted_ReturnsConflict()
+    {
+        var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
+
+        var start = await client.PostAsJsonAsync("/coach/weeks/committed/adjust", new
+        {
+            weekStartDate = "2026-10-12",
+            reason = "Already started",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14"
+        });
+        start.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        _factory.Brain.Reset();
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "Second try",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14"
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        _factory.Brain.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AskForChangesCommitted_WhenJobActive_ReturnsConflict()
+    {
+        var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var preflight = await db.CoachPrivacyPreflights.FirstAsync();
+            db.CoachJobs.Add(new CoachJob
+            {
+                Status = CoachJobStatuses.Queued,
+                Kind = CoachJobKinds.Generate,
+                WeekStartDate = new DateOnly(2026, 10, 12),
+                PreflightId = preflight.Id,
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        _factory.Brain.Reset();
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "While busy",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14"
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        _factory.Brain.CallCount.Should().Be(0);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            (await db.CoachAdjustments.CountAsync(a => a.Status == CoachAdjustmentStatuses.Started))
+                .Should().Be(0);
+        }
     }
 
     [Fact]
@@ -294,12 +426,8 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         public Guid Id { get; set; }
         public string Status { get; set; } = "";
         public string Kind { get; set; } = "";
+        public Guid PreflightId { get; set; }
+        public Guid? AdjustmentId { get; set; }
         public Guid? ResultWeekId { get; set; }
-    }
-
-    private sealed class AdjustResponse
-    {
-        public Guid Id { get; set; }
-        public string LockedThroughDate { get; set; } = "";
     }
 }
