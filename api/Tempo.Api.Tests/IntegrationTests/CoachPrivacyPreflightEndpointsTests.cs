@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tempo.Api.Data;
+using Tempo.Api.Models;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -138,6 +139,110 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
         payloadJson.Should().Contain("solid effort");
     }
 
+    [Fact]
+    public async Task Assemble_IncludesSelectedEpisodesAndActiveRules_ScrubsUsername()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            db.CoachEpisodes.AddRange(
+                new CoachEpisode
+                {
+                    Id = "ep_2026-10-10_race_prior",
+                    Date = new DateOnly(2026, 10, 10),
+                    Category = CoachEpisodeCategories.Race,
+                    Summary = "Prior week race for testuser",
+                    SourceWeekEnding = new DateOnly(2026, 10, 11),
+                    Source = CoachEpisodeSources.Coach,
+                    CreatedAt = DateTime.UtcNow
+                },
+                new CoachEpisode
+                {
+                    Id = "ep_2026-08-01_issue_old",
+                    Date = new DateOnly(2026, 8, 1),
+                    Category = CoachEpisodeCategories.Issue,
+                    Summary = "Old calf niggle flare",
+                    Source = CoachEpisodeSources.Athlete,
+                    CreatedAt = DateTime.UtcNow
+                },
+                new CoachEpisode
+                {
+                    Id = "ep_retired",
+                    Date = new DateOnly(2026, 9, 1),
+                    Category = CoachEpisodeCategories.Milestone,
+                    Summary = "Should not appear",
+                    Retired = true,
+                    Source = CoachEpisodeSources.Coach,
+                    CreatedAt = DateTime.UtcNow
+                });
+            db.CoachRules.AddRange(
+                new CoachRule
+                {
+                    Id = "rule_active_heat",
+                    TargetLayer = CoachRuleTargetLayers.DataInterpretationNotes,
+                    RuleText = "AM MP recovers cleaner than PM",
+                    Status = CoachRuleStatuses.Active,
+                    Evidence = ["Aug contrast"],
+                    Source = CoachRuleSources.Coach,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                },
+                new CoachRule
+                {
+                    Id = "rule_retired",
+                    TargetLayer = CoachRuleTargetLayers.KeyLearnings,
+                    RuleText = "Retired rule",
+                    Status = CoachRuleStatuses.Retired,
+                    Evidence = ["old"],
+                    Source = CoachRuleSources.Coach,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+            db.CoachCheckIns.Add(new CoachCheckIn
+            {
+                WeekStartDate = new DateOnly(2026, 10, 12),
+                Niggles = "calf tight",
+                RunNotesJson = "[]",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var assemble = await client.PostAsync(
+            "/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate=2026-10-13",
+            null);
+        assemble.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await assemble.Content.ReadFromJsonAsync<PreflightResponse>(JsonOptions);
+        doc.Should().NotBeNull();
+
+        var payloadJson = JsonSerializer.Serialize(doc!.RedactedPayload);
+        using var payload = JsonDocument.Parse(payloadJson);
+        var layer2 = payload.RootElement.GetProperty("layer2");
+        layer2.TryGetProperty("scoresById", out _).Should().BeFalse();
+        layer2.GetProperty("priorWeek").EnumerateArray().Select(e => e.GetProperty("id").GetString())
+            .Should().Contain("ep_2026-10-10_race_prior");
+        layer2.GetProperty("retrieved").EnumerateArray().Select(e => e.GetProperty("id").GetString())
+            .Should().Contain("ep_2026-08-01_issue_old");
+        payloadJson.Should().NotContain("ep_retired");
+        payloadJson.Should().NotContain("testuser");
+
+        var rules = payload.RootElement.GetProperty("layer3").GetProperty("rules");
+        rules.EnumerateArray().Select(r => r.GetProperty("id").GetString())
+            .Should().Contain("rule_active_heat")
+            .And.NotContain("rule_retired");
+
+        doc.Report.SelectedEpisodeIds.Should().Contain("ep_2026-10-10_race_prior");
+        doc.Report.SelectedRuleIds.Should().Contain("rule_active_heat");
+        doc.Report.Included.Should().Contain(i =>
+            i.Category == "layer2" && i.Detail.Contains("episodes selected of"));
+        doc.Report.Included.Should().Contain(i =>
+            i.Category == "layer3" && i.Detail.Contains("1 active standing rules"));
+    }
+
     private sealed class PreflightResponse
     {
         public Guid Id { get; set; }
@@ -152,6 +257,8 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
     {
         public List<ReportItemDto> Included { get; set; } = [];
         public List<ReportItemDto> Stripped { get; set; } = [];
+        public List<string> SelectedEpisodeIds { get; set; } = [];
+        public List<string> SelectedRuleIds { get; set; } = [];
     }
 
     private sealed class ReportItemDto

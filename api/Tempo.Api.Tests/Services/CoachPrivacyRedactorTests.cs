@@ -48,7 +48,6 @@ public class CoachPrivacyRedactorTests
     [Fact]
     public void TryRedact_FailsClosed_WhenResidualGpsRemainsInNotes()
     {
-        // Coordinates embedded in a free-text string (no forbidden key to strip).
         var packet = new
         {
             checkIn = new
@@ -65,10 +64,122 @@ public class CoachPrivacyRedactorTests
     }
 
     [Fact]
+    public void TryRedact_ScrubsUsernameAndEmailInMemoryText()
+    {
+        var packet = new CoachContextPacket(
+            Meta: new CoachPacketMeta("2026-10-12", "2026-10-18", "2026-10-13", 0, "metric", DateTime.UtcNow),
+            Goal: null,
+            Constraints: [],
+            Layer1: new CoachPacketLayer1(
+                new CoachLayer1HrZones("AgeBased", 30, null, 190, []),
+                new CoachLayer1Paces(360, 300, 280, 250),
+                [],
+                null,
+                new CoachLayer1RaceStatus("race", "half_marathon", 21097, null, null, null)),
+            Layer2: new CoachPacketLayer2(
+                PriorWeek:
+                [
+                    new CoachPacketEpisode(
+                        "ep_1",
+                        "2026-10-10",
+                        "issue",
+                        "testuser felt calf after long — email me at leak@example.com",
+                        "2026-10-11")
+                ],
+                Retrieved: [],
+                Selection: new CoachPacketLayer2Selection(8, "2026-10-11"),
+                TotalEpisodeCount: 1),
+            Layer3: new CoachPacketLayer3(
+            [
+                new CoachPacketRule(
+                    "rule_1",
+                    "key_learnings",
+                    "Never schedule quality the day after travel for testuser",
+                    ["obs"])
+            ]),
+            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, []));
+
+        var ok = CoachPrivacyRedactor.TryRedact(
+            packet,
+            out var json,
+            out var report,
+            out var error,
+            new CoachRedactionContext("testuser"));
+
+        ok.Should().BeTrue(error);
+        json.Should().NotContain("testuser");
+        json.Should().NotContain("leak@example.com");
+        json.Should().Contain("[redacted]");
+        report.SelectedEpisodeIds.Should().Contain("ep_1");
+        report.SelectedRuleIds.Should().Contain("rule_1");
+        report.Included.Should().Contain(i =>
+            i.Category == "layer2" && i.Detail.Contains("1 episodes selected of 1"));
+        report.Included.Should().Contain(i =>
+            i.Category == "layer3" && i.Detail.Contains("1 active standing rules"));
+    }
+
+    [Fact]
+    public void TryRedact_FailsClosed_WhenGpsInEpisodeSummary()
+    {
+        var packet = new CoachContextPacket(
+            Meta: new CoachPacketMeta("2026-10-12", "2026-10-18", "2026-10-13", 0, "metric", DateTime.UtcNow),
+            Goal: null,
+            Constraints: [],
+            Layer1: new CoachPacketLayer1(
+                new CoachLayer1HrZones("AgeBased", 30, null, 190, []),
+                new CoachLayer1Paces(0, 0, 0, 0),
+                [],
+                null,
+                new CoachLayer1RaceStatus("none", "", 0, null, null, null)),
+            Layer2: new CoachPacketLayer2(
+                PriorWeek:
+                [
+                    new CoachPacketEpisode(
+                        "ep_gps",
+                        "2026-10-10",
+                        "milestone",
+                        "Started near [42.3601, -71.0589]",
+                        null)
+                ],
+                Retrieved: [],
+                Selection: new CoachPacketLayer2Selection(8, "2026-10-11"),
+                TotalEpisodeCount: 1),
+            Layer3: new CoachPacketLayer3([]),
+            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, []));
+
+        var ok = CoachPrivacyRedactor.TryRedact(packet, out var json, out _, out var error);
+
+        ok.Should().BeFalse();
+        json.Should().BeEmpty();
+        error.Should().Contain("residual GPS");
+    }
+
+    [Fact]
     public void LooksLikeResidualGps_DetectsLatProperty()
     {
         CoachPrivacyRedactor.LooksLikeResidualGps("{\"lat\":42.3}").Should().BeTrue();
         CoachPrivacyRedactor.LooksLikeResidualGps("{\"distanceM\":5000}").Should().BeFalse();
+    }
+
+    [Fact]
+    public void ExtractSelectedIds_FromRedactedPayload()
+    {
+        const string json = """
+            {
+              "layer2": {
+                "priorWeek": [{ "id": "ep_a" }],
+                "retrieved": [{ "id": "ep_b" }],
+                "selection": { "l2TopK": 8, "priorWeekEnding": "2026-10-11" }
+              },
+              "layer3": {
+                "rules": [{ "id": "rule_x" }]
+              }
+            }
+            """;
+
+        var (episodes, rules) = CoachPrivacyRedactor.ExtractSelectedIds(json);
+        episodes.Should().BeEquivalentTo(["ep_a", "ep_b"]);
+        rules.Should().BeEquivalentTo(["rule_x"]);
     }
 
     [Fact]

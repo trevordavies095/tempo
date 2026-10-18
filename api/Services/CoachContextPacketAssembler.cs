@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -17,11 +18,19 @@ public class CoachContextPacketAssembler
 
     private readonly TempoDbContext _db;
     private readonly HeartRateZoneService _zoneService;
+    private readonly CoachConfig _coachConfig;
+    private readonly ILogger<CoachContextPacketAssembler> _logger;
 
-    public CoachContextPacketAssembler(TempoDbContext db, HeartRateZoneService zoneService)
+    public CoachContextPacketAssembler(
+        TempoDbContext db,
+        HeartRateZoneService zoneService,
+        CoachConfig coachConfig,
+        ILogger<CoachContextPacketAssembler> logger)
     {
         _db = db;
         _zoneService = zoneService;
+        _coachConfig = coachConfig;
+        _logger = logger;
     }
 
     public async Task<CoachContextPacket> AssembleAsync(
@@ -116,6 +125,61 @@ public class CoachContextPacketAssembler
             LifeConstraints: checkInRow?.LifeConstraints,
             Runs: runs);
 
+        var weekEnding = DateOnly.FromDateTime(week.WeekEndLocal.Date);
+        var episodes = await _db.CoachEpisodes.AsNoTracking()
+            .Where(e => !e.Retired)
+            .OrderByDescending(e => e.Date)
+            .ToListAsync(cancellationToken);
+        var totalEpisodeCount = episodes.Count;
+
+        var query = new CoachEpisodeQueryContext(
+            OverallFeel: checkIn.OverallFeel,
+            Niggles: checkIn.Niggles,
+            LifeConstraints: checkIn.LifeConstraints,
+            RunNotes: runs.Select(r => r.Notes).Where(n => !string.IsNullOrWhiteSpace(n)).Cast<string>().ToList(),
+            ConstraintNotes: constraints
+                .Select(c => c.Note)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Cast<string>()
+                .ToList());
+
+        var selection = CoachEpisodeSelector.Select(
+            episodes,
+            weekEnding,
+            query,
+            _coachConfig.L2TopK);
+
+        if (selection.ScoresById.Count > 0)
+        {
+            _logger.LogDebug(
+                "Coach L2 selection weekEnding={WeekEnding} prior={PriorCount} retrieved={RetrievedCount} scores={Scores}",
+                weekEnding,
+                selection.PriorWeek.Count,
+                selection.Retrieved.Count,
+                string.Join(",", selection.ScoresById.Select(kv => $"{kv.Key}:{kv.Value:0.##}")));
+        }
+
+        var layer2 = new CoachPacketLayer2(
+            PriorWeek: selection.PriorWeek.Select(ToPacketEpisode).ToList(),
+            Retrieved: selection.Retrieved.Select(ToPacketEpisode).ToList(),
+            Selection: new CoachPacketLayer2Selection(
+                L2TopK: selection.L2TopK,
+                PriorWeekEnding: selection.PriorWeekEnding.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+            TotalEpisodeCount: totalEpisodeCount);
+
+        var activeRules = await _db.CoachRules.AsNoTracking()
+            .Where(r => r.Status == CoachRuleStatuses.Active)
+            .OrderBy(r => r.TargetLayer)
+            .ThenBy(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        var layer3 = new CoachPacketLayer3(
+            Rules: activeRules.Select(r => new CoachPacketRule(
+                Id: r.Id,
+                TargetLayer: r.TargetLayer,
+                RuleText: r.RuleText,
+                Evidence: r.Evidence ?? [])).ToList());
+
         var adjustment = await BuildAdjustmentAsync(weekStartDate, cancellationToken);
 
         return new CoachContextPacket(
@@ -129,11 +193,19 @@ public class CoachContextPacketAssembler
             Goal: packetGoal,
             Constraints: packetConstraints,
             Layer1: layer1,
-            Layer2: new Dictionary<string, object>(),
-            Layer3: new Dictionary<string, object>(),
+            Layer2: layer2,
+            Layer3: layer3,
             CheckIn: checkIn,
             Adjustment: adjustment);
     }
+
+    private static CoachPacketEpisode ToPacketEpisode(CoachEpisode episode) =>
+        new(
+            Id: episode.Id,
+            Date: episode.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            Category: episode.Category,
+            Summary: episode.Summary,
+            SourceWeekEnding: episode.SourceWeekEnding?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
 
     private async Task<CoachPacketAdjustment?> BuildAdjustmentAsync(
         DateOnly weekStartDate,
@@ -270,10 +342,36 @@ public sealed record CoachContextPacket(
     CoachPacketGoal? Goal,
     IReadOnlyList<CoachPacketConstraint> Constraints,
     CoachPacketLayer1 Layer1,
-    Dictionary<string, object> Layer2,
-    Dictionary<string, object> Layer3,
+    CoachPacketLayer2 Layer2,
+    CoachPacketLayer3 Layer3,
     CoachPacketCheckIn CheckIn,
     CoachPacketAdjustment? Adjustment = null);
+
+public sealed record CoachPacketLayer2(
+    IReadOnlyList<CoachPacketEpisode> PriorWeek,
+    IReadOnlyList<CoachPacketEpisode> Retrieved,
+    CoachPacketLayer2Selection Selection,
+    [property: JsonIgnore] int TotalEpisodeCount = 0);
+
+public sealed record CoachPacketLayer2Selection(
+    int L2TopK,
+    string PriorWeekEnding);
+
+public sealed record CoachPacketEpisode(
+    string Id,
+    string Date,
+    string Category,
+    string Summary,
+    string? SourceWeekEnding);
+
+public sealed record CoachPacketLayer3(
+    IReadOnlyList<CoachPacketRule> Rules);
+
+public sealed record CoachPacketRule(
+    string Id,
+    string TargetLayer,
+    string RuleText,
+    IReadOnlyList<string> Evidence);
 
 public sealed record CoachPacketAdjustment(
     Guid Id,

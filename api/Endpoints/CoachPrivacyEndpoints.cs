@@ -73,7 +73,15 @@ public static class CoachPrivacyEndpoints
         var offset = timezoneOffsetMinutes ?? 0;
         var packet = await assembler.AssembleAsync(week, offset);
 
-        if (!CoachPrivacyRedactor.TryRedact(packet, out var redactedJson, out var report, out var redactError))
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync();
+        var redactContext = new CoachRedactionContext(Username: user?.Username);
+
+        if (!CoachPrivacyRedactor.TryRedact(
+                packet,
+                out var redactedJson,
+                out var report,
+                out var redactError,
+                redactContext))
         {
             return Results.BadRequest(new { error = redactError ?? "Redaction failed" });
         }
@@ -158,7 +166,7 @@ public static class CoachPrivacyEndpoints
     private static CoachPrivacyPreflightDocument ToDocument(CoachPrivacyPreflight row, string weekEndDate)
     {
         var report = JsonSerializer.Deserialize<CoachPrivacyReport>(row.PrivacyReportJson, JsonOptions)
-                     ?? new CoachPrivacyReport([], []);
+                     ?? new CoachPrivacyReport([], [], [], []);
         object? payload;
         try
         {

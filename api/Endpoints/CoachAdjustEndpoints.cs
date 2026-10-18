@@ -145,12 +145,16 @@ public static class CoachAdjustEndpoints
             payload = null;
         }
 
+        var (episodeIds, ruleIds) = CoachPrivacyRedactor.ExtractSelectedIds(week.RedactedPayloadJson);
+
         return Results.Ok(new CoachWeekPrivacyReceiptDocument(
             WeekId: week.Id,
             WeekStartDate: week.WeekStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             Status: week.Status,
             PayloadHash: week.PayloadHash,
-            RedactedPayload: payload));
+            RedactedPayload: payload,
+            SelectedEpisodeIds: episodeIds,
+            SelectedRuleIds: ruleIds));
     }
 
     private static CoachAdjustmentDocument ToDocument(CoachAdjustment adjustment) =>
@@ -200,4 +204,6 @@ public sealed record CoachWeekPrivacyReceiptDocument(
     string WeekStartDate,
     string Status,
     string PayloadHash,
-    object? RedactedPayload);
+    object? RedactedPayload,
+    IReadOnlyList<string> SelectedEpisodeIds,
+    IReadOnlyList<string> SelectedRuleIds);

@@ -266,10 +266,11 @@ builder.Services.AddSingleton(new CartoBasemapsConfig
     ApiKey = builder.Configuration["CartoBasemaps:ApiKey"]?.Trim() ?? string.Empty
 });
 
-// AI Coach host kill switch (default off; env Coach__Enabled)
+// AI Coach host kill switch (default off; env Coach__Enabled) + L2 top-k (env Coach__L2TopK)
 builder.Services.AddSingleton(new CoachConfig
 {
-    Enabled = builder.Configuration.GetValue("Coach:Enabled", false)
+    Enabled = builder.Configuration.GetValue("Coach:Enabled", false),
+    L2TopK = Math.Max(0, builder.Configuration.GetValue("Coach:L2TopK", 8))
 });
 
 // Configure form options for large file uploads (bulk import)

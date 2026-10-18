@@ -6,6 +6,7 @@ namespace Tempo.Api.Services;
 
 /// <summary>
 /// Strips athlete identity and GPS/route fields from a coach context packet before provider send.
+/// Also scrubs username / email patterns from free-text leaves (memory summaries, notes, rules).
 /// Fail-closed: if redaction cannot complete or residual GPS-looking data remains, returns false.
 /// </summary>
 public static partial class CoachPrivacyRedactor
@@ -46,10 +47,11 @@ public static partial class CoachPrivacyRedactor
         object packet,
         out string redactedJson,
         out CoachPrivacyReport report,
-        out string? error)
+        out string? error,
+        CoachRedactionContext? context = null)
     {
         redactedJson = string.Empty;
-        report = new CoachPrivacyReport([], []);
+        report = new CoachPrivacyReport([], [], [], []);
         error = null;
 
         try
@@ -63,7 +65,7 @@ public static partial class CoachPrivacyRedactor
             }
 
             var stripped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            RedactNode(node, stripped);
+            RedactNode(node, stripped, context);
 
             redactedJson = node.ToJsonString(JsonOptions);
 
@@ -81,12 +83,12 @@ public static partial class CoachPrivacyRedactor
         {
             error = $"Redaction failed: {ex.Message}";
             redactedJson = string.Empty;
-            report = new CoachPrivacyReport([], []);
+            report = new CoachPrivacyReport([], [], [], []);
             return false;
         }
     }
 
-    private static void RedactNode(JsonNode? node, HashSet<string> stripped)
+    private static void RedactNode(JsonNode? node, HashSet<string> stripped, CoachRedactionContext? context)
     {
         if (node is JsonObject obj)
         {
@@ -100,16 +102,80 @@ public static partial class CoachPrivacyRedactor
                     continue;
                 }
 
-                RedactNode(obj[key], stripped);
+                var child = obj[key];
+                if (child is JsonValue value && value.TryGetValue<string>(out var text))
+                {
+                    var scrubbed = ScrubString(text, context, stripped);
+                    if (!ReferenceEquals(scrubbed, text) && scrubbed != text)
+                    {
+                        obj[key] = scrubbed;
+                    }
+                }
+                else
+                {
+                    RedactNode(child, stripped, context);
+                }
             }
         }
         else if (node is JsonArray arr)
         {
-            foreach (var child in arr)
+            for (var i = 0; i < arr.Count; i++)
             {
-                RedactNode(child, stripped);
+                var child = arr[i];
+                if (child is JsonValue value && value.TryGetValue<string>(out var text))
+                {
+                    var scrubbed = ScrubString(text, context, stripped);
+                    if (!ReferenceEquals(scrubbed, text) && scrubbed != text)
+                    {
+                        arr[i] = scrubbed;
+                    }
+                }
+                else
+                {
+                    RedactNode(child, stripped, context);
+                }
             }
         }
+    }
+
+    internal static string ScrubString(string text, CoachRedactionContext? context, HashSet<string> stripped)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        var result = text;
+        if (!string.IsNullOrWhiteSpace(context?.Username)
+            && result.Contains(context.Username, StringComparison.OrdinalIgnoreCase))
+        {
+            result = Regex.Replace(
+                result,
+                Regex.Escape(context.Username),
+                "[redacted]",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            stripped.Add("athleteIdentity");
+        }
+
+        if (!string.IsNullOrWhiteSpace(context?.Email)
+            && result.Contains(context.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            result = Regex.Replace(
+                result,
+                Regex.Escape(context.Email),
+                "[redacted]",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            stripped.Add("athleteIdentity");
+        }
+
+        var emailScrubbed = EmailRegex().Replace(result, match =>
+        {
+            stripped.Add("athleteIdentity");
+            return "[redacted]";
+        });
+        result = emailScrubbed;
+
+        return result;
     }
 
     private static bool IsForbiddenKey(string key)
@@ -119,7 +185,6 @@ public static partial class CoachPrivacyRedactor
             return true;
         }
 
-        // Catch geoJson / routeGeoJson variants normalized
         var normalized = key.Replace("_", "", StringComparison.Ordinal).ToLowerInvariant();
         return normalized is "geojson" or "routegojson" or "previewgeojson"
             or "rawgpxdata" or "rawfitdata" or "rawstravadata" or "rawhealthkitdata";
@@ -143,19 +208,39 @@ public static partial class CoachPrivacyRedactor
 
     private static CoachPrivacyReport BuildReport(object packet, HashSet<string> stripped)
     {
+        var selectedEpisodeIds = new List<string>();
+        var selectedRuleIds = new List<string>();
+        var layer2Detail = "Layer 2 memory (empty until later slices)";
+        var layer3Detail = "Layer 3 rules (empty until later slices)";
+
+        if (packet is CoachContextPacket typed)
+        {
+            selectedEpisodeIds.AddRange(typed.Layer2.PriorWeek.Select(e => e.Id));
+            selectedEpisodeIds.AddRange(typed.Layer2.Retrieved.Select(e => e.Id));
+            selectedRuleIds.AddRange(typed.Layer3.Rules.Select(r => r.Id));
+
+            var selected = selectedEpisodeIds.Count;
+            var total = typed.Layer2.TotalEpisodeCount > 0
+                ? typed.Layer2.TotalEpisodeCount
+                : selected;
+            layer2Detail =
+                $"{selected} episodes selected of {total} — text you accepted or wrote, scrubbed of name/email/coordinates";
+            layer3Detail =
+                $"{selectedRuleIds.Count} active standing rules — text you accepted or wrote, scrubbed of name/email/coordinates";
+        }
+
         var included = new List<CoachPrivacyReportItem>
         {
             new("meta", "Week bounds, unit preference, assemble timestamp"),
             new("goal", "Primary CoachGoal fields"),
             new("constraints", "Active CoachConstraint non-negotiables"),
             new("layer1", "HR zones, paces, shoes (no athlete name)"),
-            new("layer2", "Layer 2 memory (empty until later slices)"),
-            new("layer3", "Layer 3 rules (empty until later slices)"),
+            new("layer2", layer2Detail),
+            new("layer3", layer3Detail),
             new("checkIn", "Subjective fields and run metrics/notes without workout names or GPS"),
             new("adjustment", "Athlete-started mid-week adjust reason, category, and locked/remaining days")
         };
 
-        // Always advertise what we strip by policy, even if keys were absent in this assemble.
         var strippedItems = new List<CoachPrivacyReportItem>
         {
             new("athleteIdentity", "Name, email, and username fields"),
@@ -172,10 +257,11 @@ public static partial class CoachPrivacyRedactor
             }
         }
 
-        // Keep compiler happy if packet shape is unused for inclusion detection later
-        _ = packet;
-
-        return new CoachPrivacyReport(included, strippedItems);
+        return new CoachPrivacyReport(
+            included,
+            strippedItems,
+            selectedEpisodeIds.Distinct(StringComparer.Ordinal).ToList(),
+            selectedRuleIds.Distinct(StringComparer.Ordinal).ToList());
     }
 
     /// <summary>
@@ -196,15 +282,92 @@ public static partial class CoachPrivacyRedactor
         return false;
     }
 
+    /// <summary>
+    /// Extracts selected episode/rule ids from a stored redacted packet JSON.
+    /// </summary>
+    public static (IReadOnlyList<string> EpisodeIds, IReadOnlyList<string> RuleIds) ExtractSelectedIds(
+        string? redactedPayloadJson)
+    {
+        var episodes = new List<string>();
+        var rules = new List<string>();
+        if (string.IsNullOrWhiteSpace(redactedPayloadJson))
+        {
+            return (episodes, rules);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(redactedPayloadJson);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("layer2", out var layer2))
+            {
+                CollectIds(layer2, "priorWeek", episodes);
+                CollectIds(layer2, "retrieved", episodes);
+            }
+
+            if (root.TryGetProperty("layer3", out var layer3)
+                && layer3.TryGetProperty("rules", out var rulesArr)
+                && rulesArr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in rulesArr.EnumerateArray())
+                {
+                    if (item.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+                    {
+                        var value = id.GetString();
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            rules.Add(value);
+                        }
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Caller gets empty lists when payload is unusable.
+        }
+
+        return (
+            episodes.Distinct(StringComparer.Ordinal).ToList(),
+            rules.Distinct(StringComparer.Ordinal).ToList());
+    }
+
+    private static void CollectIds(JsonElement parent, string arrayName, List<string> sink)
+    {
+        if (!parent.TryGetProperty(arrayName, out var arr) || arr.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var item in arr.EnumerateArray())
+        {
+            if (item.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+            {
+                var value = id.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    sink.Add(value);
+                }
+            }
+        }
+    }
+
     [GeneratedRegex(@"\[\s*-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+\s*\]", RegexOptions.CultureInvariant)]
     private static partial Regex CoordinatePairRegex();
 
     [GeneratedRegex(@"""(lat|lng|lon|latitude|longitude)""\s*:\s*-?\d", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex LatLngPropertyRegex();
+
+    [GeneratedRegex(@"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex EmailRegex();
 }
+
+public sealed record CoachRedactionContext(string? Username, string? Email = null);
 
 public sealed record CoachPrivacyReport(
     IReadOnlyList<CoachPrivacyReportItem> Included,
-    IReadOnlyList<CoachPrivacyReportItem> Stripped);
+    IReadOnlyList<CoachPrivacyReportItem> Stripped,
+    IReadOnlyList<string> SelectedEpisodeIds,
+    IReadOnlyList<string> SelectedRuleIds);
 
 public sealed record CoachPrivacyReportItem(string Category, string Detail);
