@@ -162,16 +162,35 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
             "strength": null
           } ],
           "safetyFlags": [],
-          "memoryProposals": [],
+          "layer1Patches": [],
+          "layer2EpisodeDrafts": [],
+          "layer3RuleProposals": [],
           "clarifyingQuestion": null,
           "callouts": []
         }
+
+        Memory channels (most weeks emit [] for all three — never pad):
+        - layer1Patches: [{ "fieldPath", "oldValue", "newValue", "rationale" }]
+          Allowlisted fieldPath only: paces.easySecPerKm|tempoSecPerKm|thresholdSecPerKm|intervalSecPerKm,
+          hrZones.maxHeartRateBpm|restingHeartRateBpm, raceStatus.targetTimeS|notes, trainingPhase
+          (trainingPhase: base|build|peak|taper|recovery|null). Never propose shoes, goal distance/date, or PRs.
+        - layer2EpisodeDrafts: [{ "date", "category", "summary", "sourceWeekEnding"? }]
+          category: race|breakthrough|issue|equipment|milestone|protocol_change (never recap — human-only).
+          Emit only if the episode would still matter if searched six months from now.
+        - layer3RuleProposals: [{ "operation": "promote"|"revise"|"retire", "ruleText", "evidence": [], "targetRuleId", "targetLayer" }]
+          targetLayer: data_interpretation_notes|key_learnings|coaching_preferences.
+          Promote only when the pattern is reusable across future weeks (not a one-off fact).
+          promote: targetRuleId null + non-empty ruleText + evidence. revise/retire: targetRuleId of an active rule.
+
+        Packet layer2/layer3 are the athlete's curated memory and active standing rules.
+        Obey active Layer 3 rules in the plan (soft guidance). CoachConstraint non-negotiables are hard.
 
         Rules:
         - Honor unit preference from the packet when describing paces in notes.
         - Honor CoachConstraint non-negotiables: blackouts = rest; standing schedule presets; secondary_race dates must be run.type=race.
         - Never initiate mid-week adjust. Only the athlete starts Adjust.
         - When the packet includes an "adjustment" object: replan ONLY remainingDates; copy lockedDays unchanged into those dates; severe niggles → backoff volume/intensity and/or refer-out safetyFlags — never diagnose.
+        - A niggle/illness Adjust is an issue-episode candidate only if it clears the six-month bar (onset of something lasting, not a sniffle).
         - Rest days: dayType=rest and run may be null.
         - coachesNotes is required and must be non-empty (max 800 chars).
         """;

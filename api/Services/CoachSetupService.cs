@@ -31,6 +31,8 @@ public sealed class CoachSetupService
         await _db.CoachPrivacyPreflights.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachCheckIns.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachConstraints.ExecuteDeleteAsync(cancellationToken);
+        await _db.CoachEpisodes.ExecuteDeleteAsync(cancellationToken);
+        await _db.CoachRules.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachMemoryLayers.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachGoals.ExecuteDeleteAsync(cancellationToken);
     }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Tempo.Api.Services;
@@ -13,7 +14,11 @@ public sealed class CoachWeeklyCommit
 
     public List<CoachWeeklyCommitSafetyFlag> SafetyFlags { get; set; } = [];
 
-    public List<CoachWeeklyCommitMemoryProposal> MemoryProposals { get; set; } = [];
+    public List<CoachLayer1Patch> Layer1Patches { get; set; } = [];
+
+    public List<CoachLayer2EpisodeDraft> Layer2EpisodeDrafts { get; set; } = [];
+
+    public List<CoachLayer3RuleProposal> Layer3RuleProposals { get; set; } = [];
 
     public string? ClarifyingQuestion { get; set; }
 
@@ -61,11 +66,54 @@ public sealed class CoachWeeklyCommitSafetyFlag
     public bool RequiresResponse { get; set; }
 }
 
-public sealed class CoachWeeklyCommitMemoryProposal
+public sealed class CoachProposalValidity
 {
-    public string Layer { get; set; } = string.Empty;
+    public bool Ok { get; set; } = true;
 
-    public string Path { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+}
+
+public sealed class CoachLayer1Patch
+{
+    public string FieldPath { get; set; } = string.Empty;
+
+    public JsonElement? OldValue { get; set; }
+
+    public JsonElement? NewValue { get; set; }
+
+    public string Rationale { get; set; } = string.Empty;
+
+    public CoachProposalValidity? Validity { get; set; }
+}
+
+public sealed class CoachLayer2EpisodeDraft
+{
+    /// <summary>ISO date yyyy-MM-dd when the event happened.</summary>
+    public string Date { get; set; } = string.Empty;
+
+    /// <summary>race | breakthrough | issue | equipment | milestone | protocol_change (not recap from model)</summary>
+    public string Category { get; set; } = string.Empty;
 
     public string Summary { get; set; } = string.Empty;
+
+    public string? SourceWeekEnding { get; set; }
+
+    public CoachProposalValidity? Validity { get; set; }
+}
+
+public sealed class CoachLayer3RuleProposal
+{
+    /// <summary>promote | revise | retire</summary>
+    public string Operation { get; set; } = string.Empty;
+
+    public string? RuleText { get; set; }
+
+    public List<string> Evidence { get; set; } = [];
+
+    public string? TargetRuleId { get; set; }
+
+    /// <summary>data_interpretation_notes | key_learnings | coaching_preferences</summary>
+    public string TargetLayer { get; set; } = string.Empty;
+
+    public CoachProposalValidity? Validity { get; set; }
 }

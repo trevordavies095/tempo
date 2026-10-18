@@ -13,6 +13,7 @@ import {
   getCoachDraftWeek,
   putCoachDraftWeek,
   type CoachDayType,
+  type CoachMemoryChecklistItem,
   type CoachWeeklyCommit,
   type CoachWeeklyCommitDay,
 } from '@/lib/api';
@@ -62,14 +63,72 @@ function normalizeCommit(raw: CoachWeeklyCommit): CoachWeeklyCommit {
       severity: f.severity ?? 'info',
       requiresResponse: Boolean(f.requiresResponse),
     })),
-    memoryProposals: (raw.memoryProposals ?? []).map((p) => ({
-      layer: p.layer ?? '',
-      path: p.path ?? '',
-      summary: p.summary ?? '',
+    layer1Patches: (raw.layer1Patches ?? []).map((p) => ({
+      fieldPath: p.fieldPath ?? '',
+      oldValue: p.oldValue ?? null,
+      newValue: p.newValue ?? null,
+      rationale: p.rationale ?? '',
+      validity: p.validity
+        ? { ok: Boolean(p.validity.ok), reason: p.validity.reason ?? null }
+        : null,
+    })),
+    layer2EpisodeDrafts: (raw.layer2EpisodeDrafts ?? []).map((d) => ({
+      date: d.date ?? '',
+      category: d.category ?? '',
+      summary: d.summary ?? '',
+      sourceWeekEnding: d.sourceWeekEnding ?? null,
+      validity: d.validity
+        ? { ok: Boolean(d.validity.ok), reason: d.validity.reason ?? null }
+        : null,
+    })),
+    layer3RuleProposals: (raw.layer3RuleProposals ?? []).map((p) => ({
+      operation: p.operation ?? '',
+      ruleText: p.ruleText ?? null,
+      evidence: p.evidence ?? [],
+      targetRuleId: p.targetRuleId ?? null,
+      targetLayer: p.targetLayer ?? '',
+      validity: p.validity
+        ? { ok: Boolean(p.validity.ok), reason: p.validity.reason ?? null }
+        : null,
     })),
     clarifyingQuestion: raw.clarifyingQuestion ?? null,
     callouts: (raw.callouts ?? []).slice(0, 5),
   };
+}
+
+function buildMemoryChecklist(commit: CoachWeeklyCommit): CoachMemoryChecklistItem[] {
+  const items: CoachMemoryChecklistItem[] = [];
+  commit.layer1Patches.forEach((p, i) => {
+    items.push({
+      channel: 'l1',
+      channelIndex: i,
+      label: `L1 · ${p.fieldPath}`,
+      detail: p.rationale || `${String(p.oldValue)} → ${String(p.newValue)}`,
+      validityOk: p.validity?.ok !== false,
+      validityReason: p.validity?.reason ?? null,
+    });
+  });
+  commit.layer2EpisodeDrafts.forEach((d, i) => {
+    items.push({
+      channel: 'l2',
+      channelIndex: i,
+      label: `L2 · ${d.category} · ${d.date}`,
+      detail: d.summary,
+      validityOk: d.validity?.ok !== false,
+      validityReason: d.validity?.reason ?? null,
+    });
+  });
+  commit.layer3RuleProposals.forEach((p, i) => {
+    items.push({
+      channel: 'l3',
+      channelIndex: i,
+      label: `L3 · ${p.operation} · ${p.targetLayer}`,
+      detail: p.ruleText || p.targetRuleId || '',
+      validityOk: p.validity?.ok !== false,
+      validityReason: p.validity?.reason ?? null,
+    });
+  });
+  return items;
 }
 
 function updateDay(
@@ -116,7 +175,10 @@ function ReviewPageInner() {
 
   const [commit, setCommit] = useState<CoachWeeklyCommit | null>(null);
   const [acks, setAcks] = useState<Record<number, { acknowledged: boolean; response: string }>>({});
-  const [acceptedMemory, setAcceptedMemory] = useState<Set<number>>(new Set());
+  const [acceptedL1, setAcceptedL1] = useState<Set<number>>(new Set());
+  const [acceptedEpisodes, setAcceptedEpisodes] = useState<Set<number>>(new Set());
+  const [acceptedRules, setAcceptedRules] = useState<Set<number>>(new Set());
+  const [archiveNotesAsRecap, setArchiveNotesAsRecap] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const draftQuery = useQuery({
@@ -145,7 +207,10 @@ function ReviewPageInner() {
       initial[i] = { acknowledged: false, response: '' };
     });
     setAcks(initial);
-    setAcceptedMemory(new Set());
+    setAcceptedL1(new Set());
+    setAcceptedEpisodes(new Set());
+    setAcceptedRules(new Set());
+    setArchiveNotesAsRecap(false);
   }, [draftQuery.data]);
 
   const distanceUnitLabel = unitPreference === 'imperial' ? 'mi' : 'km';
@@ -193,7 +258,10 @@ function ReviewPageInner() {
           acknowledged: Boolean(acks[i]?.acknowledged),
           response: acks[i]?.response?.trim() || null,
         })),
-        acceptedMemoryProposalIndexes: Array.from(acceptedMemory).sort((a, b) => a - b),
+        acceptedLayer1PatchIndexes: Array.from(acceptedL1).sort((a, b) => a - b),
+        acceptedEpisodeIndexes: Array.from(acceptedEpisodes).sort((a, b) => a - b),
+        acceptedRuleProposalIndexes: Array.from(acceptedRules).sort((a, b) => a - b),
+        archiveNotesAsRecap,
       });
     },
     onSuccess: async () => {
@@ -481,45 +549,82 @@ function ReviewPageInner() {
               </div>
             </Card>
 
-            {commit.memoryProposals.length > 0 && (
-              <Card>
+            <Card>
                 <h2 className="text-lg font-semibold text-ink mb-2">Memory proposals</h2>
                 <p className="text-sm text-muted mb-4">
                   Rejected by default. Opt in only to lasting memory changes you want kept.
+                  Invalid proposals cannot be accepted.
                 </p>
                 <ul className="space-y-3">
-                  {commit.memoryProposals.map((proposal, i) => (
-                    <li key={`${proposal.path}-${i}`} className="flex items-start gap-2">
-                      <input
-                        id={`memory-${i}`}
-                        type="checkbox"
-                        className="mt-1"
-                        checked={acceptedMemory.has(i)}
-                        onChange={(e) => {
-                          setAcceptedMemory((prev) => {
-                            const next = new Set(prev);
-                            if (e.target.checked) {
-                              next.add(i);
-                            } else {
-                              next.delete(i);
-                            }
-                            return next;
-                          });
-                        }}
-                      />
-                      <label htmlFor={`memory-${i}`} className="text-sm text-ink">
-                        <span className="text-xs uppercase tracking-wide text-muted">
-                          {proposal.layer}
-                          {proposal.path ? ` · ${proposal.path}` : ''}
-                        </span>
-                        <br />
-                        {proposal.summary}
-                      </label>
-                    </li>
-                  ))}
+                  {buildMemoryChecklist(commit).map((item) => {
+                    const key = `${item.channel}-${item.channelIndex}`;
+                    const accepted =
+                      item.channel === 'l1'
+                        ? acceptedL1.has(item.channelIndex)
+                        : item.channel === 'l2'
+                          ? acceptedEpisodes.has(item.channelIndex)
+                          : acceptedRules.has(item.channelIndex);
+                    const setAccepted =
+                      item.channel === 'l1'
+                        ? setAcceptedL1
+                        : item.channel === 'l2'
+                          ? setAcceptedEpisodes
+                          : setAcceptedRules;
+                    return (
+                      <li key={key} className="flex items-start gap-2">
+                        <input
+                          id={`memory-${key}`}
+                          type="checkbox"
+                          className="mt-1"
+                          disabled={!item.validityOk}
+                          checked={accepted}
+                          onChange={(e) => {
+                            setAccepted((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) {
+                                next.add(item.channelIndex);
+                              } else {
+                                next.delete(item.channelIndex);
+                              }
+                              return next;
+                            });
+                          }}
+                        />
+                        <label
+                          htmlFor={`memory-${key}`}
+                          className={`text-sm ${item.validityOk ? 'text-ink' : 'text-muted'}`}
+                        >
+                          <span className="text-xs uppercase tracking-wide text-muted">
+                            {item.label}
+                          </span>
+                          <br />
+                          {item.detail}
+                          {!item.validityOk && item.validityReason && (
+                            <>
+                              <br />
+                              <span className="text-xs text-danger">{item.validityReason}</span>
+                            </>
+                          )}
+                        </label>
+                      </li>
+                    );
+                  })}
                 </ul>
+                <label className="mt-4 flex items-start gap-2 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={archiveNotesAsRecap}
+                    onChange={(e) => setArchiveNotesAsRecap(e.target.checked)}
+                  />
+                  <span>
+                    Archive this week&apos;s Coach&apos;s Notes to memory
+                    <span className="block text-xs text-muted">
+                      Creates a recap episode from coachesNotes (default off).
+                    </span>
+                  </span>
+                </label>
               </Card>
-            )}
 
             {commit.clarifyingQuestion && (
               <Card>

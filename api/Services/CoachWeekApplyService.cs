@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
@@ -74,6 +73,8 @@ public class CoachWeekApplyService
             }
         }
 
+        await StampMemoryValidityAsync(commit, weekStartMonday, cancellationToken);
+
         draft.CommitJson = CoachWeeklyCommitSchema.Serialize(commit);
         draft.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
@@ -84,7 +85,10 @@ public class CoachWeekApplyService
         DateOnly weekStartMonday,
         string? optionalCommitJson,
         IReadOnlyList<CoachSafetyAcknowledgment> safetyAcknowledgments,
-        IReadOnlyList<int> acceptedMemoryProposalIndexes,
+        IReadOnlyList<int> acceptedLayer1PatchIndexes,
+        IReadOnlyList<int> acceptedEpisodeIndexes,
+        IReadOnlyList<int> acceptedRuleProposalIndexes,
+        bool archiveNotesAsRecap,
         CancellationToken cancellationToken = default)
     {
         var startedAdjust = await _db.CoachAdjustments
@@ -134,6 +138,7 @@ public class CoachWeekApplyService
                 }
             }
 
+            await StampMemoryValidityAsync(edited, weekStartMonday, cancellationToken);
             draft.CommitJson = CoachWeeklyCommitSchema.Serialize(edited);
             draft.UpdatedAt = DateTime.UtcNow;
         }
@@ -160,21 +165,53 @@ public class CoachWeekApplyService
             }
         }
 
+        // Authoritative re-stamp against current DB before accepting indexes.
+        await StampMemoryValidityAsync(commit, weekStartMonday, cancellationToken);
+        draft.CommitJson = CoachWeeklyCommitSchema.Serialize(commit);
+
         var ackError = ValidateSafetyAcknowledgments(commit.SafetyFlags, safetyAcknowledgments);
         if (ackError != null)
         {
             return (null, ackError, 400);
         }
 
-        var acceptIndexes = acceptedMemoryProposalIndexes ?? Array.Empty<int>();
-        var memoryError = ValidateMemoryIndexes(commit.MemoryProposals, acceptIndexes);
+        var l1Indexes = acceptedLayer1PatchIndexes ?? Array.Empty<int>();
+        var episodeIndexes = acceptedEpisodeIndexes ?? Array.Empty<int>();
+        var ruleIndexes = acceptedRuleProposalIndexes ?? Array.Empty<int>();
+
+        var memoryError = ValidateAcceptedIndexes(
+            "acceptedLayer1PatchIndexes", commit.Layer1Patches, l1Indexes, p => p.Validity);
         if (memoryError != null)
         {
-            return (null, memoryError, 400);
+            return (null, memoryError.Error, memoryError.StatusCode);
+        }
+
+        memoryError = ValidateAcceptedIndexes(
+            "acceptedEpisodeIndexes", commit.Layer2EpisodeDrafts, episodeIndexes, p => p.Validity);
+        if (memoryError != null)
+        {
+            return (null, memoryError.Error, memoryError.StatusCode);
+        }
+
+        memoryError = ValidateAcceptedIndexes(
+            "acceptedRuleProposalIndexes", commit.Layer3RuleProposals, ruleIndexes, p => p.Validity);
+        if (memoryError != null)
+        {
+            return (null, memoryError.Error, memoryError.StatusCode);
         }
 
         var now = DateTime.UtcNow;
-        await AppendAcceptedMemoryAsync(commit, acceptIndexes, draft.Id, now, cancellationToken);
+        var weekEnding = weekStartMonday.AddDays(6);
+        var applied = await ApplyAcceptedMemoryAsync(
+            commit,
+            l1Indexes,
+            episodeIndexes,
+            ruleIndexes,
+            archiveNotesAsRecap,
+            draft.Id,
+            weekEnding,
+            now,
+            cancellationToken);
 
         var applyRecord = new CoachWeekApplyRecord(
             AppliedAt: now,
@@ -184,7 +221,14 @@ public class CoachWeekApplyService
                     a.Acknowledged,
                     a.Response))
                 .ToList(),
-            AcceptedMemoryProposalIndexes: acceptIndexes.ToList());
+            AcceptedLayer1PatchIndexes: l1Indexes.Distinct().OrderBy(i => i).ToList(),
+            AcceptedEpisodeIndexes: episodeIndexes.Distinct().OrderBy(i => i).ToList(),
+            AcceptedRuleProposalIndexes: ruleIndexes.Distinct().OrderBy(i => i).ToList(),
+            ArchiveNotesAsRecap: archiveNotesAsRecap,
+            AppliedLayer1Paths: applied.Layer1Paths,
+            AppliedEpisodeIds: applied.EpisodeIds,
+            AppliedRuleIds: applied.RuleIds,
+            RecapEpisodeId: applied.RecapEpisodeId);
 
         if (startedAdjust != null && priorCommitted != null)
         {
@@ -199,6 +243,25 @@ public class CoachWeekApplyService
         draft.UpdatedAt = now;
         await _db.SaveChangesAsync(cancellationToken);
         return (draft, null, 200);
+    }
+
+    private async Task StampMemoryValidityAsync(
+        CoachWeeklyCommit commit,
+        DateOnly weekStartMonday,
+        CancellationToken cancellationToken)
+    {
+        var episodeIds = await _db.CoachEpisodes.AsNoTracking()
+            .Select(e => e.Id)
+            .ToListAsync(cancellationToken);
+        var activeRules = await _db.CoachRules.AsNoTracking()
+            .Where(r => r.Status == CoachRuleStatuses.Active)
+            .ToDictionaryAsync(r => r.Id, cancellationToken);
+
+        CoachMemoryProposalValidator.Stamp(
+            commit,
+            weekStartMonday,
+            episodeIds.ToHashSet(StringComparer.Ordinal),
+            activeRules);
     }
 
     private async Task<string?> ValidateLockedAgainstSourceAsync(
@@ -277,131 +340,217 @@ public class CoachWeekApplyService
         return null;
     }
 
-    internal static string? ValidateMemoryIndexes(
-        IReadOnlyList<CoachWeeklyCommitMemoryProposal> proposals,
-        IReadOnlyList<int> acceptedIndexes)
+    internal static MemoryIndexError? ValidateAcceptedIndexes<T>(
+        string fieldName,
+        IReadOnlyList<T> proposals,
+        IReadOnlyList<int> acceptedIndexes,
+        Func<T, CoachProposalValidity?> validitySelector)
     {
         proposals ??= [];
         foreach (var index in acceptedIndexes.Distinct())
         {
             if (index < 0 || index >= proposals.Count)
             {
-                return $"acceptedMemoryProposalIndexes contains out-of-range index {index}";
+                return new MemoryIndexError($"{fieldName} contains out-of-range index {index}", 400);
+            }
+
+            var validity = validitySelector(proposals[index]);
+            if (validity is { Ok: false })
+            {
+                return new MemoryIndexError(
+                    $"{fieldName} index {index} is invalid and cannot be accepted: {validity.Reason}",
+                    409);
             }
         }
 
         return null;
     }
 
-    private async Task AppendAcceptedMemoryAsync(
+    private async Task<(
+        List<string> Layer1Paths,
+        List<string> EpisodeIds,
+        List<string> RuleIds,
+        string? RecapEpisodeId)> ApplyAcceptedMemoryAsync(
         CoachWeeklyCommit commit,
-        IReadOnlyList<int> acceptedIndexes,
+        IReadOnlyList<int> l1Indexes,
+        IReadOnlyList<int> episodeIndexes,
+        IReadOnlyList<int> ruleIndexes,
+        bool archiveNotesAsRecap,
         Guid weekId,
+        DateOnly weekEnding,
         DateTime acceptedAt,
         CancellationToken cancellationToken)
     {
-        foreach (var index in acceptedIndexes.Distinct().OrderBy(i => i))
-        {
-            var proposal = commit.MemoryProposals[index];
-            var layerKey = NormalizeLayerKey(proposal.Layer);
-            if (layerKey == null)
-            {
-                continue;
-            }
+        var appliedPaths = new List<string>();
+        var appliedEpisodeIds = new List<string>();
+        var appliedRuleIds = new List<string>();
+        string? recapId = null;
 
+        if (l1Indexes.Count > 0)
+        {
             var layer = await _db.CoachMemoryLayers
-                .FirstOrDefaultAsync(l => l.Layer == layerKey, cancellationToken);
+                .FirstOrDefaultAsync(l => l.Layer == "L1", cancellationToken);
             if (layer == null)
             {
-                layer = new CoachMemoryLayer
-                {
-                    Layer = layerKey,
-                    Document = "{}",
-                    CreatedAt = acceptedAt,
-                    UpdatedAt = acceptedAt
-                };
-                _db.CoachMemoryLayers.Add(layer);
+                throw new InvalidOperationException("Layer 1 document is required before applying L1 patches");
             }
 
-            var root = ParseObject(layer.Document);
-            if (root["acceptedProposals"] is not JsonArray arr)
+            var document = CoachLayer1Json.Deserialize(layer.Document)
+                ?? throw new InvalidOperationException("Layer 1 document could not be deserialized");
+
+            foreach (var index in l1Indexes.Distinct().OrderBy(i => i))
             {
-                arr = new JsonArray();
-                root["acceptedProposals"] = arr;
+                var patch = commit.Layer1Patches[index];
+                document = CoachLayer1Patcher.Apply(document, patch);
+                appliedPaths.Add(patch.FieldPath);
             }
 
-            arr.Add(new JsonObject
-            {
-                ["path"] = proposal.Path ?? string.Empty,
-                ["summary"] = proposal.Summary ?? string.Empty,
-                ["acceptedAt"] = acceptedAt.ToString("O", CultureInfo.InvariantCulture),
-                ["weekId"] = weekId.ToString()
-            });
-
-            layer.Document = root.ToJsonString();
+            layer.Document = CoachLayer1Json.Serialize(document);
             layer.UpdatedAt = acceptedAt;
         }
-    }
 
-    internal static string? NormalizeLayerKey(string? layer)
-    {
-        var trimmed = (layer ?? string.Empty).Trim();
-        if (trimmed.Length == 0)
+        var existingEpisodeIds = (await _db.CoachEpisodes.Select(e => e.Id).ToListAsync(cancellationToken))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var index in episodeIndexes.Distinct().OrderBy(i => i))
         {
-            return null;
-        }
+            var draft = commit.Layer2EpisodeDrafts[index];
+            var date = DateOnly.Parse(draft.Date, CultureInfo.InvariantCulture);
+            var id = CoachMemoryIds.EpisodeId(date, draft.Category, draft.Summary, existingEpisodeIds);
+            existingEpisodeIds.Add(id);
 
-        if (trimmed.Equals("L1", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("1", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("layer1", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("layer_1", StringComparison.OrdinalIgnoreCase))
-        {
-            return "L1";
-        }
-
-        if (trimmed.Equals("L2", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("2", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("layer2", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("layer_2", StringComparison.OrdinalIgnoreCase))
-        {
-            return "L2";
-        }
-
-        if (trimmed.Equals("L3", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("3", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("layer3", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("layer_3", StringComparison.OrdinalIgnoreCase))
-        {
-            return "L3";
-        }
-
-        return null;
-    }
-
-    private static JsonObject ParseObject(string json)
-    {
-        try
-        {
-            var node = JsonNode.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
-            if (node is JsonObject obj)
+            DateOnly? sourceWeekEnding = null;
+            if (!string.IsNullOrWhiteSpace(draft.SourceWeekEnding)
+                && DateOnly.TryParse(draft.SourceWeekEnding, CultureInfo.InvariantCulture, DateTimeStyles.None, out var swe))
             {
-                return obj;
+                sourceWeekEnding = swe;
+            }
+            else
+            {
+                sourceWeekEnding = weekEnding;
+            }
+
+            _db.CoachEpisodes.Add(new CoachEpisode
+            {
+                Id = id,
+                Date = date,
+                Category = draft.Category,
+                Summary = draft.Summary.Length > CoachMemoryProposalValidator.MaxEpisodeSummaryLength
+                    ? draft.Summary[..CoachMemoryProposalValidator.MaxEpisodeSummaryLength]
+                    : draft.Summary,
+                SourceWeekEnding = sourceWeekEnding,
+                SourceWeekId = weekId,
+                Source = CoachEpisodeSources.Coach,
+                Retired = false,
+                CreatedAt = acceptedAt
+            });
+            appliedEpisodeIds.Add(id);
+        }
+
+        var existingRuleIds = (await _db.CoachRules.Select(r => r.Id).ToListAsync(cancellationToken))
+            .ToHashSet(StringComparer.Ordinal);
+        var rulesById = await _db.CoachRules.ToDictionaryAsync(r => r.Id, cancellationToken);
+
+        foreach (var index in ruleIndexes.Distinct().OrderBy(i => i))
+        {
+            var proposal = commit.Layer3RuleProposals[index];
+            var operation = proposal.Operation.Trim().ToLowerInvariant();
+            if (operation == "promote")
+            {
+                var id = CoachMemoryIds.RuleId(proposal.RuleText!, existingRuleIds);
+                existingRuleIds.Add(id);
+                var evidence = proposal.Evidence
+                    .Where(e => !string.IsNullOrWhiteSpace(e))
+                    .Select(e => e.Trim())
+                    .ToList();
+                _db.CoachRules.Add(new CoachRule
+                {
+                    Id = id,
+                    TargetLayer = proposal.TargetLayer,
+                    RuleText = proposal.RuleText!.Trim(),
+                    Status = CoachRuleStatuses.Active,
+                    Evidence = evidence,
+                    Source = CoachRuleSources.Coach,
+                    CreatedAt = acceptedAt,
+                    UpdatedAt = acceptedAt
+                });
+                appliedRuleIds.Add(id);
+            }
+            else if (operation == "revise")
+            {
+                var rule = rulesById[proposal.TargetRuleId!.Trim()];
+                rule.RuleText = proposal.RuleText!.Trim();
+                rule.TargetLayer = proposal.TargetLayer;
+                var merged = rule.Evidence.ToList();
+                foreach (var item in proposal.Evidence.Where(e => !string.IsNullOrWhiteSpace(e)))
+                {
+                    var trimmed = item.Trim();
+                    if (!merged.Contains(trimmed, StringComparer.Ordinal))
+                    {
+                        merged.Add(trimmed);
+                    }
+                }
+
+                rule.Evidence = merged;
+                rule.UpdatedAt = acceptedAt;
+                appliedRuleIds.Add(rule.Id);
+            }
+            else if (operation == "retire")
+            {
+                var rule = rulesById[proposal.TargetRuleId!.Trim()];
+                rule.Status = CoachRuleStatuses.Retired;
+                rule.UpdatedAt = acceptedAt;
+                appliedRuleIds.Add(rule.Id);
             }
         }
-        catch (JsonException)
+
+        if (archiveNotesAsRecap)
         {
-            // Replace unusable document with a fresh object.
+            var summary = commit.CoachesNotes.Trim();
+            if (summary.Length > CoachMemoryProposalValidator.MaxEpisodeSummaryLength)
+            {
+                summary = summary[..CoachMemoryProposalValidator.MaxEpisodeSummaryLength];
+            }
+
+            recapId = CoachMemoryIds.EpisodeId(
+                weekEnding,
+                CoachEpisodeCategories.Recap,
+                summary,
+                existingEpisodeIds);
+            existingEpisodeIds.Add(recapId);
+            _db.CoachEpisodes.Add(new CoachEpisode
+            {
+                Id = recapId,
+                Date = weekEnding,
+                Category = CoachEpisodeCategories.Recap,
+                Summary = summary,
+                SourceWeekEnding = weekEnding,
+                SourceWeekId = weekId,
+                Source = CoachEpisodeSources.Coach,
+                Retired = false,
+                CreatedAt = acceptedAt
+            });
+            appliedEpisodeIds.Add(recapId);
         }
 
-        return new JsonObject();
+        return (appliedPaths, appliedEpisodeIds, appliedRuleIds, recapId);
     }
 }
 
 public sealed record CoachSafetyAcknowledgment(int Index, bool Acknowledged, string? Response);
 
+public sealed record MemoryIndexError(string Error, int StatusCode);
+
 public sealed record CoachWeekApplyRecord(
     DateTime AppliedAt,
     IReadOnlyList<CoachSafetyAcknowledgmentRecord> SafetyAcknowledgments,
-    IReadOnlyList<int> AcceptedMemoryProposalIndexes);
+    IReadOnlyList<int> AcceptedLayer1PatchIndexes,
+    IReadOnlyList<int> AcceptedEpisodeIndexes,
+    IReadOnlyList<int> AcceptedRuleProposalIndexes,
+    bool ArchiveNotesAsRecap,
+    IReadOnlyList<string> AppliedLayer1Paths,
+    IReadOnlyList<string> AppliedEpisodeIds,
+    IReadOnlyList<string> AppliedRuleIds,
+    string? RecapEpisodeId);
 
 public sealed record CoachSafetyAcknowledgmentRecord(int Index, bool Acknowledged, string? Response);

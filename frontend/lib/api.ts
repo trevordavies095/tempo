@@ -1343,6 +1343,7 @@ export interface CoachHome {
   nextSteps: string[];
   onboardingCompleted: boolean;
   goal: CoachGoal | null;
+  pendingMemoryUpgradeNotice?: boolean;
 }
 
 export interface CoachOnboardingStatus {
@@ -1567,6 +1568,19 @@ export async function getCoachHome(): Promise<CoachHome> {
   }
 
   return response.json();
+}
+
+export async function dismissCoachMemoryUpgradeNotice(): Promise<void> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/memory-upgrade-notice/dismiss`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to dismiss memory upgrade notice: ${response.status}`);
+  }
 }
 
 export async function getCoachOnboarding(): Promise<CoachOnboardingStatus> {
@@ -1904,17 +1918,53 @@ export interface CoachWeeklyCommitSafetyFlag {
   requiresResponse: boolean;
 }
 
-export interface CoachWeeklyCommitMemoryProposal {
-  layer: string;
-  path: string;
+export interface CoachProposalValidity {
+  ok: boolean;
+  reason: string | null;
+}
+
+export interface CoachLayer1Patch {
+  fieldPath: string;
+  oldValue: unknown;
+  newValue: unknown;
+  rationale: string;
+  validity?: CoachProposalValidity | null;
+}
+
+export interface CoachLayer2EpisodeDraft {
+  date: string;
+  category: string;
   summary: string;
+  sourceWeekEnding?: string | null;
+  validity?: CoachProposalValidity | null;
+}
+
+export interface CoachLayer3RuleProposal {
+  operation: string;
+  ruleText: string | null;
+  evidence: string[];
+  targetRuleId: string | null;
+  targetLayer: string;
+  validity?: CoachProposalValidity | null;
+}
+
+/** Flat adapter row for the thin issue-12 review checklist (grouped UI = issue 14). */
+export interface CoachMemoryChecklistItem {
+  channel: 'l1' | 'l2' | 'l3';
+  channelIndex: number;
+  label: string;
+  detail: string;
+  validityOk: boolean;
+  validityReason: string | null;
 }
 
 export interface CoachWeeklyCommit {
   coachesNotes: string;
   days: CoachWeeklyCommitDay[];
   safetyFlags: CoachWeeklyCommitSafetyFlag[];
-  memoryProposals: CoachWeeklyCommitMemoryProposal[];
+  layer1Patches: CoachLayer1Patch[];
+  layer2EpisodeDrafts: CoachLayer2EpisodeDraft[];
+  layer3RuleProposals: CoachLayer3RuleProposal[];
   clarifyingQuestion: string | null;
   callouts: string[];
 }
@@ -1966,7 +2016,10 @@ export interface ApplyCoachDraftWeekRequest {
   weekStartDate: string;
   commit?: CoachWeeklyCommit;
   safetyAcknowledgments: CoachSafetyAcknowledgment[];
-  acceptedMemoryProposalIndexes: number[];
+  acceptedLayer1PatchIndexes: number[];
+  acceptedEpisodeIndexes: number[];
+  acceptedRuleProposalIndexes: number[];
+  archiveNotesAsRecap: boolean;
 }
 
 export async function postCoachGenerate(preflightId: string): Promise<CoachJob> {

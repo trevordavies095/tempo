@@ -204,6 +204,8 @@ public class CoachJobWorker : BackgroundService
                 return;
             }
 
+            await StampMemoryValidityAsync(db, commit!, preflight.WeekStartDate, CancellationToken.None);
+
             var now = DateTime.UtcNow;
             var week = await db.CoachWeeks
                 .FirstOrDefaultAsync(
@@ -297,10 +299,32 @@ public class CoachJobWorker : BackgroundService
         commit.CoachesNotes = spliced.CoachesNotes;
         commit.Days = spliced.Days;
         commit.SafetyFlags = spliced.SafetyFlags;
-        commit.MemoryProposals = spliced.MemoryProposals;
+        commit.Layer1Patches = spliced.Layer1Patches;
+        commit.Layer2EpisodeDrafts = spliced.Layer2EpisodeDrafts;
+        commit.Layer3RuleProposals = spliced.Layer3RuleProposals;
         commit.ClarifyingQuestion = spliced.ClarifyingQuestion;
         commit.Callouts = spliced.Callouts;
         return null;
+    }
+
+    internal static async Task StampMemoryValidityAsync(
+        TempoDbContext db,
+        CoachWeeklyCommit commit,
+        DateOnly weekStartMonday,
+        CancellationToken cancellationToken)
+    {
+        var episodeIds = await db.CoachEpisodes.AsNoTracking()
+            .Select(e => e.Id)
+            .ToListAsync(cancellationToken);
+        var activeRules = await db.CoachRules.AsNoTracking()
+            .Where(r => r.Status == CoachRuleStatuses.Active)
+            .ToDictionaryAsync(r => r.Id, cancellationToken);
+
+        CoachMemoryProposalValidator.Stamp(
+            commit,
+            weekStartMonday,
+            episodeIds.ToHashSet(StringComparer.Ordinal),
+            activeRules);
     }
 
     private static async Task FailAsync(TempoDbContext db, CoachJob job, string code, string message)

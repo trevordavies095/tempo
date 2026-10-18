@@ -55,6 +55,28 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
             .StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    private static async Task SeedLayer1Async(IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var doc = new CoachLayer1Document(
+            HrZones: new CoachLayer1HrZones("manual", 40, 50, 180, [new CoachLayer1HrZone(1, 100, 120)]),
+            Paces: new CoachLayer1Paces(360, 300, 280, 250),
+            Shoes: [],
+            DefaultShoeId: null,
+            RaceStatus: new CoachLayer1RaceStatus("race", "half_marathon", 21097.5, "2027-01-09", null, null),
+            CompletedAt: DateTime.UtcNow,
+            TrainingPhase: null);
+        db.CoachMemoryLayers.Add(new CoachMemoryLayer
+        {
+            Layer = "L1",
+            Document = CoachLayer1Json.Serialize(doc),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+    }
+
     private static async Task<Guid> ConsentPreflightAsync(HttpClient client, string referenceDate = "2026-10-13")
     {
         var assemble = await client.PostAsync(
@@ -90,10 +112,16 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     }
 
     private async Task<(HttpClient Client, JsonElement Commit)> GenerateDraftAsync(
-        string? commitJson = null)
+        string? commitJson = null,
+        bool seedLayer1 = false)
     {
         var client = await AuthenticatedClientAsync();
         await OptInAndProviderAsync(client);
+        if (seedLayer1)
+        {
+            await SeedLayer1Async(_factory.Decorated.Services);
+        }
+
         var preflightId = await ConsentPreflightAsync(client);
 
         commitJson ??= CoachWeeklyCommitSchemaTests.BuildCommitJson();
@@ -117,7 +145,6 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     {
         var (client, commit) = await GenerateDraftAsync();
 
-        // Edit Monday distance via PUT
         var edited = JsonNode.Parse(commit.GetRawText())!.AsObject();
         edited["days"]![0]!["run"]!["distanceM"] = 9000;
 
@@ -128,12 +155,9 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         });
         put.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var apply = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
-        {
-            weekStartDate = "2026-10-12",
-            safetyAcknowledgments = Array.Empty<object>(),
-            acceptedMemoryProposalIndexes = Array.Empty<int>()
-        });
+        var apply = await client.PostAsJsonAsync(
+            "/coach/weeks/draft/apply",
+            CoachWeeklyCommitSchemaTests.EmptyApplyBody());
         apply.StatusCode.Should().Be(HttpStatusCode.OK);
         var applied = await apply.Content.ReadFromJsonAsync<WeekResponse>(JsonOptions);
         applied!.Status.Should().Be("committed");
@@ -167,12 +191,9 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
             ]);
         var (client, _) = await GenerateDraftAsync(commitJson);
 
-        var apply = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
-        {
-            weekStartDate = "2026-10-12",
-            safetyAcknowledgments = Array.Empty<object>(),
-            acceptedMemoryProposalIndexes = Array.Empty<int>()
-        });
+        var apply = await client.PostAsJsonAsync(
+            "/coach/weeks/draft/apply",
+            CoachWeeklyCommitSchemaTests.EmptyApplyBody());
         apply.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var applyNoResponse = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
@@ -182,7 +203,10 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
             {
                 new { index = 0, acknowledged = true, response = (string?)null }
             },
-            acceptedMemoryProposalIndexes = Array.Empty<int>()
+            acceptedLayer1PatchIndexes = Array.Empty<int>(),
+            acceptedEpisodeIndexes = Array.Empty<int>(),
+            acceptedRuleProposalIndexes = Array.Empty<int>(),
+            archiveNotesAsRecap = false
         });
         applyNoResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -191,38 +215,48 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     }
 
     [Fact]
-    public async Task Apply_MemoryDefaultReject_AndAcceptAppends()
+    public async Task Apply_MemoryDefaultReject_AndAcceptEpisode()
     {
         var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
-            memoryProposals:
+            layer2EpisodeDrafts:
             [
-                new { layer = "L2", path = "episodes.travel", summary = "Travel blackout week noted" }
+                new
+                {
+                    date = "2026-10-12",
+                    category = "milestone",
+                    summary = "Travel blackout week noted"
+                }
             ]);
         var (client, _) = await GenerateDraftAsync(commitJson);
 
-        var rejectApply = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
-        {
-            weekStartDate = "2026-10-12",
-            safetyAcknowledgments = Array.Empty<object>(),
-            acceptedMemoryProposalIndexes = Array.Empty<int>()
-        });
+        var rejectApply = await client.PostAsJsonAsync(
+            "/coach/weeks/draft/apply",
+            CoachWeeklyCommitSchemaTests.EmptyApplyBody());
         rejectApply.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using (var scope = _factory.Decorated.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            (await db.CoachMemoryLayers.CountAsync(l => l.Layer == "L2")).Should().Be(0);
+            (await db.CoachEpisodes.CountAsync()).Should().Be(0);
         }
 
-        // New week draft for a different Monday so we can test accept path.
-        // Use next week: wipe committed for cleaner path — regenerate is 409 for same week.
-        // Instead seed a fresh generate on a new week via new preflight.
         var client2 = await AuthenticatedClientAsync();
         await OptInAndProviderAsync(client2);
         var preflightId = await ConsentPreflightAsync(client2, referenceDate: "2026-10-20");
         _factory.Brain.Results.Add(new CoachProtocolBrainResult(
             true,
-            BuildCommitForWeek(new DateOnly(2026, 10, 19), withMemory: true),
+            CoachWeeklyCommitSchemaTests.BuildCommitJson(
+                notes: "Next week plan.",
+                weekStart: new DateOnly(2026, 10, 19),
+                layer2EpisodeDrafts:
+                [
+                    new
+                    {
+                        date = "2026-10-19",
+                        category = "milestone",
+                        summary = "Travel blackout week noted"
+                    }
+                ]),
             1,
             1,
             CoachProtocolBrainError.None,
@@ -236,17 +270,127 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         {
             weekStartDate = "2026-10-19",
             safetyAcknowledgments = Array.Empty<object>(),
-            acceptedMemoryProposalIndexes = new[] { 0 }
+            acceptedLayer1PatchIndexes = Array.Empty<int>(),
+            acceptedEpisodeIndexes = new[] { 0 },
+            acceptedRuleProposalIndexes = Array.Empty<int>(),
+            archiveNotesAsRecap = false
         });
         acceptApply.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using (var scope = _factory.Decorated.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var layer = await db.CoachMemoryLayers.SingleAsync(l => l.Layer == "L2");
-            layer.Document.Should().Contain("acceptedProposals");
-            layer.Document.Should().Contain("Travel blackout week noted");
+            var episode = await db.CoachEpisodes.SingleAsync();
+            episode.Summary.Should().Be("Travel blackout week noted");
+            episode.Category.Should().Be("milestone");
+            episode.Source.Should().Be(CoachEpisodeSources.Coach);
         }
+    }
+
+    [Fact]
+    public async Task Apply_AcceptsL1Patch_PromoteRule_AndRecap()
+    {
+        var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            layer1Patches:
+            [
+                new
+                {
+                    fieldPath = "paces.easySecPerKm",
+                    oldValue = 360,
+                    newValue = 350,
+                    rationale = "Settled easier"
+                }
+            ],
+            layer3RuleProposals:
+            [
+                new
+                {
+                    operation = "promote",
+                    ruleText = "Morning MP recovers cleaner than afternoon MP",
+                    evidence = new[] { "Aug 15 AM MP clean" },
+                    targetRuleId = (string?)null,
+                    targetLayer = "data_interpretation_notes"
+                }
+            ]);
+        var (client, _) = await GenerateDraftAsync(commitJson, seedLayer1: true);
+
+        var apply = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
+        {
+            weekStartDate = "2026-10-12",
+            safetyAcknowledgments = Array.Empty<object>(),
+            acceptedLayer1PatchIndexes = new[] { 0 },
+            acceptedEpisodeIndexes = Array.Empty<int>(),
+            acceptedRuleProposalIndexes = new[] { 0 },
+            archiveNotesAsRecap = true
+        });
+        apply.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var scope = _factory.Decorated.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var l1 = await db.CoachMemoryLayers.SingleAsync(l => l.Layer == "L1");
+        var doc = CoachLayer1Json.Deserialize(l1.Document)!;
+        doc.Paces.EasySecPerKm.Should().Be(350);
+
+        var rule = await db.CoachRules.SingleAsync();
+        rule.RuleText.Should().Contain("Morning MP");
+        rule.Status.Should().Be(CoachRuleStatuses.Active);
+
+        var recap = await db.CoachEpisodes.SingleAsync(e => e.Category == CoachEpisodeCategories.Recap);
+        recap.Summary.Should().Contain("Keep the long easy");
+        recap.Date.Should().Be(new DateOnly(2026, 10, 18));
+    }
+
+    [Fact]
+    public async Task Apply_InvalidProposalAccept_Returns409()
+    {
+        var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            layer1Patches:
+            [
+                new
+                {
+                    fieldPath = "shoes.defaultShoeId",
+                    oldValue = (object?)null,
+                    newValue = "x",
+                    rationale = "Not allowlisted"
+                }
+            ]);
+        var (client, commit) = await GenerateDraftAsync(commitJson);
+        commit.GetProperty("layer1Patches")[0].GetProperty("validity").GetProperty("ok")
+            .GetBoolean().Should().BeFalse();
+
+        var apply = await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
+        {
+            weekStartDate = "2026-10-12",
+            safetyAcknowledgments = Array.Empty<object>(),
+            acceptedLayer1PatchIndexes = new[] { 0 },
+            acceptedEpisodeIndexes = Array.Empty<int>(),
+            acceptedRuleProposalIndexes = Array.Empty<int>(),
+            archiveNotesAsRecap = false
+        });
+        apply.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task JobLand_StampsInvalidMemory_WithoutFailingWeek()
+    {
+        var commitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            layer3RuleProposals:
+            [
+                new
+                {
+                    operation = "retire",
+                    ruleText = (string?)null,
+                    evidence = Array.Empty<string>(),
+                    targetRuleId = "rule_missing",
+                    targetLayer = "key_learnings"
+                }
+            ]);
+        var (client, commit) = await GenerateDraftAsync(commitJson);
+        commit.GetProperty("layer3RuleProposals")[0].GetProperty("validity").GetProperty("ok")
+            .GetBoolean().Should().BeFalse();
+
+        (await client.GetAsync("/coach/weeks/draft?weekStartDate=2026-10-12"))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -254,12 +398,9 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     {
         var (client, commit) = await GenerateDraftAsync();
 
-        (await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
-        {
-            weekStartDate = "2026-10-12",
-            safetyAcknowledgments = Array.Empty<object>(),
-            acceptedMemoryProposalIndexes = Array.Empty<int>()
-        })).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.PostAsJsonAsync(
+            "/coach/weeks/draft/apply",
+            CoachWeeklyCommitSchemaTests.EmptyApplyBody())).StatusCode.Should().Be(HttpStatusCode.OK);
 
         (await client.PutAsJsonAsync("/coach/weeks/draft", new
         {
@@ -267,12 +408,9 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
             commit
         })).StatusCode.Should().Be(HttpStatusCode.Conflict);
 
-        (await client.PostAsJsonAsync("/coach/weeks/draft/apply", new
-        {
-            weekStartDate = "2026-10-12",
-            safetyAcknowledgments = Array.Empty<object>(),
-            acceptedMemoryProposalIndexes = Array.Empty<int>()
-        })).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await client.PostAsJsonAsync(
+            "/coach/weeks/draft/apply",
+            CoachWeeklyCommitSchemaTests.EmptyApplyBody())).StatusCode.Should().Be(HttpStatusCode.Conflict);
 
         var preflightId = await ConsentPreflightAsync(client);
         _factory.Brain.Results.Add(new CoachProtocolBrainResult(
@@ -304,48 +442,54 @@ public class CoachReviewEndpointsTests : IClassFixture<CoachGenerateTestFactory>
             {
                 new { index = 0, acknowledged = true, response = "Understood — will rest and seek care." }
             },
-            acceptedMemoryProposalIndexes = Array.Empty<int>()
+            acceptedLayer1PatchIndexes = Array.Empty<int>(),
+            acceptedEpisodeIndexes = Array.Empty<int>(),
+            acceptedRuleProposalIndexes = Array.Empty<int>(),
+            archiveNotesAsRecap = false
         });
         apply.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    private static string BuildCommitForWeek(DateOnly weekStart, bool withMemory)
+    [Fact]
+    public async Task SetupReset_WipesEpisodesAndRules()
     {
-        var days = new List<object>();
-        for (var i = 0; i < 7; i++)
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
         {
-            var date = weekStart.AddDays(i).ToString("yyyy-MM-dd");
-            var dayType = i == 6 ? "long" : i is 1 or 4 ? "rest" : "easy";
-            object? run = dayType == "rest"
-                ? null
-                : new
-                {
-                    type = dayType,
-                    distanceM = dayType == "long" ? 16000 : 8000,
-                    structure = (string?)null,
-                    paceOrHr = (string?)null,
-                    shoeId = (string?)null,
-                    notes = (string?)null
-                };
-            days.Add(new { date, dayType, run, strength = (object?)null });
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            db.CoachEpisodes.Add(new CoachEpisode
+            {
+                Id = "ep_2026-10-01_race_seed",
+                Date = new DateOnly(2026, 10, 1),
+                Category = "race",
+                Summary = "Seed race",
+                Source = CoachEpisodeSources.Athlete,
+                CreatedAt = DateTime.UtcNow
+            });
+            db.CoachRules.Add(new CoachRule
+            {
+                Id = "rule_seed",
+                TargetLayer = CoachRuleTargetLayers.KeyLearnings,
+                RuleText = "Seed rule",
+                Status = CoachRuleStatuses.Active,
+                Evidence = ["seed"],
+                Source = CoachRuleSources.Athlete,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
         }
 
-        object[] memory = withMemory
-            ?
-            [
-                new { layer = "L2", path = "episodes.travel", summary = "Travel blackout week noted" }
-            ]
-            : [];
+        (await client.DeleteAsync("/settings/coach/setup")).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        return JsonSerializer.Serialize(new
+        using (var scope = _factory.Decorated.Services.CreateScope())
         {
-            coachesNotes = "Next week plan.",
-            days,
-            safetyFlags = Array.Empty<object>(),
-            memoryProposals = memory,
-            clarifyingQuestion = (string?)null,
-            callouts = Array.Empty<string>()
-        });
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            (await db.CoachEpisodes.CountAsync()).Should().Be(0);
+            (await db.CoachRules.CountAsync()).Should().Be(0);
+        }
     }
 
     private sealed class PreflightResponse

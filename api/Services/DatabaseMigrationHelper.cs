@@ -30,7 +30,9 @@ public static class DatabaseMigrationHelper
         { "ImportJobs", "20260816180637_AddImportJobs" },
         { "WorkoutExternalIdentities", "20260916003924_AddWorkoutExternalIdentities" },
         { "IntervalsIcuConnections", "20260916223516_AddIntervalsIcuConnection" },
-        { "CoachAdjustments", "20261014104847_AddCoachAdjustmentsAndJobKind" }
+        { "CoachAdjustments", "20261014104847_AddCoachAdjustmentsAndJobKind" },
+        { "CoachEpisodes", "20261018134037_AddCoachEpisodesAndRules" },
+        { "CoachRules", "20261018134037_AddCoachEpisodesAndRules" }
     };
 
     // Map of (table, column) pairs to their corresponding migration IDs
@@ -67,7 +69,8 @@ public static class DatabaseMigrationHelper
         { ("Workouts", "TimerTimeS"), "20260915174809_AddWorkoutTimerTimeS" },
         { ("Workouts", "SplitHeartRateBackfill"), "20260918010157_AddWorkoutSplitHeartRateBackfill" },
         { ("CoachJobs", "Kind"), "20261014104847_AddCoachAdjustmentsAndJobKind" },
-        { ("CoachJobs", "AdjustmentId"), "20261014104847_AddCoachAdjustmentsAndJobKind" }
+        { ("CoachJobs", "AdjustmentId"), "20261014104847_AddCoachAdjustmentsAndJobKind" },
+        { ("CoachPreferences", "PendingMemoryUpgradeNotice"), "20261018134037_AddCoachEpisodesAndRules" }
     };
 
     private const string ProductVersion = "10.0.0";

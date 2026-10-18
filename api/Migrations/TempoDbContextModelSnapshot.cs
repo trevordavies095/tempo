@@ -246,6 +246,53 @@ namespace Tempo.Api.Migrations
                     b.ToTable("CoachConstraints");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.CoachEpisode", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("Retired")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateOnly?>("SourceWeekEnding")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("SourceWeekId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category");
+
+                    b.HasIndex("Date");
+
+                    b.HasIndex("Retired");
+
+                    b.ToTable("CoachEpisodes");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.CoachGoal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -394,6 +441,9 @@ namespace Tempo.Api.Migrations
                     b.Property<bool>("OptedIn")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("PendingMemoryUpgradeNotice")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -481,6 +531,50 @@ namespace Tempo.Api.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("CoachProviderConnections");
+                });
+
+            modelBuilder.Entity("Tempo.Api.Models.CoachRule", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.PrimitiveCollection<string>("Evidence")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("RuleText")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TargetLayer")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("TargetLayer");
+
+                    b.ToTable("CoachRules");
                 });
 
             modelBuilder.Entity("Tempo.Api.Models.CoachWeek", b =>

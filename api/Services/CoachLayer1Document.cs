@@ -10,7 +10,18 @@ public sealed record CoachLayer1Document(
     IReadOnlyList<CoachLayer1Shoe> Shoes,
     Guid? DefaultShoeId,
     CoachLayer1RaceStatus RaceStatus,
-    DateTime CompletedAt);
+    DateTime CompletedAt,
+    // base | build | peak | taper | recovery | null
+    string? TrainingPhase = null);
+
+public static class CoachTrainingPhases
+{
+    public const string Base = "base";
+    public const string Build = "build";
+    public const string Peak = "peak";
+    public const string Taper = "taper";
+    public const string Recovery = "recovery";
+}
 
 public sealed record CoachLayer1HrZones(
     string CalculationMethod,

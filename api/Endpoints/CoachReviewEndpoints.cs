@@ -40,7 +40,8 @@ public static class CoachReviewEndpoints
             .WithSummary("Approve and apply a draft weekly commit")
             .WithDescription(
                 "Requires every safety flag acknowledged (index-based). Flags with requiresResponse need a non-empty response. " +
-                "Memory proposals default to rejected; only acceptedMemoryProposalIndexes are appended to coach memory. " +
+                "Typed memory channels default to rejected; only acceptedLayer1PatchIndexes / acceptedEpisodeIndexes / acceptedRuleProposalIndexes apply. " +
+                "Accepting an invalid stamped proposal returns 409. Optional archiveNotesAsRecap appends a recap episode from coachesNotes. " +
                 "Transitions draft → committed (coach tables only). Mid-week Adjust apply archives the prior committed week and splices remaining days. " +
                 "Optional commit edits then applies in one shot.");
 
@@ -142,13 +143,15 @@ public static class CoachReviewEndpoints
         var acks = (request.SafetyAcknowledgments ?? [])
             .Select(a => new CoachSafetyAcknowledgment(a.Index, a.Acknowledged, a.Response))
             .ToList();
-        var accepted = request.AcceptedMemoryProposalIndexes ?? [];
 
         var (week, error, status) = await applyService.ApplyAsync(
             monday,
             optionalCommitJson,
             acks,
-            accepted);
+            request.AcceptedLayer1PatchIndexes ?? [],
+            request.AcceptedEpisodeIndexes ?? [],
+            request.AcceptedRuleProposalIndexes ?? [],
+            request.ArchiveNotesAsRecap);
         if (status != 200 || week == null)
         {
             return status switch
@@ -230,6 +233,9 @@ public sealed record ApplyCoachDraftWeekRequest(
     string? WeekStartDate,
     JsonElement? Commit,
     IReadOnlyList<ApplyCoachSafetyAckRequest>? SafetyAcknowledgments,
-    IReadOnlyList<int>? AcceptedMemoryProposalIndexes);
+    IReadOnlyList<int>? AcceptedLayer1PatchIndexes,
+    IReadOnlyList<int>? AcceptedEpisodeIndexes,
+    IReadOnlyList<int>? AcceptedRuleProposalIndexes,
+    bool ArchiveNotesAsRecap = false);
 
 public sealed record ApplyCoachSafetyAckRequest(int Index, bool Acknowledged, string? Response);

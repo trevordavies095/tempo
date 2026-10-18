@@ -32,6 +32,8 @@ public class TempoDbContext : DbContext
     public DbSet<CoachJob> CoachJobs { get; set; }
     public DbSet<CoachWeek> CoachWeeks { get; set; }
     public DbSet<CoachAdjustment> CoachAdjustments { get; set; }
+    public DbSet<CoachEpisode> CoachEpisodes { get; set; }
+    public DbSet<CoachRule> CoachRules { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -263,6 +265,29 @@ public class TempoDbContext : DbContext
             entity.HasIndex(e => e.WeekStartDate);
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.SourceCommittedWeekId);
+        });
+
+        modelBuilder.Entity<CoachEpisode>(entity =>
+        {
+            entity.Property(e => e.Id).IsRequired().HasMaxLength(120);
+            entity.Property(e => e.Category).IsRequired().HasMaxLength(40);
+            entity.Property(e => e.Summary).IsRequired().HasMaxLength(400);
+            entity.Property(e => e.Source).IsRequired().HasMaxLength(20);
+            entity.HasIndex(e => e.Category);
+            entity.HasIndex(e => e.Retired);
+            entity.HasIndex(e => e.Date);
+        });
+
+        modelBuilder.Entity<CoachRule>(entity =>
+        {
+            entity.Property(e => e.Id).IsRequired().HasMaxLength(120);
+            entity.Property(e => e.TargetLayer).IsRequired().HasMaxLength(60);
+            entity.Property(e => e.RuleText).IsRequired();
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Evidence).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.Source).IsRequired().HasMaxLength(20);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.TargetLayer);
         });
     }
 }

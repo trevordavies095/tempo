@@ -3,13 +3,14 @@
 import { useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import {
+  dismissCoachMemoryUpgradeNotice,
   getCoachCommittedWeekOrNull,
   getCoachDraftWeekOrNull,
   getCoachHome,
@@ -112,6 +113,7 @@ function DayCard({
 
 function CoachPageContent() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
   const { unitPreference } = useSettings();
 
@@ -123,6 +125,11 @@ function CoachPageContent() {
     queryKey: ['coach-home'],
     queryFn: getCoachHome,
     enabled: showCoachNav,
+  });
+
+  const dismissUpgradeNotice = useMutation({
+    mutationFn: dismissCoachMemoryUpgradeNotice,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['coach-home'] }),
   });
 
   const draftQuery = useQuery({
@@ -191,6 +198,27 @@ function CoachPageContent() {
       }
     >
       <div className="w-full space-y-8">
+        {homeQuery.data?.pendingMemoryUpgradeNotice && (
+          <Card>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-ink">Regenerate your weekly draft</h2>
+                <p className="text-sm text-muted mt-1">
+                  Coach memory upgraded to typed Layer 1/2/3 channels. Any open draft was discarded —
+                  generate a new weekly plan when you are ready.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={dismissUpgradeNotice.isPending}
+                onClick={() => dismissUpgradeNotice.mutate()}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </Card>
+        )}
         <Card>
           {homeQuery.isLoading ? (
             <p className="text-sm text-muted">Loading...</p>

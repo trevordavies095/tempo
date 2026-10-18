@@ -86,7 +86,7 @@ public static class CoachEndpoints
             .WithSummary("Reset Coach setup")
             .WithDescription(
                 "Interrupts active coach jobs, then deletes peelable coach data " +
-                "(goal, memory layers, constraints, check-ins, privacy preflights, jobs, weeks, adjustments). " +
+                "(goal, memory layers, episodes, rules, constraints, check-ins, privacy preflights, jobs, weeks, adjustments). " +
                 "Keeps CoachPreferences (opt-in) and the Anthropic provider connection. " +
                 "404 when Coach__Enabled is false.");
 
@@ -106,6 +106,15 @@ public static class CoachEndpoints
             .WithSummary("Get Coach home shell")
             .WithDescription(
                 "Coach home when host-enabled and athlete opted in. " +
+                "404 when Coach is unavailable or the athlete has not opted in.");
+
+        group.MapPost("/memory-upgrade-notice/dismiss", DismissMemoryUpgradeNotice)
+            .WithName("DismissCoachMemoryUpgradeNotice")
+            .Produces(204)
+            .Produces(404)
+            .WithSummary("Dismiss typed-memory upgrade regenerate notice")
+            .WithDescription(
+                "Clears PendingMemoryUpgradeNotice on CoachPreferences. " +
                 "404 when Coach is unavailable or the athlete has not opted in.");
 
         CoachOnboardingEndpoints.Map(group);
@@ -408,7 +417,31 @@ public static class CoachEndpoints
                 "It offers training suggestions only. Seek a qualified professional for pain, injury, or health concerns.",
             NextSteps: nextSteps,
             OnboardingCompleted: onboardingComplete,
-            Goal: goal));
+            Goal: goal,
+            PendingMemoryUpgradeNotice: row.PendingMemoryUpgradeNotice));
+    }
+
+    private static async Task<IResult> DismissMemoryUpgradeNotice(TempoDbContext db, CoachConfig coachConfig)
+    {
+        if (!coachConfig.Enabled)
+        {
+            return Results.NotFound();
+        }
+
+        var row = await db.CoachPreferences.FirstOrDefaultAsync();
+        if (row?.OptedIn != true)
+        {
+            return Results.NotFound();
+        }
+
+        if (row.PendingMemoryUpgradeNotice)
+        {
+            row.PendingMemoryUpgradeNotice = false;
+            row.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        return Results.NoContent();
     }
 
     private static CoachSettingsDocument ToSettingsDocument(bool optedIn, CoachProviderConnection? provider) =>
@@ -449,4 +482,5 @@ public record CoachHomeDocument(
     string Disclaimer,
     IReadOnlyList<string> NextSteps,
     bool OnboardingCompleted,
-    CoachGoalDocument? Goal);
+    CoachGoalDocument? Goal,
+    bool PendingMemoryUpgradeNotice = false);

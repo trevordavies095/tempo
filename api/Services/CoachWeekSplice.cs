@@ -29,7 +29,9 @@ public static class CoachWeekSplice
         {
             CoachesNotes = proposed.CoachesNotes,
             SafetyFlags = proposed.SafetyFlags?.Select(CloneFlag).ToList() ?? [],
-            MemoryProposals = proposed.MemoryProposals?.Select(CloneProposal).ToList() ?? [],
+            Layer1Patches = proposed.Layer1Patches?.Select(ClonePatch).ToList() ?? [],
+            Layer2EpisodeDrafts = proposed.Layer2EpisodeDrafts?.Select(CloneEpisode).ToList() ?? [],
+            Layer3RuleProposals = proposed.Layer3RuleProposals?.Select(CloneRule).ToList() ?? [],
             ClarifyingQuestion = proposed.ClarifyingQuestion,
             Callouts = proposed.Callouts?.ToList() ?? [],
             Days = []
@@ -116,8 +118,12 @@ public static class CoachWeekSplice
     private static CoachWeeklyCommitSafetyFlag CloneFlag(CoachWeeklyCommitSafetyFlag flag) =>
         JsonSerializer.Deserialize<CoachWeeklyCommitSafetyFlag>(JsonSerializer.Serialize(flag, JsonOptions), JsonOptions)!;
 
-    private static CoachWeeklyCommitMemoryProposal CloneProposal(CoachWeeklyCommitMemoryProposal proposal) =>
-        JsonSerializer.Deserialize<CoachWeeklyCommitMemoryProposal>(
-            JsonSerializer.Serialize(proposal, JsonOptions),
-            JsonOptions)!;
+    private static CoachLayer1Patch ClonePatch(CoachLayer1Patch patch) =>
+        JsonSerializer.Deserialize<CoachLayer1Patch>(JsonSerializer.Serialize(patch, JsonOptions), JsonOptions)!;
+
+    private static CoachLayer2EpisodeDraft CloneEpisode(CoachLayer2EpisodeDraft draft) =>
+        JsonSerializer.Deserialize<CoachLayer2EpisodeDraft>(JsonSerializer.Serialize(draft, JsonOptions), JsonOptions)!;
+
+    private static CoachLayer3RuleProposal CloneRule(CoachLayer3RuleProposal proposal) =>
+        JsonSerializer.Deserialize<CoachLayer3RuleProposal>(JsonSerializer.Serialize(proposal, JsonOptions), JsonOptions)!;
 }

@@ -53,4 +53,36 @@ public class CoachWeekSpliceTests
         var error = CoachWeekSplice.ValidateLockedDaysUnchanged(source!, mutated!, LockedThrough);
         error.Should().Contain("2026-10-12");
     }
+
+    [Fact]
+    public void SpliceLockedDays_CarriesTypedMemoryChannelsFromProposed()
+    {
+        var sourceError = CoachWeeklyCommitSchema.TryParseAndValidate(
+            CoachWeeklyCommitSchemaTests.BuildCommitJson(),
+            WeekStart,
+            out var source);
+        sourceError.Should().BeNull();
+
+        var proposedError = CoachWeeklyCommitSchema.TryParseAndValidate(
+            CoachWeeklyCommitSchemaTests.BuildCommitJson(
+                notes: "Adjusted remaining week",
+                layer2EpisodeDrafts:
+                [
+                    new
+                    {
+                        date = "2026-10-14",
+                        category = "issue",
+                        summary = "Calf niggle onset mid-week"
+                    }
+                ]),
+            WeekStart,
+            out var proposed);
+        proposedError.Should().BeNull();
+
+        var spliced = CoachWeekSplice.SpliceLockedDays(source!, proposed!, LockedThrough);
+        spliced.Layer2EpisodeDrafts.Should().HaveCount(1);
+        spliced.Layer2EpisodeDrafts[0].Summary.Should().Contain("Calf niggle");
+        spliced.Layer1Patches.Should().BeEmpty();
+        spliced.Layer3RuleProposals.Should().BeEmpty();
+    }
 }

@@ -107,7 +107,10 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         {
             weekStartDate = "2026-10-12",
             safetyAcknowledgments = Array.Empty<object>(),
-            acceptedMemoryProposalIndexes = Array.Empty<int>()
+            acceptedLayer1PatchIndexes = Array.Empty<int>(),
+            acceptedEpisodeIndexes = Array.Empty<int>(),
+            acceptedRuleProposalIndexes = Array.Empty<int>(),
+            archiveNotesAsRecap = false
         });
         apply.StatusCode.Should().Be(HttpStatusCode.OK);
         return client;
@@ -210,7 +213,10 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         {
             weekStartDate = "2026-10-12",
             safetyAcknowledgments = Array.Empty<object>(),
-            acceptedMemoryProposalIndexes = Array.Empty<int>()
+            acceptedLayer1PatchIndexes = Array.Empty<int>(),
+            acceptedEpisodeIndexes = Array.Empty<int>(),
+            acceptedRuleProposalIndexes = Array.Empty<int>(),
+            archiveNotesAsRecap = false
         });
         apply.StatusCode.Should().Be(HttpStatusCode.OK);
 
