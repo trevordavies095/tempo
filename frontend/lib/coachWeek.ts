@@ -21,3 +21,36 @@ export function resolveDefaultCheckInReferenceDate(now: Date = new Date()): stri
   }
   return localDateInputValue(d);
 }
+
+/** Shift a yyyy-MM-dd calendar date by whole days (local). */
+export function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + days);
+  return localDateInputValue(date);
+}
+
+/** Plan week Monday = check-in Monday + 7 (ritual N → N+1). */
+export function planWeekStartFromCheckInMonday(checkInMonday: string): string {
+  return addDaysIso(checkInMonday, 7);
+}
+
+/**
+ * Short Mon–Sun label for ritual CTAs, e.g. "Oct 12–18".
+ * Assumes start/end are yyyy-MM-dd in the same year for the end day number.
+ */
+export function formatWeekRangeLabel(startIso: string, endIso: string): string {
+  const start = parseLocalIso(startIso);
+  const end = parseLocalIso(endIso);
+  const startLabel = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const endLabel = end.toLocaleDateString(undefined, {
+    month: start.getMonth() === end.getMonth() ? undefined : 'short',
+    day: 'numeric',
+  });
+  return `${startLabel}–${endLabel}`;
+}
+
+function parseLocalIso(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button';
 import {
   dismissCoachMemoryUpgradeNotice,
   dismissCoachSeedMemoryNudge,
+  getCoachCheckIn,
   getCoachCommittedWeekOrNull,
   getCoachDraftWeekOrNull,
   getCoachHome,
@@ -24,7 +25,12 @@ import {
   applyRecordHasAcceptedMemory,
   buildAppliedMemoryLines,
 } from '@/lib/coachMemoryDisplay';
-import { resolveDefaultCheckInReferenceDate } from '@/lib/coachWeek';
+import {
+  addDaysIso,
+  formatWeekRangeLabel,
+  planWeekStartFromCheckInMonday,
+  resolveDefaultCheckInReferenceDate,
+} from '@/lib/coachWeek';
 
 function formatDuration(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
@@ -52,16 +58,6 @@ function localDateIso(d = new Date()): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const dayNum = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${dayNum}`;
-}
-
-function lastPrescribedNonRestDate(days: CoachWeeklyCommitDay[]): string | null {
-  let last: string | null = null;
-  for (const day of days) {
-    if (day.dayType !== 'rest') {
-      last = day.date;
-    }
-  }
-  return last;
 }
 
 function DayCard({
@@ -118,6 +114,8 @@ function CoachPageContent() {
 
   const weekStartDate = useMemo(() => localMondayIso(), []);
   const todayIso = useMemo(() => localDateIso(), []);
+  const ritualRef = useMemo(() => resolveDefaultCheckInReferenceDate(), []);
+  const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
 
   const homeQuery = useQuery({
     queryKey: ['coach-home'],
@@ -135,6 +133,29 @@ function CoachPageContent() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['coach-home'] }),
   });
 
+  const ritualCheckInQuery = useQuery({
+    queryKey: ['coach-check-in', ritualRef, timezoneOffsetMinutes],
+    queryFn: () => getCoachCheckIn(timezoneOffsetMinutes, ritualRef),
+    enabled: showCoachNav,
+  });
+
+  const planWeekStart = ritualCheckInQuery.data?.weekStartDate
+    ? planWeekStartFromCheckInMonday(ritualCheckInQuery.data.weekStartDate)
+    : null;
+
+  const ritualDraftQuery = useQuery({
+    queryKey: ['coach-draft-week', planWeekStart],
+    queryFn: () => getCoachDraftWeekOrNull(planWeekStart!),
+    enabled: showCoachNav && Boolean(planWeekStart),
+  });
+
+  const ritualCommittedQuery = useQuery({
+    queryKey: ['coach-committed-week', planWeekStart],
+    queryFn: () => getCoachCommittedWeekOrNull(planWeekStart!),
+    enabled: showCoachNav && Boolean(planWeekStart),
+  });
+
+  // Calendar "this week" (today's Monday) — follow the live plan.
   const draftQuery = useQuery({
     queryKey: ['coach-draft-week', weekStartDate],
     queryFn: () => getCoachDraftWeekOrNull(weekStartDate),
@@ -154,6 +175,9 @@ function CoachPageContent() {
   }, [isFetched, showCoachNav, router]);
 
   const committed = committedQuery.data;
+  const ritualDraft = ritualDraftQuery.data;
+  const ritualCommitted = ritualCommittedQuery.data;
+  const ritualCheckIn = ritualCheckInQuery.data;
 
   // Must stay above the early returns below (rules-of-hooks).
   const appliedMemoryLines = useMemo(() => {
@@ -202,10 +226,13 @@ function CoachPageContent() {
     committed?.isAdjustment || draft?.isAdjustment || committed?.adjustmentStatus === 'applied'
   );
 
-  const lastNonRest = committed?.commit?.days
-    ? lastPrescribedNonRestDate(committed.commit.days)
-    : null;
-  const showGenerateNudge = Boolean(lastNonRest && lastNonRest <= todayIso && !draft);
+  const checkInRangeLabel =
+    ritualCheckIn?.weekStartDate && ritualCheckIn?.weekEndDate
+      ? formatWeekRangeLabel(ritualCheckIn.weekStartDate, ritualCheckIn.weekEndDate)
+      : null;
+  const planEndIso = planWeekStart ? addDaysIso(planWeekStart, 6) : null;
+  const planRangeLabel =
+    planWeekStart && planEndIso ? formatWeekRangeLabel(planWeekStart, planEndIso) : null;
 
   return (
     <PageShell
@@ -295,8 +322,8 @@ function CoachPageContent() {
                   <Link
                     href={`/coach/review?weekStartDate=${encodeURIComponent(draft.weekStartDate)}`}
                   >
-                    <Button type="button">
-                      {draft.isAdjustment ? 'Review adjust draft' : 'Review draft'}
+                    <Button type="button" variant="secondary">
+                      {draft.isAdjustment ? 'Review adjust draft' : 'Review this week draft'}
                     </Button>
                   </Link>
                 )}
@@ -304,19 +331,11 @@ function CoachPageContent() {
                   <Link
                     href={`/coach/adjust?weekStartDate=${encodeURIComponent(committed.weekStartDate)}`}
                   >
-                    <Button type="button">Adjust week</Button>
+                    <Button type="button" variant="secondary">
+                      Adjust this week
+                    </Button>
                   </Link>
                 )}
-                <Link href="/coach/check-in">
-                  <Button type="button" variant={draft || committed ? 'secondary' : undefined}>
-                    Weekly check-in
-                  </Button>
-                </Link>
-                <Link href="/coach/preflight">
-                  <Button type="button" variant="secondary">
-                    Generate plan
-                  </Button>
-                </Link>
                 <Link href="/coach/constraints">
                   <Button type="button" variant="secondary">
                     Non-negotiables
@@ -377,21 +396,77 @@ function CoachPageContent() {
           )}
         </Card>
 
-        {showGenerateNudge && (
+        {onboardingDone && goal && (
           <Card>
-            <p className="text-sm text-ink">
-              Your last prescribed session looks done. You can generate next week&apos;s plan whenever
-              you&apos;re ready — this is guidance only and does not unlock Adjust.
+            <h2 className="text-lg font-semibold text-ink mb-1">Weekly ritual</h2>
+            <p className="text-sm text-muted mb-4">
+              Check in on last week, then generate next week&apos;s plan.
             </p>
-            <div className="mt-3">
-              <Link
-                href={`/coach/preflight?referenceDate=${encodeURIComponent(resolveDefaultCheckInReferenceDate())}`}
-              >
-                <Button type="button" variant="secondary">
-                  Generate next week
-                </Button>
+            {ritualCheckInQuery.isLoading || (ritualCheckIn?.saved && !planWeekStart) ? (
+              <p className="text-sm text-muted">Loading ritual…</p>
+            ) : ritualCheckInQuery.isError ? (
+              <p className="text-sm text-danger">
+                {ritualCheckInQuery.error instanceof Error
+                  ? ritualCheckInQuery.error.message
+                  : 'Failed to load check-in week'}
+              </p>
+            ) : !ritualCheckIn?.saved ? (
+              <div className="space-y-3">
+                <Link href="/coach/check-in">
+                  <Button type="button">
+                    Check in on {checkInRangeLabel ?? 'this week'}
+                  </Button>
+                </Link>
+                <p className="text-sm text-muted">
+                  <Link href="/coach/check-in" className="underline hover:text-ink">
+                    Different week…
+                  </Link>
+                </p>
+              </div>
+            ) : ritualDraft ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted">
+                  Draft ready for {planRangeLabel ?? ritualDraft.weekStartDate}.
+                </p>
+                <Link
+                  href={`/coach/review?weekStartDate=${encodeURIComponent(ritualDraft.weekStartDate)}`}
+                >
+                  <Button type="button">
+                    {ritualDraft.isAdjustment ? 'Review adjust draft' : 'Review draft'}
+                  </Button>
+                </Link>
+              </div>
+            ) : ritualCommitted ? (
+              <div className="space-y-3">
+                <p className="text-sm text-ink">
+                  Next week is set
+                  {planRangeLabel ? ` (${planRangeLabel})` : ''}.
+                </p>
+                <Link
+                  href={`/coach/adjust?weekStartDate=${encodeURIComponent(ritualCommitted.weekStartDate)}`}
+                >
+                  <Button type="button">Adjust</Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <Link
+                  href={`/coach/preflight?referenceDate=${encodeURIComponent(ritualRef)}`}
+                >
+                  <Button type="button">
+                    Generate {planRangeLabel ?? 'next week'}
+                  </Button>
+                </Link>
+                <p className="text-sm text-muted">
+                  Check-in saved for {checkInRangeLabel}. Plan week is derived automatically.
+                </p>
+              </div>
+            )}
+            <p className="text-sm text-muted mt-4">
+              <Link href="/coach/preflight?advanced=1" className="underline hover:text-ink">
+                Generate for another week…
               </Link>
-            </div>
+            </p>
           </Card>
         )}
 

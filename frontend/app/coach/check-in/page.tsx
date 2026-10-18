@@ -99,6 +99,10 @@ function CheckInPageContent() {
         saved
       );
       setHydratedKey(`${saved.weekStartDate}:${saved.updatedAt ?? 'unsaved'}`);
+      await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-check-in'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-draft-week'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-committed-week'] });
     },
     onError: (err: Error) => setError(err.message),
   });

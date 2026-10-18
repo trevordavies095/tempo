@@ -16,11 +16,28 @@ import {
   type CoachJob,
   type CoachPrivacyPreflight,
 } from '@/lib/api';
-import { resolveDefaultCheckInReferenceDate } from '@/lib/coachWeek';
+import {
+  addDaysIso,
+  formatWeekRangeLabel,
+  planWeekStartFromCheckInMonday,
+  resolveDefaultCheckInReferenceDate,
+} from '@/lib/coachWeek';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 
 const fieldClass =
   'w-full rounded-tempo border border-border bg-canvas px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-volt';
+
+function mondayOfContainingWeek(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  const yy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
 
 function PreflightPageInner() {
   const router = useRouter();
@@ -28,9 +45,12 @@ function PreflightPageInner() {
   const { showCoachNav, isLoading: settingsLoading, isFetched } = useCoachFeature();
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
   const isAdjustMode = searchParams.get('mode') === 'adjust';
-  const initialRef =
-    searchParams.get('referenceDate') || resolveDefaultCheckInReferenceDate(new Date());
+  const isAdvanced = searchParams.get('advanced') === '1';
+  const queryReferenceDate = searchParams.get('referenceDate');
+  const initialRef = queryReferenceDate || resolveDefaultCheckInReferenceDate(new Date());
   const [referenceDate, setReferenceDate] = useState(initialRef);
+  // Happy path: ritual linked with referenceDate, not adjust, not advanced — no date picker.
+  const isHappyPath = Boolean(queryReferenceDate) && !isAdjustMode && !isAdvanced;
   const [preflight, setPreflight] = useState<CoachPrivacyPreflight | null>(null);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -142,22 +162,36 @@ function PreflightPageInner() {
       <div className="w-full space-y-6">
         <Card>
           <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted" htmlFor="preflight-ref">
-                Week containing
-              </label>
-              <input
-                id="preflight-ref"
-                type="date"
-                className={fieldClass}
-                value={referenceDate}
-                onChange={(e) => {
-                  setReferenceDate(e.target.value);
-                  setPreflight(null);
-                  setAcknowledged(false);
-                }}
-              />
-            </div>
+            {!isHappyPath && (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted" htmlFor="preflight-ref">
+                  Week containing
+                </label>
+                <input
+                  id="preflight-ref"
+                  type="date"
+                  className={fieldClass}
+                  value={referenceDate}
+                  onChange={(e) => {
+                    setReferenceDate(e.target.value);
+                    setPreflight(null);
+                    setAcknowledged(false);
+                  }}
+                />
+              </div>
+            )}
+            {isHappyPath && !preflight && (
+              <div className="flex flex-col gap-1 min-w-[12rem]">
+                <p className="text-xs font-medium text-muted">Check-in → plan</p>
+                <p className="text-sm text-ink">
+                  {(() => {
+                    const checkInMon = mondayOfContainingWeek(referenceDate);
+                    const planMon = planWeekStartFromCheckInMonday(checkInMon);
+                    return `${formatWeekRangeLabel(checkInMon, addDaysIso(checkInMon, 6))} → ${formatWeekRangeLabel(planMon, addDaysIso(planMon, 6))}`;
+                  })()}
+                </p>
+              </div>
+            )}
             <Button
               type="button"
               onClick={() => assembleMutation.mutate()}
@@ -165,7 +199,7 @@ function PreflightPageInner() {
             >
               {assembleMutation.isPending ? 'Assembling...' : 'Assemble redacted packet'}
             </Button>
-            <Link href={`/coach/check-in`}>
+            <Link href={`/coach/check-in?referenceDate=${encodeURIComponent(referenceDate)}`}>
               <Button type="button" variant="secondary">
                 Edit check-in
               </Button>
