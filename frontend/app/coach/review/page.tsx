@@ -18,7 +18,11 @@ import {
 } from '@/lib/api';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 import { useSettings, type UnitPreference } from '@/lib/settings';
-import { formatDistance } from '@/lib/format';
+import {
+  formatCoachDistance,
+  normalizePlannedDistanceM,
+  stripRedundantLeadingDistance,
+} from '@/lib/coachDistance';
 import {
   categoryLabel,
   formatLayer1PatchPrimary,
@@ -33,8 +37,11 @@ const fieldClass =
 const DAY_TYPES: CoachDayType[] = ['rest', 'easy', 'quality', 'long', 'race', 'other'];
 
 function metersToDisplay(meters: number, unit: UnitPreference): string {
-  const value = unit === 'imperial' ? meters / 1609.344 : meters / 1000;
-  return value.toFixed(2);
+  const normalized = normalizePlannedDistanceM(meters);
+  const value = unit === 'imperial' ? normalized / 1609.344 : normalized / 1000;
+  return Number.isInteger(value) || Math.abs(value - Math.round(value)) < 1e-9
+    ? String(Math.round(value))
+    : value.toFixed(2);
 }
 
 function displayToMeters(value: string, unit: UnitPreference): number {
@@ -42,7 +49,7 @@ function displayToMeters(value: string, unit: UnitPreference): number {
   if (!Number.isFinite(n) || n < 0) {
     return 0;
   }
-  return unit === 'imperial' ? n * 1609.344 : n * 1000;
+  return normalizePlannedDistanceM(unit === 'imperial' ? n * 1609.344 : n * 1000);
 }
 
 function normalizeCommit(raw: CoachWeeklyCommit): CoachWeeklyCommit {
@@ -52,14 +59,17 @@ function normalizeCommit(raw: CoachWeeklyCommit): CoachWeeklyCommit {
       date: d.date,
       dayType: d.dayType,
       run: d.run
-        ? {
-            type: d.run.type,
-            distanceM: d.run.distanceM ?? 0,
-            structure: d.run.structure ?? null,
-            paceOrHr: d.run.paceOrHr ?? null,
-            shoeId: d.run.shoeId ?? null,
-            notes: d.run.notes ?? null,
-          }
+        ? (() => {
+            const distanceM = normalizePlannedDistanceM(d.run.distanceM ?? 0);
+            return {
+              type: d.run.type,
+              distanceM,
+              structure: stripRedundantLeadingDistance(d.run.structure, distanceM),
+              paceOrHr: d.run.paceOrHr ?? null,
+              shoeId: d.run.shoeId ?? null,
+              notes: d.run.notes ?? null,
+            };
+          })()
         : null,
       strength: d.strength ?? null,
     })),
@@ -503,7 +513,7 @@ function ReviewPageInner() {
                             }
                           />
                           <span className="text-xs">
-                            {formatDistance(day.run.distanceM, unitPreference)}
+                            {formatCoachDistance(day.run.distanceM, unitPreference)}
                           </span>
                         </label>
                         <label className="text-sm text-muted space-y-1">

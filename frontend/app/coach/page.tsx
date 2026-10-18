@@ -21,7 +21,7 @@ import {
 } from '@/lib/api';
 import { useCoachFeature } from '@/hooks/useCoachFeature';
 import { useSettings } from '@/lib/settings';
-import { formatDistance } from '@/lib/format';
+import { formatCoachRunSummary } from '@/lib/coachDistance';
 import {
   applyRecordHasAcceptedMemory,
   buildAppliedMemoryLines,
@@ -95,9 +95,12 @@ function DayCard({
       {day.dayType !== 'rest' && day.run && (
         <div className="text-sm text-muted space-y-1">
           <p>
-            {formatDistance(day.run.distanceM, unitPreference)}
-            {day.run.structure ? ` · ${day.run.structure}` : ''}
-            {day.run.paceOrHr ? ` · ${day.run.paceOrHr}` : ''}
+            {formatCoachRunSummary(
+              day.run.distanceM,
+              day.run.structure,
+              day.run.paceOrHr,
+              unitPreference
+            )}
           </p>
           {day.run.notes && <p className="text-ink">{day.run.notes}</p>}
         </div>

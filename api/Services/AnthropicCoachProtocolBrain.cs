@@ -194,6 +194,8 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
 
         Rules:
         - Honor unit preference from the packet when describing paces in notes.
+        - distanceM is meters. For mile prescriptions use statute miles × 1609.344 (3 mi → 4828.032, not 4800). For km prescriptions use exact meters (8 km → 8000).
+        - structure is the workout recipe only (e.g. "2mi WU + 2mi @ tempo + 1mi CD"). Do not restate the total distance at the start — the UI already shows distanceM. Prefer null on easy/rest when there is no interval structure.
         - Honor CoachConstraint non-negotiables: blackouts = rest; standing schedule presets; secondary_race dates must be run.type=race.
         - Never initiate mid-week adjust. Only the athlete starts Adjust.
         - When the packet includes an "adjustment" object: replan ONLY remainingDates; copy lockedDays unchanged into those dates; severe niggles → backoff volume/intensity and/or refer-out safetyFlags — never diagnose.

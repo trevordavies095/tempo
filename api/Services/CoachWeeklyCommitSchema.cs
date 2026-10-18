@@ -152,6 +152,8 @@ public static partial class CoachWeeklyCommitSchema
                 {
                     return $"days[{i}].run.distanceM must be >= 0";
                 }
+
+                CoachDistanceNormalizer.NormalizeCommitRun(day.Run);
             }
         }
 
