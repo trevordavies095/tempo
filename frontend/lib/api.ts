@@ -1344,6 +1344,56 @@ export interface CoachHome {
   onboardingCompleted: boolean;
   goal: CoachGoal | null;
   pendingMemoryUpgradeNotice?: boolean;
+  showSeedMemoryNudge?: boolean;
+}
+
+export type CoachEpisodeCategory =
+  | 'race'
+  | 'breakthrough'
+  | 'issue'
+  | 'equipment'
+  | 'milestone'
+  | 'protocol_change'
+  | 'recap';
+
+export interface CoachEpisode {
+  id: string;
+  date: string;
+  category: string;
+  summary: string;
+  sourceWeekEnding: string | null;
+  source: string;
+  retired: boolean;
+  createdAt: string;
+}
+
+export interface CreateCoachEpisodeRequest {
+  date: string;
+  category: string;
+  summary: string;
+  sourceWeekEnding?: string | null;
+}
+
+export type CoachRuleTargetLayer =
+  | 'data_interpretation_notes'
+  | 'key_learnings'
+  | 'coaching_preferences';
+
+export interface CoachRule {
+  id: string;
+  targetLayer: string;
+  ruleText: string;
+  status: string;
+  evidence: string[];
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCoachRuleRequest {
+  targetLayer: string;
+  ruleText: string;
+  evidence?: string[];
 }
 
 export interface CoachOnboardingStatus {
@@ -1583,6 +1633,19 @@ export async function dismissCoachMemoryUpgradeNotice(): Promise<void> {
   }
 }
 
+export async function dismissCoachSeedMemoryNudge(): Promise<void> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/memory-seed-nudge/dismiss`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to dismiss seed memory nudge: ${response.status}`);
+  }
+}
+
 export async function getCoachOnboarding(): Promise<CoachOnboardingStatus> {
   const response = await fetchWithAuth(`${API_BASE_URL}/coach/onboarding`, {
     method: 'GET',
@@ -1695,6 +1758,154 @@ export async function retireCoachConstraint(id: string): Promise<CoachConstraint
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to retire Coach constraint: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function listCoachEpisodes(options?: {
+  includeRetired?: boolean;
+  category?: string;
+}): Promise<CoachEpisode[]> {
+  const params = new URLSearchParams();
+  params.set('includeRetired', String(Boolean(options?.includeRetired)));
+  if (options?.category) {
+    params.set('category', options.category);
+  }
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/memory/episodes?${params.toString()}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to list Coach episodes: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function createCoachEpisode(
+  body: CreateCoachEpisodeRequest
+): Promise<CoachEpisode> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/memory/episodes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to create Coach episode: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function retireCoachEpisode(id: string): Promise<CoachEpisode> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/memory/episodes/${encodeURIComponent(id)}/retire`,
+    {
+      method: 'POST',
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to retire Coach episode: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function unretireCoachEpisode(id: string): Promise<CoachEpisode> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/memory/episodes/${encodeURIComponent(id)}/unretire`,
+    {
+      method: 'POST',
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to unretire Coach episode: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function listCoachRules(options?: {
+  includeRetired?: boolean;
+}): Promise<CoachRule[]> {
+  const params = new URLSearchParams();
+  params.set('includeRetired', String(Boolean(options?.includeRetired)));
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/memory/rules?${params.toString()}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to list Coach rules: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function createCoachRule(body: CreateCoachRuleRequest): Promise<CoachRule> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/memory/rules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to create Coach rule: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function retireCoachRule(id: string): Promise<CoachRule> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/memory/rules/${encodeURIComponent(id)}/retire`,
+    {
+      method: 'POST',
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to retire Coach rule: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function unretireCoachRule(id: string): Promise<CoachRule> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/memory/rules/${encodeURIComponent(id)}/unretire`,
+    {
+      method: 'POST',
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to unretire Coach rule: ${response.status}`);
   }
 
   return response.json();

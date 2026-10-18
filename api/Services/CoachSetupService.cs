@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
+using Tempo.Api.Models;
 
 namespace Tempo.Api.Services;
 
@@ -20,6 +21,7 @@ public sealed class CoachSetupService
     /// <summary>
     /// Interrupts active coach jobs, then deletes all peelable coach rows except
     /// <c>CoachPreferences</c> and <c>CoachProviderConnections</c>.
+    /// Clears SeedMemoryNudgeDismissed so a wiped instance can see the seed nudge again.
     /// </summary>
     public async Task ResetSetupAsync(CancellationToken cancellationToken = default)
     {
@@ -35,5 +37,13 @@ public sealed class CoachSetupService
         await _db.CoachRules.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachMemoryLayers.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachGoals.ExecuteDeleteAsync(cancellationToken);
+
+        var prefs = await _db.CoachPreferences.FirstOrDefaultAsync(cancellationToken);
+        if (prefs != null && prefs.SeedMemoryNudgeDismissed)
+        {
+            prefs.SeedMemoryNudgeDismissed = false;
+            prefs.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
     }
 }

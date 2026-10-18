@@ -444,6 +444,9 @@ namespace Tempo.Api.Migrations
                     b.Property<bool>("PendingMemoryUpgradeNotice")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("SeedMemoryNudgeDismissed")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 

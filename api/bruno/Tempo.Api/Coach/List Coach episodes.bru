@@ -1,0 +1,11 @@
+meta {
+  name: List Coach episodes
+  type: http
+  seq: 40
+}
+
+get {
+  url: {{baseUrl}}/coach/memory/episodes?includeRetired=false
+  body: none
+  auth: inherit
+}

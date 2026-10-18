@@ -1,0 +1,11 @@
+meta {
+  name: List Coach rules
+  type: http
+  seq: 44
+}
+
+get {
+  url: {{baseUrl}}/coach/memory/rules?includeRetired=false
+  body: none
+  auth: inherit
+}

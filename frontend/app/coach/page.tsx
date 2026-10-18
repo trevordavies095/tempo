@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import {
   dismissCoachMemoryUpgradeNotice,
+  dismissCoachSeedMemoryNudge,
   getCoachCommittedWeekOrNull,
   getCoachDraftWeekOrNull,
   getCoachHome,
@@ -136,6 +137,11 @@ function CoachPageContent() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['coach-home'] }),
   });
 
+  const dismissSeedNudge = useMutation({
+    mutationFn: dismissCoachSeedMemoryNudge,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['coach-home'] }),
+  });
+
   const draftQuery = useQuery({
     queryKey: ['coach-draft-week', weekStartDate],
     queryFn: () => getCoachDraftWeekOrNull(weekStartDate),
@@ -242,6 +248,33 @@ function CoachPageContent() {
             </div>
           </Card>
         )}
+
+        {homeQuery.data?.showSeedMemoryNudge && (
+          <Card>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-ink">Seed your coach&apos;s memory</h2>
+                <p className="text-sm text-muted mt-1">
+                  Add a past injury, race result, or standing rule you already know about yourself
+                  before the first weekly plan.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Link href="/coach/memory">
+                  <Button type="button">Open Memory</Button>
+                </Link>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={dismissSeedNudge.isPending}
+                  onClick={() => dismissSeedNudge.mutate()}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
         <Card>
           {homeQuery.isLoading ? (
             <p className="text-sm text-muted">Loading...</p>
@@ -294,6 +327,11 @@ function CoachPageContent() {
                     Non-negotiables
                   </Button>
                 </Link>
+                <Link href="/coach/memory">
+                  <Button type="button" variant="secondary">
+                    Memory
+                  </Button>
+                </Link>
                 <Link href="/coach/onboarding">
                   <Button type="button" variant="secondary">
                     Review onboarding
@@ -331,6 +369,11 @@ function CoachPageContent() {
                   <Link href="/coach/constraints">
                     <Button type="button" variant="secondary">
                       Non-negotiables
+                    </Button>
+                  </Link>
+                  <Link href="/coach/memory">
+                    <Button type="button" variant="secondary">
+                      Memory
                     </Button>
                   </Link>
                 </div>

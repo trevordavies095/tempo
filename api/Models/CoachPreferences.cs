@@ -19,6 +19,12 @@ public class CoachPreferences
     /// </summary>
     public bool PendingMemoryUpgradeNotice { get; set; }
 
+    /// <summary>
+    /// Athlete dismissed the "Seed your coach's memory" home nudge.
+    /// Cleared on setup reset so a wiped instance can see the nudge again.
+    /// </summary>
+    public bool SeedMemoryNudgeDismissed { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

@@ -117,8 +117,18 @@ public static class CoachEndpoints
                 "Clears PendingMemoryUpgradeNotice on CoachPreferences. " +
                 "404 when Coach is unavailable or the athlete has not opted in.");
 
+        group.MapPost("/memory-seed-nudge/dismiss", DismissSeedMemoryNudge)
+            .WithName("DismissCoachSeedMemoryNudge")
+            .Produces(204)
+            .Produces(404)
+            .WithSummary("Dismiss seed-your-memory home nudge")
+            .WithDescription(
+                "Sets SeedMemoryNudgeDismissed on CoachPreferences. " +
+                "404 when Coach is unavailable or the athlete has not opted in.");
+
         CoachOnboardingEndpoints.Map(group);
         CoachConstraintEndpoints.Map(group);
+        CoachMemoryEndpoints.Map(group);
         CoachCheckInEndpoints.Map(group);
         CoachPrivacyEndpoints.Map(group);
         CoachGenerateEndpoints.Map(group);
@@ -410,6 +420,16 @@ public static class CoachEndpoints
             }
         }
 
+        var showSeedMemoryNudge = false;
+        if (!row.SeedMemoryNudgeDismissed)
+        {
+            var hasEpisodes = await db.CoachEpisodes.AsNoTracking().AnyAsync();
+            var hasRules = await db.CoachRules.AsNoTracking().AnyAsync();
+            var hasCommittedWeek = await db.CoachWeeks.AsNoTracking()
+                .AnyAsync(w => w.Status == CoachWeekStatuses.Committed);
+            showSeedMemoryNudge = !hasEpisodes && !hasRules && !hasCommittedWeek;
+        }
+
         return Results.Ok(new CoachHomeDocument(
             Title: "AI Coach",
             Disclaimer:
@@ -418,7 +438,8 @@ public static class CoachEndpoints
             NextSteps: nextSteps,
             OnboardingCompleted: onboardingComplete,
             Goal: goal,
-            PendingMemoryUpgradeNotice: row.PendingMemoryUpgradeNotice));
+            PendingMemoryUpgradeNotice: row.PendingMemoryUpgradeNotice,
+            ShowSeedMemoryNudge: showSeedMemoryNudge));
     }
 
     private static async Task<IResult> DismissMemoryUpgradeNotice(TempoDbContext db, CoachConfig coachConfig)
@@ -437,6 +458,29 @@ public static class CoachEndpoints
         if (row.PendingMemoryUpgradeNotice)
         {
             row.PendingMemoryUpgradeNotice = false;
+            row.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> DismissSeedMemoryNudge(TempoDbContext db, CoachConfig coachConfig)
+    {
+        if (!coachConfig.Enabled)
+        {
+            return Results.NotFound();
+        }
+
+        var row = await db.CoachPreferences.FirstOrDefaultAsync();
+        if (row?.OptedIn != true)
+        {
+            return Results.NotFound();
+        }
+
+        if (!row.SeedMemoryNudgeDismissed)
+        {
+            row.SeedMemoryNudgeDismissed = true;
             row.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
         }
@@ -483,4 +527,5 @@ public record CoachHomeDocument(
     IReadOnlyList<string> NextSteps,
     bool OnboardingCompleted,
     CoachGoalDocument? Goal,
-    bool PendingMemoryUpgradeNotice = false);
+    bool PendingMemoryUpgradeNotice = false,
+    bool ShowSeedMemoryNudge = false);
