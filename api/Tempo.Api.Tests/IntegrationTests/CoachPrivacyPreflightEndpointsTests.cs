@@ -8,6 +8,7 @@ using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
 using Tempo.Api.Tests.Infrastructure;
+using Tempo.Api.Tests.Services;
 using Xunit;
 
 namespace Tempo.Api.Tests.IntegrationTests;
@@ -407,6 +408,117 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
             i.Category == "layer2" && i.Detail.Contains("episodes selected of"));
         doc.Report.Included.Should().Contain(i =>
             i.Category == "layer3" && i.Detail.Contains("1 active standing rules"));
+    }
+
+    [Fact]
+    public async Task Assemble_IncludesCompactCheckInWeekExchanges_OmitsFullReplyBodies()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+        await SaveEmptyCheckInAsync(client);
+
+        var checkInMonday = new DateOnly(2026, 10, 12);
+        var planMonday = new DateOnly(2026, 10, 19);
+        var exchangeId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var preflightId = Guid.NewGuid();
+            db.CoachPrivacyPreflights.Add(new CoachPrivacyPreflight
+            {
+                Id = preflightId,
+                Kind = CoachPrivacyPreflightKinds.Exchange,
+                WeekStartDate = checkInMonday,
+                ExchangeId = exchangeId,
+                ReferenceDate = checkInMonday,
+                TimezoneOffsetMinutes = 0,
+                PayloadHash = "ex-hash",
+                RedactedPayloadJson = "{}",
+                PrivacyReportJson = "{}",
+                ConsentedAt = now,
+                AssembledAt = now
+            });
+            db.CoachExchanges.Add(new CoachExchange
+            {
+                Id = exchangeId,
+                WeekStartDate = checkInMonday,
+                AthleteText = "Calf felt tight on the long run but finished.",
+                PreflightId = preflightId,
+                ReplyJson = CoachExchangeReplySchemaTests.BuildReplyJson(
+                    whatHappened: "You finished the long run with a tight calf.",
+                    whyItLooksLikeThat: "Pace held but niggle mentioned.",
+                    whatItMeansNext: "Ease Wednesday and watch the calf.",
+                    verdict: "watch"),
+                Status = CoachExchangeStatuses.Ready,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CompletedAt = now
+            });
+            // Plan-week exchange must NOT appear in check-in rollup.
+            db.CoachExchanges.Add(new CoachExchange
+            {
+                Id = Guid.NewGuid(),
+                WeekStartDate = planMonday,
+                AthleteText = "Plan-week only — should not roll up.",
+                PreflightId = Guid.NewGuid(),
+                ReplyJson = CoachExchangeReplySchemaTests.BuildReplyJson(),
+                Status = CoachExchangeStatuses.Ready,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CompletedAt = now
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var assemble = await client.PostAsync(
+            "/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate=2026-10-13",
+            null);
+        assemble.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await assemble.Content.ReadFromJsonAsync<PreflightResponse>(JsonOptions);
+        doc.Should().NotBeNull();
+
+        doc!.Report.Included.Should().Contain(i =>
+            i.Category == "checkInWeekExchanges"
+            && i.Detail.StartsWith("1 conversations from this week", StringComparison.Ordinal));
+
+        var payloadJson = JsonSerializer.Serialize(doc.RedactedPayload);
+        using var payload = JsonDocument.Parse(payloadJson);
+        var rollup = payload.RootElement.GetProperty("checkInWeekExchanges");
+        rollup.GetArrayLength().Should().Be(1);
+        var item = rollup[0];
+        item.GetProperty("id").GetGuid().Should().Be(exchangeId);
+        item.GetProperty("athleteText").GetString().Should().Contain("Calf felt tight");
+        item.GetProperty("verdict").GetString().Should().Be("watch");
+        item.GetProperty("coachSummary").GetString().Should().Contain("Ease Wednesday");
+        item.TryGetProperty("whatHappened", out _).Should().BeFalse();
+        item.TryGetProperty("whyItLooksLikeThat", out _).Should().BeFalse();
+        item.TryGetProperty("reply", out _).Should().BeFalse();
+        payloadJson.Should().NotContain("You finished the long run with a tight calf.");
+        payloadJson.Should().NotContain("Plan-week only");
+    }
+
+    [Fact]
+    public async Task Assemble_WithoutCheckInWeekExchanges_ReportsZeroConversations()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+        await SaveEmptyCheckInAsync(client);
+
+        var assemble = await client.PostAsync(
+            "/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate=2026-10-13",
+            null);
+        assemble.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await assemble.Content.ReadFromJsonAsync<PreflightResponse>(JsonOptions);
+        doc.Should().NotBeNull();
+        doc!.Report.Included.Should().Contain(i =>
+            i.Category == "checkInWeekExchanges"
+            && i.Detail.StartsWith("0 conversations from this week", StringComparison.Ordinal));
+
+        var payloadJson = JsonSerializer.Serialize(doc.RedactedPayload);
+        using var payload = JsonDocument.Parse(payloadJson);
+        payload.RootElement.GetProperty("checkInWeekExchanges").GetArrayLength().Should().Be(0);
     }
 
     private sealed class PreflightResponse

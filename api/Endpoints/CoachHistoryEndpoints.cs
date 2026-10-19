@@ -133,4 +133,19 @@ public sealed record CoachWeekHistoryDetailDocument(
     object? ApplyRecord,
     IReadOnlyList<CoachPlanDayDocument> Days,
     CoachWeekPrivacyReceiptDocument PrivacyReceipt,
-    Guid? SourceExchangeId = null);
+    Guid? SourceExchangeId = null,
+    IReadOnlyList<CoachHistoryExchangeDocument>? Exchanges = null);
+
+/// <summary>Read-only mid-week exchange row for History week detail.</summary>
+public sealed record CoachHistoryExchangeDocument(
+    Guid Id,
+    string WeekStartDate,
+    Guid? WorkoutId,
+    string AthleteText,
+    string Status,
+    string? Verdict,
+    string? CoachSummary,
+    Guid PreflightId,
+    string? PayloadHash,
+    DateTime CreatedAt,
+    DateTime? CompletedAt);

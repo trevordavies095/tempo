@@ -281,6 +281,122 @@ public class CoachHistoryEndpointsTests : IClassFixture<CoachGenerateTestFactory
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task WeekById_IncludesWeekExchangesAndReceiptExchangeSummary()
+    {
+        var client = await AuthenticatedClientAsync();
+        var exchangeId = Guid.NewGuid();
+        var checkInExchangeId = Guid.NewGuid();
+        Guid committedId;
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var now = DateTime.UtcNow;
+            var jobId = Guid.NewGuid();
+            var preflightId = Guid.NewGuid();
+            var exchangePreflightId = Guid.NewGuid();
+
+            db.CoachJobs.Add(new CoachJob
+            {
+                Id = jobId,
+                Status = CoachJobStatuses.Ready,
+                Kind = CoachJobKinds.Generate,
+                WeekStartDate = PlanWeekStart,
+                PreflightId = preflightId,
+                CreatedAt = now
+            });
+
+            db.CoachPrivacyPreflights.Add(new CoachPrivacyPreflight
+            {
+                Id = exchangePreflightId,
+                Kind = CoachPrivacyPreflightKinds.Exchange,
+                WeekStartDate = PlanWeekStart,
+                ExchangeId = exchangeId,
+                ReferenceDate = PlanWeekStart,
+                TimezoneOffsetMinutes = 0,
+                PayloadHash = "plan-week-ex-hash",
+                RedactedPayloadJson = "{}",
+                PrivacyReportJson = "{}",
+                ConsentedAt = now,
+                AssembledAt = now
+            });
+
+            db.CoachExchanges.Add(new CoachExchange
+            {
+                Id = exchangeId,
+                WeekStartDate = PlanWeekStart,
+                AthleteText = "Mid-week note for this plan week.",
+                PreflightId = exchangePreflightId,
+                ReplyJson = CoachExchangeReplySchemaTests.BuildReplyJson(
+                    whatItMeansNext: "Hold easy through Friday.",
+                    verdict: "on_track"),
+                Status = CoachExchangeStatuses.Ready,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CompletedAt = now
+            });
+            // Check-in week exchange appears in receipt rollup only, not plan-week feed.
+            db.CoachExchanges.Add(new CoachExchange
+            {
+                Id = checkInExchangeId,
+                WeekStartDate = CheckInWeekStart,
+                AthleteText = "Check-in week conversation.",
+                PreflightId = Guid.NewGuid(),
+                ReplyJson = CoachExchangeReplySchemaTests.BuildReplyJson(),
+                Status = CoachExchangeStatuses.Ready,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CompletedAt = now
+            });
+
+            var week = new CoachWeek
+            {
+                WeekStartDate = PlanWeekStart,
+                Status = CoachWeekStatuses.Committed,
+                CommitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: PlanWeekStart),
+                PreflightId = preflightId,
+                JobId = jobId,
+                PayloadHash = new string('e', 64),
+                RedactedPayloadJson = $$"""
+                    {
+                      "checkInWeekExchanges": [
+                        {
+                          "id": "{{checkInExchangeId}}",
+                          "date": "2026-10-07",
+                          "athleteText": "Check-in week conversation.",
+                          "verdict": "on_track",
+                          "coachSummary": "Keep easy."
+                        }
+                      ],
+                      "recentTraining": { "weeks": [] }
+                    }
+                    """,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            db.CoachWeeks.Add(week);
+            await db.SaveChangesAsync();
+            committedId = week.Id;
+        }
+
+        var ok = await client.GetAsync($"/coach/weeks/{committedId}?timezoneOffsetMinutes=0");
+        ok.StatusCode.Should().Be(HttpStatusCode.OK);
+        var detail = await ok.Content.ReadFromJsonAsync<WeekDetailResponse>(JsonOptions);
+        detail.Should().NotBeNull();
+        detail!.Exchanges.Should().HaveCount(1);
+        detail.Exchanges![0].Id.Should().Be(exchangeId);
+        detail.Exchanges[0].AthleteText.Should().Contain("Mid-week note");
+        detail.Exchanges[0].Verdict.Should().Be("on_track");
+        detail.Exchanges[0].CoachSummary.Should().Contain("Hold easy");
+        detail.Exchanges[0].PayloadHash.Should().Be("plan-week-ex-hash");
+        detail.Exchanges.Should().NotContain(e => e.Id == checkInExchangeId);
+
+        detail.PrivacyReceipt.Should().NotBeNull();
+        detail.PrivacyReceipt!.ExchangeCount.Should().Be(1);
+        detail.PrivacyReceipt.ExchangeIds.Should().Contain(checkInExchangeId.ToString());
+    }
+
     private sealed class WeeksListResponse
     {
         public List<WeekListItemResponse> Items { get; set; } = [];
@@ -310,6 +426,7 @@ public class CoachHistoryEndpointsTests : IClassFixture<CoachGenerateTestFactory
         public JsonElement? ApplyRecord { get; set; }
         public List<PlanDayResponse> Days { get; set; } = [];
         public ReceiptResponse? PrivacyReceipt { get; set; }
+        public List<HistoryExchangeResponse>? Exchanges { get; set; }
     }
 
     private sealed class PlanDayResponse
@@ -321,5 +438,16 @@ public class CoachHistoryEndpointsTests : IClassFixture<CoachGenerateTestFactory
     private sealed class ReceiptResponse
     {
         public string PayloadHash { get; set; } = "";
+        public int ExchangeCount { get; set; }
+        public List<string>? ExchangeIds { get; set; }
+    }
+
+    private sealed class HistoryExchangeResponse
+    {
+        public Guid Id { get; set; }
+        public string AthleteText { get; set; } = "";
+        public string? Verdict { get; set; }
+        public string? CoachSummary { get; set; }
+        public string? PayloadHash { get; set; }
     }
 }

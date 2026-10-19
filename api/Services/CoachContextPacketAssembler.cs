@@ -212,6 +212,12 @@ public class CoachContextPacketAssembler
             priorWeekCount: Math.Max(0, _coachConfig.RecentTrainingPriorWeekCount),
             cancellationToken);
 
+        var checkInWeekExchanges = await BuildWeekExchangesAsync(
+            checkInStartDate,
+            excludeExchangeId: null,
+            unitPreference,
+            cancellationToken);
+
         return new CoachContextPacket(
             Meta: new CoachPacketMeta(
                 WeekStartDate: planStart,
@@ -232,7 +238,8 @@ public class CoachContextPacketAssembler
             CheckIn: checkIn,
             RecentTraining: recentTraining,
             Adjustment: adjustment,
-            AthleteFeedback: null);
+            AthleteFeedback: null,
+            CheckInWeekExchanges: checkInWeekExchanges);
     }
 
     /// <summary>
@@ -303,7 +310,11 @@ public class CoachContextPacketAssembler
                 Evidence: r.Evidence ?? [])).ToList());
 
         var committedPlanSlice = await BuildCommittedPlanSliceAsync(planStartDate, cancellationToken);
-        var weekExchanges = await BuildWeekExchangesAsync(planStartDate, excludeExchangeId, cancellationToken);
+        var weekExchanges = await BuildWeekExchangesAsync(
+            planStartDate,
+            excludeExchangeId,
+            unitPreference,
+            cancellationToken);
 
         var recentTraining = await BuildRecentTrainingAsync(
             planWeek,
@@ -383,12 +394,13 @@ public class CoachContextPacketAssembler
     }
 
     private async Task<IReadOnlyList<CoachPacketWeekExchange>> BuildWeekExchangesAsync(
-        DateOnly planStartDate,
+        DateOnly weekStartDate,
         Guid? excludeExchangeId,
+        string unitPreference,
         CancellationToken cancellationToken)
     {
         var query = _db.CoachExchanges.AsNoTracking()
-            .Where(e => e.WeekStartDate == planStartDate && e.Status == CoachExchangeStatuses.Ready);
+            .Where(e => e.WeekStartDate == weekStartDate && e.Status == CoachExchangeStatuses.Ready);
         if (excludeExchangeId != null)
         {
             query = query.Where(e => e.Id != excludeExchangeId);
@@ -397,6 +409,18 @@ public class CoachContextPacketAssembler
         var rows = await query
             .OrderBy(e => e.CreatedAt)
             .ToListAsync(cancellationToken);
+
+        var workoutIds = rows
+            .Where(r => r.WorkoutId != null)
+            .Select(r => r.WorkoutId!.Value)
+            .Distinct()
+            .ToList();
+        var workoutById = workoutIds.Count == 0
+            ? new Dictionary<Guid, (double DistanceM, int DurationS)>()
+            : await _db.Workouts.AsNoTracking()
+                .Where(w => workoutIds.Contains(w.Id))
+                .Select(w => new { w.Id, w.DistanceM, w.DurationS })
+                .ToDictionaryAsync(w => w.Id, w => (w.DistanceM, w.DurationS), cancellationToken);
 
         var result = new List<CoachPacketWeekExchange>(rows.Count);
         foreach (var row in rows)
@@ -417,15 +441,37 @@ public class CoachContextPacketAssembler
                 text = text[..400];
             }
 
+            string? workoutSummary = null;
+            if (row.WorkoutId is Guid wid && workoutById.TryGetValue(wid, out var w))
+            {
+                workoutSummary = FormatWorkoutSummary(w.DistanceM, w.DurationS, unitPreference);
+            }
+
             result.Add(new CoachPacketWeekExchange(
+                Id: row.Id,
                 Date: row.CreatedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 WorkoutId: row.WorkoutId,
+                WorkoutSummary: workoutSummary,
                 AthleteText: text,
                 Verdict: verdict,
                 CoachSummary: coachSummary));
         }
 
         return result;
+    }
+
+    private static string FormatWorkoutSummary(double distanceM, int durationS, string unitPreference)
+    {
+        var imperial = string.Equals(unitPreference, "imperial", StringComparison.OrdinalIgnoreCase);
+        var distanceLabel = imperial
+            ? $"{distanceM / CoachDistanceNormalizer.MetersPerMile:0.#} mi"
+            : $"{distanceM / 1000.0:0.#} km";
+        var mins = durationS / 60;
+        var secs = durationS % 60;
+        var durationLabel = mins >= 60
+            ? $"{mins / 60}:{mins % 60:D2}:{secs:D2}"
+            : $"{mins}:{secs:D2}";
+        return $"{distanceLabel}, {durationLabel}";
     }
 
     private static string Truncate(string value, int max)
@@ -742,7 +788,8 @@ public sealed record CoachContextPacket(
     CoachPacketCheckIn CheckIn,
     CoachPacketRecentTraining RecentTraining,
     CoachPacketAdjustment? Adjustment = null,
-    CoachPacketAthleteFeedback? AthleteFeedback = null);
+    CoachPacketAthleteFeedback? AthleteFeedback = null,
+    IReadOnlyList<CoachPacketWeekExchange>? CheckInWeekExchanges = null);
 
 /// <summary>Mid-week exchange packet (no weekly check-in / L2 / memory write path).</summary>
 public sealed record CoachExchangePacket(
@@ -766,8 +813,10 @@ public sealed record CoachPacketCommittedPlanDay(
     Guid? ShoeId);
 
 public sealed record CoachPacketWeekExchange(
+    Guid Id,
     string Date,
     Guid? WorkoutId,
+    string? WorkoutSummary,
     string AthleteText,
     string? Verdict,
     string? CoachSummary);

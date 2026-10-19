@@ -368,6 +368,44 @@ public class CoachPrivacyRedactorTests
     }
 
     [Fact]
+    public void ExtractCheckInWeekExchangesSummary_FromRedactedPayload()
+    {
+        const string json = """
+            {
+              "checkInWeekExchanges": [
+                {
+                  "id": "11111111-1111-1111-1111-111111111111",
+                  "date": "2026-10-14",
+                  "athleteText": "Felt tired",
+                  "verdict": "watch",
+                  "coachSummary": "Ease into Thursday."
+                },
+                {
+                  "id": "22222222-2222-2222-2222-222222222222",
+                  "date": "2026-10-16",
+                  "athleteText": "Better today"
+                }
+              ]
+            }
+            """;
+
+        var (count, ids) = CoachPrivacyRedactor.ExtractCheckInWeekExchangesSummary(json);
+        count.Should().Be(2);
+        ids.Should().Equal(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222");
+    }
+
+    [Fact]
+    public void ExtractCheckInWeekExchangesSummary_MissingOrEmpty_ReturnsZero()
+    {
+        CoachPrivacyRedactor.ExtractCheckInWeekExchangesSummary(null).ExchangeCount.Should().Be(0);
+        CoachPrivacyRedactor.ExtractCheckInWeekExchangesSummary("{}").ExchangeCount.Should().Be(0);
+        CoachPrivacyRedactor.ExtractCheckInWeekExchangesSummary("""{"checkInWeekExchanges":[]}""")
+            .ExchangeCount.Should().Be(0);
+    }
+
+    [Fact]
     public void LooksLikeResidualGps_DetectsLatProperty()
     {
         CoachPrivacyRedactor.LooksLikeResidualGps("{\"lat\":42.3}").Should().BeTrue();

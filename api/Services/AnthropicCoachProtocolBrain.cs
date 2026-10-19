@@ -245,6 +245,7 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
         - checkIn describes completed training for week N (feelScore, overallFeel, niggles, per-run rpe, runs). It is authoritative for subjective feel/RPE/niggles.
         - When checkIn.questionForCoach is present, answer it inside coachesNotes (brief, concrete).
         - recentTraining is short Tempo history (W−N…check-in week): week rollups + redacted run lists. Empty weeks are real rest — acknowledge when relevant.
+        - When checkInWeekExchanges is present: treat as this week's already-read coaching conversation (compact: athlete text, verdict, short coach summary — not full replies). Memory proposals may cite exchanges in evidence/rationale. Mid-week exchanges do not write memory; only this weekly commit writes memory.
         - days[] must be exactly the seven dates of the upcoming plan week N+1 (meta.planWeekStartDate through planWeekEndDate).
         - Do not invent workouts missing from checkIn or recentTraining.
         - Mid-week Adjust (packet.adjustment present) still replans only remainingDates within the plan week; it does not require a new check-in.

@@ -2552,6 +2552,8 @@ export interface CoachWeekPrivacyReceipt {
   selectedEpisodeIds?: string[];
   selectedRuleIds?: string[];
   recentTraining?: CoachRecentTrainingWeekReceipt[];
+  exchangeCount?: number;
+  exchangeIds?: string[];
 }
 
 export interface CoachSafetyAcknowledgment {
@@ -2843,6 +2845,20 @@ export interface CoachWeeksListResponse {
   totalPages: number;
 }
 
+export interface CoachHistoryExchange {
+  id: string;
+  weekStartDate: string;
+  workoutId: string | null;
+  athleteText: string;
+  status: string;
+  verdict: string | null;
+  coachSummary: string | null;
+  preflightId: string;
+  payloadHash: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
 export interface CoachWeekHistoryDetail {
   id: string;
   weekStartDate: string;
@@ -2862,6 +2878,7 @@ export interface CoachWeekHistoryDetail {
   days: CoachPlanDay[];
   privacyReceipt: CoachWeekPrivacyReceipt;
   sourceExchangeId?: string | null;
+  exchanges?: CoachHistoryExchange[];
 }
 
 export async function getCoachWeeks(params?: {

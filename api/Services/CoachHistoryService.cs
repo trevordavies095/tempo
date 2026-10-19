@@ -187,6 +187,7 @@ public sealed class CoachHistoryService
 
         var days = await _planDays.BuildDaysForWeekAsync(week, offset, cancellationToken);
         var receipt = BuildReceipt(week);
+        var exchanges = await BuildExchangesForWeekAsync(week.WeekStartDate, cancellationToken);
 
         return (new CoachWeekHistoryDetailDocument(
             Id: weekDoc.Id,
@@ -206,7 +207,61 @@ public sealed class CoachHistoryService
             ApplyRecord: weekDoc.ApplyRecord,
             Days: days,
             PrivacyReceipt: receipt,
-            SourceExchangeId: weekDoc.SourceExchangeId), null, 200);
+            SourceExchangeId: weekDoc.SourceExchangeId,
+            Exchanges: exchanges), null, 200);
+    }
+
+    private async Task<IReadOnlyList<CoachHistoryExchangeDocument>> BuildExchangesForWeekAsync(
+        DateOnly weekStartDate,
+        CancellationToken cancellationToken)
+    {
+        var rows = await _db.CoachExchanges.AsNoTracking()
+            .Where(e => e.WeekStartDate == weekStartDate)
+            .OrderBy(e => e.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return [];
+        }
+
+        var preflightIds = rows.Select(r => r.PreflightId).Distinct().ToList();
+        var hashByPreflight = await _db.CoachPrivacyPreflights.AsNoTracking()
+            .Where(p => preflightIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.PayloadHash })
+            .ToDictionaryAsync(p => p.Id, p => p.PayloadHash, cancellationToken);
+
+        var result = new List<CoachHistoryExchangeDocument>(rows.Count);
+        foreach (var row in rows)
+        {
+            string? verdict = null;
+            string? coachSummary = null;
+            if (!string.IsNullOrWhiteSpace(row.ReplyJson)
+                && CoachExchangeReplySchema.TryParseAndValidate(row.ReplyJson, out var reply) == null
+                && reply != null)
+            {
+                verdict = reply.Verdict;
+                var summary = reply.WhatItMeansNext?.Trim() ?? string.Empty;
+                coachSummary = summary.Length <= 240 ? summary : summary[..240];
+            }
+
+            hashByPreflight.TryGetValue(row.PreflightId, out var payloadHash);
+
+            result.Add(new CoachHistoryExchangeDocument(
+                Id: row.Id,
+                WeekStartDate: row.WeekStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                WorkoutId: row.WorkoutId,
+                AthleteText: row.AthleteText,
+                Status: row.Status,
+                Verdict: verdict,
+                CoachSummary: coachSummary,
+                PreflightId: row.PreflightId,
+                PayloadHash: payloadHash,
+                CreatedAt: row.CreatedAt,
+                CompletedAt: row.CompletedAt));
+        }
+
+        return result;
     }
 
     private static CoachWeekPrivacyReceiptDocument BuildReceipt(CoachWeek week)
@@ -223,6 +278,8 @@ public sealed class CoachHistoryService
 
         var (episodeIds, ruleIds) = CoachPrivacyRedactor.ExtractSelectedIds(week.RedactedPayloadJson);
         var recentTraining = CoachPrivacyRedactor.ExtractRecentTrainingSummary(week.RedactedPayloadJson);
+        var (exchangeCount, exchangeIds) =
+            CoachPrivacyRedactor.ExtractCheckInWeekExchangesSummary(week.RedactedPayloadJson);
 
         return new CoachWeekPrivacyReceiptDocument(
             WeekId: week.Id,
@@ -232,6 +289,8 @@ public sealed class CoachHistoryService
             RedactedPayload: payload,
             SelectedEpisodeIds: episodeIds,
             SelectedRuleIds: ruleIds,
-            RecentTraining: recentTraining);
+            RecentTraining: recentTraining,
+            ExchangeCount: exchangeCount,
+            ExchangeIds: exchangeIds);
     }
 }

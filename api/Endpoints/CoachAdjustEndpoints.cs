@@ -281,6 +281,8 @@ public static class CoachAdjustEndpoints
 
         var (episodeIds, ruleIds) = CoachPrivacyRedactor.ExtractSelectedIds(week.RedactedPayloadJson);
         var recentTraining = CoachPrivacyRedactor.ExtractRecentTrainingSummary(week.RedactedPayloadJson);
+        var (exchangeCount, exchangeIds) =
+            CoachPrivacyRedactor.ExtractCheckInWeekExchangesSummary(week.RedactedPayloadJson);
 
         return Results.Ok(new CoachWeekPrivacyReceiptDocument(
             WeekId: week.Id,
@@ -290,7 +292,9 @@ public static class CoachAdjustEndpoints
             RedactedPayload: payload,
             SelectedEpisodeIds: episodeIds,
             SelectedRuleIds: ruleIds,
-            RecentTraining: recentTraining));
+            RecentTraining: recentTraining,
+            ExchangeCount: exchangeCount,
+            ExchangeIds: exchangeIds));
     }
 
     private static CoachAdjustmentDocument ToDocument(CoachAdjustment adjustment) =>
@@ -369,4 +373,6 @@ public sealed record CoachWeekPrivacyReceiptDocument(
     object? RedactedPayload,
     IReadOnlyList<string> SelectedEpisodeIds,
     IReadOnlyList<string> SelectedRuleIds,
-    IReadOnlyList<CoachRecentTrainingWeekReceipt> RecentTraining);
+    IReadOnlyList<CoachRecentTrainingWeekReceipt> RecentTraining,
+    int ExchangeCount = 0,
+    IReadOnlyList<string>? ExchangeIds = null);

@@ -5,9 +5,11 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  getCoachExchangePrivacyReceipt,
   getCoachJob,
   getCoachWeekById,
   postCoachCommittedAskForChanges,
+  type CoachHistoryExchange,
   type CoachJob,
   type CoachPlanDay,
   type CoachWeekHistoryDetail,
@@ -107,6 +109,73 @@ function isCurrentCommittedWeek(detail: CoachWeekHistoryDetail, thisMonday: stri
   }
   const nextMonday = addDaysIso(thisMonday, 7);
   return detail.weekStartDate === thisMonday || detail.weekStartDate === nextMonday;
+}
+
+function HistoryExchangeCard({ exchange }: { exchange: CoachHistoryExchange }) {
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptHash, setReceiptHash] = useState<string | null>(exchange.payloadHash);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [loadingReceipt, setLoadingReceipt] = useState(false);
+
+  const createdLocal = useMemo(() => {
+    const d = new Date(exchange.createdAt);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, [exchange.createdAt]);
+
+  async function toggleReceipt() {
+    if (receiptOpen) {
+      setReceiptOpen(false);
+      return;
+    }
+    setReceiptOpen(true);
+    if (receiptHash || loadingReceipt) {
+      return;
+    }
+    setLoadingReceipt(true);
+    setReceiptError(null);
+    try {
+      const receipt = await getCoachExchangePrivacyReceipt(exchange.id);
+      setReceiptHash(receipt.payloadHash);
+    } catch (err) {
+      setReceiptError(err instanceof Error ? err.message : 'Failed to load receipt');
+    } finally {
+      setLoadingReceipt(false);
+    }
+  }
+
+  return (
+    <li className="rounded-tempo border border-border p-3 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted">{formatCoachDate(createdLocal)}</p>
+        <p className="text-xs uppercase tracking-wide text-muted">{exchange.status}</p>
+      </div>
+      <p className="text-sm text-ink whitespace-pre-wrap">{exchange.athleteText || '—'}</p>
+      {exchange.verdict && (
+        <p className="text-xs text-muted">
+          Verdict: <span className="text-ink">{exchange.verdict}</span>
+        </p>
+      )}
+      {exchange.coachSummary && (
+        <p className="text-sm text-muted whitespace-pre-wrap">{exchange.coachSummary}</p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={() => void toggleReceipt()}>
+          {receiptOpen ? 'Hide receipt' : 'Privacy receipt'}
+        </Button>
+      </div>
+      {receiptOpen && (
+        <div className="text-xs text-muted space-y-1">
+          {loadingReceipt && <p>Loading receipt…</p>}
+          {receiptError && <p className="text-danger">{receiptError}</p>}
+          {receiptHash && <p className="font-mono">hash {receiptHash}</p>}
+          {!loadingReceipt && !receiptError && !receiptHash && <p>No receipt available.</p>}
+        </div>
+      )}
+    </li>
+  );
 }
 
 export default function CoachHistoryDetailPage() {
@@ -308,6 +377,18 @@ export default function CoachHistoryDetailPage() {
           </Card>
         )}
 
+        {(detail.exchanges?.length ?? 0) > 0 && (
+          <Card>
+            <h2 className="text-lg font-semibold text-ink mb-1">This week with your coach</h2>
+            <p className="text-xs text-muted mb-3">Read-only mid-week conversation for this plan week.</p>
+            <ul className="space-y-3">
+              {detail.exchanges!.map((ex) => (
+                <HistoryExchangeCard key={ex.id} exchange={ex} />
+              ))}
+            </ul>
+          </Card>
+        )}
+
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div>
@@ -332,6 +413,15 @@ export default function CoachHistoryDetailPage() {
                 </li>
               ))}
             </ul>
+          )}
+          {(receipt.exchangeCount ?? 0) > 0 && (
+            <p className="mb-3 text-sm text-muted">
+              {receipt.exchangeCount} conversation
+              {receipt.exchangeCount === 1 ? '' : 's'} from check-in week
+              {receipt.exchangeIds && receipt.exchangeIds.length > 0
+                ? ` (${receipt.exchangeIds.length} id${receipt.exchangeIds.length === 1 ? '' : 's'})`
+                : ''}
+            </p>
           )}
           {inspectOpen && (
             <pre className="overflow-auto rounded-tempo border border-border bg-canvas p-3 text-xs text-ink max-h-[28rem]">

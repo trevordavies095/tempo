@@ -244,6 +244,49 @@ public static partial class CoachPrivacyRedactor
             {
                 recentTrainingDetail = "0 recent-training weeks";
             }
+
+            var exchangeCount = typed.CheckInWeekExchanges?.Count ?? 0;
+            var checkInExchangesDetail =
+                $"{exchangeCount} conversations from this week (athlete text ≤400 chars, verdict, short coach summary)";
+
+            var weeklyIncluded = new List<CoachPrivacyReportItem>
+            {
+                new("meta", "Week bounds, unit preference, assemble timestamp"),
+                new("goal", "Primary CoachGoal fields"),
+                new("constraints", "Active CoachConstraint non-negotiables"),
+                new("layer1", "HR zones, paces, shoes, run days per week, training phase (no athlete name)"),
+                new("layer2", layer2Detail),
+                new("layer3", layer3Detail),
+                new("checkIn", "Subjective fields and run metrics/notes without workout names or GPS"),
+                new("recentTraining", recentTrainingDetail),
+                new("checkInWeekExchanges", checkInExchangesDetail),
+                new("adjustment", "Athlete-started mid-week adjust reason, category, and locked/remaining days"),
+                new("athleteFeedback", "Athlete note requesting draft changes plus previous-draft day summary")
+            };
+
+            var weeklyStripped = new List<CoachPrivacyReportItem>
+            {
+                new("athleteIdentity", "Name, email, and username fields"),
+                new("workoutNames", "Workout display names (never assembled into provider packet)"),
+                new("gpsRoutes", "GPS coordinates, routes, and GeoJSON"),
+                new("hrStreams", "Heart-rate time series (never assembled into provider packet)"),
+                new("similarRoutes", "Similar-route analysis (never assembled into provider packet)"),
+                new("rawFiles", "Raw GPX/FIT/Strava/HealthKit blobs")
+            };
+
+            foreach (var cat in stripped)
+            {
+                if (weeklyStripped.All(s => !string.Equals(s.Category, cat, StringComparison.OrdinalIgnoreCase)))
+                {
+                    weeklyStripped.Add(new CoachPrivacyReportItem(cat, "Removed during redaction"));
+                }
+            }
+
+            return new CoachPrivacyReport(
+                weeklyIncluded,
+                weeklyStripped,
+                selectedEpisodeIds.Distinct(StringComparer.Ordinal).ToList(),
+                selectedRuleIds.Distinct(StringComparer.Ordinal).ToList());
         }
 
         if (packet is CoachExchangePacket exchange)
@@ -430,6 +473,51 @@ public static partial class CoachPrivacyRedactor
         return (
             episodes.Distinct(StringComparer.Ordinal).ToList(),
             rules.Distinct(StringComparer.Ordinal).ToList());
+    }
+
+    /// <summary>
+    /// Extracts checkInWeekExchanges count and exchange ids from redacted weekly packet JSON.
+    /// </summary>
+    public static (int ExchangeCount, IReadOnlyList<string> ExchangeIds) ExtractCheckInWeekExchangesSummary(
+        string? redactedPayloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(redactedPayloadJson))
+        {
+            return (0, []);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(redactedPayloadJson);
+            if (!doc.RootElement.TryGetProperty("checkInWeekExchanges", out var arr)
+                || arr.ValueKind != JsonValueKind.Array)
+            {
+                return (0, []);
+            }
+
+            var ids = new List<string>();
+            foreach (var item in arr.EnumerateArray())
+            {
+                if (!item.TryGetProperty("id", out var idEl))
+                {
+                    continue;
+                }
+
+                var id = idEl.ValueKind == JsonValueKind.String
+                    ? idEl.GetString()
+                    : idEl.ToString();
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    ids.Add(id);
+                }
+            }
+
+            return (arr.GetArrayLength(), ids);
+        }
+        catch (JsonException)
+        {
+            return (0, []);
+        }
     }
 
     /// <summary>
