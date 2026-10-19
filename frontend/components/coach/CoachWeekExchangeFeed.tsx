@@ -26,12 +26,14 @@ function ExchangeCard({
   exchange,
   timezoneOffsetMinutes,
   referenceDate,
+  weekLocked,
   onRetried,
   onAskForThisChange,
 }: {
   exchange: CoachExchange;
   timezoneOffsetMinutes: number;
   referenceDate: string;
+  weekLocked: boolean;
   onRetried: () => void;
   onAskForThisChange?: (exchange: CoachExchange) => void;
 }) {
@@ -107,14 +109,16 @@ function ExchangeCard({
           <p className="text-sm text-danger">
             {formatCoachJobError(exchange.errorCode, exchange.errorMessage)}
           </p>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={retryMutation.isPending}
-            onClick={() => retryMutation.mutate()}
-          >
-            {retryMutation.isPending ? 'Retrying…' : 'Retry'}
-          </Button>
+          {!weekLocked && (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={retryMutation.isPending}
+              onClick={() => retryMutation.mutate()}
+            >
+              {retryMutation.isPending ? 'Retrying…' : 'Retry'}
+            </Button>
+          )}
           {progress && <p className="text-sm text-muted">{progress}</p>}
           {error && <p className="text-sm text-danger">{error}</p>}
         </div>
@@ -143,10 +147,12 @@ export function CoachWeekExchangeFeed({
     queryKey: ['coach-exchanges', weekStartDate],
     queryFn: () => listCoachExchanges({ weekStartDate }),
     refetchInterval: (q) => {
-      const items = q.state.data ?? [];
+      const items = q.state.data?.exchanges ?? [];
       return items.some((e) => e.status === 'queued' || e.status === 'running') ? 1000 : false;
     },
   });
+
+  const weekLocked = listQuery.data?.weekLocked === true;
 
   const previewQuery = useQuery({
     queryKey: ['coach-exchange-preflight', weekStartDate, text.trim()],
@@ -156,7 +162,7 @@ export function CoachWeekExchangeFeed({
         timezoneOffsetMinutes,
         referenceDate,
       }),
-    enabled: inspectOpen && text.trim().length > 0,
+    enabled: !weekLocked && inspectOpen && text.trim().length > 0,
     staleTime: 30_000,
   });
 
@@ -219,16 +225,19 @@ export function CoachWeekExchangeFeed({
     }
   }, [previewQuery.data?.redactedPayload]);
 
-  const exchanges = listQuery.data ?? [];
+  const exchanges = listQuery.data?.exchanges ?? [];
 
   return (
     <>
     <Card>
       <h2 className="text-lg font-semibold text-ink mb-1">This week with your coach</h2>
       <p className="text-sm text-muted mb-4">
-        Send a mid-week note. Nothing leaves until you tap Send to coach.
+        {weekLocked
+          ? 'This week’s exchanges are locked because you accepted next week’s plan. Prior messages stay readable.'
+          : 'Send a mid-week note. Nothing leaves until you tap Send to coach.'}
       </p>
 
+      {weekLocked ? null : (
       <div className="space-y-3 mb-6">
         <label className="block space-y-1">
           <span className="text-sm font-medium text-ink">Message</span>
@@ -311,6 +320,7 @@ export function CoachWeekExchangeFeed({
         )}
         {sendError && <p className="text-sm text-danger">{sendError}</p>}
       </div>
+      )}
 
       {listQuery.isLoading ? (
         <p className="text-sm text-muted">Loading conversations…</p>
@@ -319,7 +329,9 @@ export function CoachWeekExchangeFeed({
           {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load exchanges'}
         </p>
       ) : exchanges.length === 0 ? (
-        <p className="text-sm text-muted">No messages this week yet.</p>
+        <p className="text-sm text-muted">
+          {weekLocked ? 'No messages were sent this week.' : 'No messages this week yet.'}
+        </p>
       ) : (
         <ul className="space-y-3">
           {exchanges.map((exchange) => (
@@ -328,6 +340,7 @@ export function CoachWeekExchangeFeed({
               exchange={exchange}
               timezoneOffsetMinutes={timezoneOffsetMinutes}
               referenceDate={referenceDate}
+              weekLocked={weekLocked}
               onAskForThisChange={askForThisChange.openFromExchange}
               onRetried={() => {
                 void queryClient.invalidateQueries({ queryKey: ['coach-exchanges', weekStartDate] });

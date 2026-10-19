@@ -365,10 +365,11 @@ public class CoachExchangeEndpointsTests : IClassFixture<CoachGenerateTestFactor
         failed.Status.Should().Be("failed");
         failed.AthleteText.Should().Be("Keep this text on retry");
 
-        var list = await client.GetFromJsonAsync<List<ExchangeResponse>>(
+        var list = await client.GetFromJsonAsync<ExchangeListResponse>(
             $"/coach/exchanges?weekStartDate={PlanMonday:yyyy-MM-dd}",
             JsonOptions);
-        list.Should().ContainSingle(e => e.Id == failed.Id);
+        list!.WeekLocked.Should().BeFalse();
+        list.Exchanges.Should().ContainSingle(e => e.Id == failed.Id);
 
         var receipt = await client.GetAsync($"/coach/exchanges/{failed.Id}/privacy-receipt");
         receipt.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -657,11 +658,136 @@ public class CoachExchangeEndpointsTests : IClassFixture<CoachGenerateTestFactor
         weekExchanges.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
         weekExchanges[0].GetProperty("athleteText").GetString().Should().Contain("First");
 
-        var list = await client.GetFromJsonAsync<List<ExchangeResponse>>(
+        var list = await client.GetFromJsonAsync<ExchangeListResponse>(
             $"/coach/exchanges?workoutId={workoutId}",
             JsonOptions);
-        list.Should().HaveCount(2);
-        list!.Select(e => e.Id).Should().Contain([firstDoc.Exchange.Id, secondDoc.Exchange.Id]);
+        list!.Exchanges.Should().HaveCount(2);
+        list.Exchanges.Select(e => e.Id).Should().Contain([firstDoc.Exchange.Id, secondDoc.Exchange.Id]);
+    }
+
+    [Fact]
+    public async Task AcceptNextWeek_LocksPriorWeekSends_ListRemainsReadable()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        var nextMonday = PlanMonday.AddDays(7);
+        var priorReference = "2026-10-20"; // Tuesday in PlanMonday week
+        var nextReference = "2026-10-27"; // Tuesday in next week
+
+        _factory.Brain.ExchangeResults.Add(new CoachProtocolBrainResult(
+            true,
+            CoachExchangeReplySchemaTests.BuildReplyJson(),
+            1,
+            1,
+            CoachProtocolBrainError.None,
+            null));
+
+        var priorSend = await client.PostAsJsonAsync("/coach/exchanges", new
+        {
+            athleteText = "Before lock",
+            timezoneOffsetMinutes = 0,
+            referenceDate = priorReference
+        });
+        priorSend.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var priorStarted = await priorSend.Content.ReadFromJsonAsync<SendResponse>(JsonOptions);
+        var priorReady = await PollExchangeAsync(client, priorStarted!.Exchange.Id);
+        priorReady.Status.Should().Be("ready");
+        priorReady.Locked.Should().BeFalse();
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var now = DateTime.UtcNow;
+            db.CoachWeeks.Add(new CoachWeek
+            {
+                WeekStartDate = nextMonday,
+                Status = CoachWeekStatuses.Draft,
+                CommitJson = CoachWeeklyCommitSchemaTests.BuildCommitJson(weekStart: nextMonday),
+                PreflightId = Guid.NewGuid(),
+                JobId = Guid.NewGuid(),
+                PayloadHash = new string('n', 64),
+                RedactedPayloadJson = "{}",
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // Draft alone must not lock prior week.
+        var stillOpen = await client.PostAsJsonAsync("/coach/exchanges/preflight", new
+        {
+            athleteText = "Still open while next week is draft",
+            timezoneOffsetMinutes = 0,
+            referenceDate = priorReference
+        });
+        stillOpen.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var apply = await client.PostAsJsonAsync(
+            "/coach/weeks/draft/apply",
+            CoachWeeklyCommitSchemaTests.EmptyApplyBody(weekStartDate: nextMonday.ToString("yyyy-MM-dd")));
+        apply.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var stamped = await db.CoachExchanges.SingleAsync(e => e.Id == priorReady.Id);
+            stamped.Locked.Should().BeTrue();
+            (await db.CoachExchanges.CountAsync(e => e.WeekStartDate == PlanMonday)).Should().Be(1);
+        }
+
+        var lockedSend = await client.PostAsJsonAsync("/coach/exchanges", new
+        {
+            athleteText = "Should be blocked",
+            timezoneOffsetMinutes = 0,
+            referenceDate = priorReference
+        });
+        lockedSend.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var lockedBody = await lockedSend.Content.ReadAsStringAsync();
+        lockedBody.Should().Contain("locked");
+
+        var lockedPreflight = await client.PostAsJsonAsync("/coach/exchanges/preflight", new
+        {
+            athleteText = "Should be blocked",
+            timezoneOffsetMinutes = 0,
+            referenceDate = priorReference
+        });
+        lockedPreflight.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var list = await client.GetFromJsonAsync<ExchangeListResponse>(
+            $"/coach/exchanges?weekStartDate={PlanMonday:yyyy-MM-dd}",
+            JsonOptions);
+        list!.WeekLocked.Should().BeTrue();
+        list.WeekStartDate.Should().Be(PlanMonday.ToString("yyyy-MM-dd"));
+        list.Exchanges.Should().ContainSingle(e => e.Id == priorReady.Id);
+        list.Exchanges[0].Locked.Should().BeTrue();
+
+        var get = await client.GetFromJsonAsync<ExchangeResponse>(
+            $"/coach/exchanges/{priorReady.Id}",
+            JsonOptions);
+        get!.Locked.Should().BeTrue();
+        get.AthleteText.Should().Be("Before lock");
+
+        _factory.Brain.ExchangeResults.Add(new CoachProtocolBrainResult(
+            true,
+            CoachExchangeReplySchemaTests.BuildReplyJson(verdict: "watch"),
+            1,
+            1,
+            CoachProtocolBrainError.None,
+            null));
+
+        var nextWeekSend = await client.PostAsJsonAsync("/coach/exchanges", new
+        {
+            athleteText = "Next week still open",
+            timezoneOffsetMinutes = 0,
+            referenceDate = nextReference
+        });
+        nextWeekSend.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var nextStarted = await nextWeekSend.Content.ReadFromJsonAsync<SendResponse>(JsonOptions);
+        nextStarted!.Exchange.WeekStartDate.Should().Be(nextMonday.ToString("yyyy-MM-dd"));
+        var nextReady = await PollExchangeAsync(client, nextStarted.Exchange.Id);
+        nextReady.Status.Should().Be("ready");
+        nextReady.Locked.Should().BeFalse();
     }
 
     [Fact]
@@ -741,6 +867,13 @@ public class CoachExchangeEndpointsTests : IClassFixture<CoachGenerateTestFactor
         public ExchangeResponse Exchange { get; set; } = new();
     }
 
+    private sealed class ExchangeListResponse
+    {
+        public string WeekStartDate { get; set; } = "";
+        public bool WeekLocked { get; set; }
+        public List<ExchangeResponse> Exchanges { get; set; } = new();
+    }
+
     private sealed class ExchangeResponse
     {
         public Guid Id { get; set; }
@@ -750,6 +883,7 @@ public class CoachExchangeEndpointsTests : IClassFixture<CoachGenerateTestFactor
         public string Status { get; set; } = "";
         public string? ErrorCode { get; set; }
         public string? ErrorMessage { get; set; }
+        public bool Locked { get; set; }
         public JsonElement? Reply { get; set; }
     }
 

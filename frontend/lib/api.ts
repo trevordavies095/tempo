@@ -2267,6 +2267,12 @@ export interface CoachExchangeSendResult {
   exchange: CoachExchange;
 }
 
+export interface CoachExchangeList {
+  weekStartDate: string;
+  weekLocked: boolean;
+  exchanges: CoachExchange[];
+}
+
 export interface CoachExchangePreflight {
   id: string;
   kind: string;
@@ -2334,7 +2340,7 @@ export async function listCoachExchanges(params?: {
   weekStartDate?: string;
   timezoneOffsetMinutes?: number;
   workoutId?: string;
-}): Promise<CoachExchange[]> {
+}): Promise<CoachExchangeList> {
   const searchParams = new URLSearchParams();
   if (params?.weekStartDate) {
     searchParams.set('weekStartDate', params.weekStartDate);

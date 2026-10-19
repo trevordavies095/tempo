@@ -25,11 +25,13 @@ const fieldClass =
 function WorkoutExchangeCard({
   exchange,
   timezoneOffsetMinutes,
+  weekLocked,
   onRetried,
   onAskForThisChange,
 }: {
   exchange: CoachExchange;
   timezoneOffsetMinutes: number;
+  weekLocked: boolean;
   onRetried: () => void;
   onAskForThisChange?: (exchange: CoachExchange) => void;
 }) {
@@ -104,14 +106,16 @@ function WorkoutExchangeCard({
           <p className="text-sm text-danger">
             {formatCoachJobError(exchange.errorCode, exchange.errorMessage)}
           </p>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={retryMutation.isPending}
-            onClick={() => retryMutation.mutate()}
-          >
-            {retryMutation.isPending ? 'Retrying…' : 'Retry'}
-          </Button>
+          {!weekLocked && (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={retryMutation.isPending}
+              onClick={() => retryMutation.mutate()}
+            >
+              {retryMutation.isPending ? 'Retrying…' : 'Retry'}
+            </Button>
+          )}
           {progress && <p className="text-sm text-muted">{progress}</p>}
           {error && <p className="text-sm text-danger">{error}</p>}
         </div>
@@ -135,10 +139,12 @@ export function CoachWorkoutSendPanel({ workoutId }: { workoutId: string }) {
     queryFn: () => listCoachExchanges({ workoutId }),
     enabled: showCoachNav,
     refetchInterval: (q) => {
-      const items = q.state.data ?? [];
+      const items = q.state.data?.exchanges ?? [];
       return items.some((e) => e.status === 'queued' || e.status === 'running') ? 1000 : false;
     },
   });
+
+  const weekLocked = listQuery.data?.weekLocked === true;
 
   const previewQuery = useQuery({
     queryKey: ['coach-exchange-preflight', 'workout', workoutId, text.trim()],
@@ -148,7 +154,7 @@ export function CoachWorkoutSendPanel({ workoutId }: { workoutId: string }) {
         workoutId,
         timezoneOffsetMinutes,
       }),
-    enabled: showCoachNav && inspectOpen,
+    enabled: showCoachNav && !weekLocked && inspectOpen,
     staleTime: 30_000,
   });
 
@@ -206,7 +212,7 @@ export function CoachWorkoutSendPanel({ workoutId }: { workoutId: string }) {
     }
   }, [previewQuery.data?.redactedPayload]);
 
-  const exchanges = listQuery.data ?? [];
+  const exchanges = listQuery.data?.exchanges ?? [];
 
   return (
     <>
@@ -214,11 +220,14 @@ export function CoachWorkoutSendPanel({ workoutId }: { workoutId: string }) {
       <div>
         <p className="text-sm font-medium text-ink">Send to coach</p>
         <p className="text-xs text-muted mt-0.5">
-          Tempo includes this run&apos;s stats, splits, series, weather, and plan when present. A note
-          is optional.
+          {weekLocked
+            ? 'This run’s week is locked after you accepted next week’s plan. Prior feedback stays readable.'
+            : 'Tempo includes this run’s stats, splits, series, weather, and plan when present. A note is optional.'}
         </p>
       </div>
 
+      {weekLocked ? null : (
+        <>
       <label className="block space-y-1">
         <span className="text-sm font-medium text-ink">Note (optional)</span>
         <textarea
@@ -295,6 +304,8 @@ export function CoachWorkoutSendPanel({ workoutId }: { workoutId: string }) {
         </p>
       )}
       {sendError && <p className="text-sm text-danger">{sendError}</p>}
+        </>
+      )}
 
       {listQuery.isLoading ? (
         <p className="text-sm text-muted">Loading prior feedback…</p>
@@ -311,6 +322,7 @@ export function CoachWorkoutSendPanel({ workoutId }: { workoutId: string }) {
                 key={exchange.id}
                 exchange={exchange}
                 timezoneOffsetMinutes={timezoneOffsetMinutes}
+                weekLocked={weekLocked}
                 onAskForThisChange={askForThisChange.openFromExchange}
                 onRetried={() => {
                   void queryClient.invalidateQueries({

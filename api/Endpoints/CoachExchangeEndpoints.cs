@@ -25,10 +25,12 @@ public static class CoachExchangeEndpoints
             .Produces<CoachExchangePreflightDocument>(200)
             .Produces(400)
             .Produces(404)
+            .Produces(409)
             .WithSummary("Assemble an exchange privacy preflight for Inspect (no consent)")
             .WithDescription(
                 "Assembles and redacts an exchange packet without recording consent or enqueueing. " +
-                "Send records consent. Text may be empty for Inspect while composing.");
+                "Send records consent. Text may be empty for Inspect while composing. " +
+                "409 when the plan week is locked after Accept of the next week's plan.");
 
         group.MapPost("/exchanges", PostSend)
             .WithName("PostCoachExchange")
@@ -42,14 +44,17 @@ public static class CoachExchangeEndpoints
                 "Consent is the click. Requires non-empty athleteText when no workout is attached; " +
                 "text is optional when workoutId is set (Tempo supplies run context). " +
                 "Creates a peelable CoachExchange, consented exchange preflight, and exchange job. " +
-                "409 when another exchange job is active. Ritual jobs may run concurrently.");
+                "409 when another exchange job is active, or when the plan week is locked after Accept of N+1. " +
+                "Ritual jobs may run concurrently.");
 
         group.MapGet("/exchanges", ListExchanges)
             .WithName("ListCoachExchanges")
-            .Produces<IReadOnlyList<CoachExchangeDocument>>(200)
+            .Produces<CoachExchangeListDocument>(200)
             .Produces(400)
             .Produces(404)
-            .WithSummary("List exchanges for a plan week (newest first)");
+            .WithSummary("List exchanges for a plan week (newest first)")
+            .WithDescription(
+                "Returns weekStartDate, weekLocked (true after Accept of next week's plan), and exchanges.");
 
         group.MapGet("/exchanges/{id:guid}", GetExchange)
             .WithName("GetCoachExchange")
@@ -70,7 +75,9 @@ public static class CoachExchangeEndpoints
             .Produces(400)
             .Produces(404)
             .Produces(409)
-            .WithSummary("Retry a failed exchange preserving athlete text");
+            .WithSummary("Retry a failed exchange preserving athlete text")
+            .WithDescription(
+                "409 when another exchange job is active, or when the exchange's plan week is locked.");
     }
 
     private static async Task<IResult> PostPreflight(
@@ -94,6 +101,11 @@ public static class CoachExchangeEndpoints
         if (weekError != null)
         {
             return Results.BadRequest(new { error = weekError });
+        }
+
+        if (await CoachExchangeWeekLock.IsLockedAsync(db, planMonday))
+        {
+            return Results.Conflict(new { error = CoachExchangeWeekLock.LockedErrorMessage });
         }
 
         var (preflight, assembleError, assembleStatus) = await preflightService.AssembleExchangeAsync(
@@ -149,6 +161,11 @@ public static class CoachExchangeEndpoints
         if (weekError != null)
         {
             return Results.BadRequest(new { error = weekError });
+        }
+
+        if (await CoachExchangeWeekLock.IsLockedAsync(db, planMonday))
+        {
+            return Results.Conflict(new { error = CoachExchangeWeekLock.LockedErrorMessage });
         }
 
         var now = DateTime.UtcNow;
@@ -223,42 +240,52 @@ public static class CoachExchangeEndpoints
             return Results.NotFound();
         }
 
+        DateOnly planMonday;
         IQueryable<CoachExchange> query = db.CoachExchanges.AsNoTracking();
 
         if (workoutId.HasValue)
         {
+            var offset = timezoneOffsetMinutes ?? 0;
+            var (monday, _, _, weekError) = await ResolveWeekAsync(db, null, offset, workoutId);
+            if (weekError != null)
+            {
+                return Results.BadRequest(new { error = weekError });
+            }
+
+            planMonday = monday;
             query = query.Where(e => e.WorkoutId == workoutId.Value);
         }
-        else
+        else if (!string.IsNullOrWhiteSpace(weekStartDate))
         {
-            DateOnly planMonday;
-            if (!string.IsNullOrWhiteSpace(weekStartDate))
+            if (!DateOnly.TryParse(weekStartDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out planMonday))
             {
-                if (!DateOnly.TryParse(weekStartDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out planMonday))
-                {
-                    return Results.BadRequest(new { error = "weekStartDate must be yyyy-MM-dd" });
-                }
-            }
-            else
-            {
-                var offset = timezoneOffsetMinutes ?? 0;
-                var (monday, _, _, err) = await ResolveWeekAsync(db, null, offset, null);
-                if (err != null)
-                {
-                    return Results.BadRequest(new { error = err });
-                }
-
-                planMonday = monday;
+                return Results.BadRequest(new { error = "weekStartDate must be yyyy-MM-dd" });
             }
 
             query = query.Where(e => e.WeekStartDate == planMonday);
         }
+        else
+        {
+            var offset = timezoneOffsetMinutes ?? 0;
+            var (monday, _, _, err) = await ResolveWeekAsync(db, null, offset, null);
+            if (err != null)
+            {
+                return Results.BadRequest(new { error = err });
+            }
 
+            planMonday = monday;
+            query = query.Where(e => e.WeekStartDate == planMonday);
+        }
+
+        var weekLocked = await CoachExchangeWeekLock.IsLockedAsync(db, planMonday);
         var rows = await query
             .OrderByDescending(e => e.CreatedAt)
             .ToListAsync();
 
-        return Results.Ok(rows.Select(ToDocument).ToList());
+        return Results.Ok(new CoachExchangeListDocument(
+            WeekStartDate: planMonday.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            WeekLocked: weekLocked,
+            Exchanges: rows.Select(e => ToDocument(e, weekLocked)).ToList()));
     }
 
     private static async Task<IResult> GetExchange(
@@ -272,7 +299,13 @@ public static class CoachExchangeEndpoints
         }
 
         var row = await db.CoachExchanges.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id);
-        return row == null ? Results.NotFound() : Results.Ok(ToDocument(row));
+        if (row == null)
+        {
+            return Results.NotFound();
+        }
+
+        var weekLocked = await CoachExchangeWeekLock.IsLockedAsync(db, row.WeekStartDate);
+        return Results.Ok(ToDocument(row, weekLocked));
     }
 
     private static async Task<IResult> GetPrivacyReceipt(
@@ -358,6 +391,13 @@ public static class CoachExchangeEndpoints
             return Results.BadRequest(new { error = "athleteText is required when no workout is attached" });
         }
 
+        // Keep week assignment on the original plan week.
+        var planMonday = exchange.WeekStartDate;
+        if (await CoachExchangeWeekLock.IsLockedAsync(db, planMonday))
+        {
+            return Results.Conflict(new { error = CoachExchangeWeekLock.LockedErrorMessage });
+        }
+
         var offset = request?.TimezoneOffsetMinutes ?? 0;
         var referenceLocal = request?.ReferenceDate != null
                              && DateOnly.TryParse(
@@ -367,8 +407,6 @@ public static class CoachExchangeEndpoints
                                  out var parsedRef)
             ? parsedRef
             : exchange.WeekStartDate;
-        // Keep week assignment on the original plan week.
-        var planMonday = exchange.WeekStartDate;
 
         var (preflight, assembleError, assembleStatus) = await preflightService.AssembleExchangeAsync(
             planMonday,
@@ -463,7 +501,7 @@ public static class CoachExchangeEndpoints
         return (planMonday, referenceLocal, null, null);
     }
 
-    private static CoachExchangeDocument ToDocument(CoachExchange exchange)
+    private static CoachExchangeDocument ToDocument(CoachExchange exchange, bool weekLocked = false)
     {
         object? reply = null;
         if (!string.IsNullOrWhiteSpace(exchange.ReplyJson))
@@ -505,7 +543,7 @@ public static class CoachExchangeEndpoints
             OutputTokens: exchange.OutputTokens,
             ErrorCode: exchange.ErrorCode,
             ErrorMessage: exchange.ErrorMessage,
-            Locked: exchange.Locked,
+            Locked: exchange.Locked || weekLocked,
             CreatedAt: exchange.CreatedAt,
             UpdatedAt: exchange.UpdatedAt,
             CompletedAt: exchange.CompletedAt);
@@ -587,6 +625,11 @@ public sealed record PostCoachExchangeRetryRequest(
 public sealed record CoachExchangeSendDocument(
     CoachJobDocument Job,
     CoachExchangeDocument Exchange);
+
+public sealed record CoachExchangeListDocument(
+    string WeekStartDate,
+    bool WeekLocked,
+    IReadOnlyList<CoachExchangeDocument> Exchanges);
 
 public sealed record CoachExchangeDocument(
     Guid Id,

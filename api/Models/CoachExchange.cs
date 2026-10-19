@@ -66,7 +66,9 @@ public class CoachExchange
     [MaxLength(2000)]
     public string? ErrorMessage { get; set; }
 
-    /// <summary>Reserved for Accept N+1 lock (issue 32). Default false; not enforced in issue 29.</summary>
+    /// <summary>
+    /// True after Accept of plan week N+1 (stamped on apply). Gate also derives lock from N+1 committed/archived.
+    /// </summary>
     public bool Locked { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

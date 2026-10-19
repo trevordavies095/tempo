@@ -978,6 +978,11 @@ function ReviewPageInner() {
                     ? 'Accept changes'
                     : 'Accept plan'}
               </Button>
+              {!isAdjustment && (
+                <p className="text-xs text-muted max-w-sm">
+                  Accept after your last run of the week.
+                </p>
+              )}
               <p className="text-xs text-muted max-w-sm">{disclaimer}</p>
             </div>
           </div>

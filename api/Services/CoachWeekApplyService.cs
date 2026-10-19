@@ -242,6 +242,14 @@ public class CoachWeekApplyService
         draft.ApplyRecordJson = JsonSerializer.Serialize(applyRecord, JsonOptions);
         draft.UpdatedAt = now;
         await _db.SaveChangesAsync(cancellationToken);
+
+        // Accept of week W locks exchanges for week W-7 (hard lock; no escape hatch).
+        await CoachExchangeWeekLock.StampPriorWeekLockedAsync(
+            _db,
+            weekStartMonday,
+            now,
+            cancellationToken);
+
         return (draft, null, 200);
     }
 
