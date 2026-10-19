@@ -186,13 +186,14 @@ public static class CoachAdjustEndpoints
             };
         }
 
-        DateTime? referenceLocalDt = referenceDate?.ToDateTime(TimeOnly.MinValue);
+        // Plan week is the requested weekStartDate (not the calendar week of referenceDate),
+        // so Sunday ask-for-changes on next week's committed plan still assembles plan N+1.
         var planWeek = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
             DateTime.UtcNow,
             offset,
-            referenceLocalDt ?? planMonday.ToDateTime(TimeOnly.MinValue));
+            planMonday.ToDateTime(TimeOnly.MinValue));
         var checkInWeek = WeeklyRecapWeekMath.ResolveCheckInWeekFromPlan(planWeek, offset);
-        var referenceLocal = DateOnly.FromDateTime(planWeek.ReferenceLocalDate);
+        var referenceLocal = referenceDate ?? DateOnly.FromDateTime(planWeek.ReferenceLocalDate);
 
         var (preflight, assembleError, assembleStatus) = await preflightService.AssembleAndPersistAsync(
             checkInWeek,

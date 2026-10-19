@@ -48,12 +48,15 @@ public class CoachAdjustmentService
             DateTime.UtcNow,
             timezoneOffsetMinutes,
             referenceLocal);
-        var expectedMonday = DateOnly.FromDateTime(week.WeekStartLocal.Date);
+        // Current calendar Mon–Sun containing "today", plus the upcoming plan week (ritual N+1).
+        // Matches coach UI: Ask for changes on thisMonday or nextMonday.
+        var currentMonday = DateOnly.FromDateTime(week.WeekStartLocal.Date);
+        var upcomingPlanMonday = currentMonday.AddDays(7);
         var localToday = DateOnly.FromDateTime(week.ReferenceLocalDate.Date);
 
-        if (weekStartMonday != expectedMonday)
+        if (weekStartMonday != currentMonday && weekStartMonday != upcomingPlanMonday)
         {
-            return (null, "Adjust is only available for the athlete's current Mon–Sun week", 400);
+            return (null, "Adjust is only available for the athlete's current or upcoming Mon–Sun week", 400);
         }
 
         var weekEnd = weekStartMonday.AddDays(6);

@@ -310,6 +310,43 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     }
 
     [Fact]
+    public async Task AskForChangesCommitted_OnSunday_BeforePlanWeek_AcceptsUpcomingWeek()
+    {
+        // Committed plan week is 2026-10-12. Sunday 2026-10-11 is still the prior calendar week;
+        // UI allows Ask for changes on nextMonday — API must too.
+        var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true,
+            CoachWeeklyCommitSchemaTests.BuildCommitJson(notes: "Replanned with corrected paces."),
+            3,
+            3,
+            CoachProtocolBrainError.None,
+            null));
+
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "Easy pace wrong — use settings 10:47 /mi",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-11"
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        using var scope = _factory.Decorated.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var adj = await db.CoachAdjustments.SingleAsync(a => a.Status == CoachAdjustmentStatuses.Started);
+        adj.WeekStartDate.Should().Be(new DateOnly(2026, 10, 12));
+        // Before the plan week starts, nothing in the plan is elapsed.
+        adj.LockedThroughDate.Should().Be(new DateOnly(2026, 10, 10));
+
+        var preflight = await db.CoachPrivacyPreflights.AsNoTracking()
+            .SingleAsync(p => p.WeekStartDate == new DateOnly(2026, 10, 12) && p.ConsentedAt != null);
+        preflight.ReferenceDate.Should().Be(new DateOnly(2026, 10, 11));
+        preflight.RedactedPayloadJson.Should().Contain("\"planWeekStartDate\": \"2026-10-12\"");
+        preflight.RedactedPayloadJson.Should().Contain("\"remainingDates\"");
+    }
+
+    [Fact]
     public async Task AskForChangesCommitted_EmptyNote_ReturnsBadRequest()
     {
         var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
