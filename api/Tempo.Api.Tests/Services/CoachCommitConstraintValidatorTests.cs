@@ -52,6 +52,74 @@ public class CoachCommitConstraintValidatorTests
     }
 
     [Fact]
+    public void LongDay_PassesWhenNoLongRun()
+    {
+        var json = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            dayTypeForIndex: _ => "easy",
+            runTypeForIndex: _ => "easy");
+        CoachWeeklyCommitSchema.TryParseAndValidate(json, WeekStart, out var commit).Should().BeNull();
+
+        var constraints = new[]
+        {
+            new CoachConstraint
+            {
+                Kind = CoachConstraintKinds.StandingSchedule,
+                Preset = CoachStandingPresets.LongDay,
+                Weekdays = [7]
+            }
+        };
+
+        CoachCommitConstraintValidator.Validate(commit!, constraints).Should().BeNull();
+    }
+
+    [Fact]
+    public void LongDay_PassesWhenLongOnStandingWeekday()
+    {
+        // WeekStart 2026-10-12 is Monday; index 6 = Sunday = ISO 7
+        var json = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            dayTypeForIndex: i => i == 6 ? "long" : "easy",
+            runTypeForIndex: i => i == 6 ? "long" : "easy");
+        CoachWeeklyCommitSchema.TryParseAndValidate(json, WeekStart, out var commit).Should().BeNull();
+
+        var constraints = new[]
+        {
+            new CoachConstraint
+            {
+                Kind = CoachConstraintKinds.StandingSchedule,
+                Preset = CoachStandingPresets.LongDay,
+                Weekdays = [7]
+            }
+        };
+
+        CoachCommitConstraintValidator.Validate(commit!, constraints).Should().BeNull();
+    }
+
+    [Fact]
+    public void LongDay_FailsWhenLongOnOtherWeekday()
+    {
+        // Index 2 = Wednesday 2026-10-14
+        var json = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            dayTypeForIndex: i => i == 2 ? "long" : "easy",
+            runTypeForIndex: i => i == 2 ? "long" : "easy");
+        CoachWeeklyCommitSchema.TryParseAndValidate(json, WeekStart, out var commit).Should().BeNull();
+
+        var constraints = new[]
+        {
+            new CoachConstraint
+            {
+                Kind = CoachConstraintKinds.StandingSchedule,
+                Preset = CoachStandingPresets.LongDay,
+                Weekdays = [7]
+            }
+        };
+
+        var error = CoachCommitConstraintValidator.Validate(commit!, constraints);
+        error.Should().Contain("long_day");
+        error.Should().Contain("2026-10-14");
+        error.Should().Contain("Sunday");
+    }
+
+    [Fact]
     public void SecondaryRace_RequiresRaceType()
     {
         var json = CoachWeeklyCommitSchemaTests.BuildCommitJson(

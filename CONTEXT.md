@@ -103,7 +103,7 @@ Primary AI Coach target: `race` (distance + date + optional time) or `pr` (dista
 _Avoid_: Workout race, calendar event, B-race (those are CoachConstraints)
 
 **CoachConstraint**:
-Peelable non-negotiable for AI Coach plans: `secondary_race` (B-race + intent), `blackout` (date/range + reason), or `standing_schedule` (`long_day` / `no_quality_on` / `no_run_on` with ISO weekdays Mon=1…Sun=7). Soft-retired via `IsRetired`. Managed via `/coach/constraints` (including during coach onboarding — live CRUD, not seeded from onboarding complete). Separate from CoachGoal. Plan fail-closed validation is a later slice.
+Peelable non-negotiable for AI Coach plans: `secondary_race` (B-race + intent), `blackout` (date/range + reason), or `standing_schedule` (`long_day` / `no_quality_on` / `no_run_on` with ISO weekdays Mon=1…Sun=7). Soft-retired via `IsRetired`. `long_day` means long runs, when scheduled, land on that weekday (weeks with no long run pass); athletes edit it via setup / Profile & goal “Long run day”, not the Fixed dates list. Other kinds managed via `/coach/constraints`. Separate from CoachGoal. Fail-closed on weekly commit.
 _Avoid_: CoachGoal, free-text schedule DSL, core Workout calendar, onboarding POST seed
 
 **Coach memory layer (L1)**:

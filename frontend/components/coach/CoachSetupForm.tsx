@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import {
   COACH_ANTHROPIC_MODELS,
+  COACH_WEEKDAY_LABELS,
   completeCoachOnboarding,
   getCoachOnboardingPrefill,
   getCoachProvider,
@@ -14,6 +15,7 @@ import {
   type CoachLayer1HrZones,
   type CoachLayer1Paces,
 } from '@/lib/api';
+import { setLongRunDay } from '@/components/coach/ConstraintFormFields';
 import { useSettings, type UnitPreference } from '@/lib/settings';
 import { coachSettingsQueryKey } from '@/hooks/useCoachFeature';
 
@@ -106,6 +108,7 @@ export function CoachSetupForm({
   const [paceInputs, setPaceInputs] = useState<PaceInputs>(emptyPaceInputs);
   const [hrZones, setHrZones] = useState<CoachLayer1HrZones | null>(null);
   const [runDaysPerWeek, setRunDaysPerWeek] = useState<string>('');
+  const [longRunDay, setLongRunDayState] = useState<string>('');
   const [apiKey, setApiKey] = useState('');
   const [modelId, setModelId] = useState<string>(COACH_ANTHROPIC_MODELS[0].id);
   const [error, setError] = useState<string | null>(null);
@@ -222,8 +225,12 @@ export function CoachSetupForm({
         defaultShoeId: prefillQuery.data?.defaultShoeId ?? null,
         runDaysPerWeek: runDays,
       });
+      if (longRunDay.trim() !== '') {
+        await setLongRunDay(Number(longRunDay));
+      }
       await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
       await queryClient.invalidateQueries({ queryKey: ['coach-onboarding'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-constraints'] });
       onComplete();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start coaching');
@@ -375,21 +382,38 @@ export function CoachSetupForm({
             ? 'Suggested from your recent weeks — clear if you have no preference.'
             : 'Optional. How many days a week do you usually want to run?'}
         </p>
-        <label className="block text-sm text-muted space-y-1 max-w-xs">
-          <span>Run days per week</span>
-          <select
-            className={fieldClass}
-            value={runDaysPerWeek}
-            onChange={(e) => setRunDaysPerWeek(e.target.value)}
-          >
-            <option value="">No preference</option>
-            {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-              <option key={n} value={String(n)}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm text-muted space-y-1">
+            <span>Run days per week</span>
+            <select
+              className={fieldClass}
+              value={runDaysPerWeek}
+              onChange={(e) => setRunDaysPerWeek(e.target.value)}
+            >
+              <option value="">No preference</option>
+              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                <option key={n} value={String(n)}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm text-muted space-y-1">
+            <span>Long run day</span>
+            <select
+              className={fieldClass}
+              value={longRunDay}
+              onChange={(e) => setLongRunDayState(e.target.value)}
+            >
+              <option value="">No preference</option>
+              {Object.entries(COACH_WEEKDAY_LABELS).map(([num, label]) => (
+                <option key={num} value={num}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </Card>
 
       {error && <p className="text-sm text-danger">{error}</p>}

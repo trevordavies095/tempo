@@ -3,6 +3,9 @@
 import {
   COACH_GOAL_DISTANCES,
   COACH_WEEKDAY_LABELS,
+  createCoachConstraint,
+  listCoachConstraints,
+  retireCoachConstraint,
   type CoachConstraint,
   type CoachConstraintIntent,
   type CoachConstraintKind,
@@ -20,6 +23,37 @@ type ConstraintFormFieldsProps = {
   onChange: (next: ConstraintDraft) => void;
 };
 
+function isLongDayConstraint(c: Pick<CoachConstraint, 'kind' | 'preset'>): boolean {
+  return c.kind === 'standing_schedule' && c.preset === 'long_day';
+}
+
+/** First active long_day weekday (ISO 1–7), or null when none. */
+export function readLongRunDay(constraints: CoachConstraint[]): number | null {
+  const row = constraints.find((c) => !c.isRetired && isLongDayConstraint(c));
+  const day = row?.weekdays?.[0];
+  return day != null && day >= 1 && day <= 7 ? day : null;
+}
+
+/** Retire every active long_day row, then create one when isoWeekday is set. */
+export async function setLongRunDay(isoWeekday: number | null): Promise<void> {
+  const active = await listCoachConstraints('active');
+  const longDays = active.filter(isLongDayConstraint);
+  for (const row of longDays) {
+    await retireCoachConstraint(row.id);
+  }
+  if (isoWeekday != null && isoWeekday >= 1 && isoWeekday <= 7) {
+    await createCoachConstraint({
+      kind: 'standing_schedule',
+      preset: 'long_day',
+      weekdays: [isoWeekday],
+    });
+  }
+}
+
+export function isFixedDatesConstraint(c: CoachConstraint): boolean {
+  return !isLongDayConstraint(c);
+}
+
 export function emptyConstraintDraft(kind: CoachConstraintKind = 'blackout'): ConstraintDraft {
   if (kind === 'secondary_race') {
     return {
@@ -33,8 +67,8 @@ export function emptyConstraintDraft(kind: CoachConstraintKind = 'blackout'): Co
   if (kind === 'standing_schedule') {
     return {
       kind,
-      preset: 'long_day',
-      weekdays: [7],
+      preset: 'no_run_on',
+      weekdays: [1],
       note: '',
     };
   }
@@ -44,6 +78,26 @@ export function emptyConstraintDraft(kind: CoachConstraintKind = 'blackout'): Co
     endDate: '',
     note: '',
   };
+}
+
+function standingScheduleLabel(preset: string | null | undefined, weekdays: number[] | null | undefined): string {
+  const days = (weekdays ?? [])
+    .map((d) => {
+      const full = COACH_WEEKDAY_LABELS[d] ?? String(d);
+      return full.slice(0, 3);
+    })
+    .join(', ');
+  if (preset === 'no_quality_on') {
+    return days ? `No quality on ${days}` : 'No quality on';
+  }
+  if (preset === 'no_run_on') {
+    return days ? `No run on ${days}` : 'No run on';
+  }
+  if (preset === 'long_day') {
+    const full = weekdays?.[0] != null ? COACH_WEEKDAY_LABELS[weekdays[0]] ?? String(weekdays[0]) : '?';
+    return `Long run on ${full}`;
+  }
+  return days ? `Schedule: ${days}` : 'Standing schedule';
 }
 
 export function formatConstraintSummary(c: ConstraintDraft): string {
@@ -57,10 +111,7 @@ export function formatConstraintSummary(c: ConstraintDraft): string {
         : (c.startDate ?? '?');
     return `Blackout ${range}${c.note ? ` — ${c.note}` : ''}`;
   }
-  const days = (c.weekdays ?? [])
-    .map((d) => COACH_WEEKDAY_LABELS[d] ?? String(d))
-    .join(', ');
-  return `${c.preset ?? 'schedule'}: ${days}`;
+  return standingScheduleLabel(c.preset, c.weekdays);
 }
 
 export function coachConstraintToRequest(c: CoachConstraint): CoachConstraintRequest {
@@ -87,10 +138,8 @@ export function describeCoachConstraint(c: CoachConstraint): string {
         : c.startDate;
     return `Blackout ${range}${c.note ? ` — ${c.note}` : ''}`;
   }
-  const days = (c.weekdays ?? [])
-    .map((d) => COACH_WEEKDAY_LABELS[d] ?? String(d))
-    .join(', ');
-  return `${c.preset}: ${days}${c.note ? ` — ${c.note}` : ''}`;
+  const base = standingScheduleLabel(c.preset, c.weekdays);
+  return c.note ? `${base} — ${c.note}` : base;
 }
 
 export function ConstraintFormFields({ value, onChange }: ConstraintFormFieldsProps) {
@@ -105,6 +154,10 @@ export function ConstraintFormFields({ value, onChange }: ConstraintFormFieldsPr
     const next = Array.from(current).sort((a, b) => a - b);
     onChange({ ...value, weekdays: next });
   };
+
+  const standingPreset = (value.preset === 'no_quality_on' ? 'no_quality_on' : 'no_run_on') as
+    | 'no_quality_on'
+    | 'no_run_on';
 
   return (
     <div className="space-y-3">
@@ -201,28 +254,22 @@ export function ConstraintFormFields({ value, onChange }: ConstraintFormFieldsPr
             <span className="font-medium text-ink">Preset</span>
             <select
               className={`${fieldClass} mt-1`}
-              value={value.preset ?? 'long_day'}
+              value={standingPreset}
               onChange={(e) => {
                 const preset = e.target.value as CoachStandingPreset;
                 onChange({
                   ...value,
                   preset,
-                  weekdays:
-                    preset === 'long_day'
-                      ? [(value.weekdays?.[0] ?? 7)]
-                      : (value.weekdays ?? [1]),
+                  weekdays: value.weekdays?.length ? value.weekdays : [1],
                 });
               }}
             >
-              <option value="long_day">Long day</option>
               <option value="no_quality_on">No quality on</option>
               <option value="no_run_on">No run on</option>
             </select>
           </label>
           <fieldset className="text-sm">
-            <legend className="font-medium text-ink mb-2">
-              {value.preset === 'long_day' ? 'Weekday' : 'Weekdays'}
-            </legend>
+            <legend className="font-medium text-ink mb-2">Weekdays</legend>
             <div className="flex flex-wrap gap-2">
               {Object.entries(COACH_WEEKDAY_LABELS).map(([num, label]) => {
                 const day = Number(num);
@@ -230,16 +277,10 @@ export function ConstraintFormFields({ value, onChange }: ConstraintFormFieldsPr
                 return (
                   <label key={day} className="flex items-center gap-1 text-muted">
                     <input
-                      type={value.preset === 'long_day' ? 'radio' : 'checkbox'}
+                      type="checkbox"
                       name="weekday"
                       checked={selected}
-                      onChange={() => {
-                        if (value.preset === 'long_day') {
-                          onChange({ ...value, weekdays: [day] });
-                        } else {
-                          toggleWeekday(day);
-                        }
-                      }}
+                      onChange={() => toggleWeekday(day)}
                     />
                     {label.slice(0, 3)}
                   </label>

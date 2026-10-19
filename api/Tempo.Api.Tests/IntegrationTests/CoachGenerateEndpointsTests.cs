@@ -230,6 +230,42 @@ public class CoachGenerateEndpointsTests : IClassFixture<CoachGenerateTestFactor
     }
 
     [Fact]
+    public async Task Generate_LongDayConstraint_AllowsWeekWithNoLongRun()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        (await client.PostAsJsonAsync("/coach/constraints", new
+        {
+            kind = "standing_schedule",
+            preset = "long_day",
+            weekdays = new[] { 7 }
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var preflightId = await ConsentPreflightAsync(client);
+        var noLongCommit = CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            weekStart: PlanMonday,
+            dayTypeForIndex: _ => "easy",
+            runTypeForIndex: _ => "easy");
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true, noLongCommit, 1, 1, CoachProtocolBrainError.None, null));
+
+        var generate = await client.PostAsJsonAsync("/coach/generate", new { preflightId });
+        generate.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await generate.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        var job = await PollUntilTerminalAsync(client, started!.Id);
+
+        job.Status.Should().Be("ready");
+        job.ResultWeekId.Should().NotBeNull();
+        _factory.Brain.CallCount.Should().Be(1);
+
+        var week = await client.GetAsync($"/coach/weeks/draft?weekStartDate={PlanMonday:yyyy-MM-dd}");
+        week.StatusCode.Should().Be(HttpStatusCode.OK);
+        var weekDoc = await week.Content.ReadFromJsonAsync<WeekResponse>(JsonOptions);
+        weekDoc!.Status.Should().Be("draft");
+    }
+
+    [Fact]
     public async Task Send_SavesConsentsEnqueues_AndPacketContainsNewFields()
     {
         var client = await AuthenticatedClientAsync();

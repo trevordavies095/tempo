@@ -11,10 +11,14 @@ import {
   coachConstraintToRequest,
   describeCoachConstraint,
   emptyConstraintDraft,
+  isFixedDatesConstraint,
+  readLongRunDay,
+  setLongRunDay,
   type ConstraintDraft,
 } from '@/components/coach/ConstraintFormFields';
 import {
   COACH_ANTHROPIC_MODELS,
+  COACH_WEEKDAY_LABELS,
   completeCoachOnboarding,
   createCoachConstraint,
   createCoachMemoryNote,
@@ -149,6 +153,7 @@ export default function CoachSettingsPage() {
   const [notes, setNotes] = useState('');
   const [paceInputs, setPaceInputs] = useState<PaceInputs>(emptyPaceInputs);
   const [runDaysPerWeek, setRunDaysPerWeek] = useState<string>('');
+  const [longRunDay, setLongRunDayState] = useState<string>('');
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSaving, setProfileSaving] = useState(false);
 
@@ -210,6 +215,17 @@ export default function CoachSettingsPage() {
     queryKey: ['coach-constraints', showRetiredConstraints ? 'all' : 'active'],
     queryFn: () => listCoachConstraints(showRetiredConstraints ? 'all' : 'active'),
   });
+
+  const fixedDatesConstraints = useMemo(
+    () => (constraintsQuery.data ?? []).filter(isFixedDatesConstraint),
+    [constraintsQuery.data]
+  );
+
+  useEffect(() => {
+    const active = (constraintsQuery.data ?? []).filter((c) => !c.isRetired);
+    const day = readLongRunDay(active);
+    setLongRunDayState(day != null ? String(day) : '');
+  }, [constraintsQuery.data]);
 
   const episodesQuery = useQuery({
     queryKey: ['coach-episodes', showRemovedMemory],
@@ -300,8 +316,10 @@ export default function CoachSettingsPage() {
           statusQuery.data?.layer1?.defaultShoeId ?? prefillQuery.data?.defaultShoeId ?? null,
         runDaysPerWeek: runDays,
       });
+      await setLongRunDay(longRunDay.trim() === '' ? null : Number(longRunDay));
       await queryClient.invalidateQueries({ queryKey: ['coach-onboarding'] });
       await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
+      await queryClient.invalidateQueries({ queryKey: ['coach-constraints'] });
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : 'Failed to save profile');
     } finally {
@@ -431,21 +449,38 @@ export default function CoachSettingsPage() {
               ))}
             </div>
             <h3 className="text-sm font-semibold text-ink pt-2">Your week</h3>
-            <label className="block text-sm text-muted space-y-1 max-w-xs">
-              <span>Run days per week</span>
-              <select
-                className={fieldClass}
-                value={runDaysPerWeek}
-                onChange={(e) => setRunDaysPerWeek(e.target.value)}
-              >
-                <option value="">No preference</option>
-                {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                  <option key={n} value={String(n)}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm text-muted space-y-1">
+                <span>Run days per week</span>
+                <select
+                  className={fieldClass}
+                  value={runDaysPerWeek}
+                  onChange={(e) => setRunDaysPerWeek(e.target.value)}
+                >
+                  <option value="">No preference</option>
+                  {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                    <option key={n} value={String(n)}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm text-muted space-y-1">
+                <span>Long run day</span>
+                <select
+                  className={fieldClass}
+                  value={longRunDay}
+                  onChange={(e) => setLongRunDayState(e.target.value)}
+                >
+                  <option value="">No preference</option>
+                  {Object.entries(COACH_WEEKDAY_LABELS).map(([num, label]) => (
+                    <option key={num} value={num}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             {profileError && <p className="text-sm text-danger">{profileError}</p>}
             <Button type="button" disabled={profileSaving} onClick={saveProfile}>
               {profileSaving ? 'Saving…' : 'Save profile'}
@@ -465,7 +500,7 @@ export default function CoachSettingsPage() {
             </Button>
           </div>
           <div className="space-y-4 mb-6">
-            {(constraintsQuery.data ?? []).map((c) => (
+            {fixedDatesConstraints.map((c) => (
               <div
                 key={c.id}
                 className="flex flex-wrap items-start justify-between gap-2 rounded-tempo border border-border p-3"

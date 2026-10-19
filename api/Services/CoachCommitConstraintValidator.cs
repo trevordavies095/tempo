@@ -80,6 +80,9 @@ public static class CoachCommitConstraintValidator
         return null;
     }
 
+    private static readonly string[] IsoWeekdayLabels =
+        ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
     private static string? ValidateStanding(
         CoachConstraint constraint,
         IReadOnlyDictionary<DateOnly, CoachWeeklyCommitDay> daysByDate)
@@ -89,6 +92,11 @@ public static class CoachCommitConstraintValidator
         if (string.IsNullOrWhiteSpace(preset) || weekdays.Count == 0)
         {
             return "standing_schedule constraint missing preset or weekdays";
+        }
+
+        if (preset == CoachStandingPresets.LongDay)
+        {
+            return ValidateLongDay(weekdays[0], daysByDate);
         }
 
         foreach (var isoWeekday in weekdays)
@@ -118,14 +126,34 @@ public static class CoachCommitConstraintValidator
                     }
 
                     break;
+            }
+        }
 
-                case CoachStandingPresets.LongDay:
-                    if (!IsLong(day))
-                    {
-                        return $"standing_schedule long_day violated on {day.Date}: expected a long run";
-                    }
+        return null;
+    }
 
-                    break;
+    /// <summary>
+    /// Soft long-day rule: when a long run is scheduled, it must land on the standing weekday.
+    /// Weeks with no long run pass (taper / recovery / race week).
+    /// </summary>
+    private static string? ValidateLongDay(
+        int standingIsoWeekday,
+        IReadOnlyDictionary<DateOnly, CoachWeeklyCommitDay> daysByDate)
+    {
+        var label = standingIsoWeekday is >= 1 and <= 7
+            ? IsoWeekdayLabels[standingIsoWeekday]
+            : standingIsoWeekday.ToString(CultureInfo.InvariantCulture);
+
+        foreach (var (date, day) in daysByDate)
+        {
+            if (!IsLong(day))
+            {
+                continue;
+            }
+
+            if (IsoWeekday(date) != standingIsoWeekday)
+            {
+                return $"standing_schedule long_day violated on {date:yyyy-MM-dd}: long runs go on {label}";
             }
         }
 
