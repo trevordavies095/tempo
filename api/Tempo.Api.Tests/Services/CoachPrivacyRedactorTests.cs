@@ -64,6 +64,81 @@ public class CoachPrivacyRedactorTests
     }
 
     [Fact]
+    public void TryRedact_IncludesImperialPacesDisplay_FromSecPerKm()
+    {
+        var paces = new CoachLayer1Paces(402, 340, 309, 294);
+        var packet = new CoachContextPacket(
+            Meta: new CoachPacketMeta(
+                "2026-10-19",
+                "2026-10-25",
+                "2026-10-12",
+                "2026-10-18",
+                "2026-10-19",
+                "2026-10-25",
+                "2026-10-13",
+                -240,
+                "imperial",
+                DateTime.UtcNow),
+            Goal: null,
+            Constraints: [],
+            Layer1: new CoachPacketLayer1(
+                new CoachLayer1HrZones("AgeBased", 30, null, 190, []),
+                paces,
+                [],
+                null,
+                new CoachLayer1RaceStatus("race", "Half-Marathon", 21097.5, null, null, null),
+                RunDaysPerWeek: 4,
+                TrainingPhase: null,
+                PacesDisplay: CoachPaceFormat.FromLayer1Paces(paces, "imperial")),
+            Layer2: new CoachPacketLayer2([], [], new CoachPacketLayer2Selection(8, "2026-10-11")),
+            Layer3: new CoachPacketLayer3([]),
+            CheckIn: new CoachPacketCheckIn("2026-10-12", "2026-10-18", null, null, null, null, null, []),
+            RecentTraining: new CoachPacketRecentTraining(
+            [
+                new CoachPacketRecentTrainingWeek(
+                    "2026-10-12",
+                    "2026-10-18",
+                    1,
+                    5000,
+                    1800,
+                    0,
+                    0,
+                    null,
+                    [
+                        new CoachPacketRecentTrainingRun(
+                            Guid.NewGuid(),
+                            new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc),
+                            5000,
+                            1800,
+                            140,
+                            160,
+                            null,
+                            null,
+                            null,
+                            AvgPaceDisplay: CoachPaceFormat.FormatFromDistanceAndDuration(
+                                5000,
+                                1800,
+                                "imperial"))
+                    ])
+            ]));
+
+        var ok = CoachPrivacyRedactor.TryRedact(packet, out var json, out _, out var error);
+
+        ok.Should().BeTrue(error);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("meta").GetProperty("unitPreference").GetString().Should().Be("imperial");
+        var display = root.GetProperty("layer1").GetProperty("pacesDisplay");
+        display.GetProperty("unit").GetString().Should().Be("/mi");
+        display.GetProperty("easy").GetString().Should().Be("10:47 /mi");
+        display.GetProperty("tempo").GetString().Should().Be("9:07 /mi");
+        root.GetProperty("layer1").GetProperty("paces").GetProperty("easySecPerKm").GetInt32()
+            .Should().Be(402);
+        var run = root.GetProperty("recentTraining").GetProperty("weeks")[0].GetProperty("runs")[0];
+        run.GetProperty("avgPaceDisplay").GetString().Should().Be("9:39 /mi");
+    }
+
+    [Fact]
     public void TryRedact_ScrubsUsernameAndEmailInMemoryText()
     {
         var packet = new CoachContextPacket(

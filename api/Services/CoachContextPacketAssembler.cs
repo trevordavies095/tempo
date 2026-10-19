@@ -85,7 +85,7 @@ public class CoachContextPacketAssembler
             c.Weekdays,
             c.Note)).ToList();
 
-        var layer1 = await BuildLayer1Async(settings, cancellationToken);
+        var layer1 = await BuildLayer1Async(settings, unitPreference, cancellationToken);
 
         var checkInRow = await _db.CoachCheckIns.AsNoTracking()
             .FirstOrDefaultAsync(c => c.WeekStartDate == checkInStartDate, cancellationToken);
@@ -123,7 +123,11 @@ public class CoachContextPacketAssembler
                 AvgHeartRateBpm: w.AvgHeartRateBpm,
                 RunType: w.RunType,
                 Notes: hasNotesOverlay ? overlay!.Notes : w.Notes,
-                Rpe: overlay?.Rpe ?? w.Rpe);
+                Rpe: overlay?.Rpe ?? w.Rpe,
+                AvgPaceDisplay: CoachPaceFormat.FormatFromDistanceAndDuration(
+                    w.DistanceM,
+                    w.DurationS,
+                    unitPreference));
         }).ToList();
 
         var checkIn = new CoachPacketCheckIn(
@@ -201,6 +205,7 @@ public class CoachContextPacketAssembler
             checkInWeek,
             timezoneOffsetMinutes,
             noteTextOverlays,
+            unitPreference,
             cancellationToken);
 
         return new CoachContextPacket(
@@ -230,6 +235,7 @@ public class CoachContextPacketAssembler
         WeeklyRecapWeekMath.MondaySundayWeek checkInWeek,
         int timezoneOffsetMinutes,
         IReadOnlyDictionary<Guid, string?> checkInNoteOverlays,
+        string unitPreference,
         CancellationToken cancellationToken)
     {
         var priorCount = Math.Max(0, _coachConfig.RecentTrainingPriorWeekCount);
@@ -309,7 +315,11 @@ public class CoachContextPacketAssembler
                     MaxHeartRateBpm: r.MaxHeartRateBpm,
                     Rpe: r.Rpe,
                     ShoeId: r.ShoeId,
-                    Notes: notes);
+                    Notes: notes,
+                    AvgPaceDisplay: CoachPaceFormat.FormatFromDistanceAndDuration(
+                        r.DistanceM,
+                        r.DurationS,
+                        unitPreference));
             }).ToList();
 
             buckets.Add(new CoachPacketRecentTrainingWeek(
@@ -399,6 +409,7 @@ public class CoachContextPacketAssembler
 
     private async Task<CoachPacketLayer1> BuildLayer1Async(
         UserSettings? settings,
+        string unitPreference,
         CancellationToken cancellationToken)
     {
         var liveHr = BuildHrZonesSnapshot(settings);
@@ -440,7 +451,8 @@ public class CoachContextPacketAssembler
             DefaultShoeId: defaultShoeId ?? persisted?.DefaultShoeId,
             RaceStatus: raceStatus,
             RunDaysPerWeek: persisted?.RunDaysPerWeek,
-            TrainingPhase: persisted?.TrainingPhase);
+            TrainingPhase: persisted?.TrainingPhase,
+            PacesDisplay: CoachPaceFormat.FromLayer1Paces(paces, unitPreference));
     }
 
     private CoachLayer1HrZones BuildHrZonesSnapshot(UserSettings? settings)
@@ -518,7 +530,8 @@ public sealed record CoachPacketRecentTrainingRun(
     byte? MaxHeartRateBpm,
     byte? Rpe,
     Guid? ShoeId,
-    string? Notes);
+    string? Notes,
+    string? AvgPaceDisplay = null);
 
 public sealed record CoachPacketLayer2(
     IReadOnlyList<CoachPacketEpisode> PriorWeek,
@@ -589,6 +602,14 @@ public sealed record CoachPacketConstraint(
     IReadOnlyList<int>? Weekdays,
     string? Note);
 
+/// <summary>Athlete-facing pace strings in <see cref="Unit"/> (/mi or /km). Canonical storage remains <c>*SecPerKm</c>.</summary>
+public sealed record CoachPacketPacesDisplay(
+    string Unit,
+    string? Easy,
+    string? Tempo,
+    string? Threshold,
+    string? Interval);
+
 public sealed record CoachPacketLayer1(
     CoachLayer1HrZones HrZones,
     CoachLayer1Paces Paces,
@@ -596,7 +617,8 @@ public sealed record CoachPacketLayer1(
     Guid? DefaultShoeId,
     CoachLayer1RaceStatus RaceStatus,
     int? RunDaysPerWeek = null,
-    string? TrainingPhase = null);
+    string? TrainingPhase = null,
+    CoachPacketPacesDisplay? PacesDisplay = null);
 
 public sealed record CoachPacketCheckIn(
     string WeekStartDate,
@@ -616,4 +638,5 @@ public sealed record CoachPacketCheckInRun(
     byte? AvgHeartRateBpm,
     string? RunType,
     string? Notes,
-    byte? Rpe);
+    byte? Rpe,
+    string? AvgPaceDisplay = null);

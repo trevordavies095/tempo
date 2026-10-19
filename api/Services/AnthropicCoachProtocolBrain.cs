@@ -197,7 +197,9 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
         - When packet.athleteFeedback is present: the athlete asked for changes to the previous draft. Honour note unless it violates safety or fixed dates. Use previousDraft (day summary + coachesNotes) as the base; still emit a full valid 7-day commit for the plan week.
 
         Rules:
-        - Honor unit preference from the packet when describing paces in notes.
+        - meta.unitPreference is authoritative for athlete-facing text. Describe planned distances in that unit; distanceM remains meters.
+        - Copy layer1.pacesDisplay.* (and run avgPaceDisplay) verbatim into paceOrHr / coachesNotes when citing training paces. Never invent a different easy/tempo/threshold/interval number.
+        - layer1.paces.*SecPerKm are always seconds per kilometer — use only for layer1Patches numeric oldValue/newValue. Never format *SecPerKm as M:SS yourself (do not treat 402 as 6:42 /mi).
         - distanceM is meters. For mile prescriptions use statute miles × 1609.344 (3 mi → 4828.032, not 4800). For km prescriptions use exact meters (8 km → 8000).
         - structure is the workout recipe only (e.g. "2mi WU + 2mi @ tempo + 1mi CD"). Do not restate the total distance at the start — the UI already shows distanceM. Prefer null on easy/rest when there is no interval structure.
         - When layer1.runDaysPerWeek is present, plan about that many non-rest days. Deviate for recovery, taper, race week, niggles, or fixed dates; when you do, say why in one clause of coachesNotes.
