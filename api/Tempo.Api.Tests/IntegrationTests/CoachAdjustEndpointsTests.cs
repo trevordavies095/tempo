@@ -444,6 +444,60 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
     }
 
     [Fact]
+    public async Task AskForChangesCommitted_WhenEnqueueFails_CancelsStartedAdjustment_AndAllowsRetry()
+    {
+        var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
+
+        // StartAsync does not need a provider key; StartGenerateAsync does.
+        // Removing the key after seed forces enqueue failure after the adjustment is Started.
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await db.CoachProviderConnections.ExecuteDeleteAsync();
+        }
+
+        _factory.Brain.Reset();
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "Need a change",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14"
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _factory.Brain.CallCount.Should().Be(0);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            (await db.CoachAdjustments.CountAsync(a => a.Status == CoachAdjustmentStatuses.Started))
+                .Should().Be(0);
+            (await db.CoachAdjustments.CountAsync(a => a.Status == CoachAdjustmentStatuses.Cancelled))
+                .Should().Be(1);
+        }
+
+        (await client.PutAsJsonAsync("/settings/coach/provider", new { apiKey = "sk-ant-test" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true,
+            CoachWeeklyCommitSchemaTests.BuildCommitJson(notes: "Retry after cancel."),
+            2,
+            2,
+            CoachProtocolBrainError.None,
+            null));
+
+        var retry = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "Need a change",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14"
+        });
+        retry.StatusCode.Should().Be(HttpStatusCode.Accepted);
+    }
+
+    [Fact]
     public async Task PlainRegenerate_StillConflicts_WithoutStartedAdjust()
     {
         var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());

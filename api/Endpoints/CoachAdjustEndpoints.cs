@@ -216,6 +216,7 @@ public static class CoachAdjustEndpoints
             recordConsent: true);
         if (preflight == null)
         {
+            await adjustmentService.CancelStartedAsync(adjustment.Id);
             return assembleStatus switch
             {
                 400 => Results.BadRequest(new { error = assembleError }),
@@ -224,13 +225,18 @@ public static class CoachAdjustEndpoints
         }
 
         var (job, jobError, jobStatus) = await jobService.StartGenerateAsync(preflight.Id);
-        return jobStatus switch
+        if (jobStatus != 202 || job == null)
         {
-            202 when job != null => Results.Json(ToJobDocument(job), statusCode: 202),
-            404 => Results.NotFound(new { error = jobError }),
-            409 => Results.Conflict(new { error = jobError }),
-            _ => Results.BadRequest(new { error = jobError })
-        };
+            await adjustmentService.CancelStartedAsync(adjustment.Id);
+            return jobStatus switch
+            {
+                404 => Results.NotFound(new { error = jobError }),
+                409 => Results.Conflict(new { error = jobError }),
+                _ => Results.BadRequest(new { error = jobError })
+            };
+        }
+
+        return Results.Json(ToJobDocument(job), statusCode: 202);
     }
 
     private static async Task<IResult> GetCurrentAdjustment(

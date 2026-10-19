@@ -127,6 +127,28 @@ public class CoachAdjustmentService
         return (adjustment, null, 200);
     }
 
+    /// <summary>
+    /// Cancels a Started adjustment (e.g. assemble/enqueue failed after StartAsync).
+    /// Idempotent when the row is missing or no longer Started.
+    /// </summary>
+    public async Task CancelStartedAsync(
+        Guid adjustmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var adjustment = await _db.CoachAdjustments
+            .FirstOrDefaultAsync(
+                a => a.Id == adjustmentId && a.Status == CoachAdjustmentStatuses.Started,
+                cancellationToken);
+        if (adjustment == null)
+        {
+            return;
+        }
+
+        adjustment.Status = CoachAdjustmentStatuses.Cancelled;
+        adjustment.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
     public Task<CoachAdjustment?> GetStartedAsync(
         DateOnly weekStartMonday,
         CancellationToken cancellationToken = default) =>
