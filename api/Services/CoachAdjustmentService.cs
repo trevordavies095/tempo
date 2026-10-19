@@ -20,6 +20,7 @@ public class CoachAdjustmentService
         string? category,
         int timezoneOffsetMinutes,
         DateOnly? referenceDate,
+        Guid? sourceExchangeId = null,
         CancellationToken cancellationToken = default)
     {
         var trimmedReason = (reason ?? string.Empty).Trim();
@@ -76,6 +77,29 @@ public class CoachAdjustmentService
             return (null, "Committed week not found", 404);
         }
 
+        Guid? validatedSourceExchangeId = null;
+        if (sourceExchangeId is Guid exchangeId)
+        {
+            var exchange = await _db.CoachExchanges.AsNoTracking()
+                .FirstOrDefaultAsync(e => e.Id == exchangeId, cancellationToken);
+            if (exchange == null || exchange.WeekStartDate != weekStartMonday)
+            {
+                return (null, "Source exchange not found for this week", 404);
+            }
+
+            if (exchange.Status != CoachExchangeStatuses.Ready)
+            {
+                return (null, "Source exchange must be ready", 400);
+            }
+
+            if (string.IsNullOrWhiteSpace(exchange.SuggestedChangeJson))
+            {
+                return (null, "Source exchange has no suggested change", 400);
+            }
+
+            validatedSourceExchangeId = exchange.Id;
+        }
+
         var inFlight = await _db.CoachAdjustments.AsNoTracking()
             .AnyAsync(
                 a => a.WeekStartDate == weekStartMonday && a.Status == CoachAdjustmentStatuses.Started,
@@ -90,6 +114,7 @@ public class CoachAdjustmentService
         {
             WeekStartDate = weekStartMonday,
             SourceCommittedWeekId = committed.Id,
+            SourceExchangeId = validatedSourceExchangeId,
             Reason = trimmedReason,
             Category = normalizedCategory,
             LockedThroughDate = lockedThrough,

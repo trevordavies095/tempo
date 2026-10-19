@@ -287,6 +287,7 @@ public class TempoDbContext : DbContext
             entity.HasIndex(e => e.WeekStartDate);
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.SourceCommittedWeekId);
+            entity.HasIndex(e => e.SourceExchangeId);
         });
 
         modelBuilder.Entity<CoachEpisode>(entity =>

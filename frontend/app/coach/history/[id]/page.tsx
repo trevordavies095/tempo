@@ -248,6 +248,9 @@ export default function CoachHistoryDetailPage() {
       leading={backLink}
     >
       <div className="w-full space-y-6">
+        {detail.isAdjustment && detail.sourceExchangeId && (
+          <p className="text-sm text-muted">From run feedback</p>
+        )}
         <Card>
           <h2 className="text-lg font-semibold text-ink mb-2">Coach&apos;s Notes</h2>
           <p className="text-sm text-ink whitespace-pre-wrap">

@@ -602,13 +602,62 @@ public class CoachContextPacketAssembler
             }
         }
 
+        CoachPacketAdjustmentSourceExchange? sourceExchange = null;
+        if (started.SourceExchangeId is Guid sourceExchangeId)
+        {
+            sourceExchange = await BuildAdjustmentSourceExchangeAsync(sourceExchangeId, cancellationToken);
+        }
+
         return new CoachPacketAdjustment(
             Id: started.Id,
             Reason: started.Reason,
             Category: started.Category,
             LockedThroughDate: lockedThrough,
             LockedDays: lockedDays,
-            RemainingDates: remainingDates);
+            RemainingDates: remainingDates,
+            SourceExchange: sourceExchange);
+    }
+
+    private async Task<CoachPacketAdjustmentSourceExchange?> BuildAdjustmentSourceExchangeAsync(
+        Guid sourceExchangeId,
+        CancellationToken cancellationToken)
+    {
+        var row = await _db.CoachExchanges.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == sourceExchangeId, cancellationToken);
+        if (row == null || row.Status != CoachExchangeStatuses.Ready)
+        {
+            return null;
+        }
+
+        string? verdict = null;
+        string? coachSummary = null;
+        string? suggestedSummary = null;
+        if (!string.IsNullOrWhiteSpace(row.ReplyJson)
+            && CoachExchangeReplySchema.TryParseAndValidate(row.ReplyJson, out var reply) == null
+            && reply != null)
+        {
+            verdict = reply.Verdict;
+            coachSummary = Truncate(reply.WhatItMeansNext, 240);
+            if (reply.SuggestedChange != null)
+            {
+                suggestedSummary = Truncate(reply.SuggestedChange.Summary, 400);
+            }
+        }
+
+        var text = row.AthleteText ?? string.Empty;
+        if (text.Length > 400)
+        {
+            text = text[..400];
+        }
+
+        return new CoachPacketAdjustmentSourceExchange(
+            Id: row.Id,
+            Date: row.CreatedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            WorkoutId: row.WorkoutId,
+            AthleteText: text,
+            Verdict: verdict,
+            CoachSummary: coachSummary,
+            SuggestedSummary: suggestedSummary);
     }
 
     private async Task<CoachPacketLayer1> BuildLayer1Async(
@@ -797,7 +846,18 @@ public sealed record CoachPacketAdjustment(
     string? Category,
     string LockedThroughDate,
     IReadOnlyList<object> LockedDays,
-    IReadOnlyList<string> RemainingDates);
+    IReadOnlyList<string> RemainingDates,
+    CoachPacketAdjustmentSourceExchange? SourceExchange = null);
+
+/// <summary>Compact source-exchange summary when Ask for this change stamped provenance.</summary>
+public sealed record CoachPacketAdjustmentSourceExchange(
+    Guid Id,
+    string Date,
+    Guid? WorkoutId,
+    string AthleteText,
+    string? Verdict,
+    string? CoachSummary,
+    string? SuggestedSummary);
 
 /// <summary>
 /// Packet week identity. <see cref="WeekStartDate"/>/<see cref="WeekEndDate"/> alias the plan week

@@ -132,4 +132,5 @@ public sealed record CoachWeekHistoryDetailDocument(
     string? AdjustmentStatus,
     object? ApplyRecord,
     IReadOnlyList<CoachPlanDayDocument> Days,
-    CoachWeekPrivacyReceiptDocument PrivacyReceipt);
+    CoachWeekPrivacyReceiptDocument PrivacyReceipt,
+    Guid? SourceExchangeId = null);

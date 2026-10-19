@@ -75,7 +75,8 @@ public static class DatabaseMigrationHelper
         { ("CoachCheckIns", "FeelScore"), "20261018222335_AddCoachCheckInFeelAndQuestion" },
         { ("CoachCheckIns", "QuestionForCoach"), "20261018222335_AddCoachCheckInFeelAndQuestion" },
         { ("CoachPrivacyPreflights", "Kind"), "20261019214216_AddCoachExchanges" },
-        { ("CoachPrivacyPreflights", "ExchangeId"), "20261019214216_AddCoachExchanges" }
+        { ("CoachPrivacyPreflights", "ExchangeId"), "20261019214216_AddCoachExchanges" },
+        { ("CoachAdjustments", "SourceExchangeId"), "20261019221519_AddCoachAdjustmentSourceExchangeId" }
     };
 
     private const string ProductVersion = "10.0.0";

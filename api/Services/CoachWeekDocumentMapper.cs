@@ -46,7 +46,8 @@ public static class CoachWeekDocumentMapper
             LockedThroughDate: adjustment?.LockedThroughDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             AdjustmentCategory: adjustment?.Category,
             AdjustmentStatus: adjustment?.Status,
-            ApplyRecord: applyRecord);
+            ApplyRecord: applyRecord,
+            SourceExchangeId: adjustment?.SourceExchangeId);
     }
 
     private static object? DeserializeApplyRecord(string? applyRecordJson)

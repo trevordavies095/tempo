@@ -122,6 +122,9 @@ namespace Tempo.Api.Migrations
                     b.Property<Guid>("SourceCommittedWeekId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("SourceExchangeId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -136,6 +139,8 @@ namespace Tempo.Api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("SourceCommittedWeekId");
+
+                    b.HasIndex("SourceExchangeId");
 
                     b.HasIndex("Status");
 

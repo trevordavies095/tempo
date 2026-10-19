@@ -2514,6 +2514,7 @@ export interface CoachWeekDraft {
   adjustmentCategory?: string | null;
   adjustmentStatus?: string | null;
   applyRecord?: CoachWeekApplyRecord | null;
+  sourceExchangeId?: string | null;
 }
 
 export interface CoachAdjustment {
@@ -2526,6 +2527,7 @@ export interface CoachAdjustment {
   status: string;
   createdAt: string;
   updatedAt: string;
+  sourceExchangeId?: string | null;
 }
 
 export interface CoachRecentTrainingWeekReceipt {
@@ -2853,6 +2855,7 @@ export interface CoachWeekHistoryDetail {
   applyRecord?: CoachWeekApplyRecord | null;
   days: CoachPlanDay[];
   privacyReceipt: CoachWeekPrivacyReceipt;
+  sourceExchangeId?: string | null;
 }
 
 export async function getCoachWeeks(params?: {
@@ -2949,6 +2952,7 @@ export interface PostCoachCommittedAskForChangesRequest {
   note: string;
   timezoneOffsetMinutes?: number;
   referenceDate?: string;
+  sourceExchangeId?: string;
 }
 
 /** One-shot adjust: start adjustment + consent + enqueue. */

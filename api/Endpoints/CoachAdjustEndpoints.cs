@@ -44,6 +44,7 @@ public static class CoachAdjustEndpoints
             .WithDescription(
                 "Creates an Adjustment (reason = note, no category), locks elapsed days, " +
                 "assembles the privacy packet with the adjustment block, records consent, and enqueues. " +
+                "Optional sourceExchangeId stamps Ask-for-this-change provenance (ready exchange with suggestedChange). " +
                 "409 when a job is active or an adjustment is already started; 404 when no committed plan.");
 
         group.MapGet("/weeks/{weekId:guid}/privacy-receipt", GetPrivacyReceipt)
@@ -170,12 +171,24 @@ public static class CoachAdjustEndpoints
             return Results.Conflict(new { error = "A coach generate job is already active" });
         }
 
+        Guid? sourceExchangeId = null;
+        if (!string.IsNullOrWhiteSpace(request.SourceExchangeId))
+        {
+            if (!Guid.TryParse(request.SourceExchangeId, out var parsedExchangeId))
+            {
+                return Results.BadRequest(new { error = "sourceExchangeId must be a UUID" });
+            }
+
+            sourceExchangeId = parsedExchangeId;
+        }
+
         var (adjustment, startError, startStatus) = await adjustmentService.StartAsync(
             planMonday,
             request.Note,
             category: null,
             offset,
-            referenceDate);
+            referenceDate,
+            sourceExchangeId);
         if (adjustment == null)
         {
             return startStatus switch
@@ -290,7 +303,8 @@ public static class CoachAdjustEndpoints
             LockedThroughDate: adjustment.LockedThroughDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             Status: adjustment.Status,
             CreatedAt: adjustment.CreatedAt,
-            UpdatedAt: adjustment.UpdatedAt);
+            UpdatedAt: adjustment.UpdatedAt,
+            SourceExchangeId: adjustment.SourceExchangeId);
 
     private static CoachJobDocument ToJobDocument(CoachJob job) =>
         new(
@@ -332,7 +346,8 @@ public sealed record PostCoachCommittedAskForChangesRequest(
     string? WeekStartDate,
     string? Note,
     int? TimezoneOffsetMinutes = null,
-    string? ReferenceDate = null);
+    string? ReferenceDate = null,
+    string? SourceExchangeId = null);
 
 public sealed record CoachAdjustmentDocument(
     Guid Id,
@@ -343,7 +358,8 @@ public sealed record CoachAdjustmentDocument(
     string LockedThroughDate,
     string Status,
     DateTime CreatedAt,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    Guid? SourceExchangeId = null);
 
 public sealed record CoachWeekPrivacyReceiptDocument(
     Guid WeekId,

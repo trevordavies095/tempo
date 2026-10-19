@@ -537,6 +537,54 @@ public class CoachExchangeEndpointsTests : IClassFixture<CoachGenerateTestFactor
         var attached = payload.RootElement.GetProperty("attachedRun");
         attached.TryGetProperty("planned", out var planned).Should().BeTrue();
         planned.ValueKind.Should().Be(JsonValueKind.Null);
+
+        // Ask for this change is athlete-gated: exchange Send never auto-starts adjust.
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            (await db.CoachAdjustments.CountAsync()).Should().Be(0);
+            (await db.CoachJobs.CountAsync(j => j.Kind == CoachJobKinds.Adjust)).Should().Be(0);
+        }
+    }
+
+    [Fact]
+    public async Task Send_WithSuggestedChange_DoesNotAutoEnqueueAdjust()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+
+        // Unattached message — brain may return suggestedChange; still no adjust job.
+        var suggested = new
+        {
+            summary = "Cut volume",
+            note = "Drop Friday long to easy 40",
+            affectedDates = new[] { "2026-10-23" }
+        };
+        _factory.Brain.ExchangeResults.Add(new CoachProtocolBrainResult(
+            true,
+            CoachExchangeReplySchemaTests.BuildReplyJson(suggestedChange: suggested),
+            1,
+            1,
+            CoachProtocolBrainError.None,
+            null));
+
+        var send = await client.PostAsJsonAsync("/coach/exchanges", new
+        {
+            athleteText = "Feeling cooked this week",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-20"
+        });
+        send.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await send.Content.ReadFromJsonAsync<SendResponse>(JsonOptions);
+        var exchange = await PollExchangeAsync(client, started!.Exchange.Id);
+        exchange.Status.Should().Be("ready");
+        started.Job.Kind.Should().Be("exchange");
+
+        using var scope = _factory.Decorated.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.CoachAdjustments.CountAsync()).Should().Be(0);
+        (await db.CoachJobs.CountAsync(j => j.Kind == CoachJobKinds.Adjust)).Should().Be(0);
+        (await db.CoachJobs.CountAsync(j => j.Kind == CoachJobKinds.Exchange)).Should().Be(1);
     }
 
     [Fact]

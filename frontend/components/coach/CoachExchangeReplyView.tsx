@@ -1,5 +1,6 @@
 'use client';
 
+import { Button } from '@/components/ui/Button';
 import type { CoachExchangeReply, CoachExchangeVerdict } from '@/lib/api';
 
 function verdictLabel(verdict: CoachExchangeVerdict): string {
@@ -17,7 +18,13 @@ function verdictLabel(verdict: CoachExchangeVerdict): string {
   }
 }
 
-export function CoachExchangeReplyView({ reply }: { reply: CoachExchangeReply }) {
+export function CoachExchangeReplyView({
+  reply,
+  onAskForThisChange,
+}: {
+  reply: CoachExchangeReply;
+  onAskForThisChange?: () => void;
+}) {
   const flags = reply.safetyFlags?.filter((f) => f.trim().length > 0) ?? [];
   return (
     <div className="space-y-3 mt-3">
@@ -47,10 +54,15 @@ export function CoachExchangeReplyView({ reply }: { reply: CoachExchangeReply })
         <p className="text-sm text-ink whitespace-pre-wrap">{reply.whatItMeansNext}</p>
       </div>
       {reply.suggestedChange && (
-        <div className="rounded-tempo border border-border p-3 space-y-1">
+        <div className="rounded-tempo border border-border p-3 space-y-2">
           <p className="text-xs font-medium text-muted">Suggested change</p>
           <p className="text-sm text-ink">{reply.suggestedChange.summary}</p>
           <p className="text-xs text-muted">{reply.suggestedChange.note}</p>
+          {onAskForThisChange && (
+            <Button type="button" size="sm" onClick={onAskForThisChange}>
+              Ask for this change
+            </Button>
+          )}
         </div>
       )}
     </div>

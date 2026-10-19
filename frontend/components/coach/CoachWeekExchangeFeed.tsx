@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { AskForChangesDialog } from '@/components/coach/AskForChangesDialog';
+import { CoachExchangeReplyView } from '@/components/coach/CoachExchangeReplyView';
+import { useAskForThisChange } from '@/hooks/useAskForThisChange';
 import {
   getCoachExchange,
   getCoachJob,
@@ -15,7 +18,6 @@ import {
   type CoachPrivacyReport,
 } from '@/lib/api';
 import { formatCoachDate, formatCoachJobError, pollCoachJobUntilSettled } from '@/lib/coachWeek';
-import { CoachExchangeReplyView } from '@/components/coach/CoachExchangeReplyView';
 
 const fieldClass =
   'w-full rounded-tempo border border-border bg-canvas px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-volt';
@@ -25,11 +27,13 @@ function ExchangeCard({
   timezoneOffsetMinutes,
   referenceDate,
   onRetried,
+  onAskForThisChange,
 }: {
   exchange: CoachExchange;
   timezoneOffsetMinutes: number;
   referenceDate: string;
   onRetried: () => void;
+  onAskForThisChange?: (exchange: CoachExchange) => void;
 }) {
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +88,14 @@ function ExchangeCard({
       </div>
       <p className="text-sm text-ink whitespace-pre-wrap">{exchange.athleteText}</p>
       {exchange.status === 'ready' && exchange.reply && (
-        <CoachExchangeReplyView reply={exchange.reply} />
+        <CoachExchangeReplyView
+          reply={exchange.reply}
+          onAskForThisChange={
+            exchange.reply.suggestedChange && onAskForThisChange
+              ? () => onAskForThisChange(exchange)
+              : undefined
+          }
+        />
       )}
       {(exchange.status === 'queued' || exchange.status === 'running') && (
         <p className="text-sm text-muted" aria-live="polite">
@@ -126,6 +137,7 @@ export function CoachWeekExchangeFeed({
   const [inspectOpen, setInspectOpen] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+  const askForThisChange = useAskForThisChange(timezoneOffsetMinutes);
 
   const listQuery = useQuery({
     queryKey: ['coach-exchanges', weekStartDate],
@@ -210,6 +222,7 @@ export function CoachWeekExchangeFeed({
   const exchanges = listQuery.data ?? [];
 
   return (
+    <>
     <Card>
       <h2 className="text-lg font-semibold text-ink mb-1">This week with your coach</h2>
       <p className="text-sm text-muted mb-4">
@@ -315,6 +328,7 @@ export function CoachWeekExchangeFeed({
               exchange={exchange}
               timezoneOffsetMinutes={timezoneOffsetMinutes}
               referenceDate={referenceDate}
+              onAskForThisChange={askForThisChange.openFromExchange}
               onRetried={() => {
                 void queryClient.invalidateQueries({ queryKey: ['coach-exchanges', weekStartDate] });
               }}
@@ -323,5 +337,21 @@ export function CoachWeekExchangeFeed({
         </ul>
       )}
     </Card>
+
+    <AskForChangesDialog
+      open={askForThisChange.open}
+      onClose={askForThisChange.close}
+      note={askForThisChange.note}
+      onNoteChange={askForThisChange.setNote}
+      noteLabel="What changed?"
+      whatsSentLine="Sends your note (prefilled from the coach suggestion — edit freely) and the usual redacted training packet. Elapsed days stay locked."
+      sending={askForThisChange.sending}
+      progressLabel={askForThisChange.progressLabel}
+      onSend={askForThisChange.send}
+    />
+    {askForThisChange.error && (
+      <p className="text-sm text-danger mt-2">{askForThisChange.error}</p>
+    )}
+    </>
   );
 }

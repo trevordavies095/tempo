@@ -453,6 +453,203 @@ public class CoachAdjustEndpointsTests : IClassFixture<CoachGenerateTestFactory>
         generate.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
+    [Fact]
+    public async Task AskForThisChange_WithSourceExchangeId_StampsProvenance_AndIncludesPacketSummary()
+    {
+        var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
+        var exchangeId = await SeedReadyExchangeWithSuggestionAsync(
+            weekStart: new DateOnly(2026, 10, 12),
+            suggestedNote: "Swap Thursday quality for easy recovery");
+
+        _factory.Brain.Results.Add(new CoachProtocolBrainResult(
+            true,
+            CoachWeeklyCommitSchemaTests.BuildCommitJson(notes: "Replanned from run feedback."),
+            4,
+            4,
+            CoachProtocolBrainError.None,
+            null));
+
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "Swap Thursday quality for easy recovery",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14",
+            sourceExchangeId = exchangeId
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var started = await ask.Content.ReadFromJsonAsync<JobResponse>(JsonOptions);
+        started.Should().NotBeNull();
+        started!.Kind.Should().Be("adjust");
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var adj = await db.CoachAdjustments.SingleAsync(a => a.Status == CoachAdjustmentStatuses.Started);
+            adj.SourceExchangeId.Should().Be(exchangeId);
+
+            var preflight = await db.CoachPrivacyPreflights.AsNoTracking()
+                .SingleAsync(p => p.Id == started.PreflightId);
+            preflight.RedactedPayloadJson.Should().Contain("sourceExchange");
+            preflight.RedactedPayloadJson.Should().Contain(exchangeId.ToString());
+            preflight.RedactedPayloadJson.Should().Contain("Ease Thursday");
+        }
+
+        var current = await client.GetAsync("/coach/adjustments/current?weekStartDate=2026-10-12");
+        current.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var adjDoc = JsonDocument.Parse(await current.Content.ReadAsStringAsync());
+        adjDoc.RootElement.GetProperty("sourceExchangeId").GetGuid().Should().Be(exchangeId);
+    }
+
+    [Fact]
+    public async Task AskForThisChange_MissingExchange_ReturnsNotFound()
+    {
+        var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "From missing exchange",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14",
+            sourceExchangeId = Guid.NewGuid()
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        _factory.Brain.CallCount.Should().Be(1);
+
+        using var scope = _factory.Decorated.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.CoachAdjustments.CountAsync(a => a.Status == CoachAdjustmentStatuses.Started))
+            .Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AskForThisChange_ExchangeWithoutSuggestion_ReturnsBadRequest()
+    {
+        var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
+        var exchangeId = await SeedReadyExchangeWithSuggestionAsync(
+            weekStart: new DateOnly(2026, 10, 12),
+            suggestedNote: null);
+
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "Manual note only",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14",
+            sourceExchangeId = exchangeId
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        using var scope = _factory.Decorated.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.CoachAdjustments.CountAsync(a => a.Status == CoachAdjustmentStatuses.Started))
+            .Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AskForThisChange_WrongWeekExchange_ReturnsNotFound()
+    {
+        var client = await SeedCommittedWeekAsync(CoachWeeklyCommitSchemaTests.BuildCommitJson());
+        var exchangeId = await SeedReadyExchangeWithSuggestionAsync(
+            weekStart: new DateOnly(2026, 10, 5),
+            suggestedNote: "Wrong week suggestion");
+
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "Cross-week",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14",
+            sourceExchangeId = exchangeId
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task AskForThisChange_NoCommitted_ReturnsNotFound()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAndProviderAsync(client);
+        var exchangeId = await SeedReadyExchangeWithSuggestionAsync(
+            weekStart: new DateOnly(2026, 10, 12),
+            suggestedNote: "Need a plan first");
+
+        var ask = await client.PostAsJsonAsync("/coach/weeks/committed/ask-for-changes", new
+        {
+            weekStartDate = "2026-10-12",
+            note = "Need a plan first",
+            timezoneOffsetMinutes = 0,
+            referenceDate = "2026-10-14",
+            sourceExchangeId = exchangeId
+        });
+        ask.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        _factory.Brain.CallCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Seeds a ready exchange for provenance tests. When <paramref name="suggestedNote"/> is null,
+    /// SuggestedChangeJson stays empty (no suggestion).
+    /// </summary>
+    private async Task<Guid> SeedReadyExchangeWithSuggestionAsync(
+        DateOnly weekStart,
+        string? suggestedNote)
+    {
+        using var scope = _factory.Decorated.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var now = DateTime.UtcNow;
+        var exchangeId = Guid.NewGuid();
+        var preflightId = Guid.NewGuid();
+        db.CoachPrivacyPreflights.Add(new CoachPrivacyPreflight
+        {
+            Id = preflightId,
+            Kind = CoachPrivacyPreflightKinds.Exchange,
+            WeekStartDate = weekStart,
+            ExchangeId = exchangeId,
+            ReferenceDate = weekStart,
+            TimezoneOffsetMinutes = 0,
+            PayloadHash = "test-hash",
+            RedactedPayloadJson = "{}",
+            PrivacyReportJson = "{}",
+            ConsentedAt = now,
+            AssembledAt = now
+        });
+
+        string? suggestedJson = null;
+        string replyJson;
+        if (suggestedNote != null)
+        {
+            var suggested = new
+            {
+                summary = "Ease Thursday",
+                note = suggestedNote,
+                affectedDates = new[] { weekStart.AddDays(3).ToString("yyyy-MM-dd") }
+            };
+            replyJson = CoachExchangeReplySchemaTests.BuildReplyJson(suggestedChange: suggested);
+            suggestedJson = JsonSerializer.Serialize(suggested);
+        }
+        else
+        {
+            replyJson = CoachExchangeReplySchemaTests.BuildReplyJson(suggestedChange: null);
+        }
+
+        var exchange = new CoachExchange
+        {
+            Id = exchangeId,
+            WeekStartDate = weekStart,
+            AthleteText = "Legs felt heavy after yesterday.",
+            PreflightId = preflightId,
+            ReplyJson = replyJson,
+            SuggestedChangeJson = suggestedJson,
+            Status = CoachExchangeStatuses.Ready,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now
+        };
+        db.CoachExchanges.Add(exchange);
+        await db.SaveChangesAsync();
+        return exchange.Id;
+    }
+
     private sealed class PreflightResponse
     {
         public Guid Id { get; set; }

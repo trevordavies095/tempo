@@ -37,6 +37,12 @@ public class CoachAdjustment
 
     public Guid SourceCommittedWeekId { get; set; }
 
+    /// <summary>
+    /// Optional soft ref to the exchange whose Ask-for-this-change CTA started this adjustment.
+    /// No FK — peelable like exchange WorkoutId.
+    /// </summary>
+    public Guid? SourceExchangeId { get; set; }
+
     [Required]
     [MaxLength(2000)]
     public string Reason { get; set; } = string.Empty;

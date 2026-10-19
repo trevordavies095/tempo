@@ -344,4 +344,5 @@ public sealed record CoachWeekDocument(
     string? AdjustmentCategory = null,
     string? AdjustmentStatus = null,
     // Apply audit when status is committed; null for drafts / missing record.
-    object? ApplyRecord = null);
+    object? ApplyRecord = null,
+    Guid? SourceExchangeId = null);

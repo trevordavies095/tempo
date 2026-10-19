@@ -205,7 +205,8 @@ public sealed class CoachHistoryService
             AdjustmentStatus: weekDoc.AdjustmentStatus,
             ApplyRecord: weekDoc.ApplyRecord,
             Days: days,
-            PrivacyReceipt: receipt), null, 200);
+            PrivacyReceipt: receipt,
+            SourceExchangeId: weekDoc.SourceExchangeId), null, 200);
     }
 
     private static CoachWeekPrivacyReceiptDocument BuildReceipt(CoachWeek week)
