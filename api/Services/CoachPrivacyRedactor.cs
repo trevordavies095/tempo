@@ -274,6 +274,18 @@ public static partial class CoachPrivacyRedactor
             var athleteTextDetail = string.IsNullOrWhiteSpace(exchange.AthleteText)
                 ? "Empty athlete message"
                 : "Your message to the coach (avoid names and addresses)";
+            string attachedRunDetail;
+            if (exchange.AttachedRun == null)
+            {
+                attachedRunDetail = "No attached run";
+            }
+            else
+            {
+                var ar = exchange.AttachedRun;
+                var plannedBit = ar.Planned == null ? "no planned session" : "planned session + adherence hint";
+                attachedRunDetail =
+                    $"Attached run: core stats, {ar.Splits.Count} splits, {ar.Series.Count} series points (HR/pace/cadence/elev/grade), ambient weather, {plannedBit} — no GPS, name, or device temperature";
+            }
 
             var exchangeIncluded = new List<CoachPrivacyReportItem>
             {
@@ -285,7 +297,8 @@ public static partial class CoachPrivacyRedactor
                 new("committedPlanSlice", planDetail),
                 new("weekExchanges", exchangesDetail),
                 new("athleteText", athleteTextDetail),
-                new("recentTraining", recentTrainingDetail)
+                new("recentTraining", recentTrainingDetail),
+                new("attachedRun", attachedRunDetail)
             };
 
             var exchangeStripped = new List<CoachPrivacyReportItem>

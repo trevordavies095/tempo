@@ -37,9 +37,10 @@ public static class CoachExchangeEndpoints
             .Produces(400)
             .Produces(404)
             .Produces(409)
-            .WithSummary("Send an unattached message exchange to the coach")
+            .WithSummary("Send a message exchange to the coach (optional attached workout)")
             .WithDescription(
-                "Consent is the click. Requires non-empty athleteText when no workout is attached. " +
+                "Consent is the click. Requires non-empty athleteText when no workout is attached; " +
+                "text is optional when workoutId is set (Tempo supplies run context). " +
                 "Creates a peelable CoachExchange, consented exchange preflight, and exchange job. " +
                 "409 when another exchange job is active. Ritual jobs may run concurrently.");
 
@@ -84,20 +85,25 @@ public static class CoachExchangeEndpoints
         }
 
         var offset = request?.TimezoneOffsetMinutes ?? 0;
-        var (planMonday, referenceLocal, weekError) = ResolveWeek(request?.ReferenceDate, offset);
+        var text = request?.AthleteText?.Trim() ?? string.Empty;
+        var (planMonday, referenceLocal, workoutId, weekError) = await ResolveWeekAsync(
+            db,
+            request?.ReferenceDate,
+            offset,
+            request?.WorkoutId);
         if (weekError != null)
         {
             return Results.BadRequest(new { error = weekError });
         }
 
-        var text = request?.AthleteText?.Trim() ?? string.Empty;
         var (preflight, assembleError, assembleStatus) = await preflightService.AssembleExchangeAsync(
             planMonday,
             referenceLocal,
             offset,
             text,
             exchangeId: null,
-            recordConsent: false);
+            recordConsent: false,
+            workoutId: workoutId);
         if (preflight == null)
         {
             return assembleStatus switch
@@ -123,7 +129,8 @@ public static class CoachExchangeEndpoints
         }
 
         var text = request?.AthleteText?.Trim() ?? string.Empty;
-        if (text.Length == 0)
+        var workoutId = request?.WorkoutId;
+        if (text.Length == 0 && !workoutId.HasValue)
         {
             return Results.BadRequest(new { error = "athleteText is required when no workout is attached" });
         }
@@ -134,7 +141,11 @@ public static class CoachExchangeEndpoints
         }
 
         var offset = request?.TimezoneOffsetMinutes ?? 0;
-        var (planMonday, referenceLocal, weekError) = ResolveWeek(request?.ReferenceDate, offset);
+        var (planMonday, referenceLocal, resolvedWorkoutId, weekError) = await ResolveWeekAsync(
+            db,
+            request?.ReferenceDate,
+            offset,
+            workoutId);
         if (weekError != null)
         {
             return Results.BadRequest(new { error = weekError });
@@ -144,7 +155,7 @@ public static class CoachExchangeEndpoints
         var exchange = new CoachExchange
         {
             WeekStartDate = planMonday,
-            WorkoutId = null,
+            WorkoutId = resolvedWorkoutId,
             AthleteText = text,
             Status = CoachExchangeStatuses.Queued,
             CreatedAt = now,
@@ -160,6 +171,7 @@ public static class CoachExchangeEndpoints
             text,
             exchangeId: exchange.Id,
             recordConsent: true,
+            workoutId: resolvedWorkoutId,
             excludeExchangeId: exchange.Id);
         if (preflight == null)
         {
@@ -203,35 +215,46 @@ public static class CoachExchangeEndpoints
         TempoDbContext db,
         CoachConfig coachConfig,
         [FromQuery] string? weekStartDate,
-        [FromQuery] int? timezoneOffsetMinutes)
+        [FromQuery] int? timezoneOffsetMinutes,
+        [FromQuery] Guid? workoutId)
     {
         if (!await IsCoachAvailableAsync(db, coachConfig))
         {
             return Results.NotFound();
         }
 
-        DateOnly planMonday;
-        if (!string.IsNullOrWhiteSpace(weekStartDate))
+        IQueryable<CoachExchange> query = db.CoachExchanges.AsNoTracking();
+
+        if (workoutId.HasValue)
         {
-            if (!DateOnly.TryParse(weekStartDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out planMonday))
-            {
-                return Results.BadRequest(new { error = "weekStartDate must be yyyy-MM-dd" });
-            }
+            query = query.Where(e => e.WorkoutId == workoutId.Value);
         }
         else
         {
-            var offset = timezoneOffsetMinutes ?? 0;
-            var (monday, _, err) = ResolveWeek(null, offset);
-            if (err != null)
+            DateOnly planMonday;
+            if (!string.IsNullOrWhiteSpace(weekStartDate))
             {
-                return Results.BadRequest(new { error = err });
+                if (!DateOnly.TryParse(weekStartDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out planMonday))
+                {
+                    return Results.BadRequest(new { error = "weekStartDate must be yyyy-MM-dd" });
+                }
+            }
+            else
+            {
+                var offset = timezoneOffsetMinutes ?? 0;
+                var (monday, _, _, err) = await ResolveWeekAsync(db, null, offset, null);
+                if (err != null)
+                {
+                    return Results.BadRequest(new { error = err });
+                }
+
+                planMonday = monday;
             }
 
-            planMonday = monday;
+            query = query.Where(e => e.WeekStartDate == planMonday);
         }
 
-        var rows = await db.CoachExchanges.AsNoTracking()
-            .Where(e => e.WeekStartDate == planMonday)
+        var rows = await query
             .OrderByDescending(e => e.CreatedAt)
             .ToListAsync();
 
@@ -329,8 +352,8 @@ public static class CoachExchangeEndpoints
             return Results.BadRequest(new { error = "Only failed exchanges can be retried" });
         }
 
-        var text = exchange.AthleteText;
-        if (string.IsNullOrWhiteSpace(text))
+        var text = exchange.AthleteText ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text) && !exchange.WorkoutId.HasValue)
         {
             return Results.BadRequest(new { error = "athleteText is required when no workout is attached" });
         }
@@ -354,6 +377,7 @@ public static class CoachExchangeEndpoints
             text,
             exchangeId: exchange.Id,
             recordConsent: true,
+            workoutId: exchange.WorkoutId,
             excludeExchangeId: exchange.Id);
         if (preflight == null)
         {
@@ -387,16 +411,38 @@ public static class CoachExchangeEndpoints
             statusCode: 202);
     }
 
-    private static (DateOnly PlanMonday, DateOnly ReferenceLocal, string? Error) ResolveWeek(
+    /// <summary>
+    /// When workoutId is set, week assignment uses the workout's local date (ignores referenceDate).
+    /// </summary>
+    private static async Task<(DateOnly PlanMonday, DateOnly ReferenceLocal, Guid? WorkoutId, string? Error)> ResolveWeekAsync(
+        TempoDbContext db,
         string? referenceDate,
-        int timezoneOffsetMinutes)
+        int timezoneOffsetMinutes,
+        Guid? workoutId)
     {
+        if (workoutId.HasValue)
+        {
+            var workout = await db.Workouts.AsNoTracking()
+                .FirstOrDefaultAsync(w => w.Id == workoutId.Value);
+            if (workout == null)
+            {
+                return (default, default, null, "Workout not found");
+            }
+
+            var localDate = CoachAttachedRunBuilder.LocalDateFromUtc(workout.StartedAt, timezoneOffsetMinutes);
+            var week = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
+                utcNow: DateTime.SpecifyKind(localDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc),
+                timezoneOffsetMinutes,
+                referenceLocalDate: localDate.ToDateTime(TimeOnly.MinValue));
+            return (DateOnly.FromDateTime(week.WeekStartLocal), localDate, workoutId, null);
+        }
+
         DateTime referenceLocalDt;
         if (!string.IsNullOrWhiteSpace(referenceDate))
         {
             if (!DateOnly.TryParse(referenceDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
             {
-                return (default, default, "referenceDate must be yyyy-MM-dd");
+                return (default, default, null, "referenceDate must be yyyy-MM-dd");
             }
 
             referenceLocalDt = parsed.ToDateTime(TimeOnly.MinValue);
@@ -408,13 +454,13 @@ public static class CoachExchangeEndpoints
             referenceLocalDt = local.Date;
         }
 
-        var week = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
+        var unattachedWeek = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
             utcNow: DateTime.SpecifyKind(referenceLocalDt, DateTimeKind.Utc),
             timezoneOffsetMinutes,
             referenceLocalDate: referenceLocalDt);
-        var planMonday = DateOnly.FromDateTime(week.WeekStartLocal);
+        var planMonday = DateOnly.FromDateTime(unattachedWeek.WeekStartLocal);
         var referenceLocal = DateOnly.FromDateTime(referenceLocalDt);
-        return (planMonday, referenceLocal, null);
+        return (planMonday, referenceLocal, null, null);
     }
 
     private static CoachExchangeDocument ToDocument(CoachExchange exchange)
@@ -530,6 +576,7 @@ public static class CoachExchangeEndpoints
 
 public sealed record PostCoachExchangeRequest(
     string? AthleteText,
+    Guid? WorkoutId = null,
     int? TimezoneOffsetMinutes = null,
     string? ReferenceDate = null);
 

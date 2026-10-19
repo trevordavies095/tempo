@@ -19,17 +19,20 @@ public class CoachContextPacketAssembler
     private readonly TempoDbContext _db;
     private readonly HeartRateZoneService _zoneService;
     private readonly CoachConfig _coachConfig;
+    private readonly CoachAttachedRunBuilder _attachedRunBuilder;
     private readonly ILogger<CoachContextPacketAssembler> _logger;
 
     public CoachContextPacketAssembler(
         TempoDbContext db,
         HeartRateZoneService zoneService,
         CoachConfig coachConfig,
+        CoachAttachedRunBuilder attachedRunBuilder,
         ILogger<CoachContextPacketAssembler> logger)
     {
         _db = db;
         _zoneService = zoneService;
         _coachConfig = coachConfig;
+        _attachedRunBuilder = attachedRunBuilder;
         _logger = logger;
     }
 
@@ -233,13 +236,14 @@ public class CoachContextPacketAssembler
     }
 
     /// <summary>
-    /// Assembles a mid-week exchange packet (no attachedRun in issue 29).
-    /// Week assignment: reference local date → plan-week Monday.
+    /// Assembles a mid-week exchange packet (optional attachedRun when workoutId set).
+    /// Week assignment: reference local date → plan-week Monday (caller resolves from workout when attached).
     /// </summary>
-    public async Task<CoachExchangePacket> AssembleExchangeAsync(
+    public async Task<(CoachExchangePacket? Packet, string? Error)> AssembleExchangeAsync(
         WeeklyRecapWeekMath.MondaySundayWeek planWeek,
         int timezoneOffsetMinutes,
         string athleteText,
+        Guid? workoutId = null,
         Guid? excludeExchangeId = null,
         CancellationToken cancellationToken = default)
     {
@@ -309,7 +313,22 @@ public class CoachContextPacketAssembler
             priorWeekCount: Math.Max(0, _coachConfig.ExchangeRecentTrainingPriorWeekCount),
             cancellationToken);
 
-        return new CoachExchangePacket(
+        CoachAttachedRun? attachedRun = null;
+        if (workoutId.HasValue)
+        {
+            var (run, runError) = await _attachedRunBuilder.BuildAsync(
+                workoutId.Value,
+                timezoneOffsetMinutes,
+                cancellationToken);
+            if (run == null)
+            {
+                return (null, runError ?? "Workout not found");
+            }
+
+            attachedRun = run;
+        }
+
+        return (new CoachExchangePacket(
             Meta: new CoachPacketMeta(
                 WeekStartDate: planStart,
                 WeekEndDate: planEnd,
@@ -329,7 +348,7 @@ public class CoachContextPacketAssembler
             WeekExchanges: weekExchanges,
             AthleteText: athleteText,
             RecentTraining: recentTraining,
-            AttachedRun: null);
+            AttachedRun: attachedRun), null);
     }
 
     private async Task<IReadOnlyList<CoachPacketCommittedPlanDay>?> BuildCommittedPlanSliceAsync(
@@ -687,7 +706,7 @@ public sealed record CoachExchangePacket(
     IReadOnlyList<CoachPacketWeekExchange> WeekExchanges,
     string AthleteText,
     CoachPacketRecentTraining RecentTraining,
-    object? AttachedRun = null);
+    CoachAttachedRun? AttachedRun = null);
 
 public sealed record CoachPacketCommittedPlanDay(
     string Date,

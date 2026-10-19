@@ -2290,6 +2290,7 @@ export interface CoachExchangePrivacyReceipt {
 
 export async function postCoachExchangePreflight(body: {
   athleteText?: string;
+  workoutId?: string;
   timezoneOffsetMinutes?: number;
   referenceDate?: string;
 }): Promise<CoachExchangePreflight> {
@@ -2309,7 +2310,8 @@ export async function postCoachExchangePreflight(body: {
 }
 
 export async function postCoachExchange(body: {
-  athleteText: string;
+  athleteText?: string;
+  workoutId?: string;
   timezoneOffsetMinutes?: number;
   referenceDate?: string;
 }): Promise<CoachExchangeSendResult> {
@@ -2331,6 +2333,7 @@ export async function postCoachExchange(body: {
 export async function listCoachExchanges(params?: {
   weekStartDate?: string;
   timezoneOffsetMinutes?: number;
+  workoutId?: string;
 }): Promise<CoachExchange[]> {
   const searchParams = new URLSearchParams();
   if (params?.weekStartDate) {
@@ -2338,6 +2341,9 @@ export async function listCoachExchanges(params?: {
   }
   if (params?.timezoneOffsetMinutes !== undefined) {
     searchParams.set('timezoneOffsetMinutes', params.timezoneOffsetMinutes.toString());
+  }
+  if (params?.workoutId) {
+    searchParams.set('workoutId', params.workoutId);
   }
   const qs = searchParams.toString();
   const response = await fetchWithAuth(

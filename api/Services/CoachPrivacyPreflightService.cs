@@ -182,6 +182,7 @@ public sealed class CoachPrivacyPreflightService
         string athleteText,
         Guid? exchangeId,
         bool recordConsent,
+        Guid? workoutId = null,
         Guid? excludeExchangeId = null,
         CancellationToken cancellationToken = default)
     {
@@ -199,12 +200,17 @@ public sealed class CoachPrivacyPreflightService
                 referenceLocalDate: planMonday.ToDateTime(TimeOnly.MinValue));
         }
 
-        var packet = await _assembler.AssembleExchangeAsync(
+        var (packet, assembleError) = await _assembler.AssembleExchangeAsync(
             planWeek,
             timezoneOffsetMinutes,
             athleteText,
+            workoutId,
             excludeExchangeId,
             cancellationToken);
+        if (packet == null)
+        {
+            return (null, assembleError ?? "Failed to assemble exchange packet", 400);
+        }
 
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         var redactContext = new CoachRedactionContext(Username: user?.Username);

@@ -227,6 +227,7 @@ builder.Services.AddHttpClient(AnthropicCoachProtocolBrain.HttpClientName, clien
 });
 builder.Services.AddScoped<IAnthropicCoachClient, AnthropicCoachClient>();
 builder.Services.AddScoped<ICoachProtocolBrain, AnthropicCoachProtocolBrain>();
+builder.Services.AddScoped<CoachAttachedRunBuilder>();
 builder.Services.AddScoped<CoachContextPacketAssembler>();
 builder.Services.AddScoped<CoachCheckInService>();
 builder.Services.AddScoped<CoachPlanDaysService>();
@@ -277,7 +278,13 @@ builder.Services.AddSingleton(new CoachConfig
     L2TopK = Math.Max(0, builder.Configuration.GetValue("Coach:L2TopK", 8)),
     RecentTrainingPriorWeekCount = Math.Max(
         0,
-        builder.Configuration.GetValue("Coach:RecentTrainingPriorWeekCount", 3))
+        builder.Configuration.GetValue("Coach:RecentTrainingPriorWeekCount", 3)),
+    ExchangeSeriesPoints = Math.Max(
+        2,
+        builder.Configuration.GetValue("Coach:ExchangeSeriesPoints", 90)),
+    ExchangeRecentTrainingPriorWeekCount = Math.Max(
+        0,
+        builder.Configuration.GetValue("Coach:ExchangeRecentTrainingPriorWeekCount", 1))
 });
 
 // Configure form options for large file uploads (bulk import)

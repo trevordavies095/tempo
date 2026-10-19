@@ -9,6 +9,7 @@ import { ActivityDetailTabs } from '@/components/ActivityDetailTabs';
 import { RouteComparisonTab } from '@/components/RouteComparisonTab';
 import { WorkoutOverviewPanel } from '@/components/WorkoutOverviewPanel';
 import { CoachPlannedVsActualStrip } from '@/components/coach/CoachPlannedVsActualStrip';
+import { CoachWorkoutSendPanel } from '@/components/coach/CoachWorkoutSendPanel';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -74,6 +75,7 @@ function WorkoutOverviewPageContent() {
       <WorkoutDetailHeader workout={data} />
 
       <CoachPlannedVsActualStrip workout={data} />
+      <CoachWorkoutSendPanel workoutId={data.id} />
 
       <ActivityDetailTabs
         showComparisonTab={hasMatchedRuns}
