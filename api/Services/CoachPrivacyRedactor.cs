@@ -251,7 +251,7 @@ public static partial class CoachPrivacyRedactor
             new("meta", "Week bounds, unit preference, assemble timestamp"),
             new("goal", "Primary CoachGoal fields"),
             new("constraints", "Active CoachConstraint non-negotiables"),
-            new("layer1", "HR zones, paces, shoes (no athlete name)"),
+            new("layer1", "HR zones, paces, shoes, run days per week, training phase (no athlete name)"),
             new("layer2", layer2Detail),
             new("layer3", layer3Detail),
             new("checkIn", "Subjective fields and run metrics/notes without workout names or GPS"),

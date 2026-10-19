@@ -148,6 +148,7 @@ export default function CoachSettingsPage() {
   const [targetTimeInput, setTargetTimeInput] = useState('');
   const [notes, setNotes] = useState('');
   const [paceInputs, setPaceInputs] = useState<PaceInputs>(emptyPaceInputs);
+  const [runDaysPerWeek, setRunDaysPerWeek] = useState<string>('');
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSaving, setProfileSaving] = useState(false);
 
@@ -195,6 +196,9 @@ export default function CoachSettingsPage() {
     if (status.layer1.paces) {
       setPaceInputs(pacesToInputs(status.layer1.paces, unitPreference));
     }
+    setRunDaysPerWeek(
+      status.layer1.runDaysPerWeek != null ? String(status.layer1.runDaysPerWeek) : ''
+    );
   }, [statusQuery.data, unitPreference]);
 
   useEffect(() => {
@@ -279,6 +283,8 @@ export default function CoachSettingsPage() {
     }
     setProfileSaving(true);
     try {
+      const runDays =
+        runDaysPerWeek.trim() === '' ? null : Number(runDaysPerWeek);
       await completeCoachOnboarding({
         goal: {
           type: goalType,
@@ -292,6 +298,7 @@ export default function CoachSettingsPage() {
         shoes: statusQuery.data?.layer1?.shoes ?? prefillQuery.data?.shoes,
         defaultShoeId:
           statusQuery.data?.layer1?.defaultShoeId ?? prefillQuery.data?.defaultShoeId ?? null,
+        runDaysPerWeek: runDays,
       });
       await queryClient.invalidateQueries({ queryKey: ['coach-onboarding'] });
       await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
@@ -423,6 +430,22 @@ export default function CoachSettingsPage() {
                 </label>
               ))}
             </div>
+            <h3 className="text-sm font-semibold text-ink pt-2">Your week</h3>
+            <label className="block text-sm text-muted space-y-1 max-w-xs">
+              <span>Run days per week</span>
+              <select
+                className={fieldClass}
+                value={runDaysPerWeek}
+                onChange={(e) => setRunDaysPerWeek(e.target.value)}
+              >
+                <option value="">No preference</option>
+                {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                  <option key={n} value={String(n)}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
             {profileError && <p className="text-sm text-danger">{profileError}</p>}
             <Button type="button" disabled={profileSaving} onClick={saveProfile}>
               {profileSaving ? 'Saving…' : 'Save profile'}

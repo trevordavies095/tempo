@@ -107,7 +107,7 @@ Peelable non-negotiable for AI Coach plans: `secondary_race` (B-race + intent), 
 _Avoid_: CoachGoal, free-text schedule DSL, core Workout calendar, onboarding POST seed
 
 **Coach memory layer (L1)**:
-Peelable JSON document on `CoachMemoryLayers` (`Layer = L1`) holding confirmed HR zones, training paces, shoe snapshots, and `raceStatus` mirroring CoachGoal. Prefills from Tempo; athlete confirms paces before persist. No FK into Workouts/Shoes/UserSettings — assemble later overlays live Tempo shoes/HR. L2/L3 reserved for later slices.
+Peelable JSON document on `CoachMemoryLayers` (`Layer = L1`) holding confirmed HR zones, training paces, shoe snapshots, `raceStatus` mirroring CoachGoal, optional soft `runDaysPerWeek` (1–7 target run days), and optional `trainingPhase`. Prefills from Tempo (including suggested run-days median from recent non-empty weeks); athlete confirms paces before persist. No FK into Workouts/Shoes/UserSettings — assemble overlays live Tempo shoes/HR and forwards `runDaysPerWeek` / `trainingPhase` into the coach packet. Soft weekly-shape guidance only (no fail-closed run-count validator).
 _Avoid_: UserSettings, User.OnboardingCompleted, core Tempo schema
 
 **Coach onboarding**:

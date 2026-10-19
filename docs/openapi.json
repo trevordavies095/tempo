@@ -3897,6 +3897,19 @@
           "completedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "trainingPhase": {
+            "type": "string",
+            "nullable": true,
+            "description": "base | build | peak | taper | recovery when set"
+          },
+          "runDaysPerWeek": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 7,
+            "description": "Soft target run (non-rest) days per week"
           }
         },
         "additionalProperties": false,
@@ -4084,6 +4097,12 @@
           "disclaimer": {
             "type": "string",
             "nullable": true
+          },
+          "suggestedRunDaysPerWeek": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Median run count over the last 8 non-empty Mon–Sun weeks; null when no history"
           }
         },
         "additionalProperties": false
@@ -4319,6 +4338,14 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "runDaysPerWeek": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 7,
+            "description": "Optional soft target; omit or null to clear"
           }
         },
         "additionalProperties": false

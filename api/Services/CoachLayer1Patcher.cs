@@ -50,6 +50,10 @@ public static class CoachLayer1Patcher
             {
                 TrainingPhase = NormalizeTrainingPhase(ReadNullableString(value))
             },
+            "runDaysPerWeek" => document with
+            {
+                RunDaysPerWeek = ReadInt(value)
+            },
             _ => throw new InvalidOperationException($"Unsupported L1 patch path '{path}'")
         };
     }

@@ -105,6 +105,7 @@ export function CoachSetupForm({
   const [notes, setNotes] = useState('');
   const [paceInputs, setPaceInputs] = useState<PaceInputs>(emptyPaceInputs);
   const [hrZones, setHrZones] = useState<CoachLayer1HrZones | null>(null);
+  const [runDaysPerWeek, setRunDaysPerWeek] = useState<string>('');
   const [apiKey, setApiKey] = useState('');
   const [modelId, setModelId] = useState<string>(COACH_ANTHROPIC_MODELS[0].id);
   const [error, setError] = useState<string | null>(null);
@@ -130,6 +131,9 @@ export function CoachSetupForm({
     }
     if (prefill.hrZones) {
       setHrZones(prefill.hrZones);
+    }
+    if (prefill.suggestedRunDaysPerWeek != null) {
+      setRunDaysPerWeek(String(prefill.suggestedRunDaysPerWeek));
     }
     if (prefill.goalDistances?.length && !prefill.goalDistances.includes(distance)) {
       setDistance(prefill.goalDistances[0]);
@@ -202,6 +206,8 @@ export function CoachSetupForm({
         await queryClient.invalidateQueries({ queryKey: coachSettingsQueryKey });
         await queryClient.invalidateQueries({ queryKey: ['coach-provider'] });
       }
+      const runDays =
+        runDaysPerWeek.trim() === '' ? null : Number(runDaysPerWeek);
       await completeCoachOnboarding({
         goal: {
           type: goalType,
@@ -214,6 +220,7 @@ export function CoachSetupForm({
         hrZones: hrZones ?? undefined,
         shoes: prefillQuery.data?.shoes,
         defaultShoeId: prefillQuery.data?.defaultShoeId ?? null,
+        runDaysPerWeek: runDays,
       });
       await queryClient.invalidateQueries({ queryKey: ['coach-home'] });
       await queryClient.invalidateQueries({ queryKey: ['coach-onboarding'] });
@@ -359,6 +366,30 @@ export function CoachSetupForm({
             </label>
           ))}
         </div>
+      </Card>
+
+      <Card>
+        <h2 className="text-lg font-semibold text-ink mb-1">Your week</h2>
+        <p className="text-sm text-muted mb-4">
+          {prefillQuery.data?.suggestedRunDaysPerWeek != null
+            ? 'Suggested from your recent weeks — clear if you have no preference.'
+            : 'Optional. How many days a week do you usually want to run?'}
+        </p>
+        <label className="block text-sm text-muted space-y-1 max-w-xs">
+          <span>Run days per week</span>
+          <select
+            className={fieldClass}
+            value={runDaysPerWeek}
+            onChange={(e) => setRunDaysPerWeek(e.target.value)}
+          >
+            <option value="">No preference</option>
+            {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+              <option key={n} value={String(n)}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
       </Card>
 
       {error && <p className="text-sm text-danger">{error}</p>}

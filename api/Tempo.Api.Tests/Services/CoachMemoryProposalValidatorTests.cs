@@ -112,6 +112,64 @@ public class CoachMemoryProposalValidatorTests
         commit.Layer1Patches[0].Validity!.Ok.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(7, true)]
+    [InlineData(4, true)]
+    [InlineData(0, false)]
+    [InlineData(8, false)]
+    public void Stamp_RunDaysPerWeek_RequiresIntegerOneToSeven(int newValue, bool ok)
+    {
+        var commit = Parse(CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            layer1Patches:
+            [
+                new
+                {
+                    fieldPath = "runDaysPerWeek",
+                    oldValue = 3,
+                    newValue,
+                    rationale = "Settled frequency"
+                }
+            ]));
+
+        CoachMemoryProposalValidator.Stamp(
+            commit,
+            WeekStart,
+            new HashSet<string>(),
+            new Dictionary<string, CoachRule>());
+
+        commit.Layer1Patches[0].Validity!.Ok.Should().Be(ok);
+        if (!ok)
+        {
+            commit.Layer1Patches[0].Validity!.Reason.Should().Contain("1 to 7");
+        }
+    }
+
+    [Fact]
+    public void Stamp_RunDaysPerWeek_RejectsString()
+    {
+        var commit = Parse(CoachWeeklyCommitSchemaTests.BuildCommitJson(
+            layer1Patches:
+            [
+                new
+                {
+                    fieldPath = "runDaysPerWeek",
+                    oldValue = 3,
+                    newValue = "four",
+                    rationale = "Nope"
+                }
+            ]));
+
+        CoachMemoryProposalValidator.Stamp(
+            commit,
+            WeekStart,
+            new HashSet<string>(),
+            new Dictionary<string, CoachRule>());
+
+        commit.Layer1Patches[0].Validity!.Ok.Should().BeFalse();
+        commit.Layer1Patches[0].Validity!.Reason.Should().Contain("1 to 7");
+    }
+
     [Fact]
     public void Stamp_Revise_StampsCurrentRuleText_FromActiveRule()
     {

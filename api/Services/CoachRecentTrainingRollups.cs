@@ -62,4 +62,26 @@ public static class CoachRecentTrainingRollups
 
         return new WeekRollup(runCount, distanceM, durationS, elevationGainM, relativeEffortSum, easyHrAvg);
     }
+
+    /// <summary>
+    /// Median of positive week run counts (empty weeks already excluded).
+    /// Even count: average of the two middle values, rounded AwayFromZero.
+    /// </summary>
+    public static int? MedianPositiveRunCount(IReadOnlyList<int> nonEmptyWeekRunCounts)
+    {
+        if (nonEmptyWeekRunCounts.Count == 0)
+        {
+            return null;
+        }
+
+        var sorted = nonEmptyWeekRunCounts.OrderBy(c => c).ToList();
+        var mid = sorted.Count / 2;
+        if (sorted.Count % 2 == 1)
+        {
+            return sorted[mid];
+        }
+
+        var avg = (sorted[mid - 1] + sorted[mid]) / 2.0;
+        return (int)Math.Round(avg, MidpointRounding.AwayFromZero);
+    }
 }

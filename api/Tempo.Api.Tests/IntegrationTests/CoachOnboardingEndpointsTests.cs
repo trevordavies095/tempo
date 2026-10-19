@@ -70,7 +70,8 @@ public class CoachOnboardingEndpointsTests : IClassFixture<CoachEnabledTestFacto
         int easy = 360,
         int tempo = 310,
         int threshold = 280,
-        int interval = 265)
+        int interval = 265,
+        int? runDaysPerWeek = null)
     {
         return new
         {
@@ -103,7 +104,8 @@ public class CoachOnboardingEndpointsTests : IClassFixture<CoachEnabledTestFacto
                     new { zoneNumber = 4, minBpm = 152, maxBpm = 171 },
                     new { zoneNumber = 5, minBpm = 171, maxBpm = 190 }
                 }
-            }
+            },
+            runDaysPerWeek
         };
     }
 
@@ -293,6 +295,109 @@ public class CoachOnboardingEndpointsTests : IClassFixture<CoachEnabledTestFacto
     }
 
     [Fact]
+    public async Task Complete_RunDaysPerWeek_RoundTrip_AndRejectsOutOfRange()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+
+        var withDays = await client.PostAsJsonAsync(
+            "/coach/onboarding",
+            CompletePayload(runDaysPerWeek: 4));
+        withDays.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await withDays.Content.ReadFromJsonAsync<OnboardingResponse>(JsonOptions);
+        body!.Layer1!.RunDaysPerWeek.Should().Be(4);
+
+        var cleared = await client.PostAsJsonAsync(
+            "/coach/onboarding",
+            CompletePayload(runDaysPerWeek: null));
+        cleared.StatusCode.Should().Be(HttpStatusCode.OK);
+        var clearedBody = await cleared.Content.ReadFromJsonAsync<OnboardingResponse>(JsonOptions);
+        clearedBody!.Layer1!.RunDaysPerWeek.Should().BeNull();
+
+        (await client.PostAsJsonAsync("/coach/onboarding", CompletePayload(runDaysPerWeek: 0)))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.PostAsJsonAsync("/coach/onboarding", CompletePayload(runDaysPerWeek: 8)))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Complete_PreservesTrainingPhase_WhenRewritingLayer1()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+
+        (await client.PostAsJsonAsync("/coach/onboarding", CompletePayload()))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var layer = await db.CoachMemoryLayers.FirstAsync(l => l.Layer == "L1");
+            var doc = CoachLayer1Json.Deserialize(layer.Document)!;
+            layer.Document = CoachLayer1Json.Serialize(doc with { TrainingPhase = "build" });
+            await db.SaveChangesAsync();
+        }
+
+        var again = await client.PostAsJsonAsync(
+            "/coach/onboarding",
+            CompletePayload(easy: 355));
+        again.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await again.Content.ReadFromJsonAsync<OnboardingResponse>(JsonOptions);
+        body!.Layer1!.Paces.EasySecPerKm.Should().Be(355);
+        body.Layer1.TrainingPhase.Should().Be("build");
+    }
+
+    [Fact]
+    public async Task Prefill_SuggestedRunDaysPerWeek_IsMedianOfNonEmptyWeeks()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+
+        var utcNow = DateTime.UtcNow;
+        // Align to Mon of current UTC week, then seed three prior non-empty weeks with 3, 5, 4 runs.
+        var today = DateOnly.FromDateTime(utcNow);
+        var mondayOffset = today.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)today.DayOfWeek - 1;
+        var thisMonday = today.AddDays(-mondayOffset);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            async Task SeedWeek(DateOnly monday, int runCount)
+            {
+                for (var i = 0; i < runCount; i++)
+                {
+                    await TestDataSeeder.SeedWorkoutAsync(
+                        db,
+                        startedAt: monday.AddDays(i).ToDateTime(new TimeOnly(12, 0), DateTimeKind.Utc),
+                        distanceM: 5000,
+                        durationS: 1800);
+                }
+            }
+
+            await SeedWeek(thisMonday.AddDays(-14), 3);
+            await SeedWeek(thisMonday.AddDays(-7), 5);
+            await SeedWeek(thisMonday, 4);
+        }
+
+        var response = await client.GetAsync("/coach/onboarding/prefill");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<PrefillResponse>(JsonOptions);
+        body!.SuggestedRunDaysPerWeek.Should().Be(4); // median of 3, 4, 5
+    }
+
+    [Fact]
+    public async Task Prefill_SuggestedRunDaysPerWeek_Null_WhenNoWorkouts()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+
+        var response = await client.GetAsync("/coach/onboarding/prefill");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<PrefillResponse>(JsonOptions);
+        body!.SuggestedRunDaysPerWeek.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Home_DropsOnboardingNextStep_WhenCompleted()
     {
         var client = await AuthenticatedClientAsync();
@@ -378,6 +483,8 @@ public class CoachOnboardingEndpointsTests : IClassFixture<CoachEnabledTestFacto
         public PacesResponse Paces { get; set; } = new();
         public RaceStatusResponse RaceStatus { get; set; } = new();
         public List<ShoeResponse> Shoes { get; set; } = new();
+        public string? TrainingPhase { get; set; }
+        public int? RunDaysPerWeek { get; set; }
     }
 
     private class PacesResponse
@@ -413,6 +520,7 @@ public class CoachOnboardingEndpointsTests : IClassFixture<CoachEnabledTestFacto
         public PacesResponse? SuggestedPaces { get; set; }
         public List<string> GoalDistances { get; set; } = new();
         public string Disclaimer { get; set; } = string.Empty;
+        public int? SuggestedRunDaysPerWeek { get; set; }
     }
 
     private class HrZonesResponse

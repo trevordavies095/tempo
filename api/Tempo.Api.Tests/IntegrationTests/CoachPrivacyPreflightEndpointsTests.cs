@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Services;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -98,6 +99,59 @@ public class CoachPrivacyPreflightEndpointsTests : IClassFixture<CoachEnabledTes
         assemble.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await assemble.Content.ReadAsStringAsync();
         body.Should().Contain("Save a Coach check-in");
+    }
+
+    [Fact]
+    public async Task Assemble_Layer1_IncludesRunDaysPerWeek_AndTrainingPhase()
+    {
+        var client = await AuthenticatedClientAsync();
+        await OptInAsync(client);
+        await SaveEmptyCheckInAsync(client);
+
+        using (var scope = _factory.Decorated.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var layer1 = new CoachLayer1Document(
+                HrZones: new CoachLayer1HrZones(
+                    "AgeBased", 30, null, 190,
+                    [
+                        new CoachLayer1HrZone(1, 95, 114),
+                        new CoachLayer1HrZone(2, 114, 133),
+                        new CoachLayer1HrZone(3, 133, 152),
+                        new CoachLayer1HrZone(4, 152, 171),
+                        new CoachLayer1HrZone(5, 171, 190)
+                    ]),
+                Paces: new CoachLayer1Paces(360, 310, 280, 265),
+                Shoes: [],
+                DefaultShoeId: null,
+                RaceStatus: new CoachLayer1RaceStatus(
+                    "race", "Half-Marathon", 21097.5, "2027-01-09", null, null),
+                CompletedAt: DateTime.UtcNow,
+                TrainingPhase: "build",
+                RunDaysPerWeek: 4);
+            db.CoachMemoryLayers.Add(new CoachMemoryLayer
+            {
+                Layer = "L1",
+                Document = CoachLayer1Json.Serialize(layer1),
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var assemble = await client.PostAsync(
+            "/coach/privacy/preflight?timezoneOffsetMinutes=0&referenceDate=2026-10-13",
+            null);
+        assemble.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await assemble.Content.ReadFromJsonAsync<PreflightResponse>(JsonOptions);
+        var payloadJson = JsonSerializer.Serialize(doc!.RedactedPayload);
+        using var payload = JsonDocument.Parse(payloadJson);
+        var layer1El = payload.RootElement.GetProperty("layer1");
+        layer1El.GetProperty("runDaysPerWeek").GetInt32().Should().Be(4);
+        layer1El.GetProperty("trainingPhase").GetString().Should().Be("build");
+        doc.Report.Included.Should().Contain(i =>
+            i.Category == "layer1" &&
+            i.Detail.Contains("run days", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

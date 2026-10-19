@@ -1335,6 +1335,8 @@ export interface CoachLayer1 {
   defaultShoeId: string | null;
   raceStatus: CoachLayer1RaceStatus;
   completedAt: string;
+  trainingPhase?: string | null;
+  runDaysPerWeek?: number | null;
 }
 
 export interface CoachHome {
@@ -1415,6 +1417,7 @@ export interface CoachOnboardingPrefill {
   suggestedPaces: CoachLayer1Paces | null;
   goalDistances: string[];
   disclaimer: string;
+  suggestedRunDaysPerWeek?: number | null;
 }
 
 export type CoachConstraintKind = 'secondary_race' | 'blackout' | 'standing_schedule';
@@ -1461,6 +1464,7 @@ export interface CompleteCoachOnboardingRequest {
   hrZones?: CoachLayer1HrZones;
   shoes?: CoachLayer1Shoe[];
   defaultShoeId?: string | null;
+  runDaysPerWeek?: number | null;
 }
 
 export const COACH_GOAL_DISTANCES = [

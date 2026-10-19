@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Utils;
 
 namespace Tempo.Api.Endpoints;
 
@@ -134,6 +135,8 @@ public static class CoachOnboardingEndpoints
         suggested ??= CoachPaceSuggestions.SuggestFromBestEfforts(
             bestEfforts.Select(be => (be.Distance, be.DistanceM, be.TimeS)));
 
+        var suggestedRunDays = await SuggestRunDaysPerWeekAsync(db, utcNow);
+
         return Results.Ok(new CoachOnboardingPrefillDocument(
             UnitPreference: unitPreference,
             HrZones: hrZones,
@@ -144,7 +147,8 @@ public static class CoachOnboardingEndpoints
             GoalDistances: CoachGoalDistances.Catalog.Keys.ToList(),
             Disclaimer:
                 "Tempo AI Coach is not a doctor and does not provide medical advice. " +
-                "It offers training suggestions only. Seek a qualified professional for pain, injury, or health concerns."));
+                "It offers training suggestions only. Seek a qualified professional for pain, injury, or health concerns.",
+            SuggestedRunDaysPerWeek: suggestedRunDays));
     }
 
     private static async Task<IResult> PostOnboarding(
@@ -247,6 +251,12 @@ public static class CoachOnboardingEndpoints
             return Results.BadRequest(new { error = shoeSnapshots.Error });
         }
 
+        var runDaysPerWeek = request.RunDaysPerWeek;
+        if (runDaysPerWeek is < 1 or > 7)
+        {
+            return Results.BadRequest(new { error = "runDaysPerWeek must be between 1 and 7 when provided" });
+        }
+
         var now = DateTime.UtcNow;
         var goal = await db.CoachGoals.FirstOrDefaultAsync();
         if (goal == null)
@@ -262,6 +272,20 @@ public static class CoachOnboardingEndpoints
         goal.TargetTimeS = targetTimeS;
         goal.Notes = notes;
         goal.UpdatedAt = now;
+
+        var layer = await db.CoachMemoryLayers.FirstOrDefaultAsync(l => l.Layer == Layer1Key);
+        string? preservedTrainingPhase = null;
+        if (layer != null)
+        {
+            try
+            {
+                preservedTrainingPhase = CoachLayer1Json.Deserialize(layer.Document)?.TrainingPhase;
+            }
+            catch (JsonException)
+            {
+                preservedTrainingPhase = null;
+            }
+        }
 
         var layer1Doc = new CoachLayer1Document(
             HrZones: hrZones,
@@ -279,9 +303,10 @@ public static class CoachOnboardingEndpoints
                 RaceDate: raceDate?.ToString("yyyy-MM-dd"),
                 TargetTimeS: targetTimeS,
                 Notes: notes),
-            CompletedAt: now);
+            CompletedAt: now,
+            TrainingPhase: preservedTrainingPhase,
+            RunDaysPerWeek: runDaysPerWeek);
 
-        var layer = await db.CoachMemoryLayers.FirstOrDefaultAsync(l => l.Layer == Layer1Key);
         var json = CoachLayer1Json.Serialize(layer1Doc);
         if (layer == null)
         {
@@ -448,6 +473,41 @@ public static class CoachOnboardingEndpoints
 
         return (shoes, defaultShoeId, null);
     }
+
+    /// <summary>
+    /// Median run count over the last 8 Mon–Sun weeks that contain at least one run (UTC weeks).
+    /// </summary>
+    private static async Task<int?> SuggestRunDaysPerWeekAsync(TempoDbContext db, DateTime utcNow)
+    {
+        var checkInWeek = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
+            utcNow,
+            timezoneOffsetMinutes: 0,
+            referenceLocalDate: null);
+        var weeks = WeeklyRecapWeekMath.BuildRecentTrainingWeeks(
+            checkInWeek,
+            priorWeekCount: 7,
+            timezoneOffsetMinutes: 0);
+
+        var windowStartUtc = weeks[0].FullWeekRange.StartUtc;
+        var windowEndUtc = weeks[^1].FullWeekRange.EndUtc;
+        var startedAts = await db.Workouts.AsNoTracking()
+            .Where(w => w.StartedAt >= windowStartUtc && w.StartedAt <= windowEndUtc)
+            .Select(w => w.StartedAt)
+            .ToListAsync();
+
+        var nonEmptyCounts = new List<int>();
+        foreach (var week in weeks)
+        {
+            var count = startedAts.Count(t =>
+                t >= week.FullWeekRange.StartUtc && t <= week.FullWeekRange.EndUtc);
+            if (count > 0)
+            {
+                nonEmptyCounts.Add(count);
+            }
+        }
+
+        return CoachRecentTrainingRollups.MedianPositiveRunCount(nonEmptyCounts);
+    }
 }
 
 public record CoachGoalDocument(
@@ -478,7 +538,8 @@ public record CoachOnboardingPrefillDocument(
     IReadOnlyList<CoachPrefillBestEffort> BestEfforts,
     CoachLayer1Paces? SuggestedPaces,
     IReadOnlyList<string> GoalDistances,
-    string Disclaimer);
+    string Disclaimer,
+    int? SuggestedRunDaysPerWeek = null);
 
 public record CoachGoalRequest(
     string? Type,
@@ -498,4 +559,5 @@ public record CompleteCoachOnboardingRequest(
     CoachPacesRequest? Paces,
     CoachLayer1HrZones? HrZones,
     IReadOnlyList<CoachLayer1Shoe>? Shoes,
-    Guid? DefaultShoeId);
+    Guid? DefaultShoeId,
+    int? RunDaysPerWeek = null);

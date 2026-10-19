@@ -21,7 +21,8 @@ public static class CoachMemoryProposalValidator
         "hrZones.restingHeartRateBpm",
         "raceStatus.targetTimeS",
         "raceStatus.notes",
-        "trainingPhase"
+        "trainingPhase",
+        "runDaysPerWeek"
     };
 
     private static readonly HashSet<string> TrainingPhases = new(StringComparer.OrdinalIgnoreCase)
@@ -128,6 +129,8 @@ public static class CoachMemoryProposalValidator
                     : Invalid("raceStatus.notes newValue must be a string or null"),
             "trainingPhase"
                 => ValidateTrainingPhase(value),
+            "runDaysPerWeek"
+                => ValidateRunDaysPerWeek(value),
             _ => Invalid($"fieldPath '{path}' is not in the L1 allowlist")
         };
     }
@@ -261,6 +264,16 @@ public static class CoachMemoryProposalValidator
         return TrainingPhases.Contains(phase)
             ? Ok()
             : Invalid("trainingPhase must be base|build|peak|taper|recovery|null");
+    }
+
+    private static CoachProposalValidity ValidateRunDaysPerWeek(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var n) && n is >= 1 and <= 7)
+        {
+            return Ok();
+        }
+
+        return Invalid("runDaysPerWeek newValue must be an integer from 1 to 7");
     }
 
     private static CoachProposalValidity RequirePositiveInt(JsonElement value, string path)

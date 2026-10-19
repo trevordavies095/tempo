@@ -172,8 +172,10 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
         Memory channels (most weeks emit [] for all three — never pad):
         - layer1Patches: [{ "fieldPath", "oldValue", "newValue", "rationale" }]
           Allowlisted fieldPath only: paces.easySecPerKm|tempoSecPerKm|thresholdSecPerKm|intervalSecPerKm,
-          hrZones.maxHeartRateBpm|restingHeartRateBpm, raceStatus.targetTimeS|notes, trainingPhase
-          (trainingPhase: base|build|peak|taper|recovery|null). Never propose shoes, goal distance/date, or PRs.
+          hrZones.maxHeartRateBpm|restingHeartRateBpm, raceStatus.targetTimeS|notes, trainingPhase,
+          runDaysPerWeek
+          (trainingPhase: base|build|peak|taper|recovery|null; runDaysPerWeek: 1–7 integer).
+          Never propose shoes, goal distance/date, or PRs.
         - layer2EpisodeDrafts: [{ "date", "category", "summary", "sourceWeekEnding"? }]
           category: race|breakthrough|issue|equipment|milestone|protocol_change (never recap — human-only).
           Emit only if the episode would still matter if searched six months from now.
@@ -198,6 +200,7 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
         - Honor unit preference from the packet when describing paces in notes.
         - distanceM is meters. For mile prescriptions use statute miles × 1609.344 (3 mi → 4828.032, not 4800). For km prescriptions use exact meters (8 km → 8000).
         - structure is the workout recipe only (e.g. "2mi WU + 2mi @ tempo + 1mi CD"). Do not restate the total distance at the start — the UI already shows distanceM. Prefer null on easy/rest when there is no interval structure.
+        - When layer1.runDaysPerWeek is present, plan about that many non-rest days. Deviate for recovery, taper, race week, niggles, or fixed dates; when you do, say why in one clause of coachesNotes.
         - Honor CoachConstraint non-negotiables: blackouts = rest; standing schedule presets; secondary_race dates must be run.type=race.
         - Never initiate mid-week adjust. Only the athlete starts Adjust.
         - When the packet includes an "adjustment" object: replan ONLY remainingDates; copy lockedDays unchanged into those dates; severe niggles → backoff volume/intensity and/or refer-out safetyFlags — never diagnose.

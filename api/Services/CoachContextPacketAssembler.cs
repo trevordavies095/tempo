@@ -438,7 +438,9 @@ public class CoachContextPacketAssembler
             Paces: paces,
             Shoes: liveShoes,
             DefaultShoeId: defaultShoeId ?? persisted?.DefaultShoeId,
-            RaceStatus: raceStatus);
+            RaceStatus: raceStatus,
+            RunDaysPerWeek: persisted?.RunDaysPerWeek,
+            TrainingPhase: persisted?.TrainingPhase);
     }
 
     private CoachLayer1HrZones BuildHrZonesSnapshot(UserSettings? settings)
@@ -592,7 +594,9 @@ public sealed record CoachPacketLayer1(
     CoachLayer1Paces Paces,
     IReadOnlyList<CoachLayer1Shoe> Shoes,
     Guid? DefaultShoeId,
-    CoachLayer1RaceStatus RaceStatus);
+    CoachLayer1RaceStatus RaceStatus,
+    int? RunDaysPerWeek = null,
+    string? TrainingPhase = null);
 
 public sealed record CoachPacketCheckIn(
     string WeekStartDate,

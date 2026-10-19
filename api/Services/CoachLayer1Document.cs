@@ -12,7 +12,9 @@ public sealed record CoachLayer1Document(
     CoachLayer1RaceStatus RaceStatus,
     DateTime CompletedAt,
     // base | build | peak | taper | recovery | null
-    string? TrainingPhase = null);
+    string? TrainingPhase = null,
+    /// <summary>Soft target run (non-rest) days per week; 1–7 when set.</summary>
+    int? RunDaysPerWeek = null);
 
 public static class CoachTrainingPhases
 {

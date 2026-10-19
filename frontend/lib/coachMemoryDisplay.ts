@@ -18,6 +18,7 @@ const L1_LABELS: Record<string, string> = {
   'raceStatus.targetTimeS': 'Goal time',
   'raceStatus.notes': 'Goal notes',
   trainingPhase: 'Training phase',
+  runDaysPerWeek: 'Run days per week',
 };
 
 const TARGET_LAYER_LABELS: Record<string, string> = {
@@ -75,6 +76,11 @@ function formatPatchValue(
 
   if (fieldPath === 'trainingPhase') {
     return typeof value === 'string' && value.trim() ? value : '—';
+  }
+
+  if (fieldPath === 'runDaysPerWeek') {
+    const n = asNumber(value);
+    return n !== null ? String(n) : String(value);
   }
 
   if (typeof value === 'string') {
