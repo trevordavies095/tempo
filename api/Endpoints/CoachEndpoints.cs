@@ -144,6 +144,7 @@ public static class CoachEndpoints
         CoachGenerateEndpoints.Map(group);
         CoachReviewEndpoints.Map(group);
         CoachAdjustEndpoints.Map(group);
+        CoachExchangeEndpoints.Map(group);
         CoachPlanDaysEndpoints.Map(group);
         CoachHistoryEndpoints.Map(group);
     }

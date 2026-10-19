@@ -29,23 +29,49 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
         _logger = logger;
     }
 
-    public async Task<CoachProtocolBrainResult> GenerateWeeklyCommitAsync(
+    public Task<CoachProtocolBrainResult> GenerateWeeklyCommitAsync(
         string redactedPacketJson,
         string modelId,
         string apiKey,
         string? repairHint,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrEmpty(redactedPacketJson);
-        ArgumentException.ThrowIfNullOrEmpty(modelId);
-        ArgumentException.ThrowIfNullOrEmpty(apiKey);
-
-        var system = BuildSystemPrompt();
+        var system = BuildWeeklySystemPrompt();
         var user = string.IsNullOrWhiteSpace(repairHint)
             ? $"Generate a weekly commit JSON for this redacted context packet:\n\n{redactedPacketJson}"
             : $"Your previous weekly commit failed validation: {repairHint}\n\n"
               + "Return a corrected weekly commit JSON for this packet:\n\n"
               + redactedPacketJson;
+        return SendAsync(redactedPacketJson, modelId, apiKey, system, user, cancellationToken);
+    }
+
+    public Task<CoachProtocolBrainResult> GenerateExchangeReplyAsync(
+        string redactedPacketJson,
+        string modelId,
+        string apiKey,
+        string? repairHint,
+        CancellationToken cancellationToken = default)
+    {
+        var system = BuildExchangeSystemPrompt();
+        var user = string.IsNullOrWhiteSpace(repairHint)
+            ? $"Generate an exchange reply JSON for this redacted context packet:\n\n{redactedPacketJson}"
+            : $"Your previous exchange reply failed validation: {repairHint}\n\n"
+              + "Return a corrected exchange reply JSON for this packet:\n\n"
+              + redactedPacketJson;
+        return SendAsync(redactedPacketJson, modelId, apiKey, system, user, cancellationToken);
+    }
+
+    private async Task<CoachProtocolBrainResult> SendAsync(
+        string redactedPacketJson,
+        string modelId,
+        string apiKey,
+        string system,
+        string user,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(redactedPacketJson);
+        ArgumentException.ThrowIfNullOrEmpty(modelId);
+        ArgumentException.ThrowIfNullOrEmpty(apiKey);
 
         var body = new
         {
@@ -147,7 +173,35 @@ public sealed class AnthropicCoachProtocolBrain : ICoachProtocolBrain
         };
     }
 
-    private static string BuildSystemPrompt() =>
+    private static string BuildExchangeSystemPrompt() =>
+        """
+        You are Tempo AI Coach — a mid-week training partner for road racing (5K–marathon).
+        You are not a doctor and do not provide medical advice. Flag refer-out concerns in safetyFlags; never diagnose.
+        This is a one-shot exchange reply, not a weekly plan. Do not emit a week plan. Do not emit memory channels.
+
+        Return ONLY a single JSON object (no markdown) matching this shape:
+        {
+          "whatHappened": "data-first read of the athlete message and context",
+          "whyItLooksLikeThat": "mechanisms / interpretation grounded in packet data",
+          "whatItMeansNext": "concrete next-session guidance",
+          "verdict": "on_track|noise|watch|concern",
+          "safetyFlags": [],
+          "suggestedChange": null
+        }
+
+        Rules:
+        - All four section strings are required and non-empty. Verdict is required.
+        - Never include layer1Patches, layer2EpisodeDrafts, or layer3RuleProposals.
+        - Obey Layer 3 soft guidance and CoachConstraint hard non-negotiables.
+        - Build on weekExchanges without repeating prior coach replies verbatim.
+        - Ambient weather only when present; never invent GPS or device/skin temperature.
+        - suggestedChange is optional and at most one object: { "summary", "note", "affectedDates": ["yyyy-MM-dd", ...] }.
+          Use only when a committed plan slice is present and remaining days exist; otherwise null.
+        - suggestedChange.note should be athlete-editable Ask-for-changes prefill text.
+        - Do not modify the plan yourself — only suggest.
+        """;
+
+    private static string BuildWeeklySystemPrompt() =>
         """
         You are Tempo AI Coach — a direct training partner for road racing (5K–marathon).
         You are not a doctor and do not provide medical advice. Back off volume or flag refer-out for severe niggles; never diagnose.

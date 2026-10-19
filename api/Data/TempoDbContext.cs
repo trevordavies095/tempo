@@ -32,6 +32,7 @@ public class TempoDbContext : DbContext
     public DbSet<CoachJob> CoachJobs { get; set; }
     public DbSet<CoachWeek> CoachWeeks { get; set; }
     public DbSet<CoachAdjustment> CoachAdjustments { get; set; }
+    public DbSet<CoachExchange> CoachExchanges { get; set; }
     public DbSet<CoachEpisode> CoachEpisodes { get; set; }
     public DbSet<CoachRule> CoachRules { get; set; }
 
@@ -229,10 +230,31 @@ public class TempoDbContext : DbContext
 
         modelBuilder.Entity<CoachPrivacyPreflight>(entity =>
         {
+            entity.Property(e => e.Kind).IsRequired().HasMaxLength(32);
             entity.Property(e => e.RedactedPayloadJson).IsRequired().HasColumnType("jsonb");
             entity.Property(e => e.PrivacyReportJson).IsRequired().HasColumnType("jsonb");
             entity.Property(e => e.PayloadHash).IsRequired().HasMaxLength(64);
-            entity.HasIndex(e => e.WeekStartDate).IsUnique();
+            // One weekly preflight per plan Monday; many exchange prefights per week.
+            entity.HasIndex(e => new { e.Kind, e.WeekStartDate })
+                .IsUnique()
+                .HasFilter("\"Kind\" = 'weekly'");
+            entity.HasIndex(e => e.ExchangeId);
+            entity.HasIndex(e => e.WeekStartDate);
+        });
+
+        modelBuilder.Entity<CoachExchange>(entity =>
+        {
+            entity.Property(e => e.AthleteText).IsRequired().HasMaxLength(4000);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(32);
+            entity.Property(e => e.ReplyJson).HasColumnType("jsonb");
+            entity.Property(e => e.SuggestedChangeJson).HasColumnType("jsonb");
+            entity.Property(e => e.ErrorCode).HasMaxLength(32);
+            entity.Property(e => e.ErrorMessage).HasMaxLength(2000);
+            entity.HasIndex(e => e.WeekStartDate);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasIndex(e => e.WorkoutId);
+            entity.HasIndex(e => e.JobId);
         });
 
         modelBuilder.Entity<CoachJob>(entity =>

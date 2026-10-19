@@ -19,11 +19,18 @@ public sealed record CoachProtocolBrainResult(
     string? ErrorMessage);
 
 /// <summary>
-/// Fakeable protocol brain: redacted context packet → weekly commit JSON.
+/// Fakeable protocol brain: redacted context packet → weekly commit or exchange reply JSON.
 /// </summary>
 public interface ICoachProtocolBrain
 {
     Task<CoachProtocolBrainResult> GenerateWeeklyCommitAsync(
+        string redactedPacketJson,
+        string modelId,
+        string apiKey,
+        string? repairHint,
+        CancellationToken cancellationToken = default);
+
+    Task<CoachProtocolBrainResult> GenerateExchangeReplyAsync(
         string redactedPacketJson,
         string modelId,
         string apiKey,

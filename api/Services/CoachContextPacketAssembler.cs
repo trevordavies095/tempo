@@ -206,6 +206,7 @@ public class CoachContextPacketAssembler
             timezoneOffsetMinutes,
             noteTextOverlays,
             unitPreference,
+            priorWeekCount: Math.Max(0, _coachConfig.RecentTrainingPriorWeekCount),
             cancellationToken);
 
         return new CoachContextPacket(
@@ -231,14 +232,198 @@ public class CoachContextPacketAssembler
             AthleteFeedback: null);
     }
 
+    /// <summary>
+    /// Assembles a mid-week exchange packet (no attachedRun in issue 29).
+    /// Week assignment: reference local date → plan-week Monday.
+    /// </summary>
+    public async Task<CoachExchangePacket> AssembleExchangeAsync(
+        WeeklyRecapWeekMath.MondaySundayWeek planWeek,
+        int timezoneOffsetMinutes,
+        string athleteText,
+        Guid? excludeExchangeId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var planStartDate = DateOnly.FromDateTime(planWeek.WeekStartLocal);
+        var planStart = planStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var planEnd = planWeek.WeekEndLocal.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var referenceDate = planWeek.ReferenceLocalDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        var settings = await _db.UserSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        var unitPreference = string.IsNullOrWhiteSpace(settings?.UnitPreference)
+            ? "metric"
+            : settings!.UnitPreference!;
+
+        var goal = await _db.CoachGoals.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        CoachPacketGoal? packetGoal = null;
+        if (goal != null)
+        {
+            packetGoal = new CoachPacketGoal(
+                goal.Type,
+                goal.Distance,
+                goal.DistanceM,
+                goal.RaceDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                goal.TargetTimeS,
+                goal.Notes);
+        }
+
+        var constraints = await _db.CoachConstraints.AsNoTracking()
+            .Where(c => !c.IsRetired)
+            .OrderBy(c => c.Kind)
+            .ThenBy(c => c.StartDate)
+            .ToListAsync(cancellationToken);
+
+        var packetConstraints = constraints.Select(c => new CoachPacketConstraint(
+            c.Kind,
+            c.StartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            c.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            c.Distance,
+            c.DistanceM,
+            c.Intent,
+            c.Preset,
+            c.Weekdays,
+            c.Note)).ToList();
+
+        var layer1 = await BuildLayer1Async(settings, unitPreference, cancellationToken);
+
+        var activeRules = await _db.CoachRules.AsNoTracking()
+            .Where(r => r.Status == CoachRuleStatuses.Active)
+            .OrderBy(r => r.TargetLayer)
+            .ThenBy(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        var layer3 = new CoachPacketLayer3(
+            Rules: activeRules.Select(r => new CoachPacketRule(
+                Id: r.Id,
+                TargetLayer: r.TargetLayer,
+                RuleText: r.RuleText,
+                Evidence: r.Evidence ?? [])).ToList());
+
+        var committedPlanSlice = await BuildCommittedPlanSliceAsync(planStartDate, cancellationToken);
+        var weekExchanges = await BuildWeekExchangesAsync(planStartDate, excludeExchangeId, cancellationToken);
+
+        var recentTraining = await BuildRecentTrainingAsync(
+            planWeek,
+            timezoneOffsetMinutes,
+            checkInNoteOverlays: new Dictionary<Guid, string?>(),
+            unitPreference,
+            priorWeekCount: Math.Max(0, _coachConfig.ExchangeRecentTrainingPriorWeekCount),
+            cancellationToken);
+
+        return new CoachExchangePacket(
+            Meta: new CoachPacketMeta(
+                WeekStartDate: planStart,
+                WeekEndDate: planEnd,
+                CheckInWeekStartDate: planStart,
+                CheckInWeekEndDate: planEnd,
+                PlanWeekStartDate: planStart,
+                PlanWeekEndDate: planEnd,
+                ReferenceDate: referenceDate,
+                TimezoneOffsetMinutes: timezoneOffsetMinutes,
+                UnitPreference: unitPreference,
+                AssembledAtUtc: DateTime.UtcNow),
+            Goal: packetGoal,
+            Constraints: packetConstraints,
+            Layer1: layer1,
+            Layer3: layer3,
+            CommittedPlanSlice: committedPlanSlice,
+            WeekExchanges: weekExchanges,
+            AthleteText: athleteText,
+            RecentTraining: recentTraining,
+            AttachedRun: null);
+    }
+
+    private async Task<IReadOnlyList<CoachPacketCommittedPlanDay>?> BuildCommittedPlanSliceAsync(
+        DateOnly planStartDate,
+        CancellationToken cancellationToken)
+    {
+        var committed = await _db.CoachWeeks.AsNoTracking()
+            .FirstOrDefaultAsync(
+                w => w.WeekStartDate == planStartDate && w.Status == CoachWeekStatuses.Committed,
+                cancellationToken);
+        if (committed == null)
+        {
+            return null;
+        }
+
+        var schemaError = CoachWeeklyCommitSchema.TryParseAndValidate(
+            committed.CommitJson,
+            planStartDate,
+            out var commit);
+        if (schemaError != null || commit == null)
+        {
+            return null;
+        }
+
+        return commit.Days.Select(d => new CoachPacketCommittedPlanDay(
+            Date: d.Date,
+            DayType: d.DayType,
+            DistanceM: d.Run?.DistanceM,
+            Structure: d.Run?.Structure,
+            PaceOrHr: d.Run?.PaceOrHr,
+            ShoeId: d.Run?.ShoeId)).ToList();
+    }
+
+    private async Task<IReadOnlyList<CoachPacketWeekExchange>> BuildWeekExchangesAsync(
+        DateOnly planStartDate,
+        Guid? excludeExchangeId,
+        CancellationToken cancellationToken)
+    {
+        var query = _db.CoachExchanges.AsNoTracking()
+            .Where(e => e.WeekStartDate == planStartDate && e.Status == CoachExchangeStatuses.Ready);
+        if (excludeExchangeId != null)
+        {
+            query = query.Where(e => e.Id != excludeExchangeId);
+        }
+
+        var rows = await query
+            .OrderBy(e => e.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var result = new List<CoachPacketWeekExchange>(rows.Count);
+        foreach (var row in rows)
+        {
+            string? verdict = null;
+            string? coachSummary = null;
+            if (!string.IsNullOrWhiteSpace(row.ReplyJson)
+                && CoachExchangeReplySchema.TryParseAndValidate(row.ReplyJson, out var reply) == null
+                && reply != null)
+            {
+                verdict = reply.Verdict;
+                coachSummary = Truncate(reply.WhatItMeansNext, 240);
+            }
+
+            var text = row.AthleteText ?? string.Empty;
+            if (text.Length > 400)
+            {
+                text = text[..400];
+            }
+
+            result.Add(new CoachPacketWeekExchange(
+                Date: row.CreatedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                WorkoutId: row.WorkoutId,
+                AthleteText: text,
+                Verdict: verdict,
+                CoachSummary: coachSummary));
+        }
+
+        return result;
+    }
+
+    private static string Truncate(string value, int max)
+    {
+        var trimmed = value.Trim();
+        return trimmed.Length <= max ? trimmed : trimmed[..max];
+    }
+
     private async Task<CoachPacketRecentTraining> BuildRecentTrainingAsync(
         WeeklyRecapWeekMath.MondaySundayWeek checkInWeek,
         int timezoneOffsetMinutes,
         IReadOnlyDictionary<Guid, string?> checkInNoteOverlays,
         string unitPreference,
+        int priorWeekCount,
         CancellationToken cancellationToken)
     {
-        var priorCount = Math.Max(0, _coachConfig.RecentTrainingPriorWeekCount);
+        var priorCount = Math.Max(0, priorWeekCount);
         var weeks = WeeklyRecapWeekMath.BuildRecentTrainingWeeks(
             checkInWeek,
             priorCount,
@@ -490,6 +675,34 @@ public sealed record CoachContextPacket(
     CoachPacketRecentTraining RecentTraining,
     CoachPacketAdjustment? Adjustment = null,
     CoachPacketAthleteFeedback? AthleteFeedback = null);
+
+/// <summary>Mid-week exchange packet (no weekly check-in / L2 / memory write path).</summary>
+public sealed record CoachExchangePacket(
+    CoachPacketMeta Meta,
+    CoachPacketGoal? Goal,
+    IReadOnlyList<CoachPacketConstraint> Constraints,
+    CoachPacketLayer1 Layer1,
+    CoachPacketLayer3 Layer3,
+    IReadOnlyList<CoachPacketCommittedPlanDay>? CommittedPlanSlice,
+    IReadOnlyList<CoachPacketWeekExchange> WeekExchanges,
+    string AthleteText,
+    CoachPacketRecentTraining RecentTraining,
+    object? AttachedRun = null);
+
+public sealed record CoachPacketCommittedPlanDay(
+    string Date,
+    string DayType,
+    double? DistanceM,
+    string? Structure,
+    string? PaceOrHr,
+    Guid? ShoeId);
+
+public sealed record CoachPacketWeekExchange(
+    string Date,
+    Guid? WorkoutId,
+    string AthleteText,
+    string? Verdict,
+    string? CoachSummary);
 
 /// <summary>Athlete-requested changes to a previous draft (Ask for changes on draft).</summary>
 public sealed record CoachPacketAthleteFeedback(

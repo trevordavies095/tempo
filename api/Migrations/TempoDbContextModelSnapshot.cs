@@ -300,6 +300,81 @@ namespace Tempo.Api.Migrations
                     b.ToTable("CoachEpisodes");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.CoachExchange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AthleteText")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int?>("InputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("JobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Locked")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("OutputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("PreflightId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReplyJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("SuggestedChangeJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("WeekStartDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("WorkoutId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("JobId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("WeekStartDate");
+
+                    b.HasIndex("WorkoutId");
+
+                    b.ToTable("CoachExchanges");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.CoachGoal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -477,6 +552,14 @@ namespace Tempo.Api.Migrations
                     b.Property<DateTime?>("ConsentedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("ExchangeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("PayloadHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -501,8 +584,13 @@ namespace Tempo.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WeekStartDate")
-                        .IsUnique();
+                    b.HasIndex("ExchangeId");
+
+                    b.HasIndex("WeekStartDate");
+
+                    b.HasIndex("Kind", "WeekStartDate")
+                        .IsUnique()
+                        .HasFilter("\"Kind\" = 'weekly'");
 
                     b.ToTable("CoachPrivacyPreflights");
                 });

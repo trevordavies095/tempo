@@ -101,13 +101,22 @@ public sealed class CoachPrivacyPreflightService
         var now = DateTime.UtcNow;
 
         var row = await _db.CoachPrivacyPreflights
-            .FirstOrDefaultAsync(p => p.WeekStartDate == planStartDate, cancellationToken);
+            .FirstOrDefaultAsync(
+                p => p.WeekStartDate == planStartDate
+                     && p.Kind == CoachPrivacyPreflightKinds.Weekly,
+                cancellationToken);
         if (row == null)
         {
-            row = new CoachPrivacyPreflight { WeekStartDate = planStartDate };
+            row = new CoachPrivacyPreflight
+            {
+                WeekStartDate = planStartDate,
+                Kind = CoachPrivacyPreflightKinds.Weekly
+            };
             _db.CoachPrivacyPreflights.Add(row);
         }
 
+        row.Kind = CoachPrivacyPreflightKinds.Weekly;
+        row.ExchangeId = null;
         row.TimezoneOffsetMinutes = timezoneOffsetMinutes;
         row.ReferenceDate = referenceLocal;
         row.RedactedPayloadJson = redactedJson;
@@ -160,6 +169,78 @@ public sealed class CoachPrivacyPreflightService
             recordConsent: true,
             athleteFeedback: feedback,
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Exchange path: assemble + redact for plan week of reference local date.
+    /// Creates a new exchange-kind preflight (never upserts weekly).
+    /// </summary>
+    public async Task<(CoachPrivacyPreflight? Preflight, string? Error, int StatusCode)> AssembleExchangeAsync(
+        DateOnly planMonday,
+        DateOnly referenceLocal,
+        int timezoneOffsetMinutes,
+        string athleteText,
+        Guid? exchangeId,
+        bool recordConsent,
+        Guid? excludeExchangeId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var planWeek = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
+            utcNow: DateTime.SpecifyKind(referenceLocal.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc),
+            timezoneOffsetMinutes,
+            referenceLocalDate: referenceLocal.ToDateTime(TimeOnly.MinValue));
+
+        // Ensure week identity matches plan Monday even if reference drifts.
+        if (DateOnly.FromDateTime(planWeek.WeekStartLocal) != planMonday)
+        {
+            planWeek = WeeklyRecapWeekMath.ResolveMondaySundayWeek(
+                utcNow: DateTime.SpecifyKind(planMonday.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc),
+                timezoneOffsetMinutes,
+                referenceLocalDate: planMonday.ToDateTime(TimeOnly.MinValue));
+        }
+
+        var packet = await _assembler.AssembleExchangeAsync(
+            planWeek,
+            timezoneOffsetMinutes,
+            athleteText,
+            excludeExchangeId,
+            cancellationToken);
+
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        var redactContext = new CoachRedactionContext(Username: user?.Username);
+
+        if (!CoachPrivacyRedactor.TryRedact(
+                packet,
+                out var redactedJson,
+                out var report,
+                out var redactError,
+                redactContext))
+        {
+            return (null, redactError ?? "Redaction failed", 400);
+        }
+
+        if (redactedJson.Contains("\"name\":", StringComparison.OrdinalIgnoreCase))
+        {
+            return (null, "Redaction failed: name fields must not appear in packet", 400);
+        }
+
+        var now = DateTime.UtcNow;
+        var row = new CoachPrivacyPreflight
+        {
+            Kind = CoachPrivacyPreflightKinds.Exchange,
+            WeekStartDate = planMonday,
+            ExchangeId = exchangeId,
+            TimezoneOffsetMinutes = timezoneOffsetMinutes,
+            ReferenceDate = referenceLocal,
+            RedactedPayloadJson = redactedJson,
+            PrivacyReportJson = JsonSerializer.Serialize(report, JsonOptions),
+            PayloadHash = Sha256Hex(redactedJson),
+            AssembledAt = now,
+            ConsentedAt = recordConsent ? now : null
+        };
+        _db.CoachPrivacyPreflights.Add(row);
+        await _db.SaveChangesAsync(cancellationToken);
+        return (row, null, 200);
     }
 
     public static bool TryBuildAthleteFeedback(

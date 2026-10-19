@@ -51,6 +51,7 @@ public sealed class CoachSetupService
     {
         await _jobs.InterruptIncompleteJobsAsync(cancellationToken);
 
+        await _db.CoachExchanges.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachJobs.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachWeeks.ExecuteDeleteAsync(cancellationToken);
         await _db.CoachAdjustments.ExecuteDeleteAsync(cancellationToken);

@@ -246,6 +246,72 @@ public static partial class CoachPrivacyRedactor
             }
         }
 
+        if (packet is CoachExchangePacket exchange)
+        {
+            selectedRuleIds.AddRange(exchange.Layer3.Rules.Select(r => r.Id));
+            layer3Detail =
+                $"{selectedRuleIds.Count} active standing rules — text you accepted or wrote, scrubbed of name/email/coordinates";
+
+            var weeks = exchange.RecentTraining.Weeks;
+            if (weeks.Count > 0)
+            {
+                var runCount = weeks.Sum(w => w.RunCount);
+                var start = weeks[0].WeekStartDate;
+                var end = weeks[^1].WeekEndDate;
+                recentTrainingDetail =
+                    $"{weeks.Count} Mon–Sun weeks ({start}→{end}), {runCount} runs — distance/duration/HR/RPE/shoe ids and notes; no titles or GPS";
+            }
+            else
+            {
+                recentTrainingDetail = "0 recent-training weeks";
+            }
+
+            var planDetail = exchange.CommittedPlanSlice == null
+                ? "No committed plan for this week"
+                : $"{exchange.CommittedPlanSlice.Count} planned days (day type, distance, structure, pace/HR, shoe) — no titles or GPS";
+            var exchangesDetail =
+                $"{exchange.WeekExchanges.Count} prior exchanges this week (athlete text ≤400 chars, verdict, short coach summary)";
+            var athleteTextDetail = string.IsNullOrWhiteSpace(exchange.AthleteText)
+                ? "Empty athlete message"
+                : "Your message to the coach (avoid names and addresses)";
+
+            var exchangeIncluded = new List<CoachPrivacyReportItem>
+            {
+                new("meta", "Week bounds, unit preference, assemble timestamp"),
+                new("goal", "Primary CoachGoal fields"),
+                new("constraints", "Active CoachConstraint non-negotiables"),
+                new("layer1", "HR zones, paces, shoes, run days per week, training phase (no athlete name)"),
+                new("layer3", layer3Detail),
+                new("committedPlanSlice", planDetail),
+                new("weekExchanges", exchangesDetail),
+                new("athleteText", athleteTextDetail),
+                new("recentTraining", recentTrainingDetail)
+            };
+
+            var exchangeStripped = new List<CoachPrivacyReportItem>
+            {
+                new("athleteIdentity", "Name, email, and username fields"),
+                new("workoutNames", "Workout display names (never assembled into provider packet)"),
+                new("gpsRoutes", "GPS coordinates, routes, and GeoJSON"),
+                new("deviceTemperature", "Device/skin temperature (never assembled)"),
+                new("rawFiles", "Raw GPX/FIT/Strava/HealthKit blobs")
+            };
+
+            foreach (var cat in stripped)
+            {
+                if (exchangeStripped.All(s => !string.Equals(s.Category, cat, StringComparison.OrdinalIgnoreCase)))
+                {
+                    exchangeStripped.Add(new CoachPrivacyReportItem(cat, "Removed during redaction"));
+                }
+            }
+
+            return new CoachPrivacyReport(
+                exchangeIncluded,
+                exchangeStripped,
+                selectedEpisodeIds.Distinct(StringComparer.Ordinal).ToList(),
+                selectedRuleIds.Distinct(StringComparer.Ordinal).ToList());
+        }
+
         var included = new List<CoachPrivacyReportItem>
         {
             new("meta", "Week bounds, unit preference, assemble timestamp"),

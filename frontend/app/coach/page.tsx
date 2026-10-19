@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { AskForChangesDialog } from '@/components/coach/AskForChangesDialog';
 import { CoachSetupForm } from '@/components/coach/CoachSetupForm';
+import { CoachWeekExchangeFeed } from '@/components/coach/CoachWeekExchangeFeed';
 import {
   deleteCoachDraftWeek,
   getCoachCheckIn,
@@ -365,7 +366,11 @@ export default function CoachPage() {
   const ritualDraft = ritualDraftQuery.data;
   const ritualCommitted = ritualCommittedQuery.data;
   const ritualCheckIn = ritualCheckInQuery.data;
-  const currentJob = currentJobQuery.data;
+  // Ritual card ignores exchange jobs (mid-week Sends must not hijack "coach is working").
+  const currentJob =
+    currentJobQuery.data && currentJobQuery.data.kind !== 'exchange'
+      ? currentJobQuery.data
+      : null;
 
   const calendarMemoryLines = useMemo(
     () => memoryLinesForWeek(committed, unitPreference),
@@ -549,6 +554,14 @@ export default function CoachPage() {
             )}
             {ritualError && <p className="text-sm text-danger mt-3">{ritualError}</p>}
           </Card>
+        )}
+
+        {onboardingDone && goal && (
+          <CoachWeekExchangeFeed
+            weekStartDate={weekStartDate}
+            timezoneOffsetMinutes={timezoneOffsetMinutes}
+            referenceDate={todayIso}
+          />
         )}
 
         {planLoading && (

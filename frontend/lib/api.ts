@@ -2205,7 +2205,7 @@ export async function consentCoachPrivacyPreflight(id: string): Promise<CoachPri
 }
 
 export type CoachJobStatus = 'queued' | 'running' | 'ready' | 'failed' | string;
-export type CoachJobKind = 'generate' | 'adjust' | string;
+export type CoachJobKind = 'generate' | 'adjust' | 'exchange' | string;
 export type CoachAdjustCategory = 'niggle' | 'illness' | 'life' | 'other';
 
 export interface CoachJob {
@@ -2224,6 +2224,188 @@ export interface CoachJob {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+}
+
+export type CoachExchangeStatus = 'queued' | 'running' | 'ready' | 'failed' | string;
+export type CoachExchangeVerdict = 'on_track' | 'noise' | 'watch' | 'concern' | string;
+
+export interface CoachExchangeReply {
+  whatHappened: string;
+  whyItLooksLikeThat: string;
+  whatItMeansNext: string;
+  verdict: CoachExchangeVerdict;
+  safetyFlags?: string[];
+  suggestedChange?: {
+    summary: string;
+    note: string;
+    affectedDates: string[];
+  } | null;
+}
+
+export interface CoachExchange {
+  id: string;
+  weekStartDate: string;
+  workoutId: string | null;
+  athleteText: string;
+  preflightId: string;
+  jobId: string | null;
+  status: CoachExchangeStatus;
+  reply: CoachExchangeReply | null;
+  suggestedChange: CoachExchangeReply['suggestedChange'];
+  inputTokens: number | null;
+  outputTokens: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  locked: boolean;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export interface CoachExchangeSendResult {
+  job: CoachJob;
+  exchange: CoachExchange;
+}
+
+export interface CoachExchangePreflight {
+  id: string;
+  kind: string;
+  weekStartDate: string;
+  payloadHash: string;
+  consentedAt: string | null;
+  redactedPayload: unknown;
+  privacyReport: CoachPrivacyReport | null;
+  assembledAt: string;
+}
+
+export interface CoachExchangePrivacyReceipt {
+  exchangeId: string;
+  weekStartDate: string;
+  preflightId: string;
+  payloadHash: string;
+  consentedAt: string | null;
+  redactedPayload: unknown;
+  privacyReport: CoachPrivacyReport | null;
+}
+
+export async function postCoachExchangePreflight(body: {
+  athleteText?: string;
+  timezoneOffsetMinutes?: number;
+  referenceDate?: string;
+}): Promise<CoachExchangePreflight> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/exchanges/preflight`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to assemble exchange preflight: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function postCoachExchange(body: {
+  athleteText: string;
+  timezoneOffsetMinutes?: number;
+  referenceDate?: string;
+}): Promise<CoachExchangeSendResult> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/exchanges`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to send exchange: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function listCoachExchanges(params?: {
+  weekStartDate?: string;
+  timezoneOffsetMinutes?: number;
+}): Promise<CoachExchange[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.weekStartDate) {
+    searchParams.set('weekStartDate', params.weekStartDate);
+  }
+  if (params?.timezoneOffsetMinutes !== undefined) {
+    searchParams.set('timezoneOffsetMinutes', params.timezoneOffsetMinutes.toString());
+  }
+  const qs = searchParams.toString();
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/coach/exchanges${qs ? `?${qs}` : ''}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to list exchanges: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachExchange(id: string): Promise<CoachExchange> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/exchanges/${id}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get exchange: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCoachExchangePrivacyReceipt(
+  id: string
+): Promise<CoachExchangePrivacyReceipt> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/exchanges/${id}/privacy-receipt`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to get exchange privacy receipt: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function retryCoachExchange(
+  id: string,
+  body?: { timezoneOffsetMinutes?: number; referenceDate?: string }
+): Promise<CoachExchangeSendResult> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/coach/exchanges/${id}/retry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body ?? {}),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to retry exchange: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 export type CoachDayType = 'rest' | 'easy' | 'quality' | 'long' | 'race' | 'other' | string;

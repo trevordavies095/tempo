@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace Tempo.Api.Models;
 
 /// <summary>
-/// Peelable privacy pre-flight artifact for one Mon–Sun week.
+/// Peelable privacy pre-flight artifact for a weekly ritual or an exchange.
 /// Stores redacted packet JSON only. ConsentedAt null until the athlete confirms.
 /// </summary>
 public class CoachPrivacyPreflight
@@ -12,8 +12,16 @@ public class CoachPrivacyPreflight
     [Key]
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    /// <summary>Local Monday of the check-in / generate week.</summary>
+    /// <summary><see cref="CoachPrivacyPreflightKinds.Weekly"/> or <see cref="CoachPrivacyPreflightKinds.Exchange"/>.</summary>
+    [Required]
+    [MaxLength(32)]
+    public string Kind { get; set; } = CoachPrivacyPreflightKinds.Weekly;
+
+    /// <summary>Local Monday of the plan / exchange week.</summary>
     public DateOnly WeekStartDate { get; set; }
+
+    /// <summary>Set for exchange prefights; null for weekly.</summary>
+    public Guid? ExchangeId { get; set; }
 
     public int TimezoneOffsetMinutes { get; set; }
 
@@ -35,6 +43,6 @@ public class CoachPrivacyPreflight
 
     public DateTime AssembledAt { get; set; } = DateTime.UtcNow;
 
-    /// <summary>Null until athlete consents. Only consented rows are sendable for generate.</summary>
+    /// <summary>Null until athlete consents. Only consented rows are sendable.</summary>
     public DateTime? ConsentedAt { get; set; }
 }

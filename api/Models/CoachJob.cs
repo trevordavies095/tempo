@@ -6,6 +6,15 @@ public static class CoachJobKinds
 {
     public const string Generate = "generate";
     public const string Adjust = "adjust";
+    public const string Exchange = "exchange";
+
+    public static bool IsRitual(string? kind) =>
+        string.Equals(kind, Generate, StringComparison.Ordinal)
+        || string.Equals(kind, Adjust, StringComparison.Ordinal)
+        || string.IsNullOrWhiteSpace(kind);
+
+    public static bool IsExchange(string? kind) =>
+        string.Equals(kind, Exchange, StringComparison.Ordinal);
 }
 
 public static class CoachJobStatuses

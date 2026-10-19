@@ -31,6 +31,11 @@ public sealed class CoachJobService
             return (null, "Privacy pre-flight consent is required before generate", 400);
         }
 
+        if (preflight.Kind == CoachPrivacyPreflightKinds.Exchange)
+        {
+            return (null, "Exchange prefights cannot start a ritual generate job", 400);
+        }
+
         var provider = await _db.CoachProviderConnections.AsNoTracking()
             .FirstOrDefaultAsync(cancellationToken);
         if (provider == null || provider.ApiKeyCiphertext.Length == 0)
@@ -79,8 +84,8 @@ public sealed class CoachJobService
             }
         }
 
-        var active = await FindActiveJobAsync(cancellationToken);
-        if (active != null)
+        var activeRitual = await FindActiveRitualJobAsync(cancellationToken);
+        if (activeRitual != null)
         {
             return (null, "A coach generate job is already active", 409);
         }
@@ -109,21 +114,88 @@ public sealed class CoachJobService
         return (job, null, 202);
     }
 
+    public async Task<(CoachJob? Job, string? Error, int StatusCode)> StartExchangeAsync(
+        Guid preflightId,
+        Guid exchangeId,
+        CancellationToken cancellationToken = default)
+    {
+        var preflight = await _db.CoachPrivacyPreflights
+            .FirstOrDefaultAsync(p => p.Id == preflightId, cancellationToken);
+        if (preflight == null)
+        {
+            return (null, "Preflight not found", 404);
+        }
+
+        if (preflight.ConsentedAt == null)
+        {
+            return (null, "Privacy pre-flight consent is required before exchange", 400);
+        }
+
+        if (preflight.Kind != CoachPrivacyPreflightKinds.Exchange)
+        {
+            return (null, "Preflight must be an exchange kind", 400);
+        }
+
+        var exchange = await _db.CoachExchanges
+            .FirstOrDefaultAsync(e => e.Id == exchangeId, cancellationToken);
+        if (exchange == null)
+        {
+            return (null, "Exchange not found", 404);
+        }
+
+        var provider = await _db.CoachProviderConnections.AsNoTracking()
+            .FirstOrDefaultAsync(cancellationToken);
+        if (provider == null || provider.ApiKeyCiphertext.Length == 0)
+        {
+            return (null, "Anthropic provider key is required", 400);
+        }
+
+        var activeExchange = await FindActiveExchangeJobAsync(cancellationToken);
+        if (activeExchange != null)
+        {
+            return (null, "A coach exchange job is already active", 409);
+        }
+
+        var job = new CoachJob
+        {
+            Status = CoachJobStatuses.Queued,
+            Kind = CoachJobKinds.Exchange,
+            WeekStartDate = preflight.WeekStartDate,
+            PreflightId = preflight.Id,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.CoachJobs.Add(job);
+        exchange.JobId = job.Id;
+        exchange.PreflightId = preflight.Id;
+        exchange.Status = CoachExchangeStatuses.Queued;
+        exchange.ErrorCode = null;
+        exchange.ErrorMessage = null;
+        exchange.CompletedAt = null;
+        exchange.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+        await _queue.EnqueueAsync(job.Id, cancellationToken);
+        return (job, null, 202);
+    }
+
     public Task<CoachJob?> GetAsync(Guid id, CancellationToken cancellationToken = default)
         => _db.CoachJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
 
     public Task<CoachJob?> GetActiveJobAsync(CancellationToken cancellationToken = default) =>
-        FindActiveJobAsync(cancellationToken);
+        FindActiveRitualJobAsync(cancellationToken);
 
+    /// <summary>
+    /// Ritual card current job: active ritual, else latest ritual (never exchange).
+    /// </summary>
     public async Task<CoachJob?> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
-        var active = await FindActiveJobAsync(cancellationToken);
+        var active = await FindActiveRitualJobAsync(cancellationToken);
         if (active != null)
         {
             return active;
         }
 
         return await _db.CoachJobs.AsNoTracking()
+            .Where(j => j.Kind != CoachJobKinds.Exchange)
             .OrderByDescending(j => j.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
     }
@@ -147,12 +219,41 @@ public sealed class CoachJobService
             job.CompletedAt = now;
         }
 
+        var incompleteExchangeJobs = incomplete
+            .Where(j => j.Kind == CoachJobKinds.Exchange)
+            .Select(j => j.Id)
+            .ToList();
+        if (incompleteExchangeJobs.Count > 0)
+        {
+            var exchanges = await _db.CoachExchanges
+                .Where(e => e.JobId != null && incompleteExchangeJobs.Contains(e.JobId.Value)
+                            && (e.Status == CoachExchangeStatuses.Queued
+                                || e.Status == CoachExchangeStatuses.Running))
+                .ToListAsync(cancellationToken);
+            foreach (var exchange in exchanges)
+            {
+                exchange.Status = CoachExchangeStatuses.Failed;
+                exchange.ErrorCode = CoachJobErrorCodes.Interrupted;
+                exchange.ErrorMessage = "interrupted on API startup";
+                exchange.CompletedAt = now;
+                exchange.UpdatedAt = now;
+            }
+        }
+
         await _db.SaveChangesAsync(cancellationToken);
     }
 
-    private Task<CoachJob?> FindActiveJobAsync(CancellationToken cancellationToken) =>
+    private Task<CoachJob?> FindActiveRitualJobAsync(CancellationToken cancellationToken) =>
         _db.CoachJobs.AsNoTracking()
-            .Where(j => j.Status == CoachJobStatuses.Queued || j.Status == CoachJobStatuses.Running)
+            .Where(j => (j.Status == CoachJobStatuses.Queued || j.Status == CoachJobStatuses.Running)
+                        && j.Kind != CoachJobKinds.Exchange)
+            .OrderByDescending(j => j.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private Task<CoachJob?> FindActiveExchangeJobAsync(CancellationToken cancellationToken) =>
+        _db.CoachJobs.AsNoTracking()
+            .Where(j => (j.Status == CoachJobStatuses.Queued || j.Status == CoachJobStatuses.Running)
+                        && j.Kind == CoachJobKinds.Exchange)
             .OrderByDescending(j => j.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
 }
