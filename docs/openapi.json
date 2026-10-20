@@ -924,7 +924,7 @@
           "Stats"
         ],
         "summary": "Get relative effort stats",
-        "description": "Returns cumulative relative effort for the current week (Monday-Sunday) and calculates\nthe 3-week average and range from the previous 3 complete weeks.",
+        "description": "Returns cumulative relative effort for the selected week (Monday-Sunday) and calculates\nthe 3-week average and range from the previous 3 complete weeks.\nWeek boundaries match `/stats/weekly-recap`; the current week query uses the full Mon–Sun window (not week-to-date).",
         "operationId": "GetRelativeEffortStats",
         "parameters": [
           {
@@ -935,6 +935,14 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "referenceDate",
+            "in": "query",
+            "description": "Optional local calendar date (yyyy-MM-dd) that selects which Monday–Sunday week is treated as \"current\"; defaults to today in the offset frame.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -944,6 +952,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RelativeEffortStatsDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
