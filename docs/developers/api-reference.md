@@ -529,9 +529,12 @@ Query Parameters:
 Returns a list of similar route matches with:
 - `workoutId` - ID of the similar workout
 - `similarityScore` - Route similarity score (0-100%)
-- `distanceDifferenceM` - Distance difference in meters
-- `timeDifferenceS` - Time difference in seconds
-- `paceDifferenceS` - Pace difference in seconds per km
+- `timeDifferenceS` - Time difference in seconds (match − subject; negative = faster)
+- `paceDifferenceS` - Pace difference in seconds per km (match − subject; negative = faster)
+- `avgHeartRateBpm` - Match average heart rate when available
+- `avgHeartRateDifferenceBpm` - Match − subject avg HR (negative = lower HR than subject; null if either lacks HR)
+- `name`, `runType` - Match workout name and run type when set
+- `relativeEffort`, `elevGainM` - Match effort and elevation when available
 
 ## Statistics
 

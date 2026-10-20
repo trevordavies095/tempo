@@ -1540,8 +1540,9 @@ public static class WorkoutsEndpoints
             // Get current workout details for comparison
             var currentDurationS = currentWorkout.DurationS;
             var currentAvgPaceS = currentWorkout.AvgPaceS;
+            var currentAvgHeartRateBpm = currentWorkout.AvgHeartRateBpm;
 
-            // Load full workout details for matches to access RelativeEffort and ElevGainM
+            // Load full workout details for matches (effort, elev, HR, name, runType)
             var matchWorkoutIds = similarRoutes.Select(m => m.WorkoutId).ToList();
             var matchWorkouts = await db.Workouts
                 .AsNoTracking()
@@ -1564,7 +1565,15 @@ public static class WorkoutsEndpoints
                     TimeDifferenceS = match.DurationS - currentDurationS, // Negative = faster, Positive = slower
                     PaceDifferenceS = match.AvgPaceS - currentAvgPaceS, // Negative = faster pace
                     RelativeEffort = matchWorkout?.RelativeEffort,
-                    ElevGainM = matchWorkout?.ElevGainM
+                    ElevGainM = matchWorkout?.ElevGainM,
+                    AvgHeartRateBpm = matchWorkout?.AvgHeartRateBpm,
+                    AvgHeartRateDifferenceBpm =
+                        matchWorkout?.AvgHeartRateBpm is byte matchHr
+                        && currentAvgHeartRateBpm is byte currentHr
+                            ? matchHr - currentHr
+                            : null,
+                    Name = matchWorkout?.Name,
+                    RunType = matchWorkout?.RunType
                 };
             }).ToList();
 

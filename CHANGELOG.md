@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`GET /workouts/{id}/similar-routes` heart-rate fields** - Each match may include `avgHeartRateBpm`, `avgHeartRateDifferenceBpm` (match − subject; negative = lower HR than the subject; null when either side lacks HR), plus `name` and `runType`. Additive; existing clients ignore unknown fields.
 - **`GET /stats/relative-effort` optional `referenceDate`** - Same `yyyy-MM-dd` week-selection semantics as `GET /stats/weekly-recap` so clients can load relative-effort stats for a historical Monday–Sunday week; omitting the param preserves today’s behavior. Invalid dates return `400`.
 - **OpenAPI response schemas for coach/CLI integration endpoints** - Documented `200` (and error) response bodies in `docs/openapi.json` for `GET /workouts`, `/workouts/{id}`, `/workouts/{id}/time-series`, `/workouts/{id}/similar-routes`, `/stats/weekly-recap`, `/stats/relative-effort`, `/stats/best-efforts`, `/shoes`, `/settings/heart-rate-zones`, `/settings/unit-preference`, and `/auth/me`. Handlers return named DTOs wired via `.Produces<T>`; payloads are unchanged. CI continues to keep the committed OpenAPI file in sync with Swashbuckle generation.
 

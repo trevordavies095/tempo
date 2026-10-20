@@ -3340,6 +3340,26 @@
             "type": "number",
             "format": "double",
             "nullable": true
+          },
+          "avgHeartRateBpm": {
+            "type": "integer",
+            "description": "Average heart rate of the matched workout (bpm), when available.",
+            "format": "int32",
+            "nullable": true
+          },
+          "avgHeartRateDifferenceBpm": {
+            "type": "integer",
+            "description": "Negative = lower avg HR than current workout (match − subject).",
+            "format": "int32",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "runType": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false,

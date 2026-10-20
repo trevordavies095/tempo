@@ -1787,6 +1787,11 @@ export interface SimilarRoute {
   paceDifferenceS?: number; // Negative = faster pace
   relativeEffort?: number | null;
   elevGainM?: number | null;
+  avgHeartRateBpm?: number | null;
+  /** Negative = match has lower avg HR than the subject (match − subject). */
+  avgHeartRateDifferenceBpm?: number | null;
+  name?: string | null;
+  runType?: string | null;
 }
 
 export async function getSimilarRoutes(workoutId: string, maxResults?: number): Promise<SimilarRoute[]> {
