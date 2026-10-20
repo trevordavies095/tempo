@@ -1213,6 +1213,8 @@ public static class WorkoutsEndpoints
     /// Retrieves complete workout data including route (as GeoJSON), splits, and weather information.
     /// Each split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),
     /// startElapsedS, endElapsedS, and startDistanceM (number or null).
+    /// Does not include an embedded timeSeries array; heart-rate and other per-sample sensors are only available
+    /// via paginated <c>GET /workouts/{id}/time-series</c> (sparse, non-interpolated samples).
     /// <c>timerTimeS</c> is FIT total timer time when known (null for non-FIT or missing Session); distinct from
     /// <c>durationS</c> (elapsed) and <c>movingTimeS</c>.
     /// <c>heartRateZoneTimes</c> is five live zone buckets from HR series + current Settings, or JSON null.
@@ -1424,6 +1426,17 @@ public static class WorkoutsEndpoints
     /// <summary>
     /// Paginated WorkoutTimeSeries samples for a workout.
     /// </summary>
+    /// <remarks>
+    /// The only API surface for per-sample series; <c>GET /workouts/{id}</c> does not embed time-series.
+    /// Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors:
+    /// distanceM, heartRateBpm, cadenceRpm (steps/min, both feet; not single-leg RPM), powerWatts, speedMps,
+    /// gradePercent, elevationM, temperatureC, verticalSpeedMps.
+    /// Null fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second
+    /// is present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed.
+    /// The server does not interpolate missing seconds; clients may interpolate if needed.
+    /// Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second.
+    /// Default pageSize is 1000 with a maximum of 5000; use multiple requests for long activities.
+    /// </remarks>
     private static async Task<IResult> GetWorkoutTimeSeries(
         Guid id,
         TempoDbContext db,
@@ -2461,7 +2474,8 @@ public static class WorkoutsEndpoints
         .Produces<ErrorResponse>(404)
         .WithSummary("Get workout time series")
         .WithDescription(
-            "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm (steps/min), powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. " +
+            "The only API surface for per-sample series; GET /workouts/{id} does not embed time-series. " +
+            "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm (steps/min, both feet; not single-leg RPM), powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. " +
             "Null fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second is present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. " +
             "The server does not interpolate missing seconds; clients may interpolate if needed. " +
             "Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. " +
@@ -2476,6 +2490,11 @@ public static class WorkoutsEndpoints
             "Retrieves complete workout data including route (as GeoJSON), splits, and weather information. " +
             "Each split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null), " +
             "startElapsedS, endElapsedS, and startDistanceM (number or null). " +
+            "Does not include an embedded timeSeries array; heart-rate and other per-sample sensors are only available " +
+            "via paginated GET /workouts/{id}/time-series (sparse, non-interpolated samples). " +
+            "timerTimeS is FIT total timer time when known (null for non-FIT or missing Session); distinct from " +
+            "durationS (elapsed) and movingTimeS. " +
+            "heartRateZoneTimes is five live zone buckets from HR series + current Settings, or JSON null. " +
             "Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values " +
             "are normalized for consistency.");
 

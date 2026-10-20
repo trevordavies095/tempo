@@ -411,9 +411,12 @@ Get detailed workout information:
 GET /workouts/{id}
 ```
 
+Detail does **not** include an embedded `timeSeries` array. Heart-rate and other per-sample sensors are only available via [Get Workout Time Series](#get-workout-time-series) (`GET /workouts/{id}/time-series`; sparse, non-interpolated).
+
 Detail includes top-level `healthKitUuid` when the workout was imported (or stamped) from HealthKit.
 Detail also includes nullable `timerTimeS` next to `movingTimeS`. `durationS` is always elapsed.
 Detail also includes `heartRateZoneTimes`: five `{ zone, timeS }` objects (zones 1–5) or JSON `null`, computed live from HR time series and current Settings zones (same buckets as Relative Effort). Not present on list GET.
+List/detail `avgCadenceRpm` / `maxCadenceRpm` are steps per minute (both feet), despite the `*Rpm` names — typical running values ~160, not single-leg ~80.
 ### Update Workout
 
 Update workout details (e.g., activity name, shoe assignment):
@@ -510,7 +513,9 @@ Query parameters:
 - `page` - Page number (default: 1)
 - `pageSize` - Items per page (default: 1000, maximum: 5000)
 
-Each item includes `elapsedSeconds` plus optional sensors: `distanceM`, `heartRateBpm`, `cadenceRpm` (steps/min), `powerWatts`, `speedMps`, `gradePercent`, `elevationM`, `temperatureC`, `verticalSpeedMps`. Null fields mean that sensor was not recorded at that sample. Samples are sparse (not every elapsed second). The server does not interpolate. Ordering is ascending by `elapsedSeconds`, then by row id.
+This is the only API surface for per-sample series; workout detail does not embed time-series.
+
+Each item includes `elapsedSeconds` plus optional sensors: `distanceM`, `heartRateBpm`, `cadenceRpm` (steps/min, both feet — not single-leg RPM; same unit as list/detail `avgCadenceRpm` / `maxCadenceRpm`), `powerWatts`, `speedMps`, `gradePercent`, `elevationM`, `temperatureC`, `verticalSpeedMps`. Null fields mean that sensor was not recorded at that sample. Samples are sparse (not every elapsed second). The server does not interpolate. Ordering is ascending by `elapsedSeconds`, then by row id.
 
 The command-center overview client follows pages until complete or 20,000 samples and still renders what it loaded.
 
