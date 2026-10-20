@@ -18,6 +18,9 @@ public class WorkoutTimeSeriesPointDocument
     [JsonPropertyName("heartRateBpm")]
     public int? HeartRateBpm { get; set; }
 
+    /// <summary>
+    /// Cadence in steps per minute (both feet). Despite the <c>*Rpm</c> JSON name, values are total steps/min (~160 typical), not single-leg RPM (~80).
+    /// </summary>
     [JsonPropertyName("cadenceRpm")]
     public int? CadenceRpm { get; set; }
 

@@ -1830,7 +1830,7 @@
           "Workouts"
         ],
         "summary": "Paginated WorkoutTimeSeries samples for a workout.",
-        "description": "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm (steps/min), powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. Null fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second is present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. The server does not interpolate missing seconds; clients may interpolate if needed. Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. Default pageSize is 1000 with a maximum of 5000; use multiple requests for long activities.",
+        "description": "The only API surface for per-sample series; `GET /workouts/{id}` does not embed time-series.\nReturns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors:\ndistanceM, heartRateBpm, cadenceRpm (steps/min, both feet; not single-leg RPM), powerWatts, speedMps,\ngradePercent, elevationM, temperatureC, verticalSpeedMps.\nNull fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second\nis present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed.\nThe server does not interpolate missing seconds; clients may interpolate if needed.\nOrdering is ascending by elapsedSeconds, then by row id when multiple samples share the same second.\nDefault pageSize is 1000 with a maximum of 5000; use multiple requests for long activities.",
         "operationId": "GetWorkoutTimeSeries",
         "parameters": [
           {
@@ -1896,7 +1896,7 @@
           "Workouts"
         ],
         "summary": "Get workout details",
-        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),\nstartElapsedS, endElapsedS, and startDistanceM (number or null).\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.\n`heartRateZoneTimes` is five live zone buckets from HR series + current Settings, or JSON null.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
+        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),\nstartElapsedS, endElapsedS, and startDistanceM (number or null).\nDoes not include an embedded timeSeries array; heart-rate and other per-sample sensors are only available\nvia paginated `GET /workouts/{id}/time-series` (sparse, non-interpolated samples).\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.\n`heartRateZoneTimes` is five live zone buckets from HR series + current Settings, or JSON null.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
         "operationId": "GetWorkout",
         "parameters": [
           {
@@ -3810,11 +3810,13 @@
           },
           "maxCadenceRpm": {
             "type": "integer",
+            "description": "Max cadence in steps per minute (both feet). Despite the `*Rpm` JSON name, values are total steps/min (~160 typical), not single-leg RPM (~80).",
             "format": "int32",
             "nullable": true
           },
           "avgCadenceRpm": {
             "type": "integer",
+            "description": "Average cadence in steps per minute (both feet). Despite the `*Rpm` JSON name, values are total steps/min (~160 typical), not single-leg RPM (~80).",
             "format": "int32",
             "nullable": true
           },
@@ -4006,11 +4008,13 @@
           },
           "maxCadenceRpm": {
             "type": "integer",
+            "description": "Max cadence in steps per minute (both feet). Despite the `*Rpm` JSON name, values are total steps/min (~160 typical), not single-leg RPM (~80).",
             "format": "int32",
             "nullable": true
           },
           "avgCadenceRpm": {
             "type": "integer",
+            "description": "Average cadence in steps per minute (both feet). Despite the `*Rpm` JSON name, values are total steps/min (~160 typical), not single-leg RPM (~80).",
             "format": "int32",
             "nullable": true
           },
@@ -4217,6 +4221,7 @@
           },
           "cadenceRpm": {
             "type": "integer",
+            "description": "Cadence in steps per minute (both feet). Despite the `*Rpm` JSON name, values are total steps/min (~160 typical), not single-leg RPM (~80).",
             "format": "int32",
             "nullable": true
           },

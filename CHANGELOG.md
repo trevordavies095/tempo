@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OpenAPI response schemas for coach/CLI integration endpoints** - Documented `200` (and error) response bodies in `docs/openapi.json` for `GET /workouts`, `/workouts/{id}`, `/workouts/{id}/time-series`, `/workouts/{id}/similar-routes`, `/stats/weekly-recap`, `/stats/relative-effort`, `/stats/best-efforts`, `/shoes`, `/settings/heart-rate-zones`, `/settings/unit-preference`, and `/auth/me`. Handlers return named DTOs wired via `.Produces<T>`; payloads are unchanged. CI continues to keep the committed OpenAPI file in sync with Swashbuckle generation.
 
 ### Changed
+- **OpenAPI / API docs: time-series and cadence** - Document that `GET /workouts/{id}` does not embed time-series (use `GET /workouts/{id}/time-series`); clarify `avgCadenceRpm` / `maxCadenceRpm` / `cadenceRpm` as steps/min (both feet) despite the `*Rpm` names.
 - **Experimental `:feat-ai-coach` images are retiring** - Tempo no longer publishes GHCR images from the `feat/ai-coach` branch. Coaching will live in a separate product; do not deploy or pin `:feat-ai-coach` for new installs.
 
 ### Removed

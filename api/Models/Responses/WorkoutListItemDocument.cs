@@ -61,9 +61,15 @@ public class WorkoutListItemDocument
     [JsonPropertyName("minHeartRateBpm")]
     public int? MinHeartRateBpm { get; set; }
 
+    /// <summary>
+    /// Max cadence in steps per minute (both feet). Despite the <c>*Rpm</c> JSON name, values are total steps/min (~160 typical), not single-leg RPM (~80).
+    /// </summary>
     [JsonPropertyName("maxCadenceRpm")]
     public int? MaxCadenceRpm { get; set; }
 
+    /// <summary>
+    /// Average cadence in steps per minute (both feet). Despite the <c>*Rpm</c> JSON name, values are total steps/min (~160 typical), not single-leg RPM (~80).
+    /// </summary>
     [JsonPropertyName("avgCadenceRpm")]
     public int? AvgCadenceRpm { get; set; }
 
