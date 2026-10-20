@@ -363,35 +363,38 @@ public static class StatsEndpoints
     /// <param name="db">Database context</param>
     /// <param name="logger">Logger instance</param>
     /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC)</param>
+    /// <param name="referenceDate">Optional local calendar date (yyyy-MM-dd) that selects which Monday–Sunday week is treated as &quot;current&quot;; defaults to today in the offset frame.</param>
     /// <returns>Cumulative relative effort for the current week and 3-week average range</returns>
     /// <remarks>
-    /// Returns cumulative relative effort for the current week (Monday-Sunday) and calculates
+    /// Returns cumulative relative effort for the selected week (Monday-Sunday) and calculates
     /// the 3-week average and range from the previous 3 complete weeks.
+    /// Week boundaries match <c>/stats/weekly-recap</c>; the current week query uses the full Mon–Sun window (not week-to-date).
     /// </remarks>
     private static async Task<IResult> GetRelativeEffortStats(
         TempoDbContext db,
         ILogger<Program> logger,
-        [FromQuery] int? timezoneOffsetMinutes = null)
+        [FromQuery] int? timezoneOffsetMinutes = null,
+        [FromQuery] string? referenceDate = null)
     {
-        // Get current week boundaries (Monday-Sunday) in the specified timezone
-        var now = DateTime.UtcNow;
-        if (timezoneOffsetMinutes.HasValue)
+        DateTime? referenceLocalDate = null;
+        if (!string.IsNullOrWhiteSpace(referenceDate))
         {
-            now = now.AddMinutes(timezoneOffsetMinutes.Value);
+            if (!DateTime.TryParse(referenceDate, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
+            {
+                return Results.BadRequest(new ErrorResponse { Error = "Invalid referenceDate; use yyyy-MM-dd." });
+            }
+
+            referenceLocalDate = parsed.Date;
         }
 
-        // Calculate start of current week (Monday)
-        var daysSinceMonday = ((int)now.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        var weekStart = now.Date.AddDays(-daysSinceMonday);
-        var weekEnd = weekStart.AddDays(7).AddTicks(-1);
+        var utcNow = DateTime.UtcNow;
+        var ctx = BuildWeeklyRecapUtcContext(utcNow, timezoneOffsetMinutes, referenceLocalDate);
 
-        // Convert back to UTC for database query
-        var weekStartUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(weekStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(weekStart, DateTimeKind.Utc);
-        var weekEndUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(weekEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(weekEnd, DateTimeKind.Utc);
+        // Full Mon–Sun window (not week-to-date CurrentRange) so the cumulative chart always has 7 day slots.
+        var weekStart = ctx.WeekStartLocal;
+        var weekEnd = ctx.WeekEndLocal;
+        var weekStartUtc = LocalDateRangeStartToUtc(weekStart, timezoneOffsetMinutes);
+        var weekEndUtc = LocalDateRangeEndToUtc(weekEnd, timezoneOffsetMinutes);
 
         // Query workouts for the current week with relative effort
         var currentWeekWorkouts = await db.Workouts
@@ -427,22 +430,13 @@ public static class StatsEndpoints
             cumulativeEffort[i] = runningTotal;
         }
 
-        // Calculate previous 3 complete weeks
+        // Previous 3 complete weeks (same windows as weekly-recap trailing averages)
+        var previousRanges = new[] { ctx.PreviousWeekRange, ctx.TrailingWeek2, ctx.TrailingWeek3 };
         var previousWeeks = new List<int>();
-        for (int weekOffset = 1; weekOffset <= 3; weekOffset++)
+        foreach (var range in previousRanges)
         {
-            var prevWeekStart = weekStart.AddDays(-7 * weekOffset);
-            var prevWeekEnd = prevWeekStart.AddDays(7).AddTicks(-1);
-
-            var prevWeekStartUtc = timezoneOffsetMinutes.HasValue
-                ? DateTime.SpecifyKind(prevWeekStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-                : DateTime.SpecifyKind(prevWeekStart, DateTimeKind.Utc);
-            var prevWeekEndUtc = timezoneOffsetMinutes.HasValue
-                ? DateTime.SpecifyKind(prevWeekEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-                : DateTime.SpecifyKind(prevWeekEnd, DateTimeKind.Utc);
-
             var prevWeekTotal = await db.Workouts
-                .Where(w => w.StartedAt >= prevWeekStartUtc && w.StartedAt <= prevWeekEndUtc)
+                .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc)
                 .AsNoTracking()
                 .SumAsync(w => (int?)w.RelativeEffort) ?? 0;
 
@@ -460,7 +454,7 @@ public static class StatsEndpoints
         return Results.Ok(new RelativeEffortStatsDocument
         {
             WeekStart = weekStart.ToString("yyyy-MM-dd"),
-            WeekEnd = weekEnd.ToString("yyyy-MM-dd"),
+            WeekEnd = weekEnd.Date.ToString("yyyy-MM-dd"),
             CurrentWeek = cumulativeEffort,
             PreviousWeeks = previousWeeks,
             ThreeWeekAverage = Math.Round(threeWeekAverage, 1),
@@ -1003,8 +997,11 @@ public static class StatsEndpoints
         group.MapGet("/relative-effort", GetRelativeEffortStats)
             .WithName("GetRelativeEffortStats")
             .Produces<RelativeEffortStatsDocument>(200)
+            .Produces<ErrorResponse>(400)
             .WithSummary("Get relative effort stats")
-            .WithDescription("Returns cumulative relative effort for the current week and 3-week average range");
+            .WithDescription(
+                "Returns cumulative relative effort for the current week (Monday-Sunday) and the 3-week average and range from the previous 3 complete weeks. " +
+                "Optional referenceDate (yyyy-MM-dd) selects the calendar week in the timezoneOffsetMinutes frame.");
 
         group.MapGet("/weekly-recap", GetWeeklyRecap)
             .WithName("GetWeeklyRecap")

@@ -1015,6 +1015,105 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result!.CurrentWeek.Should().HaveCount(7);
     }
 
+    [Fact]
+    public async Task GetRelativeEffortStats_Returns400_WhenReferenceDateInvalid()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var response = await client.GetAsync("/stats/relative-effort?referenceDate=not-a-date");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>
+    /// referenceDate 2020-06-10 -> current week 2020-06-08 .. 2020-06-14;
+    /// previous weeks: 2020-06-01..07 (100), 2020-05-25..31 (200), 2020-05-18..24 (300).
+    /// </summary>
+    [Fact]
+    public async Task GetRelativeEffortStats_UsesReferenceDate_ForHistoricalWeek()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+
+            // Current week Mon/Wed: cumulative Mon=50, Tue=50, Wed=150, …
+            var mon = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 8, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin Mon");
+            mon.RelativeEffort = 50;
+
+            var wed = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin Wed");
+            wed.RelativeEffort = 100;
+
+            // Prior week -1 (Mon 2020-06-01)
+            var prev1 = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 3, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin prev1");
+            prev1.RelativeEffort = 100;
+
+            // Prior week -2 (Mon 2020-05-25)
+            var prev2 = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 5, 27, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin prev2");
+            prev2.RelativeEffort = 200;
+
+            // Prior week -3 (Mon 2020-05-18)
+            var prev3 = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 5, 20, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin prev3");
+            prev3.RelativeEffort = 300;
+
+            // Noise in "today's" week should not affect the pinned historical week
+            var todayNoise = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: DateTime.UtcNow.Date.AddHours(12),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin today noise");
+            todayNoise.RelativeEffort = 999;
+
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync("/stats/relative-effort?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<RelativeEffortStatsResponse>();
+        result.Should().NotBeNull();
+        result!.WeekStart.Should().Be("2020-06-08");
+        result.WeekEnd.Should().Be("2020-06-14");
+        result.CurrentWeek.Should().HaveCount(7);
+        result.CurrentWeek[0].Should().Be(50);
+        result.CurrentWeek[1].Should().Be(50);
+        result.CurrentWeek[2].Should().Be(150);
+        result.CurrentWeekTotal.Should().Be(150);
+        result.PreviousWeeks.Should().Equal(100, 200, 300);
+        result.ThreeWeekAverage.Should().BeApproximately(200.0, 0.1);
+        result.RangeMin.Should().Be(100);
+        result.RangeMax.Should().Be(300);
+    }
+
     #endregion
 
     #region Yearly Stats Tests
