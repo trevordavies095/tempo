@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Models.Responses;
 using Tempo.Api.Services;
 using Tempo.Api.Utils;
 
@@ -13,21 +14,6 @@ public static class WorkoutsEndpoints
 {
     private const int TimeSeriesDefaultPageSize = 1000;
     private const int TimeSeriesMaxPageSize = 5000;
-
-    // Response class for similar routes
-    private class SimilarRouteResponse
-    {
-        public Guid WorkoutId { get; set; }
-        public DateTime StartedAt { get; set; }
-        public int DurationS { get; set; }
-        public double DistanceM { get; set; }
-        public double AvgPaceS { get; set; }
-        public double? SimilarityScore { get; set; }
-        public int? TimeDifferenceS { get; set; } // Negative = faster, Positive = slower
-        public double? PaceDifferenceS { get; set; } // Negative = faster pace
-        public int? RelativeEffort { get; set; }
-        public double? ElevGainM { get; set; }
-    }
 
     /// <summary>
     /// Import a HealthKit workout from tempo-ios (JSON decode adapter → PersistAsync).
@@ -291,7 +277,7 @@ public static class WorkoutsEndpoints
         // Validate page number
         if (page > totalPages && totalPages > 0)
         {
-            return Results.NotFound(new { error = "Page not found" });
+            return Results.NotFound(new ErrorResponse { Error = "Page not found" });
         }
 
         // Apply dynamic sorting
@@ -362,50 +348,50 @@ public static class WorkoutsEndpoints
                     logger);
             }
 
-            return new
+            return new WorkoutListItemDocument
             {
-                id = w.Id,
-                startedAt = w.StartedAt,
-                durationS = w.DurationS,
-                distanceM = w.DistanceM,
-                avgPaceS = w.AvgPaceS,
-                elevGainM = w.ElevGainM,
-                elevLossM = w.ElevLossM,
-                minElevM = w.MinElevM,
-                maxElevM = w.MaxElevM,
-                maxSpeedMps = w.MaxSpeedMps,
-                avgSpeedMps = w.AvgSpeedMps,
-                movingTimeS = w.MovingTimeS,
-                timerTimeS = w.TimerTimeS,
-                maxHeartRateBpm = w.MaxHeartRateBpm,
-                avgHeartRateBpm = w.AvgHeartRateBpm,
-                minHeartRateBpm = w.MinHeartRateBpm,
-                maxCadenceRpm = w.MaxCadenceRpm,
-                avgCadenceRpm = w.AvgCadenceRpm,
-                maxPowerWatts = w.MaxPowerWatts,
-                avgPowerWatts = w.AvgPowerWatts,
-                calories = w.Calories,
-                relativeEffort = w.RelativeEffort,
-                rpe = w.Rpe,
-                runType = w.RunType,
-                source = w.Source,
-                device = w.Device,
-                healthKitUuid = w.HealthKitUuid,
-                name = w.Name,
-                hasRoute,
-                route = routeGeoJson,
-                splitsCount = row.SplitsCount,
-                media = listMedia.GetValueOrDefault(w.Id) ?? []
+                Id = w.Id,
+                StartedAt = w.StartedAt,
+                DurationS = w.DurationS,
+                DistanceM = w.DistanceM,
+                AvgPaceS = w.AvgPaceS,
+                ElevGainM = w.ElevGainM,
+                ElevLossM = w.ElevLossM,
+                MinElevM = w.MinElevM,
+                MaxElevM = w.MaxElevM,
+                MaxSpeedMps = w.MaxSpeedMps,
+                AvgSpeedMps = w.AvgSpeedMps,
+                MovingTimeS = w.MovingTimeS,
+                TimerTimeS = w.TimerTimeS,
+                MaxHeartRateBpm = w.MaxHeartRateBpm,
+                AvgHeartRateBpm = w.AvgHeartRateBpm,
+                MinHeartRateBpm = w.MinHeartRateBpm,
+                MaxCadenceRpm = w.MaxCadenceRpm,
+                AvgCadenceRpm = w.AvgCadenceRpm,
+                MaxPowerWatts = w.MaxPowerWatts,
+                AvgPowerWatts = w.AvgPowerWatts,
+                Calories = w.Calories,
+                RelativeEffort = w.RelativeEffort,
+                Rpe = w.Rpe,
+                RunType = w.RunType,
+                Source = w.Source,
+                Device = w.Device,
+                HealthKitUuid = w.HealthKitUuid,
+                Name = w.Name,
+                HasRoute = hasRoute,
+                Route = routeGeoJson,
+                SplitsCount = row.SplitsCount,
+                Media = listMedia.GetValueOrDefault(w.Id) ?? []
             };
         }).ToList();
 
-        return Results.Ok(new
+        return Results.Ok(new PagedResponse<WorkoutListItemDocument>
         {
-            items,
-            totalCount,
-            page,
-            pageSize,
-            totalPages
+            Items = items,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages
         });
     }
 
@@ -446,13 +432,13 @@ public static class WorkoutsEndpoints
             r => (r.PreviewGeoJson, fallbacks.GetValueOrDefault(r.WorkoutId)));
     }
 
-    private static async Task<Dictionary<Guid, List<object>>> LoadListMediaAsync(
+    private static async Task<Dictionary<Guid, List<MediaRefDocument>>> LoadListMediaAsync(
         TempoDbContext db,
         List<Guid> workoutIds)
     {
         if (workoutIds.Count == 0)
         {
-            return new Dictionary<Guid, List<object>>();
+            return new Dictionary<Guid, List<MediaRefDocument>>();
         }
 
         var rows = await WorkoutQueryService.QueryListMedia(db, workoutIds).ToListAsync();
@@ -460,7 +446,7 @@ public static class WorkoutsEndpoints
             .GroupBy(m => m.WorkoutId)
             .ToDictionary(
                 g => g.Key,
-                g => g.Select(m => (object)new { id = m.Id, mimeType = m.MimeType }).ToList());
+                g => g.Select(m => new MediaRefDocument { Id = m.Id, MimeType = m.MimeType }).ToList());
     }
 
     private static object? DeserializeListRoute(
@@ -1247,7 +1233,7 @@ public static class WorkoutsEndpoints
 
         if (workout == null)
         {
-            return Results.NotFound(new { error = "Workout not found" });
+            return Results.NotFound(new ErrorResponse { Error = "Workout not found" });
         }
 
         // Parse route GeoJSON if exists
@@ -1307,17 +1293,17 @@ public static class WorkoutsEndpoints
         }
 
         // Map splits (device_lap if any, else distance)
-        var splits = WorkoutSplitDisplay.SelectDisplayList(workout.Splits).Select(s => new
+        var splits = WorkoutSplitDisplay.SelectDisplayList(workout.Splits).Select(s => new WorkoutSplitDocument
         {
-            idx = s.Idx,
-            kind = s.Kind,
-            distanceM = s.DistanceM,
-            durationS = s.DurationS,
-            paceS = s.PaceS,
-            avgHeartRateBpm = s.AvgHeartRateBpm,
-            startElapsedS = s.StartElapsedS,
-            endElapsedS = s.EndElapsedS,
-            startDistanceM = s.StartDistanceM
+            Idx = s.Idx,
+            Kind = s.Kind,
+            DistanceM = s.DistanceM,
+            DurationS = s.DurationS,
+            PaceS = s.PaceS,
+            AvgHeartRateBpm = s.AvgHeartRateBpm,
+            StartElapsedS = s.StartElapsedS,
+            EndElapsedS = s.EndElapsedS,
+            StartDistanceM = s.StartDistanceM
         }).ToList();
 
         // Raw JSONB blobs are opt-in: default query projects them out, so skip deserialize too.
@@ -1376,63 +1362,62 @@ public static class WorkoutsEndpoints
             }
         }
 
-        // Include shoe information if assigned
-        object? shoe = null;
+        WorkoutShoeRefDocument? shoe = null;
         if (workout.Shoe != null)
         {
-            shoe = new
+            shoe = new WorkoutShoeRefDocument
             {
-                id = workout.Shoe.Id,
-                brand = workout.Shoe.Brand,
-                model = workout.Shoe.Model
+                Id = workout.Shoe.Id,
+                Brand = workout.Shoe.Brand,
+                Model = workout.Shoe.Model
             };
         }
 
         var heartRateZoneTimes = await BuildHeartRateZoneTimesAsync(
             workout.Id, db, zoneService, relativeEffortService);
 
-        return Results.Ok(new
+        return Results.Ok(new WorkoutDetailDocument
         {
-            id = workout.Id,
-            startedAt = workout.StartedAt,
-            durationS = workout.DurationS,
-            distanceM = workout.DistanceM,
-            avgPaceS = workout.AvgPaceS,
-            elevGainM = workout.ElevGainM,
-            elevLossM = workout.ElevLossM,
-            minElevM = workout.MinElevM,
-            maxElevM = workout.MaxElevM,
-            maxSpeedMps = workout.MaxSpeedMps,
-            avgSpeedMps = workout.AvgSpeedMps,
-            movingTimeS = workout.MovingTimeS,
-            timerTimeS = workout.TimerTimeS,
-            maxHeartRateBpm = workout.MaxHeartRateBpm,
-            avgHeartRateBpm = workout.AvgHeartRateBpm,
-            minHeartRateBpm = workout.MinHeartRateBpm,
-            maxCadenceRpm = workout.MaxCadenceRpm,
-            avgCadenceRpm = workout.AvgCadenceRpm,
-            maxPowerWatts = workout.MaxPowerWatts,
-            avgPowerWatts = workout.AvgPowerWatts,
-            calories = workout.Calories,
-            relativeEffort = workout.RelativeEffort,
-            heartRateZoneTimes,
-            rpe = workout.Rpe,
-            runType = workout.RunType,
-            notes = workout.Notes,
-            source = workout.Source,
-            device = workout.Device,
-            healthKitUuid = workout.HealthKitUuid,
-            name = workout.Name,
-            shoeId = workout.ShoeId,
-            shoe = shoe,
-            weather = weather,
-            rawGpxData = rawGpxData,
-            rawFitData = rawFitData,
-            rawStravaData = rawStravaData,
-            rawHealthKitData = rawHealthKitData,
-            createdAt = workout.CreatedAt,
-            route = routeGeoJson,
-            splits = splits
+            Id = workout.Id,
+            StartedAt = workout.StartedAt,
+            DurationS = workout.DurationS,
+            DistanceM = workout.DistanceM,
+            AvgPaceS = workout.AvgPaceS,
+            ElevGainM = workout.ElevGainM,
+            ElevLossM = workout.ElevLossM,
+            MinElevM = workout.MinElevM,
+            MaxElevM = workout.MaxElevM,
+            MaxSpeedMps = workout.MaxSpeedMps,
+            AvgSpeedMps = workout.AvgSpeedMps,
+            MovingTimeS = workout.MovingTimeS,
+            TimerTimeS = workout.TimerTimeS,
+            MaxHeartRateBpm = workout.MaxHeartRateBpm,
+            AvgHeartRateBpm = workout.AvgHeartRateBpm,
+            MinHeartRateBpm = workout.MinHeartRateBpm,
+            MaxCadenceRpm = workout.MaxCadenceRpm,
+            AvgCadenceRpm = workout.AvgCadenceRpm,
+            MaxPowerWatts = workout.MaxPowerWatts,
+            AvgPowerWatts = workout.AvgPowerWatts,
+            Calories = workout.Calories,
+            RelativeEffort = workout.RelativeEffort,
+            HeartRateZoneTimes = heartRateZoneTimes,
+            Rpe = workout.Rpe,
+            RunType = workout.RunType,
+            Notes = workout.Notes,
+            Source = workout.Source,
+            Device = workout.Device,
+            HealthKitUuid = workout.HealthKitUuid,
+            Name = workout.Name,
+            ShoeId = workout.ShoeId,
+            Shoe = shoe,
+            Weather = weather,
+            RawGpxData = rawGpxData,
+            RawFitData = rawFitData,
+            RawStravaData = rawStravaData,
+            RawHealthKitData = rawHealthKitData,
+            CreatedAt = workout.CreatedAt,
+            Route = routeGeoJson,
+            Splits = splits
         });
     }
 
@@ -1448,7 +1433,7 @@ public static class WorkoutsEndpoints
         var workoutExists = await db.Workouts.AsNoTracking().AnyAsync(w => w.Id == id);
         if (!workoutExists)
         {
-            return Results.NotFound(new { error = "Workout not found" });
+            return Results.NotFound(new ErrorResponse { Error = "Workout not found" });
         }
 
         if (page < 1)
@@ -1478,34 +1463,34 @@ public static class WorkoutsEndpoints
         var pageOutOfRange = totalPages > 0 ? page > totalPages : page > 1;
         if (pageOutOfRange)
         {
-            return Results.NotFound(new { error = "Page not found" });
+            return Results.NotFound(new ErrorResponse { Error = "Page not found" });
         }
 
         var rows = await query
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(ts => new
+            .Select(ts => new WorkoutTimeSeriesPointDocument
             {
-                elapsedSeconds = ts.ElapsedSeconds,
-                distanceM = ts.DistanceM,
-                heartRateBpm = ts.HeartRateBpm.HasValue ? (int?)ts.HeartRateBpm.Value : null,
-                cadenceRpm = ts.CadenceRpm.HasValue ? (int?)ts.CadenceRpm.Value : null,
-                powerWatts = ts.PowerWatts.HasValue ? (int?)ts.PowerWatts.Value : null,
-                speedMps = ts.SpeedMps,
-                gradePercent = ts.GradePercent,
-                elevationM = ts.ElevationM,
-                temperatureC = ts.TemperatureC.HasValue ? (int?)ts.TemperatureC.Value : null,
-                verticalSpeedMps = ts.VerticalSpeedMps
+                ElapsedSeconds = ts.ElapsedSeconds,
+                DistanceM = ts.DistanceM,
+                HeartRateBpm = ts.HeartRateBpm.HasValue ? (int?)ts.HeartRateBpm.Value : null,
+                CadenceRpm = ts.CadenceRpm.HasValue ? (int?)ts.CadenceRpm.Value : null,
+                PowerWatts = ts.PowerWatts.HasValue ? (int?)ts.PowerWatts.Value : null,
+                SpeedMps = ts.SpeedMps,
+                GradePercent = ts.GradePercent,
+                ElevationM = ts.ElevationM,
+                TemperatureC = ts.TemperatureC.HasValue ? (int?)ts.TemperatureC.Value : null,
+                VerticalSpeedMps = ts.VerticalSpeedMps
             })
             .ToListAsync();
 
-        return Results.Ok(new
+        return Results.Ok(new PagedResponse<WorkoutTimeSeriesPointDocument>
         {
-            items = rows,
-            page,
-            pageSize,
-            totalCount,
-            totalPages
+            Items = rows,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            TotalPages = totalPages
         });
     }
 
@@ -1540,13 +1525,13 @@ public static class WorkoutsEndpoints
 
             if (currentWorkout == null)
             {
-                return Results.NotFound(new { error = "Workout not found" });
+                return Results.NotFound(new ErrorResponse { Error = "Workout not found" });
             }
 
             // Verify workout has route data
             if (currentWorkout.Route == null || string.IsNullOrEmpty(currentWorkout.Route.RouteGeoJson))
             {
-                return Results.BadRequest(new { error = "Workout has no route data" });
+                return Results.BadRequest(new ErrorResponse { Error = "Workout has no route data" });
             }
 
             // Find similar routes
@@ -1555,8 +1540,6 @@ public static class WorkoutsEndpoints
             // Get current workout details for comparison
             var currentDurationS = currentWorkout.DurationS;
             var currentAvgPaceS = currentWorkout.AvgPaceS;
-            var currentRelativeEffort = currentWorkout.RelativeEffort;
-            var currentElevGainM = currentWorkout.ElevGainM;
 
             // Load full workout details for matches to access RelativeEffort and ElevGainM
             var matchWorkoutIds = similarRoutes.Select(m => m.WorkoutId).ToList();
@@ -1570,7 +1553,7 @@ public static class WorkoutsEndpoints
             {
                 matchWorkouts.TryGetValue(match.WorkoutId, out var matchWorkout);
 
-                return new SimilarRouteResponse
+                return new SimilarRouteDocument
                 {
                     WorkoutId = match.WorkoutId,
                     StartedAt = match.StartedAt,
@@ -2395,8 +2378,8 @@ public static class WorkoutsEndpoints
 
         group.MapGet("", ListWorkouts)
         .WithName("ListWorkouts")
-        .Produces(200)
-        .Produces(404)
+        .Produces<PagedResponse<WorkoutListItemDocument>>(200)
+        .Produces<ErrorResponse>(404)
         .WithSummary("List workouts")
         .WithDescription("Returns a paginated list of workouts with optional filtering. Item route is a simplified preview when stored; otherwise the full route. Each item includes media { id, mimeType } and splitsCount.");
 
@@ -2457,16 +2440,16 @@ public static class WorkoutsEndpoints
 
         group.MapGet("/{id:guid}/similar-routes", GetSimilarRoutes)
         .WithName("GetSimilarRoutes")
-        .Produces(200)
-        .Produces(400)
-        .Produces(404)
+        .Produces<List<SimilarRouteDocument>>(200)
+        .Produces<ErrorResponse>(400)
+        .Produces<ErrorResponse>(404)
         .WithSummary("Get similar routes")
         .WithDescription("Returns previous workouts that were completed on similar routes, allowing users to compare their current performance with past efforts. Includes time and pace differences compared to the current workout. Requires the workout to have route data.");
 
         group.MapGet("/{id:guid}/time-series", GetWorkoutTimeSeries)
         .WithName("GetWorkoutTimeSeries")
-        .Produces(200)
-        .Produces(404)
+        .Produces<PagedResponse<WorkoutTimeSeriesPointDocument>>(200)
+        .Produces<ErrorResponse>(404)
         .WithSummary("Get workout time series")
         .WithDescription(
             "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm (steps/min), powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. " +
@@ -2477,8 +2460,8 @@ public static class WorkoutsEndpoints
 
         group.MapGet("/{id:guid}", GetWorkout)
         .WithName("GetWorkout")
-        .Produces(200)
-        .Produces(404)
+        .Produces<WorkoutDetailDocument>(200)
+        .Produces<ErrorResponse>(404)
         .WithSummary("Get workout details")
         .WithDescription(
             "Retrieves complete workout data including route (as GeoJSON), splits, and weather information. " +
@@ -2699,7 +2682,7 @@ public static class WorkoutsEndpoints
     /// <summary>
     /// Live time-in-zone buckets from HR series + current Settings (or null when hidden).
     /// </summary>
-    private static async Task<object[]?> BuildHeartRateZoneTimesAsync(
+    private static async Task<List<HrZoneTimeDocument>?> BuildHeartRateZoneTimesAsync(
         Guid workoutId,
         TempoDbContext db,
         HeartRateZoneService zoneService,
@@ -2734,14 +2717,14 @@ public static class WorkoutsEndpoints
             return null;
         }
 
-        var result = new object[5];
+        var result = new List<HrZoneTimeDocument>(5);
         for (int i = 0; i < 5; i++)
         {
-            result[i] = new
+            result.Add(new HrZoneTimeDocument
             {
-                zone = i + 1,
-                timeS = (int)Math.Round(timeInZones[i])
-            };
+                Zone = i + 1,
+                TimeS = (int)Math.Round(timeInZones[i])
+            });
         }
 
         return result;

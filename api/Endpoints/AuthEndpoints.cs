@@ -6,6 +6,7 @@ using Tempo.Api.Authentication;
 using Tempo.Api.Authorization;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Models.Responses;
 using Tempo.Api.Services;
 using Tempo.Api.Utils;
 
@@ -289,13 +290,13 @@ public static class AuthEndpoints
         return Results.Ok(ToCurrentUserResponse(dbUser));
     }
 
-    private static object ToCurrentUserResponse(User dbUser) => new
+    private static CurrentUserDocument ToCurrentUserResponse(User dbUser) => new()
     {
-        userId = dbUser.Id,
-        username = dbUser.Username,
-        createdAt = dbUser.CreatedAt,
-        lastLoginAt = dbUser.LastLoginAt,
-        onboardingCompleted = dbUser.OnboardingCompleted
+        UserId = dbUser.Id,
+        Username = dbUser.Username,
+        CreatedAt = dbUser.CreatedAt,
+        LastLoginAt = dbUser.LastLoginAt,
+        OnboardingCompleted = dbUser.OnboardingCompleted
     };
 
     /// <summary>
@@ -454,7 +455,7 @@ public static class AuthEndpoints
         group.MapGet("/me", GetCurrentUser)
             .WithName("GetCurrentUser")
             .RequireAuthorization()
-            .Produces(200)
+            .Produces<CurrentUserDocument>(200)
             .Produces(401)
             .WithSummary("Get current user")
             .WithDescription(

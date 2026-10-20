@@ -930,6 +930,8 @@ Other endpoints may include extra fields (for example `details`) where noted abo
 
 The canonical machine-readable API document is **[openapi.json](../openapi.json)** in this repository (on the `develop` integration branch). Use it for client generation and to stay aligned with the read-only CLI.
 
+Coach and CLI integration GETs (`/workouts`, `/workouts/{id}`, time-series, similar-routes, weekly-recap, relative-effort, best-efforts, shoes, heart-rate zones, unit preference, and `/auth/me`) publish typed `200` response schemas (and `{ "error": "…" }` bodies where those status codes are declared). After changing routes or response DTOs, regenerate the file with the Swashbuckle CLI steps in the repository README so CI’s OpenAPI diff stays green.
+
 ## Interactive Documentation
 
 In development mode, interactive API documentation is available at `/swagger`. This provides:

@@ -3,7 +3,7 @@
   "info": {
     "title": "Tempo API",
     "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
-    "version": "2.10.1"
+    "version": "2.9.0"
   },
   "paths": {
     "/auth/register": {
@@ -108,7 +108,14 @@
         "operationId": "GetCurrentUser",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUserDocument"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized"
@@ -310,7 +317,14 @@
         "operationId": "GetHeartRateZones",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartRateZonesDocument"
+                }
+              }
+            }
           },
           "500": {
             "description": "Internal Server Error"
@@ -402,7 +416,14 @@
         "operationId": "GetUnitPreference",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitPreferenceDocument"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -683,10 +704,27 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShoeListItemDocument"
+                  }
+                }
+              }
+            }
           },
           "400": {
-            "description": "Bad Request"
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Internal Server Error"
@@ -901,7 +939,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelativeEffortStatsDocument"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -940,10 +985,24 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyRecapDocument"
+                }
+              }
+            }
           },
           "400": {
-            "description": "Bad Request"
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -963,7 +1022,14 @@
         "operationId": "GetBestEfforts",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BestEffortsDocument"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1357,10 +1423,24 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutListItemDocumentPagedResponse"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Not Found"
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1686,13 +1766,37 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SimilarRouteDocument"
+                  }
+                }
+              }
+            }
           },
           "400": {
-            "description": "Bad Request"
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Not Found"
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1741,10 +1845,24 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutTimeSeriesPointDocumentPagedResponse"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Not Found"
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1785,10 +1903,24 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutDetailDocument"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Not Found"
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2366,6 +2498,56 @@
   },
   "components": {
     "schemas": {
+      "BestEffortDistanceDocument": {
+        "required": [
+          "distance",
+          "distanceM",
+          "timeS",
+          "workoutDate",
+          "workoutId"
+        ],
+        "type": "object",
+        "properties": {
+          "distance": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "timeS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "workoutId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "workoutDate": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "One best-effort distance entry (matches `BestEffortService.BestEffortResult` wire shape)."
+      },
+      "BestEffortsDocument": {
+        "required": [
+          "distances"
+        ],
+        "type": "object",
+        "properties": {
+          "distances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BestEffortDistanceDocument"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "description": "Body of `GET /stats/best-efforts`."
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "properties": {
@@ -2440,6 +2622,53 @@
         },
         "additionalProperties": false,
         "description": "Request model for creating a shoe"
+      },
+      "CurrentUserDocument": {
+        "required": [
+          "createdAt",
+          "onboardingCompleted",
+          "userId",
+          "username"
+        ],
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastLoginAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "onboardingCompleted": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Body of `GET /auth/me`."
+      },
+      "ErrorResponse": {
+        "required": [
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "error": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Standard error body used by many Tempo endpoints: `{ \"error\": \"…\" }`."
       },
       "HealthKitImportRequest": {
         "type": "object",
@@ -2610,6 +2839,84 @@
           }
         },
         "additionalProperties": false
+      },
+      "HeartRateZoneEntryDocument": {
+        "required": [
+          "maxBpm",
+          "minBpm",
+          "zoneNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "zoneNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "minBpm": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxBpm": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HeartRateZonesDocument": {
+        "required": [
+          "calculationMethod",
+          "zones"
+        ],
+        "type": "object",
+        "properties": {
+          "calculationMethod": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "age": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "restingHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeartRateZoneEntryDocument"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "description": "Body of `GET /settings/heart-rate-zones`."
+      },
+      "HrZoneTimeDocument": {
+        "required": [
+          "timeS",
+          "zone"
+        ],
+        "type": "object",
+        "properties": {
+          "zone": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "timeS": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Time spent in one HR zone on workout detail."
       },
       "ImportJobDocument": {
         "type": "object",
@@ -2790,6 +3097,25 @@
         "additionalProperties": false,
         "description": "Request model for user login"
       },
+      "MediaRefDocument": {
+        "required": [
+          "id",
+          "mimeType"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mimeType": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Media stub on workout list items."
+      },
       "PutIntervalsIcuConnectionRequest": {
         "type": "object",
         "properties": {
@@ -2816,6 +3142,63 @@
         "additionalProperties": false,
         "description": "Request model for user registration"
       },
+      "RelativeEffortStatsDocument": {
+        "required": [
+          "currentWeek",
+          "currentWeekTotal",
+          "previousWeeks",
+          "rangeMax",
+          "rangeMin",
+          "threeWeekAverage",
+          "weekEnd",
+          "weekStart"
+        ],
+        "type": "object",
+        "properties": {
+          "weekStart": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "weekEnd": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "currentWeek": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "description": "Cumulative Mon–Sun relative effort (length 7)."
+          },
+          "previousWeeks": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "description": "Totals for the three prior full weeks."
+          },
+          "threeWeekAverage": {
+            "type": "number",
+            "format": "double"
+          },
+          "rangeMin": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rangeMax": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currentWeekTotal": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Body of `GET /stats/relative-effort`."
+      },
       "SetDefaultShoeRequest": {
         "type": "object",
         "properties": {
@@ -2828,6 +3211,121 @@
         },
         "additionalProperties": false,
         "description": "Request model for setting default shoe"
+      },
+      "ShoeListItemDocument": {
+        "required": [
+          "brand",
+          "createdAt",
+          "id",
+          "isRetired",
+          "model",
+          "totalMileage",
+          "unit",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "brand": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "model": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "initialMileageM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "isRetired": {
+            "type": "boolean"
+          },
+          "totalMileage": {
+            "type": "number",
+            "format": "double"
+          },
+          "unit": {
+            "minLength": 1,
+            "type": "string",
+            "description": "`miles` or `km`."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "description": "One shoe from `GET /shoes` (root JSON array)."
+      },
+      "SimilarRouteDocument": {
+        "required": [
+          "avgPaceS",
+          "distanceM",
+          "durationS",
+          "startedAt",
+          "workoutId"
+        ],
+        "type": "object",
+        "properties": {
+          "workoutId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "avgPaceS": {
+            "type": "number",
+            "format": "double"
+          },
+          "similarityScore": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "timeDifferenceS": {
+            "type": "integer",
+            "description": "Negative = faster than current workout.",
+            "format": "int32",
+            "nullable": true
+          },
+          "paceDifferenceS": {
+            "type": "number",
+            "description": "Negative = faster pace than current workout.",
+            "format": "double",
+            "nullable": true
+          },
+          "relativeEffort": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "elevGainM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "One match from `GET /workouts/{id}/similar-routes` (root JSON array)."
       },
       "StravaBulkImportError": {
         "type": "object",
@@ -2842,6 +3340,21 @@
           }
         },
         "additionalProperties": false
+      },
+      "UnitPreferenceDocument": {
+        "required": [
+          "unitPreference"
+        ],
+        "type": "object",
+        "properties": {
+          "unitPreference": {
+            "minLength": 1,
+            "type": "string",
+            "description": "`metric` or `imperial`."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Body of `GET /settings/unit-preference`."
       },
       "UpdateHeartRateZonesRequest": {
         "type": "object",
@@ -2985,6 +3498,759 @@
         },
         "additionalProperties": false,
         "description": "Public support snapshot from GET /version. Identity only — no secrets, no Postgres."
+      },
+      "WeeklyRecapDocument": {
+        "required": [
+          "currentWeekIsPartial",
+          "generatedAtUtc",
+          "metrics",
+          "referenceDate",
+          "weekEnd",
+          "weekStart"
+        ],
+        "type": "object",
+        "properties": {
+          "weekStart": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "weekEnd": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "referenceDate": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timezoneOffsetMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "currentWeekIsPartial": {
+            "type": "boolean"
+          },
+          "generatedAtUtc": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricsDocument"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Body of `GET /stats/weekly-recap`."
+      },
+      "WeeklyRecapMetricDoubleDocument": {
+        "required": [
+          "current",
+          "previous",
+          "trailingAvg"
+        ],
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "number",
+            "format": "double"
+          },
+          "previous": {
+            "type": "number",
+            "format": "double"
+          },
+          "trailingAvg": {
+            "type": "number",
+            "format": "double"
+          },
+          "deltaVsPrevious": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "WeeklyRecapMetricIntDocument": {
+        "required": [
+          "current",
+          "previous",
+          "trailingAvg"
+        ],
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "previous": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "trailingAvg": {
+            "type": "number",
+            "format": "double"
+          },
+          "deltaVsPrevious": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "WeeklyRecapMetricLongDocument": {
+        "required": [
+          "current",
+          "previous",
+          "trailingAvg"
+        ],
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "previous": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "trailingAvg": {
+            "type": "number",
+            "format": "double"
+          },
+          "deltaVsPrevious": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "WeeklyRecapMetricNullableDoubleDocument": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "previous": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "trailingAvg": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "deltaVsPrevious": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "WeeklyRecapMetricsDocument": {
+        "required": [
+          "distanceM",
+          "durationS",
+          "easyRunAvgHeartRateBpm",
+          "elevationGainM",
+          "relativeEffortSum",
+          "runs"
+        ],
+        "type": "object",
+        "properties": {
+          "runs": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricIntDocument"
+          },
+          "distanceM": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricDoubleDocument"
+          },
+          "durationS": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricLongDocument"
+          },
+          "elevationGainM": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricDoubleDocument"
+          },
+          "relativeEffortSum": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricIntDocument"
+          },
+          "easyRunAvgHeartRateBpm": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricNullableDoubleDocument"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkoutDetailDocument": {
+        "required": [
+          "avgPaceS",
+          "createdAt",
+          "distanceM",
+          "durationS",
+          "id",
+          "splits",
+          "startedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "avgPaceS": {
+            "type": "number",
+            "format": "double"
+          },
+          "elevGainM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "elevLossM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "minElevM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "maxElevM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "maxSpeedMps": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "avgSpeedMps": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "movingTimeS": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "timerTimeS": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "avgHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "minHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxCadenceRpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "avgCadenceRpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxPowerWatts": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "avgPowerWatts": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "calories": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "relativeEffort": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "heartRateZoneTimes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HrZoneTimeDocument"
+            },
+            "nullable": true
+          },
+          "rpe": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "runType": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "device": {
+            "type": "string",
+            "nullable": true
+          },
+          "healthKitUuid": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "shoeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "shoe": {
+            "$ref": "#/components/schemas/WorkoutShoeRefDocument"
+          },
+          "weather": {
+            "description": "Normalized weather object, or null.",
+            "nullable": true
+          },
+          "rawGpxData": {
+            "nullable": true
+          },
+          "rawFitData": {
+            "nullable": true
+          },
+          "rawStravaData": {
+            "nullable": true
+          },
+          "rawHealthKitData": {
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "route": {
+            "nullable": true
+          },
+          "splits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkoutSplitDocument"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "description": "Body of `GET /workouts/{id}`."
+      },
+      "WorkoutListItemDocument": {
+        "required": [
+          "avgPaceS",
+          "distanceM",
+          "durationS",
+          "hasRoute",
+          "id",
+          "media",
+          "splitsCount",
+          "startedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "avgPaceS": {
+            "type": "number",
+            "format": "double"
+          },
+          "elevGainM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "elevLossM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "minElevM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "maxElevM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "maxSpeedMps": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "avgSpeedMps": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "movingTimeS": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "timerTimeS": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "avgHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "minHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxCadenceRpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "avgCadenceRpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "maxPowerWatts": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "avgPowerWatts": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "calories": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "relativeEffort": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "rpe": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "runType": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "device": {
+            "type": "string",
+            "nullable": true
+          },
+          "healthKitUuid": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "hasRoute": {
+            "type": "boolean"
+          },
+          "route": {
+            "description": "GeoJSON preview or full route, or null.",
+            "nullable": true
+          },
+          "splitsCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaRefDocument"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "description": "One row from `GET /workouts`."
+      },
+      "WorkoutListItemDocumentPagedResponse": {
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "totalCount",
+          "totalPages"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkoutListItemDocument"
+            }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Paginated list wrapper shared by workout list and time-series."
+      },
+      "WorkoutShoeRefDocument": {
+        "required": [
+          "brand",
+          "id",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "brand": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "model": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Shoe stub on workout detail."
+      },
+      "WorkoutSplitDocument": {
+        "required": [
+          "distanceM",
+          "durationS",
+          "endElapsedS",
+          "idx",
+          "kind",
+          "paceS",
+          "startElapsedS"
+        ],
+        "type": "object",
+        "properties": {
+          "idx": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "kind": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double"
+          },
+          "durationS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "paceS": {
+            "type": "number",
+            "format": "double"
+          },
+          "avgHeartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "startElapsedS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "endElapsedS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startDistanceM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "One split on `GET /workouts/{id}`."
+      },
+      "WorkoutTimeSeriesPointDocument": {
+        "required": [
+          "elapsedSeconds"
+        ],
+        "type": "object",
+        "properties": {
+          "elapsedSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "distanceM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "heartRateBpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cadenceRpm": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "powerWatts": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "speedMps": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "gradePercent": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "elevationM": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "temperatureC": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "verticalSpeedMps": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "One sample from `GET /workouts/{id}/time-series`."
+      },
+      "WorkoutTimeSeriesPointDocumentPagedResponse": {
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "totalCount",
+          "totalPages"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkoutTimeSeriesPointDocument"
+            }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Paginated list wrapper shared by workout list and time-series."
       }
     },
     "securitySchemes": {
