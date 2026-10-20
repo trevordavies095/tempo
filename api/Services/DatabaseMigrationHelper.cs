@@ -32,6 +32,49 @@ public static class DatabaseMigrationHelper
         { "IntervalsIcuConnections", "20260916223516_AddIntervalsIcuConnection" }
     };
 
+    /// <summary>
+    /// Tables created by experimental <c>feat/ai-coach</c> / <c>:feat-ai-coach</c> images.
+    /// Dropped unconditionally on startup when present; core Tempo data is untouched.
+    /// </summary>
+    internal static readonly string[] LeftoverCoachTables =
+    [
+        "CoachPreferences",
+        "CoachProviderConnections",
+        "CoachGoals",
+        "CoachMemoryLayers",
+        "CoachConstraints",
+        "CoachCheckIns",
+        "CoachPrivacyPreflights",
+        "CoachJobs",
+        "CoachWeeks",
+        "CoachAdjustments",
+        "CoachEpisodes",
+        "CoachRules",
+        "CoachExchanges",
+    ];
+
+    /// <summary>
+    /// EF migration IDs from <c>feat/ai-coach</c> (2026-10-13 through 2026-10-19).
+    /// Purged from <c>__EFMigrationsHistory</c> when leftover coach schema is cleaned up.
+    /// </summary>
+    internal static readonly string[] LeftoverCoachMigrationIds =
+    [
+        "20261013233508_AddCoachPreferences",
+        "20261013234603_AddCoachProviderConnection",
+        "20261014003607_AddCoachGoalAndMemoryLayers",
+        "20261014011934_AddCoachConstraints",
+        "20261014014510_AddCoachCheckIns",
+        "20261014015448_AddCoachPrivacyPreflights",
+        "20261014020240_AddCoachJobsAndWeeks",
+        "20261014021250_AddCoachWeekApplyRecord",
+        "20261014104847_AddCoachAdjustmentsAndJobKind",
+        "20261018134037_AddCoachEpisodesAndRules",
+        "20261018191631_AddCoachSeedMemoryNudgeDismissed",
+        "20261018222335_AddCoachCheckInFeelAndQuestion",
+        "20261019214216_AddCoachExchanges",
+        "20261019221519_AddCoachAdjustmentSourceExchangeId",
+    ];
+
     // Map of (table, column) pairs to their corresponding migration IDs
     private static readonly Dictionary<(string Table, string Column), string> ColumnToMigrationMap = new()
     {
@@ -87,7 +130,18 @@ public static class DatabaseMigrationHelper
                     CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY (""MigrationId"")
                 );
             ");
-            
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Error ensuring migration history table - will attempt to migrate anyway");
+        }
+
+        // Drop stranded coach schema from experimental :feat-ai-coach images (no opt-out).
+        // Fail hard: partial cleanup must not leave a half-migrated database.
+        PurgeLeftoverCoachSchema(db);
+
+        try
+        {
             // Detect all existing tables and mark corresponding migrations as applied
             SyncMigrationHistory(db);
         }
@@ -107,6 +161,111 @@ public static class DatabaseMigrationHelper
             Log.Error(ex, "Failed to apply database migrations");
             throw; // Re-throw to prevent app from starting with broken database state
         }
+    }
+
+    /// <summary>
+    /// Removes leftover Coach* tables and matching <c>__EFMigrationsHistory</c> rows left by
+    /// experimental <c>:feat-ai-coach</c> images. Always runs when leftovers are detected; there is
+    /// no opt-out. Workouts, settings, shoes, and other core Tempo tables are not modified.
+    /// </summary>
+    internal static void PurgeLeftoverCoachSchema(TempoDbContext db)
+    {
+        try
+        {
+            var existingTables = GetExistingTables(db);
+            var recordedMigrations = GetRecordedMigrations(db);
+
+            var coachTablesPresent = existingTables
+                .Where(t => t.StartsWith("Coach", StringComparison.Ordinal)
+                            || LeftoverCoachTables.Contains(t, StringComparer.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            var coachMigrationsPresent = recordedMigrations
+                .Where(id => LeftoverCoachMigrationIds.Contains(id, StringComparer.Ordinal)
+                             || id.Contains("Coach", StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            if (coachTablesPresent.Count == 0 && coachMigrationsPresent.Count == 0)
+            {
+                return;
+            }
+
+            Log.Warning(
+                "Leftover experimental coach schema detected ({TableCount} table(s), {MigrationCount} history row(s)). Dropping Coach* tables and purging matching migration history. In-Tempo coach data is discarded; workouts/settings/shoes are unchanged.",
+                coachTablesPresent.Count,
+                coachMigrationsPresent.Count);
+
+            // Prefer known list order, then any unexpected Coach* tables (CASCADE for safety).
+            var tablesToDrop = LeftoverCoachTables
+                .Concat(coachTablesPresent)
+                .Distinct(StringComparer.Ordinal)
+                .Where(t => existingTables.Contains(t, StringComparer.Ordinal))
+                .ToList();
+
+            foreach (var table in tablesToDrop)
+            {
+                if (!IsSafeCoachTableName(table))
+                {
+                    Log.Warning("Skipping unexpected table name during coach cleanup: {Table}", table);
+                    continue;
+                }
+
+                // Identifier cannot be a SQL parameter; name is validated above and quoted.
+                var sql = "DROP TABLE IF EXISTS " + QuoteIdent(table) + " CASCADE;";
+                db.Database.ExecuteSqlRaw(sql);
+                Log.Information("Dropped leftover coach table {Table}", table);
+            }
+
+            var migrationsToDelete = LeftoverCoachMigrationIds
+                .Concat(coachMigrationsPresent)
+                .Distinct(StringComparer.Ordinal)
+                .Where(id => recordedMigrations.Contains(id))
+                .ToList();
+
+            foreach (var migrationId in migrationsToDelete)
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    DELETE FROM ""__EFMigrationsHistory""
+                    WHERE ""MigrationId"" = {0};
+                ", migrationId);
+                Log.Information("Purged leftover coach migration history row {MigrationId}", migrationId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to purge leftover coach schema");
+            throw;
+        }
+    }
+
+    private static string QuoteIdent(string ident)
+    {
+        return "\"" + ident.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    internal static bool IsSafeCoachTableName(string table)
+    {
+        if (string.IsNullOrEmpty(table) || table.Length > 128)
+        {
+            return false;
+        }
+
+        if (!table.StartsWith("Coach", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        foreach (var ch in table)
+        {
+            if (!char.IsAsciiLetterOrDigit(ch) && ch != '_')
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

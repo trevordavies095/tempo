@@ -121,6 +121,12 @@ To update to a new version:
 
 Database migrations run automatically on API startup.
 
+### Leaving the experimental `:feat-ai-coach` image
+
+The experimental coach feature image (`ghcr.io/.../api:feat-ai-coach` / `frontend:feat-ai-coach`) is retiring; new publishes of that tag have stopped. Move back to a supported tag (`edge`, a release `v*`, or whatever `docker-compose.prod.yml` pins).
+
+On the next API start, Tempo **drops any leftover `Coach*` tables** and removes matching `__EFMigrationsHistory` rows. **That discards in-Tempo coach data** (goals, weeks, check-ins, etc.). Workouts, settings, shoes, and other core Tempo data stay intact. There is no opt-out.
+
 ## Stopping Services
 
 ```bash
