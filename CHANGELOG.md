@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Experimental `:feat-ai-coach` images are retiring** - Tempo no longer publishes GHCR images from the `feat/ai-coach` branch. Coaching will live in a separate product; do not deploy or pin `:feat-ai-coach` for new installs.
+
+### Removed
+- **Leftover in-Tempo coach schema on startup** - If a database still has `Coach*` tables or coach rows in `__EFMigrationsHistory` (from a prior `:feat-ai-coach` image), API startup drops those tables and deletes the matching history rows. **Switching off `:feat-ai-coach` discards in-Tempo coach data.** Workouts, UserSettings, shoes, and other core Tempo data are unchanged. There is no opt-out.
+
 ## [2.10.1] - 2026-10-01
 
 ### Fixed
