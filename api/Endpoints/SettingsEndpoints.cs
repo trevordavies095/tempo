@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Models.Responses;
 using Tempo.Api.Services;
 
 namespace Tempo.Api.Endpoints;
@@ -92,35 +93,35 @@ public static class SettingsEndpoints
                 var defaultZones = zoneService.CalculateZonesFromAge(defaultAge);
                 var defaultMaxHr = 220 - defaultAge;
 
-                return Results.Ok(new
+                return Results.Ok(new HeartRateZonesDocument
                 {
-                    calculationMethod = HeartRateCalculationMethod.AgeBased.ToString(),
-                    age = defaultAge,
-                    restingHeartRateBpm = (int?)null,
-                    maxHeartRateBpm = defaultMaxHr,
-                    zones = defaultZones.Select((z, i) => new
+                    CalculationMethod = HeartRateCalculationMethod.AgeBased.ToString(),
+                    Age = defaultAge,
+                    RestingHeartRateBpm = null,
+                    MaxHeartRateBpm = defaultMaxHr,
+                    Zones = defaultZones.Select((z, i) => new HeartRateZoneEntryDocument
                     {
-                        zoneNumber = i + 1,
-                        minBpm = z.MinBpm,
-                        maxBpm = z.MaxBpm
-                    }).ToArray()
+                        ZoneNumber = i + 1,
+                        MinBpm = z.MinBpm,
+                        MaxBpm = z.MaxBpm
+                    }).ToList()
                 });
             }
 
             var zones = zoneService.GetZonesFromUserSettings(settings);
 
-            return Results.Ok(new
+            return Results.Ok(new HeartRateZonesDocument
             {
-                calculationMethod = settings.CalculationMethod.ToString(),
-                age = settings.Age,
-                restingHeartRateBpm = settings.RestingHeartRateBpm,
-                maxHeartRateBpm = settings.MaxHeartRateBpm,
-                zones = zones.Select((z, i) => new
+                CalculationMethod = settings.CalculationMethod.ToString(),
+                Age = settings.Age,
+                RestingHeartRateBpm = settings.RestingHeartRateBpm,
+                MaxHeartRateBpm = settings.MaxHeartRateBpm,
+                Zones = zones.Select((z, i) => new HeartRateZoneEntryDocument
                 {
-                    zoneNumber = i + 1,
-                    minBpm = z.MinBpm,
-                    maxBpm = z.MaxBpm
-                }).ToArray()
+                    ZoneNumber = i + 1,
+                    MinBpm = z.MinBpm,
+                    MaxBpm = z.MaxBpm
+                }).ToList()
             });
         }
         catch (Exception ex)
@@ -384,7 +385,7 @@ public static class SettingsEndpoints
             var settings = await db.UserSettings.FirstOrDefaultAsync();
             var unitPreference = settings?.UnitPreference ?? "metric";
             
-            return Results.Ok(new { unitPreference });
+            return Results.Ok(new UnitPreferenceDocument { UnitPreference = unitPreference });
         }
         catch (Exception ex)
         {
@@ -446,7 +447,7 @@ public static class SettingsEndpoints
 
         group.MapGet("/heart-rate-zones", GetHeartRateZones)
             .WithName("GetHeartRateZones")
-            .Produces(200)
+            .Produces<HeartRateZonesDocument>(200)
             .Produces(500)
             .WithSummary("Get heart rate zones")
             .WithDescription("Returns the current heart rate zones configuration. If no settings exist, returns default zones calculated using age-based method with age 30.");
@@ -468,7 +469,7 @@ public static class SettingsEndpoints
 
         group.MapGet("/unit-preference", GetUnitPreference)
             .WithName("GetUnitPreference")
-            .Produces(200)
+            .Produces<UnitPreferenceDocument>(200)
             .WithSummary("Get unit preference")
             .WithDescription("Returns the stored unit preference (metric or imperial), defaults to metric");
 

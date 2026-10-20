@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Models.Responses;
 using Tempo.Api.Services;
 
 namespace Tempo.Api.Endpoints;
@@ -172,67 +173,67 @@ public static class StatsEndpoints
         return Math.Round(values.Average(), 1, MidpointRounding.AwayFromZero);
     }
 
-    private static object MetricInt(
+    private static WeeklyRecapMetricIntDocument MetricInt(
         int current,
         int previous,
         double trailingAvg,
         int? deltaVsPrevious)
     {
-        return new
+        return new WeeklyRecapMetricIntDocument
         {
-            current,
-            previous,
-            trailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
-            deltaVsPrevious
+            Current = current,
+            Previous = previous,
+            TrailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
+            DeltaVsPrevious = deltaVsPrevious
         };
     }
 
-    private static object MetricLong(
+    private static WeeklyRecapMetricLongDocument MetricLong(
         long current,
         long previous,
         double trailingAvg,
         long? deltaVsPrevious)
     {
-        return new
+        return new WeeklyRecapMetricLongDocument
         {
-            current,
-            previous,
-            trailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
-            deltaVsPrevious
+            Current = current,
+            Previous = previous,
+            TrailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
+            DeltaVsPrevious = deltaVsPrevious
         };
     }
 
-    private static object MetricDouble(
+    private static WeeklyRecapMetricDoubleDocument MetricDouble(
         double current,
         double previous,
         double trailingAvg,
         double? deltaVsPrevious)
     {
-        return new
+        return new WeeklyRecapMetricDoubleDocument
         {
-            current,
-            previous,
-            trailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
-            deltaVsPrevious
+            Current = current,
+            Previous = previous,
+            TrailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
+            DeltaVsPrevious = deltaVsPrevious
         };
     }
 
-    private static object MetricNullableDouble(
+    private static WeeklyRecapMetricNullableDoubleDocument MetricNullableDouble(
         double? current,
         double? previous,
         double? trailingAvg,
         double? deltaVsPrevious)
     {
-        return new
+        return new WeeklyRecapMetricNullableDoubleDocument
         {
-            current,
-            previous,
-            trailingAvg = trailingAvg.HasValue
+            Current = current,
+            Previous = previous,
+            TrailingAvg = trailingAvg.HasValue
                 ? Math.Round(trailingAvg.Value, 1, MidpointRounding.AwayFromZero)
-                : (double?)null,
-            deltaVsPrevious = deltaVsPrevious.HasValue
+                : null,
+            DeltaVsPrevious = deltaVsPrevious.HasValue
                 ? Math.Round(deltaVsPrevious.Value, 1, MidpointRounding.AwayFromZero)
-                : (double?)null
+                : null
         };
     }
 
@@ -456,16 +457,16 @@ public static class StatsEndpoints
         // Calculate current week total (last cumulative value)
         var currentWeekTotal = cumulativeEffort[6];
 
-        return Results.Ok(new
+        return Results.Ok(new RelativeEffortStatsDocument
         {
-            weekStart = weekStart.ToString("yyyy-MM-dd"),
-            weekEnd = weekEnd.ToString("yyyy-MM-dd"),
-            currentWeek = cumulativeEffort,
-            previousWeeks = previousWeeks,
-            threeWeekAverage = Math.Round(threeWeekAverage, 1),
-            rangeMin = rangeMin,
-            rangeMax = rangeMax,
-            currentWeekTotal = currentWeekTotal
+            WeekStart = weekStart.ToString("yyyy-MM-dd"),
+            WeekEnd = weekEnd.ToString("yyyy-MM-dd"),
+            CurrentWeek = cumulativeEffort,
+            PreviousWeeks = previousWeeks,
+            ThreeWeekAverage = Math.Round(threeWeekAverage, 1),
+            RangeMin = rangeMin,
+            RangeMax = rangeMax,
+            CurrentWeekTotal = currentWeekTotal
         });
     }
 
@@ -495,7 +496,7 @@ public static class StatsEndpoints
         {
             if (!DateTime.TryParse(referenceDate, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
             {
-                return Results.BadRequest(new { error = "Invalid referenceDate; use yyyy-MM-dd." });
+                return Results.BadRequest(new ErrorResponse { Error = "Invalid referenceDate; use yyyy-MM-dd." });
             }
 
             referenceLocalDate = parsed.Date;
@@ -520,22 +521,22 @@ public static class StatsEndpoints
             ? current.EasyRunAvgHeartRateBpm.Value - previous.EasyRunAvgHeartRateBpm.Value
             : null;
 
-        return Results.Ok(new
+        return Results.Ok(new WeeklyRecapDocument
         {
-            weekStart = ctx.WeekStartLocal.ToString("yyyy-MM-dd"),
-            weekEnd = ctx.WeekEndLocal.Date.ToString("yyyy-MM-dd"),
-            referenceDate = ctx.ReferenceLocalDate.ToString("yyyy-MM-dd"),
-            timezoneOffsetMinutes,
-            currentWeekIsPartial = ctx.CurrentWeekIsPartial,
-            generatedAtUtc = utcNow.ToString("O"),
-            metrics = new
+            WeekStart = ctx.WeekStartLocal.ToString("yyyy-MM-dd"),
+            WeekEnd = ctx.WeekEndLocal.Date.ToString("yyyy-MM-dd"),
+            ReferenceDate = ctx.ReferenceLocalDate.ToString("yyyy-MM-dd"),
+            TimezoneOffsetMinutes = timezoneOffsetMinutes,
+            CurrentWeekIsPartial = ctx.CurrentWeekIsPartial,
+            GeneratedAtUtc = utcNow.ToString("O"),
+            Metrics = new WeeklyRecapMetricsDocument
             {
-                runs = MetricInt(current.Runs, previous.Runs, trRuns, current.Runs - previous.Runs),
-                distanceM = MetricDouble(current.DistanceM, previous.DistanceM, trDist, current.DistanceM - previous.DistanceM),
-                durationS = MetricLong(current.DurationS, previous.DurationS, trDur, current.DurationS - previous.DurationS),
-                elevationGainM = MetricDouble(current.ElevationGainM, previous.ElevationGainM, trElev, current.ElevationGainM - previous.ElevationGainM),
-                relativeEffortSum = MetricInt(current.RelativeEffortSum, previous.RelativeEffortSum, trEffort, current.RelativeEffortSum - previous.RelativeEffortSum),
-                easyRunAvgHeartRateBpm = MetricNullableDouble(
+                Runs = MetricInt(current.Runs, previous.Runs, trRuns, current.Runs - previous.Runs),
+                DistanceM = MetricDouble(current.DistanceM, previous.DistanceM, trDist, current.DistanceM - previous.DistanceM),
+                DurationS = MetricLong(current.DurationS, previous.DurationS, trDur, current.DurationS - previous.DurationS),
+                ElevationGainM = MetricDouble(current.ElevationGainM, previous.ElevationGainM, trElev, current.ElevationGainM - previous.ElevationGainM),
+                RelativeEffortSum = MetricInt(current.RelativeEffortSum, previous.RelativeEffortSum, trEffort, current.RelativeEffortSum - previous.RelativeEffortSum),
+                EasyRunAvgHeartRateBpm = MetricNullableDouble(
                     current.EasyRunAvgHeartRateBpm,
                     previous.EasyRunAvgHeartRateBpm,
                     trEasyHr,
@@ -561,7 +562,17 @@ public static class StatsEndpoints
         try
         {
             var bestEfforts = await bestEffortService.GetBestEffortsAsync(db);
-            return Results.Ok(new { distances = bestEfforts });
+            return Results.Ok(new BestEffortsDocument
+            {
+                Distances = bestEfforts.Select(b => new BestEffortDistanceDocument
+                {
+                    Distance = b.Distance,
+                    DistanceM = b.DistanceM,
+                    TimeS = b.TimeS,
+                    WorkoutId = b.WorkoutId,
+                    WorkoutDate = b.WorkoutDate
+                }).ToList()
+            });
         }
         catch (Exception ex)
         {
@@ -991,14 +1002,14 @@ public static class StatsEndpoints
 
         group.MapGet("/relative-effort", GetRelativeEffortStats)
             .WithName("GetRelativeEffortStats")
-            .Produces(200)
+            .Produces<RelativeEffortStatsDocument>(200)
             .WithSummary("Get relative effort stats")
             .WithDescription("Returns cumulative relative effort for the current week and 3-week average range");
 
         group.MapGet("/weekly-recap", GetWeeklyRecap)
             .WithName("GetWeeklyRecap")
-            .Produces(200)
-            .Produces(400)
+            .Produces<WeeklyRecapDocument>(200)
+            .Produces<ErrorResponse>(400)
             .WithSummary("Get weekly recap aggregates")
             .WithDescription(
                 "Returns run count, distance, duration, elevation gain, relative effort sum, and easy-run average HR for the current (week-to-date) window, previous full week, and trailing 3-week averages, with week-over-week deltas. " +
@@ -1007,7 +1018,7 @@ public static class StatsEndpoints
 
         group.MapGet("/best-efforts", GetBestEfforts)
             .WithName("GetBestEfforts")
-            .Produces(200)
+            .Produces<BestEffortsDocument>(200)
             .WithSummary("Get best efforts")
             .WithDescription("Returns the fastest time achieved for each standard running distance (400m through Marathon). Best efforts are calculated from any segment within any workout.");
 
