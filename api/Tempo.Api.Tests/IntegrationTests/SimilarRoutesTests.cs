@@ -482,6 +482,8 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
                 name: "Similar Run");
             similarWorkout.RelativeEffort = 85;
             similarWorkout.ElevGainM = 150.0;
+            similarWorkout.AvgHeartRateBpm = 155;
+            similarWorkout.RunType = "easy";
             await db.SaveChangesAsync();
 
             var similarRouteCoords = new List<double[]>
@@ -514,6 +516,138 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
         match.PaceDifferenceS.Should().NotBeNull();
         match.RelativeEffort.Should().Be(85);
         match.ElevGainM.Should().Be(150.0);
+        match.AvgHeartRateBpm.Should().Be(155);
+        match.Name.Should().Be("Similar Run");
+        match.RunType.Should().Be("easy");
+    }
+
+    [Fact]
+    public async Task GetSimilarRoutes_IncludesHeartRateFields_WhenAvailable()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout currentWorkout;
+        Workout withHrWorkout;
+        Workout withoutHrWorkout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+
+            currentWorkout = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: DateTime.UtcNow.AddDays(-1),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "Current Run");
+            currentWorkout.AvgHeartRateBpm = 160;
+            await db.SaveChangesAsync();
+
+            var currentRouteCoords = new List<double[]>
+            {
+                new[] { 0.0, 0.0 },
+                new[] { 0.01, 0.01 }
+            };
+            await TestDataSeeder.SeedWorkoutWithRouteAsync(db, currentWorkout, currentRouteCoords);
+
+            withHrWorkout = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: DateTime.UtcNow.AddDays(-10),
+                distanceM: 5000,
+                durationS: 1700,
+                name: "Lower HR Run");
+            withHrWorkout.AvgHeartRateBpm = 150;
+            withHrWorkout.RunType = "tempo";
+            await db.SaveChangesAsync();
+            await TestDataSeeder.SeedWorkoutWithRouteAsync(db, withHrWorkout, currentRouteCoords);
+
+            withoutHrWorkout = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: DateTime.UtcNow.AddDays(-20),
+                distanceM: 5000,
+                durationS: 1900,
+                name: "No HR Run");
+            withoutHrWorkout.AvgHeartRateBpm = null;
+            await db.SaveChangesAsync();
+            await TestDataSeeder.SeedWorkoutWithRouteAsync(db, withoutHrWorkout, currentRouteCoords);
+        }
+
+        // Act
+        var response = await client.GetAsync($"/workouts/{currentWorkout.Id}/similar-routes");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<List<SimilarRouteResponse>>();
+        result.Should().NotBeNull();
+        var matches = result!;
+
+        var withHr = matches.FirstOrDefault(r => r.WorkoutId == withHrWorkout.Id);
+        withHr.Should().NotBeNull();
+        withHr!.AvgHeartRateBpm.Should().Be(150);
+        withHr.AvgHeartRateDifferenceBpm.Should().Be(-10); // 150 - 160 (match − subject)
+        withHr.Name.Should().Be("Lower HR Run");
+        withHr.RunType.Should().Be("tempo");
+
+        var withoutHr = matches.FirstOrDefault(r => r.WorkoutId == withoutHrWorkout.Id);
+        withoutHr.Should().NotBeNull();
+        withoutHr!.AvgHeartRateBpm.Should().BeNull();
+        withoutHr.AvgHeartRateDifferenceBpm.Should().BeNull();
+        withoutHr.Name.Should().Be("No HR Run");
+    }
+
+    [Fact]
+    public async Task GetSimilarRoutes_OmitsHeartRateDelta_WhenSubjectHasNoHeartRate()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout currentWorkout;
+        Workout matchWorkout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+
+            currentWorkout = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: DateTime.UtcNow.AddDays(-1),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "Current No HR");
+            currentWorkout.AvgHeartRateBpm = null;
+            await db.SaveChangesAsync();
+
+            var routeCoords = new List<double[]>
+            {
+                new[] { 0.0, 0.0 },
+                new[] { 0.01, 0.01 }
+            };
+            await TestDataSeeder.SeedWorkoutWithRouteAsync(db, currentWorkout, routeCoords);
+
+            matchWorkout = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: DateTime.UtcNow.AddDays(-10),
+                distanceM: 5000,
+                durationS: 1750,
+                name: "Match With HR");
+            matchWorkout.AvgHeartRateBpm = 148;
+            await db.SaveChangesAsync();
+            await TestDataSeeder.SeedWorkoutWithRouteAsync(db, matchWorkout, routeCoords);
+        }
+
+        // Act
+        var response = await client.GetAsync($"/workouts/{currentWorkout.Id}/similar-routes");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<List<SimilarRouteResponse>>();
+        result.Should().NotBeNull();
+
+        var match = result!.FirstOrDefault(r => r.WorkoutId == matchWorkout.Id);
+        match.Should().NotBeNull();
+        match!.AvgHeartRateBpm.Should().Be(148);
+        match.AvgHeartRateDifferenceBpm.Should().BeNull();
     }
 
     #region Response Models
@@ -530,6 +664,10 @@ public class SimilarRoutesTests : IClassFixture<TempoWebApplicationFactory>
         public double? PaceDifferenceS { get; set; }
         public int? RelativeEffort { get; set; }
         public double? ElevGainM { get; set; }
+        public int? AvgHeartRateBpm { get; set; }
+        public int? AvgHeartRateDifferenceBpm { get; set; }
+        public string? Name { get; set; }
+        public string? RunType { get; set; }
     }
 
     private class ErrorResponse

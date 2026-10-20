@@ -44,4 +44,18 @@ public class SimilarRouteDocument
 
     [JsonPropertyName("elevGainM")]
     public double? ElevGainM { get; set; }
+
+    /// <summary>Average heart rate of the matched workout (bpm), when available.</summary>
+    [JsonPropertyName("avgHeartRateBpm")]
+    public int? AvgHeartRateBpm { get; set; }
+
+    /// <summary>Negative = lower avg HR than current workout (match − subject).</summary>
+    [JsonPropertyName("avgHeartRateDifferenceBpm")]
+    public int? AvgHeartRateDifferenceBpm { get; set; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("runType")]
+    public string? RunType { get; set; }
 }
