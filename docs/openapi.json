@@ -2,7 +2,7 @@
   "openapi": "3.0.4",
   "info": {
     "title": "Tempo API",
-    "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an admin-issued API key (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
+    "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an API key generated in Settings (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
     "version": "2.10.1"
   },
   "paths": {
@@ -187,7 +187,7 @@
           "Authentication"
         ],
         "summary": "Create API key",
-        "description": "Creates an API key for machine/CLI access. The full key is returned once; store it securely. Requires a browser JWT session (not an API key).",
+        "description": "Creates an API key for machine/CLI access. Each user may have one active key; returns 409 if one exists (revoke it first). The key can be shown again later via the reveal endpoint. Requires a browser JWT session (not an API key).",
         "operationId": "CreateApiKey",
         "requestBody": {
           "content": {
@@ -207,6 +207,9 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Conflict"
           }
         },
         "security": [
@@ -220,7 +223,7 @@
           "Authentication"
         ],
         "summary": "List API keys",
-        "description": "Returns metadata for your API keys (never the secret value).",
+        "description": "Returns metadata for your API keys, including revoked ones (never the secret value). canReveal is false for keys created before reveal existed.",
         "operationId": "ListApiKeys",
         "responses": {
           "200": {
@@ -228,6 +231,46 @@
           },
           "401": {
             "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/auth/api-keys/{id}/reveal": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Reveal API key",
+        "description": "Returns the full secret for your active API key. 404 if the key is revoked or not yours; 409 if it can't be decrypted (created before reveal existed, or JWT:SecretKey was rotated). Requires a browser JWT session (not an API key).",
+        "operationId": "RevealApiKey",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict"
           }
         },
         "security": [

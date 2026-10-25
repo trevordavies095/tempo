@@ -8,11 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Settings → Account → API key** - Generate, show, copy, and revoke your Tempo API key from the browser instead of `curl`. New `POST /auth/api-keys/{id}/reveal` (session only) returns the full key; `GET /auth/api-keys` items include `canReveal`. New keys are stored hashed (authentication) and AES-GCM encrypted with a key derived from `JWT:SecretKey` (reveal). Keys created before this release keep working but cannot be shown; rotating `JWT:SecretKey` has the same effect.
 - **`GET /workouts/{id}/similar-routes` heart-rate fields** - Each match may include `avgHeartRateBpm`, `avgHeartRateDifferenceBpm` (match − subject; negative = lower HR than the subject; null when either side lacks HR), plus `name` and `runType`. Additive; existing clients ignore unknown fields.
 - **`GET /stats/relative-effort` optional `referenceDate`** - Same `yyyy-MM-dd` week-selection semantics as `GET /stats/weekly-recap` so clients can load relative-effort stats for a historical Monday–Sunday week; omitting the param preserves today’s behavior. Invalid dates return `400`.
 - **OpenAPI response schemas for coach/CLI integration endpoints** - Documented `200` (and error) response bodies in `docs/openapi.json` for `GET /workouts`, `/workouts/{id}`, `/workouts/{id}/time-series`, `/workouts/{id}/similar-routes`, `/stats/weekly-recap`, `/stats/relative-effort`, `/stats/best-efforts`, `/shoes`, `/settings/heart-rate-zones`, `/settings/unit-preference`, and `/auth/me`. Handlers return named DTOs wired via `.Produces<T>`; payloads are unchanged. CI continues to keep the committed OpenAPI file in sync with Swashbuckle generation.
 
 ### Changed
+- **One active API key per user** - `POST /auth/api-keys` returns **409** while you have an active key; revoke it first. **Upgrade note:** the migration revokes all but each user's newest active key. Any client still using an older key gets **401** after upgrading; generate or copy the current key from Settings and update the client.
+- **API key docs no longer say "read-only"** - API keys authenticate every protected route, including writes, except password change and key management.
 - **OpenAPI / API docs: time-series and cadence** - Document that `GET /workouts/{id}` does not embed time-series (use `GET /workouts/{id}/time-series`); clarify `avgCadenceRpm` / `maxCadenceRpm` / `cadenceRpm` as steps/min (both feet) despite the `*Rpm` names.
 - **Experimental `:feat-ai-coach` images are retiring** - Tempo no longer publishes GHCR images from the `feat/ai-coach` branch. Coaching will live in a separate product; do not deploy or pin `:feat-ai-coach` for new installs.
 

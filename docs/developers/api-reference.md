@@ -12,11 +12,13 @@ Complete reference for the Tempo REST API.
 Most endpoints require authentication. Tempo accepts **`Authorization: Bearer`** in two forms:
 
 - **JWT** — Usually issued after login and sent automatically as the httpOnly cookie `authToken`. The same JWT can be sent as a Bearer token when calling the API directly (e.g. `curl`).
-- **API key** — Admin-issued secret for machine clients (prefix `tmp_`). Use for read-only automation and the planned CLI: set something like `TEMPO_API_KEY` and send `Authorization: Bearer <key>`. The server distinguishes keys from JWTs by the `tmp_` prefix.
+- **API key** — Secret for machine clients such as tempo-cli (prefix `tmp_`). Generate it in **Settings → Account → API key**, set something like `TEMPO_API_KEY`, and send `Authorization: Bearer <key>`. The server distinguishes keys from JWTs by the `tmp_` prefix.
 
-API keys work on normal protected routes (for example `GET /auth/me`, `GET /workouts`, stats, settings, shoes). **Creating, listing, and revoking API keys** requires a full interactive JWT session (`POST/GET/DELETE /auth/api-keys`); those routes do not accept an API key.
+API keys work on all normal protected routes, **including writes** (for example `GET /auth/me`, `GET /workouts`, imports, stats, settings, shoes). They are not read-only. **Creating, listing, revealing, and revoking API keys** and changing the password require a full interactive JWT session; those routes do not accept an API key (403).
 
 ### API keys (CLI and automation)
+
+Each user has **one active key**. The usual path is Settings → Account → API key (Generate, Show, Copy, Revoke). The endpoints below back that card.
 
 **Create** (session required — log in first so the `authToken` cookie is set, or use a cookie jar with `POST /auth/login`):
 
@@ -30,7 +32,7 @@ Cookie: authToken=…
 }
 ```
 
-Response **201**: includes `id`, `label`, `keyPrefix`, `createdAt`, and **`key`** (full secret) **once**. Store it immediately; later listing never returns the secret.
+Response **201**: includes `id`, `label`, `keyPrefix`, `createdAt`, and **`key`** (full secret). Response **409** `{ "error": "An active API key already exists. …" }` when you already have an active key; revoke it first.
 
 **List** (session only):
 
@@ -38,7 +40,15 @@ Response **201**: includes `id`, `label`, `keyPrefix`, `createdAt`, and **`key`*
 GET /auth/api-keys
 ```
 
-Returns metadata per key: `id`, `label`, `keyPrefix`, `createdAt`, `revokedAt`.
+Returns metadata per key, including revoked keys: `id`, `label`, `keyPrefix`, `createdAt`, `revokedAt`, `canReveal`. Never returns the secret. `canReveal` is `false` for keys created before Tempo stored an encrypted copy.
+
+**Reveal** (session only):
+
+```http
+POST /auth/api-keys/{id}/reveal
+```
+
+Response **200** `{ "key": "tmp_…" }` for your active key. **404** if the key is revoked or not yours. **409** `{ "error": "This key can't be displayed. …" }` if it has no readable encrypted copy (created before reveal existed, or `JWT:SecretKey` was rotated); the key still authenticates.
 
 **Revoke** (session only):
 
@@ -65,7 +75,7 @@ export TEMPO_API_KEY='tmp_…'
 curl -sS -H "Authorization: Bearer $TEMPO_API_KEY" http://localhost:5001/auth/me
 ```
 
-Do not log API keys or commit them to version control. Rotate by revoking the key and creating a new one.
+Do not log API keys or commit them to version control. Rotate by revoking the key and creating a new one. Tempo stores each key hashed (for authentication) and AES-GCM encrypted with a key derived from `JWT:SecretKey` (so Settings can show it).
 
 ### Register
 

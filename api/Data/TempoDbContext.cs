@@ -125,6 +125,10 @@ public class TempoDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => e.UserId);
+            // One active key per user
+            entity.HasIndex(e => e.UserId, "IX_ApiKeys_UserId_Active")
+                .IsUnique()
+                .HasFilter("\"RevokedAt\" IS NULL");
             // TryAuthenticateUserAsync: WHERE KeyPrefix = @p AND RevokedAt IS NULL
             entity.HasIndex(e => e.KeyPrefix)
                 .HasFilter("\"RevokedAt\" IS NULL");

@@ -366,7 +366,13 @@ public static class AuthEndpoints
             return Results.BadRequest(new { error = "Label must be at most 200 characters" });
         }
 
-        var (entity, plaintextKey) = await apiKeyService.CreateAsync(userId.Value, label, cancellationToken);
+        var created = await apiKeyService.TryCreateAsync(userId.Value, label, cancellationToken);
+        if (created == null)
+        {
+            return Results.Conflict(new { error = "An active API key already exists. Revoke it before creating a new one." });
+        }
+
+        var (entity, plaintextKey) = created.Value;
 
         return TypedResults.Json(
             new
@@ -398,8 +404,30 @@ public static class AuthEndpoints
             label = k.Label,
             keyPrefix = k.KeyPrefix,
             createdAt = k.CreatedAt,
-            revokedAt = k.RevokedAt
+            revokedAt = k.RevokedAt,
+            canReveal = k.KeyCiphertext != null
         }));
+    }
+
+    private static async Task<IResult> RevealApiKey(
+        Guid id,
+        ClaimsPrincipal user,
+        ApiKeyService apiKeyService,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetUserIdFromClaims(user);
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var (status, plaintextKey) = await apiKeyService.TryRevealAsync(userId.Value, id, cancellationToken);
+        return status switch
+        {
+            ApiKeyRevealStatus.Revealed => Results.Ok(new { key = plaintextKey }),
+            ApiKeyRevealStatus.Unavailable => Results.Conflict(new { error = "This key can't be displayed. Revoke it and generate a new one." }),
+            _ => Results.NotFound()
+        };
     }
 
     private static async Task<IResult> RevokeApiKey(
@@ -488,9 +516,10 @@ public static class AuthEndpoints
             .Produces(StatusCodes.Status201Created)
             .Produces(400)
             .Produces(401)
+            .Produces(409)
             .WithSummary("Create API key")
             .WithDescription(
-                "Creates an API key for machine/CLI access. The full key is returned once; store it securely. Requires a browser JWT session (not an API key).");
+                "Creates an API key for machine/CLI access. Each user may have one active key; returns 409 if one exists (revoke it first). The key can be shown again later via the reveal endpoint. Requires a browser JWT session (not an API key).");
 
         group.MapGet("/api-keys", ListApiKeys)
             .WithName("ListApiKeys")
@@ -498,7 +527,18 @@ public static class AuthEndpoints
             .Produces(200)
             .Produces(401)
             .WithSummary("List API keys")
-            .WithDescription("Returns metadata for your API keys (never the secret value).");
+            .WithDescription("Returns metadata for your API keys, including revoked ones (never the secret value). canReveal is false for keys created before reveal existed.");
+
+        group.MapPost("/api-keys/{id:guid}/reveal", RevealApiKey)
+            .WithName("RevealApiKey")
+            .RequireAuthorization(AuthorizationPolicyNames.JwtSessionOnly)
+            .Produces(200)
+            .Produces(401)
+            .Produces(404)
+            .Produces(409)
+            .WithSummary("Reveal API key")
+            .WithDescription(
+                "Returns the full secret for your active API key. 404 if the key is revoked or not yours; 409 if it can't be decrypted (created before reveal existed, or JWT:SecretKey was rotated). Requires a browser JWT session (not an API key).");
 
         group.MapDelete("/api-keys/{id:guid}", RevokeApiKey)
             .WithName("RevokeApiKey")

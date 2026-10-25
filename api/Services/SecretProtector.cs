@@ -4,20 +4,19 @@ using System.Text;
 namespace Tempo.Api.Services;
 
 /// <summary>
-/// AES-GCM encrypt/decrypt for the intervals.icu API key.
-/// Wrapping key is HKDF-SHA256 of JWT:SecretKey with a purpose string.
+/// AES-GCM encrypt/decrypt for secrets Tempo must read back in plaintext.
+/// Wrapping key is HKDF-SHA256 of JWT:SecretKey with a per-purpose info string,
+/// so each subclass gets an independent key. Rotating JWT:SecretKey makes stored ciphertext unreadable.
 /// </summary>
-public sealed class IntervalsIcuSecretProtector
+public abstract class SecretProtector
 {
-    public const string Purpose = "tempo-intervals-icu-api-key";
-
     private const int NonceSize = 12;
     private const int TagSize = 16;
     private const int KeySize = 32;
 
     private readonly byte[] _key;
 
-    public IntervalsIcuSecretProtector(IConfiguration configuration)
+    protected SecretProtector(IConfiguration configuration, string purpose)
     {
         var secret = configuration["JWT:SecretKey"]
             ?? throw new InvalidOperationException("JWT:SecretKey is not configured");
@@ -27,7 +26,7 @@ public sealed class IntervalsIcuSecretProtector
             Encoding.UTF8.GetBytes(secret),
             outputLength: KeySize,
             salt: null,
-            info: Encoding.UTF8.GetBytes(Purpose));
+            info: Encoding.UTF8.GetBytes(purpose));
     }
 
     public byte[] Encrypt(string plaintext)
@@ -65,5 +64,31 @@ public sealed class IntervalsIcuSecretProtector
         using var aes = new AesGcm(_key, TagSize);
         aes.Decrypt(nonce, ciphertext, tag, plaintext);
         return Encoding.UTF8.GetString(plaintext);
+    }
+}
+
+/// <summary>
+/// Protects the intervals.icu personal API key.
+/// </summary>
+public sealed class IntervalsIcuSecretProtector : SecretProtector
+{
+    public const string Purpose = "tempo-intervals-icu-api-key";
+
+    public IntervalsIcuSecretProtector(IConfiguration configuration)
+        : base(configuration, Purpose)
+    {
+    }
+}
+
+/// <summary>
+/// Protects Tempo API key plaintext so Settings can reveal it. Authentication still uses <see cref="Models.ApiKey.KeyHash"/>.
+/// </summary>
+public sealed class ApiKeySecretProtector : SecretProtector
+{
+    public const string Purpose = "tempo-api-key";
+
+    public ApiKeySecretProtector(IConfiguration configuration)
+        : base(configuration, Purpose)
+    {
     }
 }

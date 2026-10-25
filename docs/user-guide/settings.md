@@ -239,6 +239,20 @@ After you connect, Tempo looks for new running activities about every 15 minutes
 
 The connection is **not** included in a Tempo export ZIP. After restore, connect again in Settings.
 
+## API Key
+
+Tools such as [tempo-cli](https://github.com/trevordavies095/tempo-cli) and the Tempo extension for Claude Desktop use an API key to read your Tempo data. You manage it under **Settings → Account → API key**.
+
+- **Generate key** creates your key. You can have one key at a time.
+- **Show** / **Hide** displays the full key. **Copy** puts it on your clipboard.
+- **Revoke** turns the key off immediately. Anything using it stops working until you give it a new key. After revoking, you can generate a new one.
+
+**Keep the key private.** It can read and change your Tempo data (it cannot change your password or manage API keys). Do not paste it into shared channels or commit it to a repository.
+
+If the card says the key **can't be shown**, it was created before Tempo could display keys, or the server's `JWT__SecretKey` was changed. The key still works. Revoke it and generate a new one if you need to see it.
+
+API keys are **not** included in a Tempo export ZIP. After restore, generate a new key.
+
 ## Export / Import
 
 Tempo allows you to export all your data in a portable ZIP format for backup, migration, or data portability. Under **Migrate / restore**, you can restore a previous Tempo export or import a Strava archive after onboarding.

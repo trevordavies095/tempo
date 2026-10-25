@@ -106,9 +106,11 @@ Use **Development** (not `Testing`) for `dotnet swagger tofile`: with `Testing`,
 
 With the API running in **Development**, you can also fetch the same document at `http://localhost:5001/swagger/v1/swagger.json`. Production deployments do not expose Swagger by default.
 
-**API keys (CLI and automation):** Protected routes accept `Authorization: Bearer` with either a JWT (browser session) or an admin-issued API key (prefix `tmp_`). The planned read-only CLI uses env such as `TEMPO_API_KEY`; it does not create keys—operators issue them in Tempo.
+**API keys (CLI and automation):** Protected routes accept `Authorization: Bearer` with either a JWT (browser session) or an API key (prefix `tmp_`). tempo-cli reads the key from `TEMPO_API_KEY` (or its config file); it does not create keys.
 
-1. **Create a key** (requires a logged-in session, not an API key). Either use **Swagger** at `/swagger` in Development, or from a shell log in with a cookie jar and create a key:
+1. **Get a key.** In Tempo, open **Settings → Account → API key** and click **Generate key**. Use **Show** or **Copy** any time to see it again. Each user has **one active key**; revoke it to generate a new one.
+
+   Without the UI (requires a logged-in session, not an API key), log in with a cookie jar and create the key:
 
 ```bash
 BASE=http://localhost:5001
@@ -120,7 +122,7 @@ curl -sS -b tempo-cookies.txt -X POST "$BASE/auth/api-keys" \
   -d '{"label":"cli"}'
 ```
 
-The JSON response includes the secret **`key` once**; the server stores only a hash. Copy it immediately.
+   The JSON response includes the secret **`key`**. Creating a second key while one is active returns **409**.
 
 2. **Verify** machine access:
 
@@ -129,7 +131,7 @@ export TEMPO_API_KEY='tmp_…'   # paste the key from step 1
 curl -sS -H "Authorization: Bearer $TEMPO_API_KEY" http://localhost:5001/auth/me
 ```
 
-3. **Security:** Do not commit keys, log them in apps, or paste them into shared channels. Revoke a compromised key (`DELETE /auth/api-keys/{id}` with the same session you used to create it) and create a new one.
+3. **Security:** An API key can read **and change** your Tempo data (everything except changing the password and managing keys). Do not commit keys, log them in apps, or paste them into shared channels. Tempo stores the key hashed for authentication and encrypted (derived from `JWT:SecretKey`) so Settings can show it; rotating `JWT:SecretKey` keeps the key working but it can no longer be shown. Revoke a compromised key from Settings (or `DELETE /auth/api-keys/{id}` with a session) and generate a new one.
 
 4. **401 on protected routes** often returns: `{"error":"Invalid or expired credentials"}` (invalid, revoked, or missing auth). Full paths and schemas: [docs/openapi.json](docs/openapi.json).
 
