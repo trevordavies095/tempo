@@ -1593,6 +1593,79 @@ export async function changePassword(
   return response.json();
 }
 
+export interface ApiKeySummary {
+  id: string;
+  label: string | null;
+  keyPrefix: string;
+  createdAt: string;
+  revokedAt: string | null;
+  canReveal: boolean;
+}
+
+export interface CreatedApiKey {
+  id: string;
+  label: string | null;
+  key: string;
+  keyPrefix: string;
+  createdAt: string;
+}
+
+export async function listApiKeys(): Promise<ApiKeySummary[]> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/api-keys`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load API key: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function createApiKey(label?: string): Promise<CreatedApiKey> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/api-keys`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ label: label ?? null }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to generate API key: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function revealApiKey(id: string): Promise<string> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/api-keys/${encodeURIComponent(id)}/reveal`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to show API key: ${response.status}`);
+  }
+
+  const body: { key: string } = await response.json();
+  return body.key;
+}
+
+export async function revokeApiKey(id: string): Promise<void> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/api-keys/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to revoke API key: ${response.status}`);
+  }
+}
+
 export async function checkRegistrationAvailable(): Promise<RegistrationAvailableResponse> {
   const response = await fetch(`${API_BASE_URL}/auth/registration-available`, {
     method: 'GET',

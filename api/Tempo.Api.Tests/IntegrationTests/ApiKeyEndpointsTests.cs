@@ -250,6 +250,120 @@ public class ApiKeyEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         second.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
+    [Fact]
+    public async Task CreateApiKey_WhenActiveKeyExists_ReturnsConflict()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        (await client.PostAsJsonAsync("/auth/api-keys", new { label = "first" })).EnsureSuccessStatusCode();
+
+        var second = await client.PostAsJsonAsync("/auth/api-keys", new { label = "second" });
+
+        second.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var err = await second.Content.ReadFromJsonAsync<ErrorDto>();
+        err!.Error.Should().Contain("already exists");
+    }
+
+    [Fact]
+    public async Task CreateApiKey_AfterRevoke_ReturnsCreated()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        var first = await (await client.PostAsJsonAsync("/auth/api-keys", new { })).Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+        (await client.DeleteAsync($"/auth/api-keys/{first!.Id}")).EnsureSuccessStatusCode();
+
+        var second = await client.PostAsJsonAsync("/auth/api-keys", new { });
+
+        second.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [Fact]
+    public async Task RevealApiKey_ReturnsSameKeyAsCreate()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        var created = await (await client.PostAsJsonAsync("/auth/api-keys", new { })).Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+
+        var reveal = await client.PostAsync($"/auth/api-keys/{created!.Id}/reveal", null);
+
+        reveal.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await reveal.Content.ReadFromJsonAsync<RevealApiKeyResponse>();
+        body!.Key.Should().Be(created.Key);
+    }
+
+    [Fact]
+    public async Task ListApiKeys_ReportsCanReveal()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        (await client.PostAsJsonAsync("/auth/api-keys", new { })).EnsureSuccessStatusCode();
+
+        var list = await client.GetFromJsonAsync<List<ApiKeyListItemResponse>>("/auth/api-keys");
+
+        list.Should().ContainSingle().Which.CanReveal.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RevealApiKey_WithoutCiphertext_ReturnsConflictAndListSaysCannotReveal()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        var created = await (await client.PostAsJsonAsync("/auth/api-keys", new { })).Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await db.ApiKeys.Where(k => k.Id == created!.Id)
+                .ExecuteUpdateAsync(u => u.SetProperty(k => k.KeyCiphertext, (byte[]?)null));
+        }
+
+        var reveal = await client.PostAsync($"/auth/api-keys/{created!.Id}/reveal", null);
+
+        reveal.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var err = await reveal.Content.ReadFromJsonAsync<ErrorDto>();
+        err!.Error.Should().Contain("can't be displayed");
+        var list = await client.GetFromJsonAsync<List<ApiKeyListItemResponse>>("/auth/api-keys");
+        list.Should().ContainSingle().Which.CanReveal.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RevealApiKey_WhenRevoked_ReturnsNotFound()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        var created = await (await client.PostAsJsonAsync("/auth/api-keys", new { })).Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+        await client.DeleteAsync($"/auth/api-keys/{created!.Id}");
+
+        var reveal = await client.PostAsync($"/auth/api-keys/{created.Id}/reveal", null);
+
+        reveal.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task RevealApiKey_WithBearerApiKey_ReturnsForbidden()
+    {
+        await EnsureCleanDatabaseAsync();
+        var sessionClient = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "alice", "Pass123!");
+        var created = await (await sessionClient.PostAsJsonAsync("/auth/api-keys", new { })).Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+
+        var apiKeyClient = _factory.CreateClient();
+        apiKeyClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", created!.Key);
+
+        var reveal = await apiKeyClient.PostAsync($"/auth/api-keys/{created.Id}/reveal", null);
+
+        reveal.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task RevealApiKey_WhenUnauthenticated_ReturnsUnauthorized()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = _factory.CreateClient();
+
+        var reveal = await client.PostAsync($"/auth/api-keys/{Guid.NewGuid()}/reveal", null);
+
+        reveal.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     private sealed class CreateApiKeyResponse
     {
         public Guid Id { get; set; }
@@ -266,6 +380,12 @@ public class ApiKeyEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public string KeyPrefix { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public DateTime? RevokedAt { get; set; }
+        public bool CanReveal { get; set; }
+    }
+
+    private sealed class RevealApiKeyResponse
+    {
+        public string Key { get; set; } = string.Empty;
     }
 
     private sealed class MeResponse

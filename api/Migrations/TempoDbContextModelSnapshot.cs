@@ -31,6 +31,9 @@ namespace Tempo.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<byte[]>("KeyCiphertext")
+                        .HasColumnType("bytea");
+
                     b.Property<string>("KeyHash")
                         .IsRequired()
                         .HasColumnType("text");
@@ -56,6 +59,10 @@ namespace Tempo.Api.Migrations
                         .HasFilter("\"RevokedAt\" IS NULL");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex(new[] { "UserId" }, "IX_ApiKeys_UserId_Active")
+                        .IsUnique()
+                        .HasFilter("\"RevokedAt\" IS NULL");
 
                     b.ToTable("ApiKeys");
                 });

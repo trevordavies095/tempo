@@ -208,6 +208,7 @@ builder.Services.AddScoped<IWeatherService>(sp => sp.GetRequiredService<WeatherS
 builder.Services.AddScoped<WorkoutIntake>();
 builder.Services.AddScoped<HealthKitWorkoutDecoder>();
 builder.Services.AddSingleton<IntervalsIcuSecretProtector>();
+builder.Services.AddSingleton<ApiKeySecretProtector>();
 builder.Services.AddHttpClient(IntervalsIcuClient.HttpClientName, client =>
 {
     client.BaseAddress = new Uri("https://intervals.icu/api/v1/");

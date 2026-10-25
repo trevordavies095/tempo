@@ -24,7 +24,7 @@ public static class TempoOpenApi
             Description =
                 "HTTP API for Tempo, a self-hosted running tracker. " +
                 "Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) " +
-                $"or an admin-issued API key (prefix `{ApiKeyService.KeyMaterialPrefix}`). " +
+                $"or an API key generated in Settings (prefix `{ApiKeyService.KeyMaterialPrefix}`). " +
                 "Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login."
         });
 

@@ -21,6 +21,7 @@ import AppearanceSection from '@/components/AppearanceSection';
 import { ShoeManagementSection } from '@/components/ShoeManagementSection';
 import { ExportImportSection } from '@/components/ExportImportSection';
 import { IntervalsIcuSection } from '@/components/IntervalsIcuSection';
+import { ApiKeySection } from '@/components/ApiKeySection';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
@@ -701,6 +702,7 @@ function SettingsPageContent() {
                 </div>
               </details>
             </Card>
+            <ApiKeySection />
           </div>
 
           {/* System Information */}

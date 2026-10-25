@@ -1,13 +1,24 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 
 namespace Tempo.Api.Services;
 
+public enum ApiKeyRevealStatus
+{
+    Revealed,
+    NotFound,
+
+    /// <summary>Key exists and is active but has no readable ciphertext (pre-reveal key or rotated JWT:SecretKey).</summary>
+    Unavailable
+}
+
 /// <summary>
-/// API key generation, storage (hashed), listing, revocation, and validation for machine auth (Theme C).
+/// API key generation, storage (hashed + encrypted), listing, reveal, revocation, and validation for machine auth (Theme C).
+/// Each user has at most one active key.
 /// </summary>
 public class ApiKeyService
 {
@@ -21,18 +32,26 @@ public class ApiKeyService
 
     private readonly TempoDbContext _db;
     private readonly PasswordService _passwordService;
+    private readonly ApiKeySecretProtector _protector;
 
-    public ApiKeyService(TempoDbContext db, PasswordService passwordService)
+    public ApiKeyService(TempoDbContext db, PasswordService passwordService, ApiKeySecretProtector protector)
     {
         _db = db;
         _passwordService = passwordService;
+        _protector = protector;
     }
 
     /// <summary>
-    /// Creates a key; the plaintext key in the return value is returned once to the caller — never stored.
+    /// Creates a key unless the user already has an active one (returns null). The plaintext is stored only
+    /// as a hash (for authentication) and as ciphertext (for <see cref="TryRevealAsync"/>).
     /// </summary>
-    public async Task<(ApiKey Entity, string PlaintextKey)> CreateAsync(Guid userId, string? label, CancellationToken cancellationToken = default)
+    public async Task<(ApiKey Entity, string PlaintextKey)?> TryCreateAsync(Guid userId, string? label, CancellationToken cancellationToken = default)
     {
+        if (await _db.ApiKeys.AnyAsync(k => k.UserId == userId && k.RevokedAt == null, cancellationToken))
+        {
+            return null;
+        }
+
         var plaintextKey = GenerateSecret();
         var keyPrefix = BuildKeyPrefix(plaintextKey);
         var entity = new ApiKey
@@ -41,13 +60,66 @@ public class ApiKeyService
             Label = NormalizeLabel(label),
             KeyHash = HashApiKeySecret(plaintextKey),
             KeyPrefix = keyPrefix,
+            KeyCiphertext = _protector.Encrypt(plaintextKey),
             CreatedAt = DateTime.UtcNow
         };
 
         _db.ApiKeys.Add(entity);
-        await _db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsActiveKeyUniqueViolation(ex))
+        {
+            // Lost a race with a concurrent create; IX_ApiKeys_UserId_Active kept the invariant.
+            _db.Entry(entity).State = EntityState.Detached;
+            return null;
+        }
 
         return (entity, plaintextKey);
+    }
+
+    /// <summary>
+    /// Decrypts the user's active key <paramref name="apiKeyId"/>. Revoked or foreign keys are <see cref="ApiKeyRevealStatus.NotFound"/>.
+    /// </summary>
+    public async Task<(ApiKeyRevealStatus Status, string? PlaintextKey)> TryRevealAsync(
+        Guid userId,
+        Guid apiKeyId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _db.ApiKeys
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                k => k.Id == apiKeyId && k.UserId == userId && k.RevokedAt == null,
+                cancellationToken);
+
+        if (entity == null)
+        {
+            return (ApiKeyRevealStatus.NotFound, null);
+        }
+
+        if (entity.KeyCiphertext == null)
+        {
+            return (ApiKeyRevealStatus.Unavailable, null);
+        }
+
+        string plaintextKey;
+        try
+        {
+            plaintextKey = _protector.Decrypt(entity.KeyCiphertext);
+        }
+        catch (CryptographicException)
+        {
+            return (ApiKeyRevealStatus.Unavailable, null);
+        }
+
+        // Ciphertext must still match the hash that authenticates this key.
+        if (!VerifyApiKeyAgainstStoredHash(plaintextKey, entity.KeyHash))
+        {
+            return (ApiKeyRevealStatus.Unavailable, null);
+        }
+
+        return (ApiKeyRevealStatus.Revealed, plaintextKey);
     }
 
     public async Task<IReadOnlyList<ApiKey>> ListForUserAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -180,6 +252,19 @@ public class ApiKeyService
         return plaintextKey.Length <= KeyPrefixLength
             ? plaintextKey
             : plaintextKey[..KeyPrefixLength];
+    }
+
+    private static bool IsActiveKeyUniqueViolation(DbUpdateException ex)
+    {
+        for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+        {
+            if (inner is PostgresException pg && pg.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                return pg.ConstraintName == "IX_ApiKeys_UserId_Active";
+            }
+        }
+
+        return false;
     }
 
     private static string? NormalizeLabel(string? label)
