@@ -814,6 +814,66 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         zones.Zones[4].MaxBpm.Should().Be(190);
     }
 
+    [Fact]
+    public async Task GetThresholds_WithRecentBestEffort_ReturnsSuggestionAlongsideSetValue()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        Guid workoutId;
+        var workoutDate = DateTime.UtcNow.AddDays(-10);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var settings = await TestDataSeeder.SeedUserSettingsAsync(db);
+            settings.ThresholdPaceS = 270;
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, startedAt: workoutDate);
+            db.WorkoutBestEfforts.Add(new WorkoutBestEffort
+            {
+                WorkoutId = workout.Id,
+                Distance = "5K",
+                DistanceM = 5000,
+                TimeS = 1200
+            });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        // Act
+        var result = await client.GetFromJsonAsync<ThresholdsResponse>("/settings/thresholds");
+
+        // Assert: suggestion is present even with a value set, and never replaces it
+        result!.ThresholdPaceS.Should().Be(270);
+        result.SuggestedThresholdPaceS.Should().Be(256);
+        result.SuggestedFrom.Should().NotBeNull();
+        result.SuggestedFrom!.Distance.Should().Be("5K");
+        result.SuggestedFrom.TimeS.Should().Be(1200);
+        result.SuggestedFrom.WorkoutDate.Should().Be(workoutDate.ToString("yyyy-MM-dd"));
+        result.SuggestedFrom.WorkoutId.Should().Be(workoutId.ToString());
+
+        // The PUT response carries the suggestion too
+        var putResponse = await client.PutAsJsonAsync("/settings/thresholds", new { thresholdPaceS = 260 });
+        var putResult = await putResponse.Content.ReadFromJsonAsync<ThresholdsResponse>();
+        putResult!.ThresholdPaceS.Should().Be(260);
+        putResult.SuggestedThresholdPaceS.Should().Be(256);
+    }
+
+    [Fact]
+    public async Task GetThresholds_WithNoQualifyingEffort_ReturnsNullSuggestion()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        // Act
+        var result = await client.GetFromJsonAsync<ThresholdsResponse>("/settings/thresholds");
+
+        // Assert
+        result!.SuggestedThresholdPaceS.Should().BeNull();
+        result.SuggestedFrom.Should().BeNull();
+    }
+
     #endregion
 
     #region GetCartoBasemaps Tests
@@ -927,6 +987,16 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
     {
         public int? ThresholdPaceS { get; set; }
         public int? ThresholdHeartRateBpm { get; set; }
+        public int? SuggestedThresholdPaceS { get; set; }
+        public SuggestedFromResponse? SuggestedFrom { get; set; }
+    }
+
+    private class SuggestedFromResponse
+    {
+        public string Distance { get; set; } = string.Empty;
+        public int TimeS { get; set; }
+        public string WorkoutDate { get; set; } = string.Empty;
+        public string WorkoutId { get; set; } = string.Empty;
     }
 
     private class ErrorResponse

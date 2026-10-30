@@ -426,24 +426,52 @@ public static class SettingsEndpoints
     private const int MaxThresholdHeartRateBpm = 230;
 
     /// <summary>
+    /// Builds the thresholds document: the saved values plus the read-only suggestion
+    /// </summary>
+    private static async Task<ThresholdsDocument> BuildThresholdsDocumentAsync(
+        UserSettings? settings,
+        TempoDbContext db,
+        ThresholdSuggestionService suggestionService)
+    {
+        var suggestion = await suggestionService.GetSuggestionAsync(db, DateTime.UtcNow);
+
+        return new ThresholdsDocument
+        {
+            ThresholdPaceS = settings?.ThresholdPaceS,
+            ThresholdHeartRateBpm = settings?.ThresholdHeartRateBpm,
+            SuggestedThresholdPaceS = suggestion?.ThresholdPaceS,
+            SuggestedFrom = suggestion == null ? null : new ThresholdSuggestionSourceDocument
+            {
+                Distance = suggestion.Distance,
+                TimeS = suggestion.TimeS,
+                WorkoutDate = suggestion.WorkoutDate,
+                WorkoutId = suggestion.WorkoutId
+            }
+        };
+    }
+
+    /// <summary>
     /// Get threshold pace and heart rate
     /// </summary>
     /// <param name="db">Database context</param>
+    /// <param name="suggestionService">Threshold suggestion service</param>
     /// <param name="logger">Logger instance</param>
-    /// <returns>Athlete-set threshold pace (seconds per km) and threshold heart rate, each null when not set</returns>
+    /// <returns>Athlete-set threshold pace (seconds per km) and threshold heart rate, each null when not set,
+    /// plus a suggested threshold pace</returns>
+    /// <remarks>
+    /// The suggestion is Daniels VDOT from the best 5K or 10K effort in the last 90 days, with T-pace at 88% of
+    /// VDOT; the faster of the two wins. It is returned whether or not a threshold is set and is never saved.
+    /// </remarks>
     private static async Task<IResult> GetThresholds(
         TempoDbContext db,
+        ThresholdSuggestionService suggestionService,
         ILogger<Program> logger)
     {
         try
         {
             var settings = await db.UserSettings.AsNoTracking().FirstOrDefaultAsync();
 
-            return Results.Ok(new ThresholdsDocument
-            {
-                ThresholdPaceS = settings?.ThresholdPaceS,
-                ThresholdHeartRateBpm = settings?.ThresholdHeartRateBpm
-            });
+            return Results.Ok(await BuildThresholdsDocumentAsync(settings, db, suggestionService));
         }
         catch (Exception ex)
         {
@@ -458,8 +486,9 @@ public static class SettingsEndpoints
     /// <param name="request">Thresholds update request</param>
     /// <param name="db">Database context</param>
     /// <param name="zoneService">Heart rate zone service</param>
+    /// <param name="suggestionService">Threshold suggestion service</param>
     /// <param name="logger">Logger instance</param>
-    /// <returns>Updated thresholds</returns>
+    /// <returns>Updated thresholds, with the suggestion as on GET</returns>
     /// <remarks>
     /// Replaces both values: an omitted or null field clears it. Threshold pace must be 120-900 seconds per km
     /// and threshold heart rate 60-230 BPM. Creates the settings row with default zones if none exists.
@@ -468,6 +497,7 @@ public static class SettingsEndpoints
         [FromBody] UpdateThresholdsRequest request,
         TempoDbContext db,
         HeartRateZoneService zoneService,
+        ThresholdSuggestionService suggestionService,
         ILogger<Program> logger)
     {
         try
@@ -496,11 +526,7 @@ public static class SettingsEndpoints
             settings.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
 
-            return Results.Ok(new ThresholdsDocument
-            {
-                ThresholdPaceS = settings.ThresholdPaceS,
-                ThresholdHeartRateBpm = settings.ThresholdHeartRateBpm
-            });
+            return Results.Ok(await BuildThresholdsDocumentAsync(settings, db, suggestionService));
         }
         catch (Exception ex)
         {
@@ -556,7 +582,7 @@ public static class SettingsEndpoints
             .Produces<ThresholdsDocument>(200)
             .Produces(500)
             .WithSummary("Get threshold pace and heart rate")
-            .WithDescription("Returns the athlete-set threshold pace (thresholdPaceS, seconds per km) and threshold heart rate (thresholdHeartRateBpm, BPM). Each is null when not set.");
+            .WithDescription("Returns the athlete-set threshold pace (thresholdPaceS, seconds per km) and threshold heart rate (thresholdHeartRateBpm, BPM); each is null when not set. Also returns a read-only suggestedThresholdPaceS (seconds per km) computed with Jack Daniels' VDOT formula (Daniels–Gilbert equations) from the best 5K or 10K effort, including splits of longer runs, among workouts in the last 90 days, with threshold (T) pace at 88% of VDOT; when both distances qualify the faster T-pace wins. suggestedFrom gives the source effort (distance, timeS, workoutDate, workoutId). Both are null when no effort qualifies, and are present whether or not a threshold is set. The suggestion is never saved.");
 
         group.MapPut("/thresholds", UpdateThresholds)
             .WithName("UpdateThresholds")
@@ -564,7 +590,7 @@ public static class SettingsEndpoints
             .Produces(400)
             .Produces(500)
             .WithSummary("Update threshold pace and heart rate")
-            .WithDescription("Replaces both thresholds: an omitted or null field clears it. thresholdPaceS is seconds per km and must be 120-900; thresholdHeartRateBpm must be 60-230 BPM. Out-of-range values return 400. Creates the settings row with default age-based zones if none exists.");
+            .WithDescription("Replaces both thresholds: an omitted or null field clears it. thresholdPaceS is seconds per km and must be 120-900; thresholdHeartRateBpm must be 60-230 BPM. Out-of-range values return 400. Creates the settings row with default age-based zones if none exists. The response includes the suggestion, as on GET.");
 
         group.MapGet("/carto-basemaps", GetCartoBasemaps)
             .WithName("GetCartoBasemaps")

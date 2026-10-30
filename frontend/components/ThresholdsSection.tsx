@@ -3,7 +3,8 @@
 import { useState, type FormEvent } from 'react';
 import { useThresholds } from '@/hooks/useThresholds';
 import { useSettings, type UnitPreference } from '@/lib/settings';
-import type { ThresholdSettings } from '@/lib/api';
+import Link from 'next/link';
+import type { ThresholdSettings, ThresholdsResponse } from '@/lib/api';
 import { formatPace, formatPaceInput, parsePaceInput } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -16,6 +17,12 @@ const MIN_PACE_S_PER_KM = 120;
 const MAX_PACE_S_PER_KM = 900;
 const MIN_HR_BPM = 60;
 const MAX_HR_BPM = 230;
+
+// workoutDate is a UTC calendar date; build it locally so the day doesn't shift by timezone
+function formatWorkoutDay(yyyyMmDd: string): string {
+  const [year, month, day] = yyyyMmDd.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 export default function ThresholdsSection() {
   const { unitPreference } = useSettings();
@@ -63,7 +70,7 @@ function ThresholdsForm({
   saveSuccess,
   onSave,
 }: {
-  saved: ThresholdSettings;
+  saved: ThresholdsResponse;
   unitPreference: UnitPreference;
   isSaving: boolean;
   saveSuccess: boolean;
@@ -130,6 +137,24 @@ function ThresholdsForm({
             onChange={(e) => setPaceInput(e.target.value)}
             className={fieldClass}
           />
+          {saved.suggestedThresholdPaceS !== null && saved.suggestedFrom && (
+            <p className="text-xs text-muted mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>
+                Suggested {formatPace(saved.suggestedThresholdPaceS, unitPreference)} from your{' '}
+                <Link href={`/dashboard/${saved.suggestedFrom.workoutId}`} className="text-ink underline">
+                  {saved.suggestedFrom.distance} on {formatWorkoutDay(saved.suggestedFrom.workoutDate)}
+                </Link>
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setPaceInput(formatPaceInput(saved.suggestedThresholdPaceS!, unitPreference))}
+              >
+                Use this
+              </Button>
+            </p>
+          )}
         </div>
         <div>
           <label htmlFor="threshold-hr" className="block text-sm font-medium text-ink mb-2">

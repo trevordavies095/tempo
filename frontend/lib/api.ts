@@ -1197,7 +1197,21 @@ export interface ThresholdSettings {
   thresholdHeartRateBpm: number | null;
 }
 
-export async function getThresholds(): Promise<ThresholdSettings> {
+export interface ThresholdSuggestionSource {
+  distance: string;
+  timeS: number;
+  /** UTC start date, yyyy-MM-dd */
+  workoutDate: string;
+  workoutId: string;
+}
+
+export interface ThresholdsResponse extends ThresholdSettings {
+  /** Read-only Daniels T-pace (seconds per km) from the best 5K/10K in the last 90 days */
+  suggestedThresholdPaceS: number | null;
+  suggestedFrom: ThresholdSuggestionSource | null;
+}
+
+export async function getThresholds(): Promise<ThresholdsResponse> {
   const response = await fetchWithAuth(`${API_BASE_URL}/settings/thresholds`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
@@ -1211,7 +1225,7 @@ export async function getThresholds(): Promise<ThresholdSettings> {
   return response.json();
 }
 
-export async function updateThresholds(thresholds: ThresholdSettings): Promise<ThresholdSettings> {
+export async function updateThresholds(thresholds: ThresholdSettings): Promise<ThresholdsResponse> {
   const response = await fetchWithAuth(`${API_BASE_URL}/settings/thresholds`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
