@@ -23,6 +23,32 @@ public class DeviceLapBackfillService
     public const string MarkerAbsent = "absent";
     public const string MarkerUnparseable = "unparseable";
 
+    /// <summary>
+    /// Second-step marker: device_lap rows carry FIT intensity / trigger / step index
+    /// (or were judged unfillable). Independent of <see cref="LapsBackfillKey"/>.
+    /// </summary>
+    public const string LapAnnotationsBackfillKey = "lapAnnotationsBackfill";
+    public const string MarkerSkippedMismatch = "skipped_mismatch";
+    public const string MarkerUnrecoverable = "unrecoverable";
+
+    /// <summary>
+    /// Annotation-step candidate scan: workouts with device laps and an unstamped JSON object.
+    /// Rows without FIT bytes are still candidates so they get stamped <see cref="MarkerUnrecoverable"/>.
+    /// </summary>
+    public const string PostgresAnnotationCandidateSql =
+        """
+        SELECT w."Id" AS "Value"
+        FROM "Workouts" AS w
+        WHERE EXISTS (
+            SELECT 1 FROM "WorkoutSplits" AS s
+            WHERE s."WorkoutId" = w."Id" AND s."Kind" = 'device_lap'
+        )
+        AND w."RawFitData" IS NOT NULL
+        AND jsonb_typeof(w."RawFitData") = 'object'
+        AND w."RawFitData"->>'lapAnnotationsBackfill' IS NULL
+        ORDER BY w."Id"
+        """;
+
     /// <summary>Substring used by tests to assert a stamp was or was not written.</summary>
     public const string LapsBackfillMarkerPrefix = "\"lapsBackfill\":";
     private const string UnparseableStampJson = """{"lapsBackfill":"unparseable"}""";
@@ -178,6 +204,8 @@ public class DeviceLapBackfillService
         var sessionElapsed = TryReadSessionElapsedFromRawFitJson(workout.RawFitData);
         IReadOnlyList<DeviceLapSummary>? candidates = TryReadLapsFromRawFitJson(workout.RawFitData);
         var hadLapMessagesInJson = candidates != null;
+        // Legacy JSON laps lack intensity / step; only a fresh FIT parse yields complete annotations.
+        var candidatesFromFitParse = false;
 
         if ((!sessionElapsed.HasValue || candidates == null) && hasFitBytes)
         {
@@ -202,6 +230,7 @@ public class DeviceLapBackfillService
             if (candidates == null)
             {
                 candidates = parseResult.Laps;
+                candidatesFromFitParse = true;
                 hadLapMessagesInJson = parseResult.Laps.Count > 0;
                 workout.RawFitData = PatchLapsArray(workout.RawFitData!, parseResult.RawFitDataJson);
             }
@@ -232,6 +261,11 @@ public class DeviceLapBackfillService
             DeviceLapMapper.OverlayDeviceAvgHeartRate(deviceLaps, candidates);
             _db.WorkoutSplits.AddRange(deviceLaps);
             workout.RawFitData = StampMarker(workout.RawFitData!, MarkerApplied);
+            if (candidatesFromFitParse)
+            {
+                workout.RawFitData = StampMarker(workout.RawFitData, MarkerApplied, LapAnnotationsBackfillKey);
+            }
+
             await _db.SaveChangesAsync(cancellationToken);
             return true;
         }
@@ -432,13 +466,144 @@ public class DeviceLapBackfillService
         return root.ToJsonString(JsonUtils.DefaultOptions);
     }
 
-    private static string StampMarker(string existingJson, string value)
+    private static string StampMarker(string existingJson, string value, string key = LapsBackfillKey)
     {
         var root = JsonNode.Parse(existingJson)?.AsObject()
             ?? throw new InvalidOperationException("RawFitData is not a JSON object");
 
-        root[LapsBackfillKey] = value;
+        root[key] = value;
         return root.ToJsonString(JsonUtils.DefaultOptions);
+    }
+
+    /// <summary>
+    /// Stamps <see cref="LapAnnotationsBackfillKey"/> = applied on freshly parsed FIT JSON so new
+    /// imports never become annotation candidates. Returns the input unchanged when it is not a JSON object.
+    /// </summary>
+    public static string? StampLapAnnotationsApplied(string? rawFitDataJson)
+    {
+        if (string.IsNullOrEmpty(rawFitDataJson) || !TryGetPatchableObject(rawFitDataJson, out _))
+        {
+            return rawFitDataJson;
+        }
+
+        return StampMarker(rawFitDataJson, MarkerApplied, LapAnnotationsBackfillKey);
+    }
+
+    /// <summary>
+    /// Second step: fills Intensity / Trigger / StepIndex on existing device_lap rows from reparsed
+    /// FIT bytes, in place by Idx. Never inserts, deletes, or rewrites other lap columns.
+    /// Returns the number of workouts stamped.
+    /// </summary>
+    public async Task<int> RunAnnotationsAsync(CancellationToken cancellationToken = default)
+    {
+        var candidateIds = await _db.Database
+            .SqlQueryRaw<Guid>(PostgresAnnotationCandidateSql)
+            .ToListAsync(cancellationToken);
+
+        var total = candidateIds.Count;
+        var processed = 0;
+        foreach (var workoutId in candidateIds)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            try
+            {
+                if (await AnnotateWorkoutAsync(workoutId, cancellationToken))
+                {
+                    processed++;
+                    if (processed % BatchSize == 0 || processed == total)
+                    {
+                        _logger.LogInformation(
+                            "Device lap annotation backfill: {Processed} of {Total}",
+                            processed,
+                            total);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Device lap annotation backfill failed for workout {WorkoutId}", workoutId);
+            }
+            finally
+            {
+                _db.ChangeTracker.Clear();
+            }
+        }
+
+        return processed;
+    }
+
+    private async Task<bool> AnnotateWorkoutAsync(Guid workoutId, CancellationToken cancellationToken)
+    {
+        var workout = await _db.Workouts.FirstAsync(w => w.Id == workoutId, cancellationToken);
+        if (string.IsNullOrEmpty(workout.RawFitData) || !TryGetPatchableObject(workout.RawFitData, out _))
+        {
+            return false;
+        }
+
+        var hasFitBytes = workout.RawFileData != null && workout.RawFileData.Length > 0 && LooksLikeFitFile(workout);
+        if (!hasFitBytes)
+        {
+            workout.RawFitData = StampMarker(workout.RawFitData, MarkerUnrecoverable, LapAnnotationsBackfillKey);
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        FitParserService.FitParseResult parseResult;
+        try
+        {
+            using var stream = new MemoryStream(workout.RawFileData!);
+            var isGzipped = workout.RawFileName?.EndsWith(".fit.gz", StringComparison.OrdinalIgnoreCase) == true;
+            parseResult = isGzipped
+                ? _fitParser.ParseGzippedFit(stream)
+                : _fitParser.ParseFit(stream);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Device lap annotation backfill failed for workout {WorkoutId}", workoutId);
+            workout.RawFitData = StampMarker(workout.RawFitData, MarkerUnparseable, LapAnnotationsBackfillKey);
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        var sessionElapsed = TryReadSessionElapsedFromRawFitJson(workout.RawFitData)
+            ?? TryReadSessionElapsedFromRawFitJson(parseResult.RawFitDataJson);
+        if (sessionElapsed.HasValue && Math.Abs(sessionElapsed.Value - workout.DurationS) > 1)
+        {
+            workout.RawFitData = StampMarker(workout.RawFitData, MarkerSkippedCrop, LapAnnotationsBackfillKey);
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        var deviceLaps = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workoutId && s.Kind == WorkoutSplitKinds.DeviceLap)
+            .OrderBy(s => s.Idx)
+            .ToListAsync(cancellationToken);
+        var kept = parseResult.Laps.Where(DeviceLapMapper.ShouldKeep).ToList();
+        if (kept.Count != deviceLaps.Count)
+        {
+            workout.RawFitData = StampMarker(workout.RawFitData, MarkerSkippedMismatch, LapAnnotationsBackfillKey);
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        for (var i = 0; i < deviceLaps.Count; i++)
+        {
+            deviceLaps[i].Intensity = kept[i].Intensity;
+            deviceLaps[i].Trigger = kept[i].LapTrigger;
+            deviceLaps[i].StepIndex = kept[i].StepIndex;
+        }
+
+        workout.RawFitData = StampMarker(workout.RawFitData, MarkerApplied, LapAnnotationsBackfillKey);
+        await _db.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     /// <summary>

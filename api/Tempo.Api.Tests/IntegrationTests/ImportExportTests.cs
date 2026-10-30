@@ -697,6 +697,17 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
                 (0, 1600, 650, 0, 650),
                 (1, 3400, 1150, 650, 1800));
 
+            var seededLaps = await db.WorkoutSplits
+                .Where(s => s.WorkoutId == workoutId && s.Kind == WorkoutSplitKinds.DeviceLap)
+                .OrderBy(s => s.Idx)
+                .ToListAsync();
+            seededLaps[0].Intensity = "active";
+            seededLaps[0].Trigger = "distance";
+            seededLaps[0].StepIndex = 1;
+            seededLaps[1].Intensity = "rest";
+            seededLaps[1].Trigger = "position_start";
+            seededLaps[1].StepIndex = 2;
+
             await db.SaveChangesAsync();
 
             expected = await db.WorkoutSplits
@@ -753,6 +764,53 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
 
             restored.Count(s => s.Kind == WorkoutSplitKinds.DeviceLap).Should().Be(2);
             restored.Count(s => s.Kind == WorkoutSplitKinds.Distance).Should().BeGreaterThan(0);
+
+            var restoredLaps = restored
+                .Where(s => s.Kind == WorkoutSplitKinds.DeviceLap)
+                .OrderBy(s => s.Idx)
+                .ToList();
+            restoredLaps.Select(s => s.Intensity).Should().Equal("active", "rest");
+            restoredLaps.Select(s => s.Trigger).Should().Equal("distance", "position_start");
+            restoredLaps.Select(s => s.StepIndex).Should().Equal(1, 2);
+            restored.Where(s => s.Kind == WorkoutSplitKinds.Distance)
+                .Should().OnlyContain(s => s.Intensity == null && s.Trigger == null && s.StepIndex == null);
+        }
+    }
+
+    [Fact]
+    public async Task ImportExport_OldZipSplitsMissingLapAnnotations_RestoresNull()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var workoutId = Guid.NewGuid();
+        var startedAt = DateTime.UtcNow.AddHours(-2);
+        var oldSplits = new object[]
+        {
+            new { id = Guid.NewGuid(), workoutId, kind = WorkoutSplitKinds.DeviceLap, idx = 0, distanceM = 1000.0, durationS = 300, paceS = 300.0, startElapsedS = 0, endElapsedS = 300 },
+            new { id = Guid.NewGuid(), workoutId, kind = WorkoutSplitKinds.DeviceLap, idx = 1, distanceM = 1000.0, durationS = 300, paceS = 300.0, startElapsedS = 300, endElapsedS = 600 }
+        };
+        var zip = CreateExportZipWithWorkoutJsonOmittingTimerTimeS(
+            workoutId, startedAt, durationS: 600, distanceM: 2000, avgPaceS: 300, splits: oldSplits);
+
+        var formContent = new MultipartFormDataContent();
+        var streamContent = new StreamContent(zip);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        formContent.Add(streamContent, "file", "export-old.zip");
+
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
+        importResult.Success.Should().BeTrue();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var restored = await db.WorkoutSplits.AsNoTracking()
+                .Where(s => s.WorkoutId == workoutId)
+                .ToListAsync();
+            restored.Should().HaveCount(2);
+            restored.Should().OnlyContain(s =>
+                s.Kind == WorkoutSplitKinds.DeviceLap &&
+                s.Intensity == null && s.Trigger == null && s.StepIndex == null);
         }
     }
 
@@ -1005,7 +1063,8 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         DateTime startedAt,
         int durationS,
         double distanceM,
-        double avgPaceS)
+        double avgPaceS,
+        object[]? splits = null)
     {
         var workoutWithoutTimer = new
         {
@@ -1034,7 +1093,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
                     shoes = 0,
                     workouts = 1,
                     routes = 0,
-                    splits = 0,
+                    splits = splits?.Length ?? 0,
                     timeSeries = 0,
                     mediaFiles = 0,
                     bestEfforts = 0,
@@ -1063,7 +1122,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             CreateJsonFile(archive, "data/shoes.json", Array.Empty<object>());
             CreateJsonFile(archive, "data/workouts.json", new[] { workoutWithoutTimer });
             CreateJsonFile(archive, "data/routes.json", Array.Empty<object>());
-            CreateJsonFile(archive, "data/splits.json", Array.Empty<object>());
+            CreateJsonFile(archive, "data/splits.json", splits ?? Array.Empty<object>());
             CreateJsonFile(archive, "data/time-series.json", Array.Empty<object>());
             CreateJsonFile(archive, "data/media-metadata.json", Array.Empty<object>());
             CreateJsonFile(archive, "data/best-efforts.json", Array.Empty<object>());

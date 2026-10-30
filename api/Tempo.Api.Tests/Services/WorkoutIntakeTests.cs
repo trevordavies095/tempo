@@ -522,6 +522,8 @@ public class WorkoutIntakeTests : IAsyncLifetime
         rawLaps[0].GetProperty("intensity").GetString().Should().Be("warmup");
         rawLaps[0].GetProperty("trigger").GetString().Should().Be("manual");
         rawLaps[5].GetProperty("stepIndex").GetInt32().Should().Be(3);
+        raw.RootElement.GetProperty(DeviceLapBackfillService.LapAnnotationsBackfillKey).GetString()
+            .Should().Be(DeviceLapBackfillService.MarkerApplied);
     }
 
     [Fact]
