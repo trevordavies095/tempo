@@ -58,6 +58,10 @@ public class WeeklyRecapMetricsDocument
     [JsonPropertyName("relativeEffortSum")]
     public WeeklyRecapMetricIntDocument RelativeEffortSum { get; set; } = new();
 
+    /// <summary>
+    /// Duration-weighted average heart rate of runs typed <c>Easy Run</c> or <c>Recovery</c>. <c>Walk-Run</c> and other
+    /// run types are excluded. Null for a bucket with no qualifying run.
+    /// </summary>
     [Required]
     [JsonPropertyName("easyRunAvgHeartRateBpm")]
     public WeeklyRecapMetricNullableDoubleDocument EasyRunAvgHeartRateBpm { get; set; } = new();

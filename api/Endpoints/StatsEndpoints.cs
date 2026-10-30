@@ -138,7 +138,7 @@ public static class StatsEndpoints
         var relativeEffortSum = await baseQuery.SumAsync(w => (int?)w.RelativeEffort, cancellationToken) ?? 0;
 
         var easyQuery = baseQuery.Where(w =>
-            w.RunType == RunTypes.EasyRun &&
+            (w.RunType == RunTypes.EasyRun || w.RunType == RunTypes.Recovery) &&
             w.AvgHeartRateBpm != null &&
             w.DurationS > 0);
 
@@ -474,7 +474,7 @@ public static class StatsEndpoints
     /// Week boundaries are Monday 00:00 through Sunday 23:59:59.999 in the local frame implied by <paramref name="timezoneOffsetMinutes"/>.
     /// The current window is [weekStartUtc, min(UTC now, weekEndUtc)] so mid-week responses reflect week-to-date; the response field <c>currentWeekIsPartial</c> is true when UTC now falls inside the current week window.
     /// Trailing averages use the three full calendar weeks immediately before the current week (offsets -1, -2, -3), matching <c>/stats/relative-effort</c>.
-    /// Elevation uses SUM(COALESCE(ElevGainM, 0)). Relative effort sums only non-null values. Easy-run HR uses RunType &quot;Easy Run&quot; with duration-weighted average HR; weeks with no qualifying runs return null for that metric.
+    /// Elevation uses SUM(COALESCE(ElevGainM, 0)). Relative effort sums only non-null values. Easy-run HR uses RunType &quot;Easy Run&quot; or &quot;Recovery&quot; (not &quot;Walk-Run&quot;) with duration-weighted average HR; weeks with no qualifying runs return null for that metric.
     /// Deleted workouts do not appear. Fixed-offset timezones do not model DST; clients should send the offset in effect for the user at request time.
     /// </remarks>
     private static async Task<IResult> GetWeeklyRecap(
@@ -1009,7 +1009,7 @@ public static class StatsEndpoints
             .WithDescription(
                 "Returns run count, distance, duration, elevation gain, relative effort sum, and easy-run average HR for the current (week-to-date) window, previous full week, and trailing 3-week averages, with week-over-week deltas. " +
                 "Optional referenceDate (yyyy-MM-dd) selects the calendar week in the timezoneOffsetMinutes frame. " +
-                "Easy runs are RunType \"Easy Run\" with duration-weighted average heart rate.");
+                "Easy runs are RunType \"Easy Run\" or \"Recovery\" (not \"Walk-Run\") with duration-weighted average heart rate.");
 
         group.MapGet("/best-efforts", GetBestEfforts)
             .WithName("GetBestEfforts")
