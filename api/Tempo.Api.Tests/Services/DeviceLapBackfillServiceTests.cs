@@ -110,6 +110,48 @@ public class DeviceLapBackfillServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RunAsync_JsonLaps_NormalizesLegacyTrigger_AndCarriesAnnotations()
+    {
+        var workout = await SeedFitCandidateAsync(durationS: 600);
+        workout.RawFitData = BuildRawFitWithLaps(
+            sessionElapsed: 600,
+            laps:
+            [
+                new
+                {
+                    start = FixtureStart.ToString("O"),
+                    timestamp = FixtureStart.AddSeconds(300).ToString("O"),
+                    distance = 1000.0,
+                    timer = 300.0,
+                    elapsed = 300.0,
+                    trigger = "PositionStart"
+                },
+                new
+                {
+                    start = FixtureStart.AddSeconds(300).ToString("O"),
+                    timestamp = FixtureStart.AddSeconds(600).ToString("O"),
+                    distance = 800.0,
+                    timer = 300.0,
+                    elapsed = 300.0,
+                    trigger = "time",
+                    intensity = "rest",
+                    stepIndex = 2
+                }
+            ]);
+        await _db.SaveChangesAsync();
+
+        await _service.RunAsync();
+
+        var deviceLaps = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.DeviceLap)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        deviceLaps.Select(s => s.Trigger).Should().Equal("position_start", "time");
+        deviceLaps.Select(s => s.Intensity).Should().Equal(null, "rest");
+        deviceLaps.Select(s => s.StepIndex).Should().Equal(null, 2);
+    }
+
+    [Fact]
     public async Task RunAsync_ReparsesFitBytes_WhenLapsMissingFromJson()
     {
         var start = FixtureStart;

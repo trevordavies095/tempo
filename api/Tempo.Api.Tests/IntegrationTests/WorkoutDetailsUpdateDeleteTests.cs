@@ -186,6 +186,47 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         result.Splits[2].StartElapsedS.Should().Be(721);
         result.Splits[2].EndElapsedS.Should().Be(1083);
         result.Splits.Should().OnlyContain(s => s.StartDistanceM == null);
+
+        using var raw = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        foreach (var split in raw.RootElement.GetProperty("splits").EnumerateArray())
+        {
+            split.GetProperty("intensity").ValueKind.Should().Be(JsonValueKind.Null);
+            split.GetProperty("trigger").ValueKind.Should().Be(JsonValueKind.Null);
+            split.GetProperty("stepIndex").ValueKind.Should().Be(JsonValueKind.Null);
+        }
+    }
+
+    [Fact]
+    public async Task GetWorkout_DeviceLaps_IncludeIntensityTriggerAndStepIndex()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Intervals");
+
+            var laps = new List<WorkoutSplit>
+            {
+                new() { WorkoutId = workout.Id, Kind = WorkoutSplitKinds.DeviceLap, Idx = 0, DistanceM = 800, DurationS = 180, PaceS = 225, Intensity = "active", Trigger = "distance", StepIndex = 1 },
+                new() { WorkoutId = workout.Id, Kind = WorkoutSplitKinds.DeviceLap, Idx = 1, DistanceM = 300, DurationS = 120, PaceS = 400, Intensity = "rest", Trigger = "time", StepIndex = 2 },
+                new() { WorkoutId = workout.Id, Kind = WorkoutSplitKinds.DeviceLap, Idx = 2, DistanceM = 500, DurationS = 200, PaceS = 400 }
+            };
+            WorkoutSplitElapsed.FillFromCumulativeDuration(laps);
+            db.WorkoutSplits.AddRange(laps);
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync($"/workouts/{workout.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result!.Splits.Should().HaveCount(3);
+        result.Splits.Select(s => s.Intensity).Should().Equal("active", "rest", null);
+        result.Splits.Select(s => s.Trigger).Should().Equal("distance", "time", null);
+        result.Splits.Select(s => s.StepIndex).Should().Equal(1, 2, null);
     }
 
     [Fact]
@@ -1788,6 +1829,9 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public int StartElapsedS { get; set; }
         public int EndElapsedS { get; set; }
         public double? StartDistanceM { get; set; }
+        public string? Intensity { get; set; }
+        public string? Trigger { get; set; }
+        public int? StepIndex { get; set; }
     }
 
     private class ShoeResponse

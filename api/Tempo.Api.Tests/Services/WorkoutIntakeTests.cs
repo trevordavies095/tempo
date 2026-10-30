@@ -483,6 +483,75 @@ public class WorkoutIntakeTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ProcessAsync_Created_Fit_StructuredWorkout_WritesLapIntensityTriggerAndStepIndexInOrder()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var fitBytes = CreateMinimalFitBytes(
+            elapsedSeconds: 1200f,
+            timerSeconds: 1200f,
+            totalDistanceMeters: 4000f,
+            laps: new[]
+            {
+                new SyntheticLap(start, 300f, 300f, 1000f, 130, LapTrigger.Manual, Intensity.Warmup, 0),
+                new SyntheticLap(start.AddSeconds(300), 180f, 180f, 800f, 170, LapTrigger.Distance, Intensity.Active, 1),
+                new SyntheticLap(start.AddSeconds(480), 120f, 120f, 300f, 140, LapTrigger.Time, Intensity.Rest, 2),
+                new SyntheticLap(start.AddSeconds(600), 180f, 180f, 800f, 172, LapTrigger.Distance, Intensity.Active, 1),
+                new SyntheticLap(start.AddSeconds(780), 120f, 120f, 300f, 142, LapTrigger.Time, Intensity.Rest, 2),
+                new SyntheticLap(start.AddSeconds(900), 300f, 300f, 800f, 135, LapTrigger.SessionEnd, Intensity.Cooldown, 3),
+            });
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "intervals.fit");
+
+        result.Action.Should().Be("created");
+        var all = await _db.WorkoutSplits.Where(s => s.WorkoutId == result.Workout!.Id).ToListAsync();
+        var laps = all.Where(s => s.Kind == WorkoutSplitKinds.DeviceLap).OrderBy(s => s.Idx).ToList();
+
+        laps.Select(s => s.Intensity).Should().Equal("warmup", "active", "rest", "active", "rest", "cooldown");
+        laps.Select(s => s.Trigger).Should().Equal("manual", "distance", "time", "distance", "time", "session_end");
+        laps.Select(s => s.StepIndex).Should().Equal(0, 1, 2, 1, 2, 3);
+
+        var distance = all.Where(s => s.Kind == WorkoutSplitKinds.Distance).ToList();
+        distance.Should().NotBeEmpty();
+        distance.Should().OnlyContain(s => s.Intensity == null && s.Trigger == null && s.StepIndex == null);
+
+        var stored = await _db.Workouts.SingleAsync();
+        using var raw = System.Text.Json.JsonDocument.Parse(stored.RawFitData!);
+        var rawLaps = raw.RootElement.GetProperty("laps").EnumerateArray().ToList();
+        rawLaps[0].GetProperty("intensity").GetString().Should().Be("warmup");
+        rawLaps[0].GetProperty("trigger").GetString().Should().Be("manual");
+        rawLaps[5].GetProperty("stepIndex").GetInt32().Should().Be(3);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Created_Fit_LapsWithoutIntensityOrStep_PersistNulls()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var start = new System.DateTime(2024, 1, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var fitBytes = CreateMinimalFitBytes(
+            elapsedSeconds: 1200f,
+            timerSeconds: 1200f,
+            totalDistanceMeters: 2400f,
+            laps: new[]
+            {
+                new SyntheticLap(start, 600f, 600f, 1200f, 150, LapTrigger.Distance),
+                new SyntheticLap(start.AddSeconds(600), 600f, 600f, 1200f, 152, LapTrigger.SessionEnd),
+            });
+        using var stream = new MemoryStream(fitBytes);
+
+        var result = await _intake.ProcessAsync(stream, "easy.fit");
+
+        var laps = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == result.Workout!.Id && s.Kind == WorkoutSplitKinds.DeviceLap)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        laps.Should().HaveCount(2);
+        laps.Should().OnlyContain(s => s.Intensity == null && s.StepIndex == null);
+        laps.Select(s => s.Trigger).Should().Equal("distance", "session_end");
+    }
+
+    [Fact]
     public async Task ProcessAsync_Created_Fit_WithOneLap_WritesDistanceOnly()
     {
         await TestDataSeeder.SeedUserSettingsAsync(_db);
@@ -1635,6 +1704,7 @@ public class WorkoutIntakeTests : IAsyncLifetime
         laps[1].DurationS.Should().Be(600);
         (laps[1].EndElapsedS - laps[1].StartElapsedS).Should().BeGreaterThan(laps[1].DurationS);
         laps[2].DistanceM.Should().BeApproximately(13, 0.1);
+        laps.Should().OnlyContain(s => s.Intensity == null && s.Trigger == null && s.StepIndex == null);
         WorkoutSplitDisplay.SelectDisplayList(all).Should().OnlyContain(s => s.Kind == WorkoutSplitKinds.DeviceLap);
     }
 
@@ -1979,7 +2049,9 @@ public class WorkoutIntakeTests : IAsyncLifetime
         float TimerSeconds,
         float DistanceMeters,
         byte? AvgHeartRate,
-        LapTrigger Trigger);
+        LapTrigger Trigger,
+        Intensity? Intensity = null,
+        ushort? StepIndex = null);
 
     private static byte[] CreateMinimalFitBytes(
         float elapsedSeconds = 1200f,
@@ -2029,6 +2101,14 @@ public class WorkoutIntakeTests : IAsyncLifetime
                     lap.SetAvgHeartRate(lapDef.AvgHeartRate.Value);
                 }
                 lap.SetLapTrigger(lapDef.Trigger);
+                if (lapDef.Intensity.HasValue)
+                {
+                    lap.SetIntensity(lapDef.Intensity.Value);
+                }
+                if (lapDef.StepIndex.HasValue)
+                {
+                    lap.SetWktStepIndex(lapDef.StepIndex.Value);
+                }
                 encode.Write(lap);
             }
         }

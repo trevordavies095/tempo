@@ -667,6 +667,10 @@ namespace Tempo.Api.Migrations
                     b.Property<int>("Idx")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Intensity")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -680,6 +684,13 @@ namespace Tempo.Api.Migrations
 
                     b.Property<int>("StartElapsedS")
                         .HasColumnType("integer");
+
+                    b.Property<int?>("StepIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Trigger")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<Guid>("WorkoutId")
                         .HasColumnType("uuid");

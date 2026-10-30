@@ -323,15 +323,23 @@ public class DeviceLapBackfillService
                 TimerS = ReadOptionalDouble(lap, "timer"),
                 ElapsedS = ReadOptionalDouble(lap, "elapsed"),
                 AvgHeartRateBpm = ReadOptionalByte(lap, "avgHeartRate"),
-                LapTrigger = lap.TryGetProperty("trigger", out var trigger) &&
-                             trigger.ValueKind == JsonValueKind.String
-                    ? trigger.GetString()
+                LapTrigger = DeviceLapAnnotations.Normalize(ReadOptionalString(lap, "trigger")),
+                Intensity = DeviceLapAnnotations.Normalize(ReadOptionalString(lap, "intensity")),
+                StepIndex = lap.TryGetProperty("stepIndex", out var step) &&
+                            step.ValueKind == JsonValueKind.Number &&
+                            step.TryGetInt32(out var stepValue)
+                    ? stepValue
                     : null
             });
         }
 
         return list;
     }
+
+    private static string? ReadOptionalString(JsonElement parent, string name) =>
+        parent.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.String
+            ? el.GetString()
+            : null;
 
     private static DateTime? ReadOptionalDateTime(JsonElement parent, string name)
     {
