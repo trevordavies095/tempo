@@ -412,6 +412,9 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result.Metrics.LongestRunDistanceM.Current.Should().Be(0);
         result.Metrics.LongestRunDurationS.Current.Should().Be(0);
         result.Metrics.RunsByType.Should().BeEmpty();
+        result.Metrics.ZoneSecondsZ1.Current.Should().BeNull();
+        result.Metrics.ZoneSecondsZ1.TrailingAvg.Should().BeNull();
+        result.Metrics.ZoneSecondsZ1.DeltaVsPrevious.Should().BeNull();
         result.ReferenceDate.Should().Be("2020-06-10");
     }
 
@@ -616,6 +619,131 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         document.RootElement.GetProperty("metrics").GetProperty("runsByType").EnumerateObject()
             .Select(p => (p.Name, p.Value.GetInt32()))
             .Should().Equal(("Easy Run", 1), ("Long Run", 1), ("legacy-jog", 1), ("Unspecified", 1));
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_ZoneSeconds_EqualSumOfWorkoutDetailHeartRateZoneTimes()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var workoutIds = new List<Guid>();
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30); // Z1 95–114, Z3 133–152, Z5 171–190
+            var zoned = await TestDataSeeder.SeedWorkoutAsync(
+                db, startedAt: new DateTime(2020, 6, 8, 12, 0, 0, DateTimeKind.Utc), durationS: 60);
+            var zoned2 = await TestDataSeeder.SeedWorkoutAsync(
+                db, startedAt: new DateTime(2020, 6, 9, 12, 0, 0, DateTimeKind.Utc), durationS: 60);
+            var noHr = await TestDataSeeder.SeedWorkoutAsync(
+                db, startedAt: new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc), durationS: 60);
+            AddHrSeries(db, zoned.Id, 110, 110, 140, 180);
+            AddHrSeries(db, zoned2.Id, 140, 140, 160);
+            await db.SaveChangesAsync();
+            workoutIds.AddRange([zoned.Id, zoned2.Id, noHr.Id]);
+        }
+
+        // Compute stored zone seconds the way import does.
+        foreach (var id in workoutIds)
+        {
+            (await client.PostAsync($"/workouts/{id}/recalculate-effort", null))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var expected = new long[5];
+        foreach (var id in workoutIds)
+        {
+            using var detail = JsonDocument.Parse(await client.GetStringAsync($"/workouts/{id}"));
+            var zones = detail.RootElement.GetProperty("heartRateZoneTimes");
+            if (zones.ValueKind == JsonValueKind.Null)
+            {
+                continue;
+            }
+
+            foreach (var zone in zones.EnumerateArray())
+            {
+                expected[zone.GetProperty("zone").GetInt32() - 1] += zone.GetProperty("timeS").GetInt32();
+            }
+        }
+
+        expected.Sum().Should().BeGreaterThan(0);
+
+        var recap = await client.GetFromJsonAsync<WeeklyRecapResponse>("/stats/weekly-recap?referenceDate=2020-06-10");
+        var metrics = recap!.Metrics;
+        new[]
+        {
+            metrics.ZoneSecondsZ1.Current,
+            metrics.ZoneSecondsZ2.Current,
+            metrics.ZoneSecondsZ3.Current,
+            metrics.ZoneSecondsZ4.Current,
+            metrics.ZoneSecondsZ5.Current,
+        }.Should().Equal(expected.Select(e => (long?)e));
+        metrics.ZoneSecondsZ3.Previous.Should().BeNull();
+        metrics.ZoneSecondsZ3.DeltaVsPrevious.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_ZoneSeconds_NullWithoutHr_TrailingAveragesOnlyWeeksWithHr()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            // Current week 2020-06-08..14: a run without HR → null.
+            await SeedZonedRunAsync(db, new DateTime(2020, 6, 9, 12, 0, 0, DateTimeKind.Utc), null);
+            // Previous week: two zoned runs summed.
+            await SeedZonedRunAsync(db, new DateTime(2020, 6, 2, 12, 0, 0, DateTimeKind.Utc), 100);
+            await SeedZonedRunAsync(db, new DateTime(2020, 6, 4, 12, 0, 0, DateTimeKind.Utc), 200);
+            // Trailing week 2 (2020-05-25..31): no HR → excluded from the trailing average.
+            await SeedZonedRunAsync(db, new DateTime(2020, 5, 27, 12, 0, 0, DateTimeKind.Utc), null);
+            // Trailing week 3 (2020-05-18..24).
+            await SeedZonedRunAsync(db, new DateTime(2020, 5, 20, 12, 0, 0, DateTimeKind.Utc), 600);
+        }
+
+        var recap = await client.GetFromJsonAsync<WeeklyRecapResponse>("/stats/weekly-recap?referenceDate=2020-06-10");
+        var z3 = recap!.Metrics.ZoneSecondsZ3;
+
+        z3.Current.Should().BeNull();
+        z3.Previous.Should().Be(300);
+        z3.TrailingAvg.Should().Be(450); // (300 + 600) / 2, week 2 has no HR
+        z3.DeltaVsPrevious.Should().BeNull();
+        recap.Metrics.ZoneSecondsZ1.Previous.Should().Be(30); // Z1 = zone 3 seconds / 10 in this fixture
+    }
+
+    private static void AddHrSeries(TempoDbContext db, Guid workoutId, params byte[] heartRates)
+    {
+        for (var i = 0; i < heartRates.Length; i++)
+        {
+            db.WorkoutTimeSeries.Add(new WorkoutTimeSeries
+            {
+                WorkoutId = workoutId,
+                ElapsedSeconds = i * 10,
+                HeartRateBpm = heartRates[i]
+            });
+        }
+    }
+
+    /// <summary>
+    /// Seeds a run with stored zone seconds: Z3 = <paramref name="zone3Seconds"/>, Z1 = a tenth of it, others 0.
+    /// Null leaves every zone null (no HR series).
+    /// </summary>
+    private static async Task SeedZonedRunAsync(TempoDbContext db, DateTime startedAt, int? zone3Seconds)
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(db, startedAt: startedAt);
+        if (zone3Seconds.HasValue)
+        {
+            workout.ZoneSecondsZ1 = zone3Seconds.Value / 10;
+            workout.ZoneSecondsZ2 = 0;
+            workout.ZoneSecondsZ3 = zone3Seconds.Value;
+            workout.ZoneSecondsZ4 = 0;
+            workout.ZoneSecondsZ5 = 0;
+        }
+
+        workout.ZoneSecondsComputedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
     }
 
     private static async Task SeedRecapRunAsync(
@@ -2204,6 +2332,19 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public WeeklyRecapMetricDouble LongestRunDistanceM { get; set; } = null!;
         public WeeklyRecapMetricInt LongestRunDurationS { get; set; } = null!;
         public Dictionary<string, int> RunsByType { get; set; } = null!;
+        public WeeklyRecapMetricNullableLong ZoneSecondsZ1 { get; set; } = null!;
+        public WeeklyRecapMetricNullableLong ZoneSecondsZ2 { get; set; } = null!;
+        public WeeklyRecapMetricNullableLong ZoneSecondsZ3 { get; set; } = null!;
+        public WeeklyRecapMetricNullableLong ZoneSecondsZ4 { get; set; } = null!;
+        public WeeklyRecapMetricNullableLong ZoneSecondsZ5 { get; set; } = null!;
+    }
+
+    private class WeeklyRecapMetricNullableLong
+    {
+        public long? Current { get; set; }
+        public long? Previous { get; set; }
+        public double? TrailingAvg { get; set; }
+        public long? DeltaVsPrevious { get; set; }
     }
 
     private class WeeklyRecapMetricInt

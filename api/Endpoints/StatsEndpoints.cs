@@ -22,7 +22,8 @@ public static class StatsEndpoints
         double? EasyRunAvgHeartRateBpm,
         long MovingTimeS,
         double LongestRunDistanceM,
-        int LongestRunDurationS);
+        int LongestRunDurationS,
+        long[]? ZoneSeconds);
 
     private sealed record UtcRange(DateTime StartUtc, DateTime EndUtc);
 
@@ -156,7 +157,14 @@ public static class StatsEndpoints
                     (w.RunType == RunTypes.EasyRun || w.RunType == RunTypes.Recovery) &&
                     w.AvgHeartRateBpm != null && w.DurationS > 0
                         ? (double)w.AvgHeartRateBpm!.Value * w.DurationS
-                        : 0.0)
+                        : 0.0),
+                // Stored per-workout zone seconds; the five columns are written together, so Z1 marks "has HR".
+                ZonedRuns = g.Count(w => w.ZoneSecondsZ1 != null),
+                ZoneSecondsZ1 = g.Sum(w => (long)(w.ZoneSecondsZ1 ?? 0)),
+                ZoneSecondsZ2 = g.Sum(w => (long)(w.ZoneSecondsZ2 ?? 0)),
+                ZoneSecondsZ3 = g.Sum(w => (long)(w.ZoneSecondsZ3 ?? 0)),
+                ZoneSecondsZ4 = g.Sum(w => (long)(w.ZoneSecondsZ4 ?? 0)),
+                ZoneSecondsZ5 = g.Sum(w => (long)(w.ZoneSecondsZ5 ?? 0))
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -178,10 +186,13 @@ public static class StatsEndpoints
             easyHrAvg,
             row.MovingTimeS,
             row.LongestRunDistanceM,
-            row.LongestRunDurationS);
+            row.LongestRunDurationS,
+            row.ZonedRuns > 0
+                ? [row.ZoneSecondsZ1, row.ZoneSecondsZ2, row.ZoneSecondsZ3, row.ZoneSecondsZ4, row.ZoneSecondsZ5]
+                : null);
     }
 
-    private static readonly BucketAggregates EmptyBucket = new(0, 0, 0, 0, 0, null, 0, 0, 0);
+    private static readonly BucketAggregates EmptyBucket = new(0, 0, 0, 0, 0, null, 0, 0, 0, null);
 
     /// <summary>
     /// Run counts by <c>RunType</c> for one window: canonical types in display order, then any legacy values,
@@ -293,6 +304,30 @@ public static class StatsEndpoints
             Previous = previous,
             TrailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
             DeltaVsPrevious = deltaVsPrevious
+        };
+    }
+
+    /// <summary>
+    /// Zone <paramref name="zoneIndex"/> (0-based) seconds as a nullable metric: null for a week without HR, trailing
+    /// average over weeks that have a value, delta null when either week is null.
+    /// </summary>
+    private static WeeklyRecapMetricNullableLongDocument MetricZoneSeconds(
+        BucketAggregates current,
+        BucketAggregates previous,
+        BucketAggregates t2,
+        BucketAggregates t3,
+        int zoneIndex)
+    {
+        long? Zone(BucketAggregates bucket) => bucket.ZoneSeconds?[zoneIndex];
+
+        var cur = Zone(current);
+        var prev = Zone(previous);
+        return new WeeklyRecapMetricNullableLongDocument
+        {
+            Current = cur,
+            Previous = prev,
+            TrailingAvg = AverageNullableDouble(prev, Zone(t2), Zone(t3)),
+            DeltaVsPrevious = cur.HasValue && prev.HasValue ? cur.Value - prev.Value : null
         };
     }
 
@@ -555,6 +590,7 @@ public static class StatsEndpoints
     /// The current window is [weekStartUtc, min(UTC now, weekEndUtc)] so mid-week responses reflect week-to-date; the response field <c>currentWeekIsPartial</c> is true when UTC now falls inside the current week window.
     /// Trailing averages use the three full calendar weeks immediately before the current week (offsets -1, -2, -3), matching <c>/stats/relative-effort</c>.
     /// Moving time and longest-run duration use MovingTimeS, falling back to DurationS when null. Longest-run distance and duration are independent maxima (may be different workouts); 0 for a week with no runs.
+    /// Zone seconds (<c>zoneSecondsZ1</c>..<c>zoneSecondsZ5</c>) sum the stored per-workout values (same as <c>heartRateZoneTimes</c> on workout detail); a week with no HR series is null, trailing averages use only weeks with a value, and the delta is null when either week is null.
     /// <c>runsByType</c> covers the current window only: counts keyed by exact RunType, zero counts omitted, null RunType counted as &quot;Unspecified&quot;.
     /// Elevation uses SUM(COALESCE(ElevGainM, 0)). Relative effort sums only non-null values. Easy-run HR uses RunType &quot;Easy Run&quot; or &quot;Recovery&quot; (not &quot;Walk-Run&quot;) with duration-weighted average HR; weeks with no qualifying runs return null for that metric.
     /// Deleted workouts do not appear. Fixed-offset timezones do not model DST; clients should send the offset in effect for the user at request time.
@@ -631,7 +667,12 @@ public static class StatsEndpoints
                     previous.LongestRunDurationS,
                     trLongestDur,
                     current.LongestRunDurationS - previous.LongestRunDurationS),
-                RunsByType = runsByType
+                RunsByType = runsByType,
+                ZoneSecondsZ1 = MetricZoneSeconds(current, previous, t2, t3, 0),
+                ZoneSecondsZ2 = MetricZoneSeconds(current, previous, t2, t3, 1),
+                ZoneSecondsZ3 = MetricZoneSeconds(current, previous, t2, t3, 2),
+                ZoneSecondsZ4 = MetricZoneSeconds(current, previous, t2, t3, 3),
+                ZoneSecondsZ5 = MetricZoneSeconds(current, previous, t2, t3, 4)
             }
         });
     }
@@ -1110,6 +1151,7 @@ public static class StatsEndpoints
                 "Optional referenceDate (yyyy-MM-dd) selects the calendar week in the timezoneOffsetMinutes frame. " +
                 "Easy runs are RunType \"Easy Run\" or \"Recovery\" (not \"Walk-Run\") with duration-weighted average heart rate. " +
                 "Moving time and longest-run duration fall back to elapsed duration when moving time is missing; longest-run distance and duration are independent maxima, 0 for a week with no runs. " +
+                "zoneSecondsZ1..Z5 sum each workout's stored heartRateZoneTimes; null for a week with no HR series, trailing average over weeks with a value, delta null when either week is null. " +
                 "runsByType is current window only: counts keyed by exact runType, zero counts omitted, no runType counted as \"Unspecified\".");
 
         group.MapGet("/best-efforts", GetBestEfforts)
