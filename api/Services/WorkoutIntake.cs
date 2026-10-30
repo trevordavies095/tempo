@@ -820,7 +820,7 @@ public class WorkoutIntake
             RawGpxData = decoded.RawGpxDataJson,
             RawFitData = decoded.RawFitDataJson,
             Source = overlay?.Source ?? (isGpx ? "gpx_import" : "fit_import"),
-            RunType = RunTypes.EasyRun,
+            RunType = "Easy Run",
             CreatedAt = DateTime.UtcNow
         };
 

@@ -163,7 +163,7 @@ public static class WorkoutsEndpoints
     /// <param name="minDistanceM">Minimum distance in meters</param>
     /// <param name="maxDistanceM">Maximum distance in meters</param>
     /// <param name="keyword">Search keyword (searches Name, Device, and Source fields)</param>
-    /// <param name="runType">Filter by run type (exact match; one of the values in the runType enum)</param>
+    /// <param name="runType">Filter by run type (e.g., "Race", "Workout", "Long Run", "Easy Run")</param>
     /// <param name="sortBy">Sort field: "name", "duration", "distance", "elevation", "relativeeffort", or default "startedAt"</param>
     /// <param name="sortOrder">Sort order: "asc" or "desc" (default: "desc" for startedAt)</param>
     /// <returns>Paginated list of workouts with metadata</returns>
@@ -2021,7 +2021,7 @@ public static class WorkoutsEndpoints
     /// <returns>Updated workout fields</returns>
     /// <remarks>
     /// Updates workout RunType, Notes, Name, ShoeId, and/or Rpe. All fields are optional - only provided fields are updated.
-    /// RunType must be one of the values in the runType enum, or null.
+    /// RunType must be one of: "Race", "Workout", "Long Run", "Easy Run", or null.
     /// Name must be 200 characters or less.
     /// Rpe must be a whole number from 1 to 10, or null to clear.
     /// </remarks>
@@ -2076,9 +2076,10 @@ public static class WorkoutsEndpoints
                 return Results.BadRequest(new { error = "runType must be a string or null" });
             }
 
-            if (runTypeValue != null && !RunTypes.IsValid(runTypeValue))
+            var validRunTypes = new[] { "Race", "Workout", "Long Run", "Easy Run" };
+            if (runTypeValue != null && !validRunTypes.Contains(runTypeValue))
             {
-                return Results.BadRequest(new { error = $"Invalid runType. Must be one of: {string.Join(", ", RunTypes.All)}, or null" });
+                return Results.BadRequest(new { error = $"Invalid runType. Must be one of: {string.Join(", ", validRunTypes)}, or null" });
             }
             workout.RunType = runTypeValue;
         }
@@ -2600,7 +2601,6 @@ public static class WorkoutsEndpoints
 
         group.MapPatch("/{id:guid}", UpdateWorkout)
         .WithName("UpdateWorkout")
-        .Accepts<UpdateWorkoutRequest>("application/json")
         .Produces(200)
         .Produces(400)
         .Produces(404)

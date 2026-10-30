@@ -10,6 +10,8 @@ namespace Tempo.Api.Endpoints;
 
 public static class StatsEndpoints
 {
+    private const string EasyRunType = "Easy Run";
+
     /// <summary>
     /// Aggregates for a single UTC-inclusive workout window [startUtc, endUtc].
     /// </summary>
@@ -138,7 +140,7 @@ public static class StatsEndpoints
         var relativeEffortSum = await baseQuery.SumAsync(w => (int?)w.RelativeEffort, cancellationToken) ?? 0;
 
         var easyQuery = baseQuery.Where(w =>
-            w.RunType == RunTypes.EasyRun &&
+            w.RunType == EasyRunType &&
             w.AvgHeartRateBpm != null &&
             w.DurationS > 0);
 

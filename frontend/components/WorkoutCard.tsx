@@ -7,7 +7,6 @@ import { formatDistance, formatDuration, formatPace, formatDateTime, getWorkoutD
 import { listDisplayDurationS } from '@/lib/workoutClocks';
 import { useSettings } from '@/lib/settings';
 import { Card } from '@/components/ui/Card';
-import { isRunType, RUN_TYPE_BADGE } from '@/lib/runTypes';
 
 // Dynamically import WorkoutMap to avoid SSR issues with Leaflet
 const WorkoutMap = dynamic(() => import('./WorkoutMap'), {
@@ -19,7 +18,18 @@ interface WorkoutCardProps {
 }
 
 function getRunTypeBadgeColor(runType: string | null): string {
-  return isRunType(runType) ? RUN_TYPE_BADGE[runType] : 'bg-canvas text-muted border-border';
+  switch (runType) {
+    case 'Easy Run':
+      return 'bg-canvas text-ink border-border';
+    case 'Race':
+      return 'bg-danger/15 text-danger border-danger/30';
+    case 'Workout':
+      return 'bg-volt text-on-volt border-volt';
+    case 'Long Run':
+      return 'bg-ink text-inverse border-ink';
+    default:
+      return 'bg-canvas text-muted border-border';
+  }
 }
 
 function getRunTypeLabel(runType: string | null): string {

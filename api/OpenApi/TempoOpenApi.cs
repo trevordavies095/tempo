@@ -40,8 +40,6 @@ public static class TempoOpenApi
         });
 
         options.OperationFilter<BearerAuthOperationFilter>();
-        options.SchemaFilter<RunTypeEnumFilters>();
-        options.ParameterFilter<RunTypeEnumFilters>();
     }
 
     private static string ReadRepositoryVersionOrFallback()

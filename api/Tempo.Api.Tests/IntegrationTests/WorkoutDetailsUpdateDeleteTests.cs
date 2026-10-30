@@ -1131,7 +1131,9 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
         
-        foreach (var runType in RunTypes.All)
+        var validRunTypes = new[] { "Race", "Workout", "Long Run", "Easy Run" };
+        
+        foreach (var runType in validRunTypes)
         {
             await EnsureCleanDatabaseAsync();
             
