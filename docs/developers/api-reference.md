@@ -388,6 +388,7 @@ Query parameters:
 - `endDate` - Filter by end date (ISO 8601)
 - `page` - Page number (default: 1)
 - `pageSize` - Items per page (default: 20)
+- `runType` - Exact-match filter on run type (one of the values listed under [Update Workout](#update-workout)); an unknown value returns an empty page
 
 List and detail responses include nullable `healthKitUuid` for tempo-ios already-imported badging.
 List and detail also include nullable `timerTimeS` (FIT timer seconds when present). `durationS` remains elapsed (wall clock); do not treat it as timer time.
@@ -436,14 +437,20 @@ PATCH /workouts/{id}
 Content-Type: application/json
 
 {
-  "activityName": "New Activity Name",
+  "name": "New Activity Name",
+  "runType": "Threshold",
   "shoeId": "guid-here"
 }
 ```
 
+All fields are optional; only fields present in the body are updated, and `null` clears a field.
+
 Fields:
-- `activityName` (string, optional) - New activity name
-- `shoeId` (Guid, optional, nullable) - Shoe ID to assign to this workout. Set to `null` to remove shoe assignment.
+- `name` (string, nullable) - Workout name, 200 characters or less
+- `runType` (string, nullable) - One of `Easy Run`, `Recovery`, `Walk-Run`, `Long Run`, `Workout`, `Threshold`, `Intervals`, `Hills`, `Fartlek`, `Race` (case-sensitive; also published as the `runType` enum in [openapi.json](../openapi.json)). Anything else returns `400`.
+- `notes` (string, nullable) - Free-text notes
+- `shoeId` (Guid, nullable) - Shoe ID to assign to this workout (must exist and not be retired). Set to `null` to remove shoe assignment.
+- `rpe` (integer, nullable) - Rate of perceived exertion, a whole number from 1 to 10
 
 ### Delete Workout
 
