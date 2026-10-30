@@ -19,7 +19,10 @@ public static class StatsEndpoints
         long DurationS,
         double ElevationGainM,
         int RelativeEffortSum,
-        double? EasyRunAvgHeartRateBpm);
+        double? EasyRunAvgHeartRateBpm,
+        long MovingTimeS,
+        double LongestRunDistanceM,
+        int LongestRunDurationS);
 
     private sealed record UtcRange(DateTime StartUtc, DateTime EndUtc);
 
@@ -125,7 +128,7 @@ public static class StatsEndpoints
     {
         if (range.EndUtc < range.StartUtc)
         {
-            return new BucketAggregates(0, 0, 0, 0, 0, null);
+            return EmptyBucket;
         }
 
         // One round trip per window: every metric is a (conditional) aggregate over the same rows.
@@ -139,6 +142,10 @@ public static class StatsEndpoints
                 DurationS = g.Sum(w => (long)w.DurationS),
                 ElevationGainM = g.Sum(w => w.ElevGainM ?? 0.0),
                 RelativeEffortSum = g.Sum(w => w.RelativeEffort ?? 0),
+                // Moving time falls back to elapsed when the source has no moving time.
+                MovingTimeS = g.Sum(w => (long)(w.MovingTimeS ?? w.DurationS)),
+                LongestRunDistanceM = g.Max(w => w.DistanceM),
+                LongestRunDurationS = g.Max(w => w.MovingTimeS ?? w.DurationS),
                 // Easy-run HR: RunType Easy Run / Recovery with avg HR and positive duration, duration-weighted.
                 EasyDurationS = g.Sum(w =>
                     (w.RunType == RunTypes.EasyRun || w.RunType == RunTypes.Recovery) &&
@@ -155,7 +162,7 @@ public static class StatsEndpoints
 
         if (row == null)
         {
-            return new BucketAggregates(0, 0, 0, 0, 0, null);
+            return EmptyBucket;
         }
 
         double? easyHrAvg = row.EasyDurationS > 0
@@ -168,8 +175,65 @@ public static class StatsEndpoints
             row.DurationS,
             row.ElevationGainM,
             row.RelativeEffortSum,
-            easyHrAvg);
+            easyHrAvg,
+            row.MovingTimeS,
+            row.LongestRunDistanceM,
+            row.LongestRunDurationS);
     }
+
+    private static readonly BucketAggregates EmptyBucket = new(0, 0, 0, 0, 0, null, 0, 0, 0);
+
+    /// <summary>
+    /// Run counts by <c>RunType</c> for one window: canonical types in display order, then any legacy values,
+    /// then <c>Unspecified</c> for workouts without a run type. Types with no runs are omitted.
+    /// </summary>
+    private static async Task<Dictionary<string, int>> GetRunsByTypeAsync(
+        TempoDbContext db,
+        UtcRange range,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (range.EndUtc < range.StartUtc)
+        {
+            return result;
+        }
+
+        var counts = await db.Workouts.AsNoTracking()
+            .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc)
+            .GroupBy(w => w.RunType)
+            .Select(g => new { RunType = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        // Canonical types first (display order), then legacy values, then Unspecified.
+        int SortRank(string? runType)
+        {
+            if (runType == null)
+            {
+                return int.MaxValue;
+            }
+
+            for (var i = 0; i < RunTypes.All.Count; i++)
+            {
+                if (RunTypes.All[i] == runType)
+                {
+                    return i;
+                }
+            }
+
+            return RunTypes.All.Count;
+        }
+
+        foreach (var c in counts
+            .OrderBy(c => SortRank(c.RunType))
+            .ThenBy(c => c.RunType, StringComparer.Ordinal))
+        {
+            result[c.RunType ?? UnspecifiedRunType] = c.Count;
+        }
+
+        return result;
+    }
+
+    private const string UnspecifiedRunType = "Unspecified";
 
     private static double AverageDouble(double a, double b, double c) => (a + b + c) / 3.0;
 
@@ -485,11 +549,13 @@ public static class StatsEndpoints
     /// <param name="logger">Logger instance</param>
     /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC), same as other stats endpoints.</param>
     /// <param name="referenceDate">Optional local calendar date (yyyy-MM-dd) that selects which Monday–Sunday week is treated as &quot;current&quot;; defaults to today in the offset frame.</param>
-    /// <returns>Counts, distance, duration, elevation, relative effort, and easy-run HR with current (week-to-date), previous week, trailing 3-week average, and week-over-week deltas.</returns>
+    /// <returns>Counts, distance, duration, moving time, longest run, elevation, relative effort, and easy-run HR with current (week-to-date), previous week, trailing 3-week average, and week-over-week deltas; plus current-week runs by type.</returns>
     /// <remarks>
     /// Week boundaries are Monday 00:00 through Sunday 23:59:59.999 in the local frame implied by <paramref name="timezoneOffsetMinutes"/>.
     /// The current window is [weekStartUtc, min(UTC now, weekEndUtc)] so mid-week responses reflect week-to-date; the response field <c>currentWeekIsPartial</c> is true when UTC now falls inside the current week window.
     /// Trailing averages use the three full calendar weeks immediately before the current week (offsets -1, -2, -3), matching <c>/stats/relative-effort</c>.
+    /// Moving time and longest-run duration use MovingTimeS, falling back to DurationS when null. Longest-run distance and duration are independent maxima (may be different workouts); 0 for a week with no runs.
+    /// <c>runsByType</c> covers the current window only: counts keyed by exact RunType, zero counts omitted, null RunType counted as &quot;Unspecified&quot;.
     /// Elevation uses SUM(COALESCE(ElevGainM, 0)). Relative effort sums only non-null values. Easy-run HR uses RunType &quot;Easy Run&quot; or &quot;Recovery&quot; (not &quot;Walk-Run&quot;) with duration-weighted average HR; weeks with no qualifying runs return null for that metric.
     /// Deleted workouts do not appear. Fixed-offset timezones do not model DST; clients should send the offset in effect for the user at request time.
     /// </remarks>
@@ -524,6 +590,11 @@ public static class StatsEndpoints
         var trElev = AverageDouble(previous.ElevationGainM, t2.ElevationGainM, t3.ElevationGainM);
         var trEffort = AverageDouble(previous.RelativeEffortSum, t2.RelativeEffortSum, t3.RelativeEffortSum);
         var trEasyHr = AverageNullableDouble(previous.EasyRunAvgHeartRateBpm, t2.EasyRunAvgHeartRateBpm, t3.EasyRunAvgHeartRateBpm);
+        var trMoving = AverageDouble(previous.MovingTimeS, t2.MovingTimeS, t3.MovingTimeS);
+        var trLongestDist = AverageDouble(previous.LongestRunDistanceM, t2.LongestRunDistanceM, t3.LongestRunDistanceM);
+        var trLongestDur = AverageDouble(previous.LongestRunDurationS, t2.LongestRunDurationS, t3.LongestRunDurationS);
+
+        var runsByType = await GetRunsByTypeAsync(db, ctx.CurrentRange);
 
         double? easyDelta = current.EasyRunAvgHeartRateBpm.HasValue && previous.EasyRunAvgHeartRateBpm.HasValue
             ? current.EasyRunAvgHeartRateBpm.Value - previous.EasyRunAvgHeartRateBpm.Value
@@ -548,7 +619,19 @@ public static class StatsEndpoints
                     current.EasyRunAvgHeartRateBpm,
                     previous.EasyRunAvgHeartRateBpm,
                     trEasyHr,
-                    easyDelta)
+                    easyDelta),
+                MovingTimeS = MetricLong(current.MovingTimeS, previous.MovingTimeS, trMoving, current.MovingTimeS - previous.MovingTimeS),
+                LongestRunDistanceM = MetricDouble(
+                    current.LongestRunDistanceM,
+                    previous.LongestRunDistanceM,
+                    trLongestDist,
+                    current.LongestRunDistanceM - previous.LongestRunDistanceM),
+                LongestRunDurationS = MetricInt(
+                    current.LongestRunDurationS,
+                    previous.LongestRunDurationS,
+                    trLongestDur,
+                    current.LongestRunDurationS - previous.LongestRunDurationS),
+                RunsByType = runsByType
             }
         });
     }
@@ -1023,9 +1106,11 @@ public static class StatsEndpoints
             .Produces<ErrorResponse>(400)
             .WithSummary("Get weekly recap aggregates")
             .WithDescription(
-                "Returns run count, distance, duration, elevation gain, relative effort sum, and easy-run average HR for the current (week-to-date) window, previous full week, and trailing 3-week averages, with week-over-week deltas. " +
+                "Returns run count, distance, duration, moving time, longest run (distance and duration), elevation gain, relative effort sum, and easy-run average HR for the current (week-to-date) window, previous full week, and trailing 3-week averages, with week-over-week deltas. " +
                 "Optional referenceDate (yyyy-MM-dd) selects the calendar week in the timezoneOffsetMinutes frame. " +
-                "Easy runs are RunType \"Easy Run\" or \"Recovery\" (not \"Walk-Run\") with duration-weighted average heart rate.");
+                "Easy runs are RunType \"Easy Run\" or \"Recovery\" (not \"Walk-Run\") with duration-weighted average heart rate. " +
+                "Moving time and longest-run duration fall back to elapsed duration when moving time is missing; longest-run distance and duration are independent maxima, 0 for a week with no runs. " +
+                "runsByType is current window only: counts keyed by exact runType, zero counts omitted, no runType counted as \"Unspecified\".");
 
         group.MapGet("/best-efforts", GetBestEfforts)
             .WithName("GetBestEfforts")

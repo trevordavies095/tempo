@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -407,6 +408,10 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result.Metrics.Runs.DeltaVsPrevious.Should().Be(0);
         result.Metrics.RelativeEffortSum.Current.Should().Be(0);
         result.Metrics.EasyRunAvgHeartRateBpm.Current.Should().BeNull();
+        result.Metrics.MovingTimeS.Current.Should().Be(0);
+        result.Metrics.LongestRunDistanceM.Current.Should().Be(0);
+        result.Metrics.LongestRunDurationS.Current.Should().Be(0);
+        result.Metrics.RunsByType.Should().BeEmpty();
         result.ReferenceDate.Should().Be("2020-06-10");
     }
 
@@ -561,6 +566,70 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
         result!.Metrics.EasyRunAvgHeartRateBpm.Current.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_ReturnsMovingTimeLongestRunAndRunsByType()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            // Current week 2020-06-08..14
+            await SeedRecapRunAsync(db, new DateTime(2020, 6, 8, 12, 0, 0, DateTimeKind.Utc), 10000, 3600, 3300, "Long Run");
+            await SeedRecapRunAsync(db, new DateTime(2020, 6, 9, 12, 0, 0, DateTimeKind.Utc), 5000, 4000, null, null);
+            await SeedRecapRunAsync(db, new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc), 3000, 1200, 1100, "Easy Run");
+            await SeedRecapRunAsync(db, new DateTime(2020, 6, 11, 12, 0, 0, DateTimeKind.Utc), 1000, 300, 300, "legacy-jog");
+            // Previous week 2020-06-01..07
+            await SeedRecapRunAsync(db, new DateTime(2020, 6, 5, 12, 0, 0, DateTimeKind.Utc), 8000, 3000, 2800, "Race");
+            // Trailing week 2 2020-05-25..31; trailing week 3 empty
+            await SeedRecapRunAsync(db, new DateTime(2020, 5, 27, 12, 0, 0, DateTimeKind.Utc), 6000, 2400, 2400, "Easy Run");
+        }
+
+        var response = await client.GetAsync("/stats/weekly-recap?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        var metrics = JsonSerializer.Deserialize<WeeklyRecapResponse>(json, JsonSerializerOptions.Web)!.Metrics;
+
+        // Moving time falls back to elapsed (4000) for the run without moving time.
+        metrics.MovingTimeS.Current.Should().Be(3300 + 4000 + 1100 + 300);
+        metrics.MovingTimeS.Previous.Should().Be(2800);
+        metrics.MovingTimeS.TrailingAvg.Should().Be(1733.33);
+        metrics.MovingTimeS.DeltaVsPrevious.Should().Be(8700 - 2800);
+
+        // Longest distance and longest duration come from different workouts.
+        metrics.LongestRunDistanceM.Current.Should().Be(10000);
+        metrics.LongestRunDistanceM.Previous.Should().Be(8000);
+        metrics.LongestRunDistanceM.TrailingAvg.Should().Be(4666.67);
+        metrics.LongestRunDistanceM.DeltaVsPrevious.Should().Be(2000);
+
+        metrics.LongestRunDurationS.Current.Should().Be(4000);
+        metrics.LongestRunDurationS.Previous.Should().Be(2800);
+        metrics.LongestRunDurationS.TrailingAvg.Should().Be(1733.33);
+        metrics.LongestRunDurationS.DeltaVsPrevious.Should().Be(1200);
+
+        // Current week only; canonical types in display order, then legacy values, then Unspecified.
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("metrics").GetProperty("runsByType").EnumerateObject()
+            .Select(p => (p.Name, p.Value.GetInt32()))
+            .Should().Equal(("Easy Run", 1), ("Long Run", 1), ("legacy-jog", 1), ("Unspecified", 1));
+    }
+
+    private static async Task SeedRecapRunAsync(
+        TempoDbContext db,
+        DateTime startedAt,
+        double distanceM,
+        int durationS,
+        int? movingTimeS,
+        string? runType)
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(db, startedAt: startedAt, distanceM: distanceM, durationS: durationS);
+        workout.MovingTimeS = movingTimeS;
+        workout.RunType = runType;
+        await db.SaveChangesAsync();
     }
 
     #endregion
@@ -2131,6 +2200,10 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public WeeklyRecapMetricDouble ElevationGainM { get; set; } = null!;
         public WeeklyRecapMetricInt RelativeEffortSum { get; set; } = null!;
         public WeeklyRecapMetricNullableDouble EasyRunAvgHeartRateBpm { get; set; } = null!;
+        public WeeklyRecapMetricLong MovingTimeS { get; set; } = null!;
+        public WeeklyRecapMetricDouble LongestRunDistanceM { get; set; } = null!;
+        public WeeklyRecapMetricInt LongestRunDurationS { get; set; } = null!;
+        public Dictionary<string, int> RunsByType { get; set; } = null!;
     }
 
     private class WeeklyRecapMetricInt

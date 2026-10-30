@@ -65,6 +65,36 @@ public class WeeklyRecapMetricsDocument
     [Required]
     [JsonPropertyName("easyRunAvgHeartRateBpm")]
     public WeeklyRecapMetricNullableDoubleDocument EasyRunAvgHeartRateBpm { get; set; } = new();
+
+    /// <summary>
+    /// Sum of moving time, falling back to elapsed duration for workouts without moving time.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("movingTimeS")]
+    public WeeklyRecapMetricLongDocument MovingTimeS { get; set; } = new();
+
+    /// <summary>
+    /// Longest single run by distance in the bucket; 0 when the bucket has no runs.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("longestRunDistanceM")]
+    public WeeklyRecapMetricDoubleDocument LongestRunDistanceM { get; set; } = new();
+
+    /// <summary>
+    /// Longest single run by moving time (elapsed when moving time is missing) in the bucket; 0 when the bucket has
+    /// no runs. Independent of <see cref="LongestRunDistanceM"/>, so it may be a different workout.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("longestRunDurationS")]
+    public WeeklyRecapMetricIntDocument LongestRunDurationS { get; set; } = new();
+
+    /// <summary>
+    /// Current week only: run counts keyed by exact <c>runType</c>. Types with no runs are omitted; workouts without a
+    /// run type are counted under <c>Unspecified</c>. No previous, trailing average, or delta.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("runsByType")]
+    public Dictionary<string, int> RunsByType { get; set; } = new();
 }
 
 public class WeeklyRecapMetricIntDocument
