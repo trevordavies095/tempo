@@ -371,6 +371,127 @@ public class BestEffortServiceTests : IAsyncLifetime
 
     #endregion
 
+    #region Workout best efforts
+
+    private static readonly string[] DistancesCoveredBy5K = ["400m", "1/2 mile", "1K", "1 mile", "2 mile", "5K"];
+
+    [Fact]
+    public async Task UpdateBestEffortsForNewWorkoutAsync_StoresOneRowPerCoveredDistance_AndMarksWorkout()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(
+            _db,
+            distanceM: 5000,
+            durationS: 1200,
+            includeTimeSeries: true);
+
+        await _service.UpdateBestEffortsForNewWorkoutAsync(_db, workout);
+
+        var rows = await _db.WorkoutBestEfforts.AsNoTracking()
+            .Where(wbe => wbe.WorkoutId == workout.Id)
+            .ToListAsync();
+        rows.Select(r => r.Distance).Should().BeEquivalentTo(DistancesCoveredBy5K);
+        rows.Single(r => r.Distance == "5K").TimeS.Should().Be(1200);
+
+        var stored = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workout.Id);
+        stored.BestEffortsComputedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateBestEffortsForNewWorkoutAsync_StoresRows_EvenWhenSlowerThanRecord()
+    {
+        await TestDataSeeder.SeedWorkoutCompleteAsync(
+            _db,
+            distanceM: 5000,
+            durationS: 1200,
+            includeTimeSeries: true);
+        await _service.CalculateAllBestEffortsAsync(_db);
+
+        var slower = await TestDataSeeder.SeedWorkoutCompleteAsync(
+            _db,
+            distanceM: 5000,
+            durationS: 1500,
+            includeTimeSeries: true);
+
+        await _service.UpdateBestEffortsForNewWorkoutAsync(_db, slower);
+
+        var row = await _db.WorkoutBestEfforts.AsNoTracking()
+            .SingleAsync(wbe => wbe.WorkoutId == slower.Id && wbe.Distance == "5K");
+        row.TimeS.Should().Be(1500);
+    }
+
+    [Fact]
+    public async Task UpdateBestEffortsForNewWorkoutAsync_RerunReplacesRows_WithoutDuplicates()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(
+            _db,
+            distanceM: 5000,
+            durationS: 1200,
+            includeTimeSeries: true);
+
+        await _service.UpdateBestEffortsForNewWorkoutAsync(_db, workout);
+        await _service.UpdateBestEffortsForNewWorkoutAsync(_db, workout);
+
+        var rows = await _db.WorkoutBestEfforts.AsNoTracking()
+            .Where(wbe => wbe.WorkoutId == workout.Id)
+            .ToListAsync();
+        rows.Should().HaveCount(DistancesCoveredBy5K.Length);
+    }
+
+    [Fact]
+    public async Task UpdateBestEffortsForNewWorkoutAsync_WorkoutShorterThanEveryDistance_StoresNoRows_ButMarks()
+    {
+        var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(
+            _db,
+            distanceM: 300,
+            durationS: 90,
+            includeTimeSeries: true);
+
+        await _service.UpdateBestEffortsForNewWorkoutAsync(_db, workout);
+
+        (await _db.WorkoutBestEfforts.AnyAsync(wbe => wbe.WorkoutId == workout.Id)).Should().BeFalse();
+        var stored = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workout.Id);
+        stored.BestEffortsComputedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CalculateAllBestEffortsAsync_RebuildsRowsForEveryWorkout()
+    {
+        var slower = await TestDataSeeder.SeedWorkoutCompleteAsync(
+            _db,
+            distanceM: 5000,
+            durationS: 1500,
+            includeTimeSeries: true);
+        var faster = await TestDataSeeder.SeedWorkoutCompleteAsync(
+            _db,
+            distanceM: 5000,
+            durationS: 1200,
+            includeTimeSeries: true);
+        // A stale row that the rebuild must drop
+        _db.WorkoutBestEfforts.Add(new WorkoutBestEffort
+        {
+            WorkoutId = slower.Id,
+            Distance = "10K",
+            DistanceM = 10000,
+            TimeS = 1
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _service.CalculateAllBestEffortsAsync(_db);
+
+        var rows = await _db.WorkoutBestEfforts.AsNoTracking().ToListAsync();
+        rows.Where(r => r.WorkoutId == slower.Id).Select(r => r.Distance)
+            .Should().BeEquivalentTo(DistancesCoveredBy5K);
+        rows.Where(r => r.WorkoutId == faster.Id).Select(r => r.Distance)
+            .Should().BeEquivalentTo(DistancesCoveredBy5K);
+        (await _db.Workouts.AsNoTracking().AllAsync(w => w.BestEffortsComputedAt != null)).Should().BeTrue();
+
+        result.Single(r => r.Distance == "5K").WorkoutId.Should().Be(faster.Id.ToString());
+        var record = await _db.BestEfforts.AsNoTracking().SingleAsync(be => be.Distance == "5K");
+        record.TimeS.Should().Be(1200);
+    }
+
+    #endregion
+
     #region ClearBestEffortsAsync Tests
 
     [Fact]

@@ -97,6 +97,14 @@ public class Workout
     public DateTime? ZoneSecondsComputedAt { get; set; }
 
     /// <summary>
+    /// When this workout's <see cref="WorkoutBestEffort"/> rows were last computed (stamped even when the
+    /// workout covers no standard distance). Null means not yet computed; the startup best-effort backfill
+    /// picks those up.
+    /// </summary>
+    [JsonIgnore]
+    public DateTime? BestEffortsComputedAt { get; set; }
+
+    /// <summary>
     /// Rate of Perceived Exertion (1–10). Athlete-set on overview, or filled from FIT
     /// session <c>workout_rpe</c> (Borg CR10 × 10) when null. Not Feel; not relative effort.
     /// </summary>

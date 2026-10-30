@@ -74,12 +74,35 @@ public class BestEffortService : IBestEffortService
             return null; // Workout is too short
         }
 
-        // Try time series method first (most accurate)
-        var timeSeries = await db.WorkoutTimeSeries
-            .Where(ts => ts.WorkoutId == workout.Id && ts.DistanceM.HasValue)
+        var timeSeries = await LoadDistanceTimeSeriesAsync(db, workout.Id);
+        return CalculateBestEffortForWorkout(workout, timeSeries, distanceName, targetDistanceM);
+    }
+
+    private static Task<List<WorkoutTimeSeries>> LoadDistanceTimeSeriesAsync(TempoDbContext db, Guid workoutId)
+    {
+        return db.WorkoutTimeSeries
+            .AsNoTracking()
+            .Where(ts => ts.WorkoutId == workoutId && ts.DistanceM.HasValue)
             .OrderBy(ts => ts.ElapsedSeconds)
             .ToListAsync();
+    }
 
+    /// <summary>
+    /// Calculate best effort for a workout and target distance from an already-loaded time series,
+    /// so callers computing every distance load the series once.
+    /// </summary>
+    private BestEffortResult? CalculateBestEffortForWorkout(
+        Workout workout,
+        List<WorkoutTimeSeries> timeSeries,
+        string distanceName,
+        double targetDistanceM)
+    {
+        if (workout.DistanceM < targetDistanceM)
+        {
+            return null; // Workout is too short
+        }
+
+        // Try time series method first (most accurate)
         int? bestTimeS = null;
 
         if (timeSeries.Count > 0)
@@ -306,7 +329,48 @@ public class BestEffortService : IBestEffortService
     }
 
     /// <summary>
+    /// Recompute a workout's <see cref="WorkoutBestEffort"/> rows: one per standard distance it covers,
+    /// replacing any it already has, and stamp <see cref="Workout.BestEffortsComputedAt"/>.
+    /// The workout must be tracked with its Route loaded (route fallback). Saves changes.
+    /// </summary>
+    public async Task<List<BestEffortResult>> ReplaceWorkoutBestEffortsAsync(TempoDbContext db, Workout workout)
+    {
+        var timeSeries = await LoadDistanceTimeSeriesAsync(db, workout.Id);
+
+        var results = new List<BestEffortResult>();
+        foreach (var (distanceName, targetDistanceM) in StandardDistances)
+        {
+            var result = CalculateBestEffortForWorkout(workout, timeSeries, distanceName, targetDistanceM);
+            if (result != null)
+            {
+                results.Add(result);
+            }
+        }
+
+        var existingRows = await db.WorkoutBestEfforts
+            .Where(wbe => wbe.WorkoutId == workout.Id)
+            .ToListAsync();
+        db.WorkoutBestEfforts.RemoveRange(existingRows);
+
+        db.WorkoutBestEfforts.AddRange(results.Select(r => new WorkoutBestEffort
+        {
+            WorkoutId = workout.Id,
+            Distance = r.Distance,
+            DistanceM = r.DistanceM,
+            TimeS = r.TimeS
+        }));
+
+        workout.BestEffortsComputedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        _logger.LogDebug("Stored {Count} workout best efforts for workout {WorkoutId}", results.Count, workout.Id);
+
+        return results;
+    }
+
+    /// <summary>
     /// Calculate all best efforts across all workouts (full recalculation).
+    /// Rebuilds every workout's <see cref="WorkoutBestEffort"/> rows along the way.
     /// </summary>
     public async Task<List<BestEffortResult>> CalculateAllBestEffortsAsync(TempoDbContext db)
     {
@@ -314,35 +378,24 @@ public class BestEffortService : IBestEffortService
 
         // Clear existing best efforts
         await ClearBestEffortsAsync(db);
+        await db.WorkoutBestEfforts.ExecuteDeleteAsync();
 
         var results = new Dictionary<string, BestEffortResult>();
 
-        // Get all workouts ordered by distance (descending) to process longer workouts first
+        // Longer workouts first so ties keep the same holder as before per-workout rows existed
         var workouts = await db.Workouts
             .Include(w => w.Route)
             .OrderByDescending(w => w.DistanceM)
             .ToListAsync();
 
-        foreach (var distanceEntry in StandardDistances.OrderByDescending(d => d.Value))
+        foreach (var workout in workouts)
         {
-            var distanceName = distanceEntry.Key;
-            var targetDistanceM = distanceEntry.Value;
-
-            _logger.LogDebug("Calculating best effort for {Distance} ({DistanceM}m)", distanceName, targetDistanceM);
-
-            // Only process workouts that are long enough
-            var qualifyingWorkouts = workouts.Where(w => w.DistanceM >= targetDistanceM).ToList();
-
-            foreach (var workout in qualifyingWorkouts)
+            foreach (var result in await ReplaceWorkoutBestEffortsAsync(db, workout))
             {
-                var result = await CalculateBestEffortForWorkoutAsync(db, workout, distanceName, targetDistanceM);
-                if (result != null)
+                // Update if this is faster than current best
+                if (!results.TryGetValue(result.Distance, out var best) || result.TimeS < best.TimeS)
                 {
-                    // Update if this is faster than current best
-                    if (!results.ContainsKey(distanceName) || result.TimeS < results[distanceName].TimeS)
-                    {
-                        results[distanceName] = result;
-                    }
+                    results[result.Distance] = result;
                 }
             }
         }
@@ -401,6 +454,10 @@ public class BestEffortService : IBestEffortService
         var preservedCount = 0;
         var processedDistances = new List<string>();
 
+        // Store this workout's own per-distance bests, then compare them against the records
+        var workoutBestEfforts = (await ReplaceWorkoutBestEffortsAsync(db, workoutWithRoute))
+            .ToDictionary(r => r.Distance);
+
         foreach (var distanceEntry in StandardDistances)
         {
             var distanceName = distanceEntry.Key;
@@ -409,15 +466,15 @@ public class BestEffortService : IBestEffortService
             // Skip if workout is too short
             if (workoutWithRoute.DistanceM < targetDistanceM)
             {
-                _logger.LogDebug("Skipping {Distance} ({DistanceM}m) - workout too short ({WorkoutDistanceM}m)", 
+                _logger.LogDebug("Skipping {Distance} ({DistanceM}m) - workout too short ({WorkoutDistanceM}m)",
                     distanceName, targetDistanceM, workoutWithRoute.DistanceM);
                 continue;
             }
 
             processedDistances.Add(distanceName);
 
-            // Calculate best effort for this distance from the new workout
-            var newBestEffort = await CalculateBestEffortForWorkoutAsync(db, workoutWithRoute, distanceName, targetDistanceM);
+            // Best effort for this distance from the new workout
+            var newBestEffort = workoutBestEfforts.GetValueOrDefault(distanceName);
             if (newBestEffort == null)
             {
                 _logger.LogDebug("Could not calculate best effort for {Distance} from workout {WorkoutId}", 

@@ -84,6 +84,10 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>
             var zoneBackfill = services.Single(d => d.ImplementationType == typeof(ZoneSecondsBackfillWorker));
             services.Remove(zoneBackfill);
 
+            // Same for per-workout best efforts; covered by BestEffortBackfillServiceTests.
+            var bestEffortBackfill = services.Single(d => d.ImplementationType == typeof(BestEffortBackfillWorker));
+            services.Remove(bestEffortBackfill);
+
             // Remove existing JWT configuration
             services.RemoveAll(typeof(IConfigureOptions<JwtBearerOptions>));
 

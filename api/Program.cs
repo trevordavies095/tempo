@@ -195,6 +195,8 @@ builder.Services.AddScoped<DeviceLapBackfillService>();
 builder.Services.AddHostedService<DeviceLapBackfillWorker>();
 builder.Services.AddScoped<ZoneSecondsBackfillService>();
 builder.Services.AddHostedService<ZoneSecondsBackfillWorker>();
+builder.Services.AddScoped<BestEffortBackfillService>();
+builder.Services.AddHostedService<BestEffortBackfillWorker>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();
