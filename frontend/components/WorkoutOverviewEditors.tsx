@@ -5,6 +5,7 @@ import type { WorkoutDetail } from '@/lib/api';
 import { useWorkoutMutations } from '@/hooks/useWorkoutMutations';
 import { ShoeSelector } from '@/components/ShoeSelector';
 import { Button } from '@/components/ui/Button';
+import { RUN_TYPES } from '@/lib/runTypes';
 
 function PencilIcon({ className }: { className?: string }) {
   return (
@@ -143,10 +144,11 @@ export function WorkoutOverviewEditors({ workout }: { workout: WorkoutDetail }) 
                 autoFocus
               >
                 <option value="">None</option>
-                <option value="Easy Run">Easy Run</option>
-                <option value="Race">Race</option>
-                <option value="Workout">Workout</option>
-                <option value="Long Run">Long Run</option>
+                {RUN_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
               </select>
               <button
                 onClick={() => setIsEditingRunType(false)}
