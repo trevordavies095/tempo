@@ -762,7 +762,8 @@ public class WorkoutIntake
                 Laps = fitResult.Laps,
                 Name = null,
                 RawGpxDataJson = null,
-                RawFitDataJson = fitResult.RawFitDataJson,
+                // Fresh parse already carries lap annotations; keep the startup annotation step away.
+                RawFitDataJson = DeviceLapBackfillService.StampLapAnnotationsApplied(fitResult.RawFitDataJson),
                 RawFileData = rawFileData,
                 RawFileName = fileName,
                 RawFileType = fileType

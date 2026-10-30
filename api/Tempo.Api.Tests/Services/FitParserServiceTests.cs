@@ -429,19 +429,19 @@ public class FitParserServiceTests
         result.Laps[0].TimerS.Should().BeApproximately(600, 0.01);
         result.Laps[0].ElapsedS.Should().BeApproximately(600, 0.01);
         result.Laps[0].AvgHeartRateBpm.Should().Be(150);
-        result.Laps[0].LapTrigger.Should().Be("Distance");
+        result.Laps[0].LapTrigger.Should().Be("distance");
         result.Laps[1].TimerS.Should().BeApproximately(600, 0.01);
         result.Laps[1].ElapsedS.Should().BeApproximately(721, 0.01);
-        result.Laps[1].LapTrigger.Should().Be("Manual");
+        result.Laps[1].LapTrigger.Should().Be("manual");
         result.Laps[2].DistanceM.Should().BeApproximately(13, 0.1);
-        result.Laps[2].LapTrigger.Should().Be("SessionEnd");
+        result.Laps[2].LapTrigger.Should().Be("session_end");
 
         using var doc = JsonDocument.Parse(result.RawFitDataJson!);
         var lapsJson = doc.RootElement.GetProperty("laps");
         lapsJson.GetArrayLength().Should().Be(3);
         lapsJson[1].GetProperty("timer").GetDouble().Should().BeApproximately(600, 0.01);
         lapsJson[1].GetProperty("elapsed").GetDouble().Should().BeApproximately(721, 0.01);
-        lapsJson[2].GetProperty("trigger").GetString().Should().Be("SessionEnd");
+        lapsJson[2].GetProperty("trigger").GetString().Should().Be("session_end");
     }
 
     private static byte[] CreateIndoorFitWithCadence(

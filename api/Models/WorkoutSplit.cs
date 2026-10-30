@@ -65,6 +65,25 @@ public class WorkoutSplit
     /// </summary>
     public byte? AvgHeartRateBpm { get; set; }
 
+    /// <summary>
+    /// FIT lap intensity, snake_case (active, rest, warmup, cooldown, recovery, interval, other).
+    /// Null for distance splits and for device laps from sources without it (HealthKit).
+    /// </summary>
+    [MaxLength(32)]
+    public string? Intensity { get; set; }
+
+    /// <summary>
+    /// FIT lap_trigger, snake_case (manual, time, distance, position_start, session_end, …).
+    /// Null for distance splits and for device laps from sources without it (HealthKit).
+    /// </summary>
+    [MaxLength(32)]
+    public string? Trigger { get; set; }
+
+    /// <summary>
+    /// FIT wkt_step_index: structured-workout step this lap belongs to. Null when absent.
+    /// </summary>
+    public int? StepIndex { get; set; }
+
     // Navigation property
     [ForeignKey(nameof(WorkoutId))]
     public Workout Workout { get; set; } = null!;

@@ -1141,7 +1141,10 @@ public static class WorkoutsEndpoints
                 avgHeartRateBpm = s.AvgHeartRateBpm,
                 startElapsedS = s.StartElapsedS,
                 endElapsedS = s.EndElapsedS,
-                startDistanceM = s.StartDistanceM
+                startDistanceM = s.StartDistanceM,
+                intensity = s.Intensity,
+                trigger = s.Trigger,
+                stepIndex = s.StepIndex
             }).ToList();
 
             var heartRateZoneTimes = BuildHeartRateZoneTimes(workout);
@@ -1209,7 +1212,9 @@ public static class WorkoutsEndpoints
     /// <remarks>
     /// Retrieves complete workout data including route (as GeoJSON), splits, and weather information.
     /// Each split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),
-    /// startElapsedS, endElapsedS, and startDistanceM (number or null).
+    /// startElapsedS, endElapsedS, startDistanceM (number or null), and the FIT device-lap fields
+    /// intensity, trigger (snake_case strings or null) and stepIndex (number or null). Those three are
+    /// null for distance splits and for HealthKit, Strava CSV and GPX sources.
     /// Does not include an embedded timeSeries array; heart-rate and other per-sample sensors are only available
     /// via paginated <c>GET /workouts/{id}/time-series</c> (sparse, non-interpolated samples).
     /// <c>timerTimeS</c> is FIT total timer time when known (null for non-FIT or missing Session); distinct from
@@ -1301,7 +1306,10 @@ public static class WorkoutsEndpoints
             AvgHeartRateBpm = s.AvgHeartRateBpm,
             StartElapsedS = s.StartElapsedS,
             EndElapsedS = s.EndElapsedS,
-            StartDistanceM = s.StartDistanceM
+            StartDistanceM = s.StartDistanceM,
+            Intensity = s.Intensity,
+            Trigger = s.Trigger,
+            StepIndex = s.StepIndex
         }).ToList();
 
         // Raw JSONB blobs are opt-in: default query projects them out, so skip deserialize too.

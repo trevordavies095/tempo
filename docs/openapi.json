@@ -1951,7 +1951,7 @@
           "Workouts"
         ],
         "summary": "Get workout details",
-        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),\nstartElapsedS, endElapsedS, and startDistanceM (number or null).\nDoes not include an embedded timeSeries array; heart-rate and other per-sample sensors are only available\nvia paginated `GET /workouts/{id}/time-series` (sparse, non-interpolated samples).\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.\n`heartRateZoneTimes` is five zone buckets stored per workout from the HR series and the zones in effect\nwhen last computed (import, crop, or a Relative Effort recalculation), or JSON null without an HR series.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
+        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),\nstartElapsedS, endElapsedS, startDistanceM (number or null), and the FIT device-lap fields\nintensity, trigger (snake_case strings or null) and stepIndex (number or null). Those three are\nnull for distance splits and for HealthKit, Strava CSV and GPX sources.\nDoes not include an embedded timeSeries array; heart-rate and other per-sample sensors are only available\nvia paginated `GET /workouts/{id}/time-series` (sparse, non-interpolated samples).\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.\n`heartRateZoneTimes` is five zone buckets stored per workout from the HR series and the zones in effect\nwhen last computed (import, crop, or a Relative Effort recalculation), or JSON null without an HR series.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
         "operationId": "GetWorkout",
         "parameters": [
           {
@@ -4371,6 +4371,22 @@
           "startDistanceM": {
             "type": "number",
             "format": "double",
+            "nullable": true
+          },
+          "intensity": {
+            "type": "string",
+            "description": "FIT lap intensity, snake_case: active, rest, warmup, cooldown, recovery, interval, other\n(unknown future values pass through snake_cased). Null for distance splits and for sources\nwithout it (HealthKit, Strava CSV, GPX); keep a pace-based fallback.",
+            "nullable": true
+          },
+          "trigger": {
+            "type": "string",
+            "description": "FIT lap_trigger, snake_case: manual, time, distance, position_start, position_lap,\nposition_waypoint, position_marked, session_end, fitness_equipment. Null when absent.",
+            "nullable": true
+          },
+          "stepIndex": {
+            "type": "integer",
+            "description": "FIT wkt_step_index: structured-workout step this lap belongs to. Null when absent.",
+            "format": "int32",
             "nullable": true
           }
         },

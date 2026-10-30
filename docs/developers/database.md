@@ -109,6 +109,9 @@ Segment rows for a Workout (`Kind`: `distance` or `device_lap`). Distance rows a
 - `EndElapsedS` (int) - wall elapsed at segment end; windows are `[Start, End)` (last inclusive)
 - `StartDistanceM` (double, nullable) - device-distance cursor at start when DistM stream exists; null for Haversine distance splits
 - `AvgHeartRateBpm` (byte, nullable) - time-weighted average from WorkoutTimeSeries; null when the split has no HR samples
+- `Intensity` (string, max 32, nullable) - FIT lap intensity, snake_case (`active`, `rest`, `warmup`, `cooldown`, `recovery`, `interval`, `other`); `device_lap` from FIT only
+- `Trigger` (string, max 32, nullable) - FIT `lap_trigger`, snake_case (`manual`, `distance`, `position_start`, …); `device_lap` from FIT only
+- `StepIndex` (int, nullable) - FIT `wkt_step_index` for structured workouts; `device_lap` from FIT only
 
 **Indexes:**
 - Unique composite index on `(WorkoutId, Kind, Idx)`

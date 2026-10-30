@@ -428,6 +428,7 @@ Detail includes top-level `healthKitUuid` when the workout was imported (or stam
 Detail also includes nullable `timerTimeS` next to `movingTimeS`. `durationS` is always elapsed.
 Detail also includes `heartRateZoneTimes`: five `{ zone, timeS }` objects (zones 1–5) or JSON `null`, stored per workout from the HR time series and the Settings zones in effect when last computed (same buckets as Relative Effort). Recomputed on import, crop, and Relative Effort recalculation (including Settings save with recalculate existing); JSON `null` without an HR series. Not present on list GET.
 List/detail `avgCadenceRpm` / `maxCadenceRpm` are steps per minute (both feet), despite the `*Rpm` names — typical running values ~160, not single-leg ~80.
+Each split also includes nullable `intensity`, `trigger`, and `stepIndex` from the FIT lap message on `device_lap` rows. `intensity` is snake_case (`active`, `rest`, `warmup`, `cooldown`, `recovery`, `interval`, `other`); `trigger` is snake_case `lap_trigger` (`manual`, `time`, `distance`, `position_start`, `session_end`, …); `stepIndex` is the structured-workout step (`wkt_step_index`). All three are JSON `null` on `distance` splits and on HealthKit, Strava CSV, and GPX workouts, so clients that pick out work reps need a pace-based fallback.
 ### Update Workout
 
 Update workout details (e.g., activity name, shoe assignment):
