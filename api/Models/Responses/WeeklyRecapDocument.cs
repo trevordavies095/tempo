@@ -65,6 +65,59 @@ public class WeeklyRecapMetricsDocument
     [Required]
     [JsonPropertyName("easyRunAvgHeartRateBpm")]
     public WeeklyRecapMetricNullableDoubleDocument EasyRunAvgHeartRateBpm { get; set; } = new();
+
+    /// <summary>
+    /// Sum of moving time, falling back to elapsed duration for workouts without moving time.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("movingTimeS")]
+    public WeeklyRecapMetricLongDocument MovingTimeS { get; set; } = new();
+
+    /// <summary>
+    /// Longest single run by distance in the bucket; 0 when the bucket has no runs.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("longestRunDistanceM")]
+    public WeeklyRecapMetricDoubleDocument LongestRunDistanceM { get; set; } = new();
+
+    /// <summary>
+    /// Longest single run by moving time (elapsed when moving time is missing) in the bucket; 0 when the bucket has
+    /// no runs. Independent of <see cref="LongestRunDistanceM"/>, so it may be a different workout.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("longestRunDurationS")]
+    public WeeklyRecapMetricIntDocument LongestRunDurationS { get; set; } = new();
+
+    /// <summary>
+    /// Current week only: run counts keyed by exact <c>runType</c>. Types with no runs are omitted; workouts without a
+    /// run type are counted under <c>Unspecified</c>. No previous, trailing average, or delta.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("runsByType")]
+    public Dictionary<string, int> RunsByType { get; set; } = new();
+
+    // Time in HR zone 1–5 (seconds), summed from each workout's stored zone seconds (the same values as
+    // heartRateZoneTimes on workout detail). Null for a bucket with no HR series; trailing average covers only
+    // buckets with a value; delta is null when either week is null.
+    [Required]
+    [JsonPropertyName("zoneSecondsZ1")]
+    public WeeklyRecapMetricNullableLongDocument ZoneSecondsZ1 { get; set; } = new();
+
+    [Required]
+    [JsonPropertyName("zoneSecondsZ2")]
+    public WeeklyRecapMetricNullableLongDocument ZoneSecondsZ2 { get; set; } = new();
+
+    [Required]
+    [JsonPropertyName("zoneSecondsZ3")]
+    public WeeklyRecapMetricNullableLongDocument ZoneSecondsZ3 { get; set; } = new();
+
+    [Required]
+    [JsonPropertyName("zoneSecondsZ4")]
+    public WeeklyRecapMetricNullableLongDocument ZoneSecondsZ4 { get; set; } = new();
+
+    [Required]
+    [JsonPropertyName("zoneSecondsZ5")]
+    public WeeklyRecapMetricNullableLongDocument ZoneSecondsZ5 { get; set; } = new();
 }
 
 public class WeeklyRecapMetricIntDocument
@@ -134,4 +187,19 @@ public class WeeklyRecapMetricNullableDoubleDocument
 
     [JsonPropertyName("deltaVsPrevious")]
     public double? DeltaVsPrevious { get; set; }
+}
+
+public class WeeklyRecapMetricNullableLongDocument
+{
+    [JsonPropertyName("current")]
+    public long? Current { get; set; }
+
+    [JsonPropertyName("previous")]
+    public long? Previous { get; set; }
+
+    [JsonPropertyName("trailingAvg")]
+    public double? TrailingAvg { get; set; }
+
+    [JsonPropertyName("deltaVsPrevious")]
+    public long? DeltaVsPrevious { get; set; }
 }

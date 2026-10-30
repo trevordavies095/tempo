@@ -1124,12 +1124,14 @@ public class WorkoutIntake
             }
 
             var zones = _zoneService.GetZonesFromUserSettings(settings);
-            var relativeEffort = _relativeEffortService.CalculateRelativeEffort(workout, zones, _db);
+            var relativeEffort = _relativeEffortService.RecalculateHeartRateMetrics(workout, zones, _db);
             if (relativeEffort.HasValue)
             {
                 workout.RelativeEffort = relativeEffort.Value;
-                await _db.SaveChangesAsync();
             }
+
+            // Zone seconds and their marker are written even when Relative Effort is null.
+            await _db.SaveChangesAsync();
         }
         catch (Exception ex)
         {

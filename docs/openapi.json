@@ -1023,7 +1023,7 @@
           "Stats"
         ],
         "summary": "Get weekly recap aggregates for dashboards and CLI integrations.",
-        "description": "Week boundaries are Monday 00:00 through Sunday 23:59:59.999 in the local frame implied by timezoneOffsetMinutes.\nThe current window is [weekStartUtc, min(UTC now, weekEndUtc)] so mid-week responses reflect week-to-date; the response field `currentWeekIsPartial` is true when UTC now falls inside the current week window.\nTrailing averages use the three full calendar weeks immediately before the current week (offsets -1, -2, -3), matching `/stats/relative-effort`.\nElevation uses SUM(COALESCE(ElevGainM, 0)). Relative effort sums only non-null values. Easy-run HR uses RunType \"Easy Run\" or \"Recovery\" (not \"Walk-Run\") with duration-weighted average HR; weeks with no qualifying runs return null for that metric.\nDeleted workouts do not appear. Fixed-offset timezones do not model DST; clients should send the offset in effect for the user at request time.",
+        "description": "Week boundaries are Monday 00:00 through Sunday 23:59:59.999 in the local frame implied by timezoneOffsetMinutes.\nThe current window is [weekStartUtc, min(UTC now, weekEndUtc)] so mid-week responses reflect week-to-date; the response field `currentWeekIsPartial` is true when UTC now falls inside the current week window.\nTrailing averages use the three full calendar weeks immediately before the current week (offsets -1, -2, -3), matching `/stats/relative-effort`.\nMoving time and longest-run duration use MovingTimeS, falling back to DurationS when null. Longest-run distance and duration are independent maxima (may be different workouts); 0 for a week with no runs.\nZone seconds (`zoneSecondsZ1`..`zoneSecondsZ5`) sum the stored per-workout values (same as `heartRateZoneTimes` on workout detail); a week with no HR series is null, trailing averages use only weeks with a value, and the delta is null when either week is null.\n`runsByType` covers the current window only: counts keyed by exact RunType, zero counts omitted, null RunType counted as \"Unspecified\".\nElevation uses SUM(COALESCE(ElevGainM, 0)). Relative effort sums only non-null values. Easy-run HR uses RunType \"Easy Run\" or \"Recovery\" (not \"Walk-Run\") with duration-weighted average HR; weeks with no qualifying runs return null for that metric.\nDeleted workouts do not appear. Fixed-offset timezones do not model DST; clients should send the offset in effect for the user at request time.",
         "operationId": "GetWeeklyRecap",
         "parameters": [
           {
@@ -1951,7 +1951,7 @@
           "Workouts"
         ],
         "summary": "Get workout details",
-        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),\nstartElapsedS, endElapsedS, and startDistanceM (number or null).\nDoes not include an embedded timeSeries array; heart-rate and other per-sample sensors are only available\nvia paginated `GET /workouts/{id}/time-series` (sparse, non-interpolated samples).\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.\n`heartRateZoneTimes` is five live zone buckets from HR series + current Settings, or JSON null.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
+        "description": "Retrieves complete workout data including route (as GeoJSON), splits, and weather information.\nEach split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),\nstartElapsedS, endElapsedS, and startDistanceM (number or null).\nDoes not include an embedded timeSeries array; heart-rate and other per-sample sensors are only available\nvia paginated `GET /workouts/{id}/time-series` (sparse, non-interpolated samples).\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.\n`heartRateZoneTimes` is five zone buckets stored per workout from the HR series and the zones in effect\nwhen last computed (import, crop, or a Relative Effort recalculation), or JSON null without an HR series.\nRaw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values\nare normalized for consistency.",
         "operationId": "GetWorkout",
         "parameters": [
           {
@@ -3800,14 +3800,49 @@
         },
         "additionalProperties": false
       },
+      "WeeklyRecapMetricNullableLongDocument": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "previous": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "trailingAvg": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "deltaVsPrevious": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "WeeklyRecapMetricsDocument": {
         "required": [
           "distanceM",
           "durationS",
           "easyRunAvgHeartRateBpm",
           "elevationGainM",
+          "longestRunDistanceM",
+          "longestRunDurationS",
+          "movingTimeS",
           "relativeEffortSum",
-          "runs"
+          "runs",
+          "runsByType",
+          "zoneSecondsZ1",
+          "zoneSecondsZ2",
+          "zoneSecondsZ3",
+          "zoneSecondsZ4",
+          "zoneSecondsZ5"
         ],
         "type": "object",
         "properties": {
@@ -3828,6 +3863,38 @@
           },
           "easyRunAvgHeartRateBpm": {
             "$ref": "#/components/schemas/WeeklyRecapMetricNullableDoubleDocument"
+          },
+          "movingTimeS": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricLongDocument"
+          },
+          "longestRunDistanceM": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricDoubleDocument"
+          },
+          "longestRunDurationS": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricIntDocument"
+          },
+          "runsByType": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "description": "Current week only: run counts keyed by exact `runType`. Types with no runs are omitted; workouts without a\nrun type are counted under `Unspecified`. No previous, trailing average, or delta."
+          },
+          "zoneSecondsZ1": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricNullableLongDocument"
+          },
+          "zoneSecondsZ2": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricNullableLongDocument"
+          },
+          "zoneSecondsZ3": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricNullableLongDocument"
+          },
+          "zoneSecondsZ4": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricNullableLongDocument"
+          },
+          "zoneSecondsZ5": {
+            "$ref": "#/components/schemas/WeeklyRecapMetricNullableLongDocument"
           }
         },
         "additionalProperties": false

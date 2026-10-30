@@ -493,6 +493,24 @@ namespace Tempo.Api.Migrations
                     b.Property<string>("Weather")
                         .HasColumnType("jsonb");
 
+                    b.Property<DateTime?>("ZoneSecondsComputedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ZoneSecondsZ1")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ZoneSecondsZ2")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ZoneSecondsZ3")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ZoneSecondsZ4")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ZoneSecondsZ5")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("HealthKitUuid")

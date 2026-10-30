@@ -804,7 +804,7 @@ public static class WorkoutsEndpoints
             }
 
             var zones = zoneService.GetZonesFromUserSettings(settings);
-            var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+            var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
             
             workout.RelativeEffort = relativeEffort;
             await db.SaveChangesAsync();
@@ -993,7 +993,7 @@ public static class WorkoutsEndpoints
             if (settings != null)
             {
                 var zones = zoneService.GetZonesFromUserSettings(settings);
-                var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
                 workout.RelativeEffort = relativeEffort;
                 await db.SaveChangesAsync();
             }
@@ -1144,8 +1144,7 @@ public static class WorkoutsEndpoints
                 startDistanceM = s.StartDistanceM
             }).ToList();
 
-            var heartRateZoneTimes = await BuildHeartRateZoneTimesAsync(
-                workout.Id, db, zoneService, relativeEffortService);
+            var heartRateZoneTimes = BuildHeartRateZoneTimes(workout);
 
             return Results.Ok(new
             {
@@ -1201,8 +1200,6 @@ public static class WorkoutsEndpoints
     /// <param name="id">Workout ID</param>
     /// <param name="db">Database context</param>
     /// <param name="weatherService">Weather service</param>
-    /// <param name="zoneService">Heart rate zone service</param>
-    /// <param name="relativeEffortService">Relative effort service (time-in-zone extractor)</param>
     /// <param name="logger">Logger instance</param>
     /// <param name="includeRaw">
     /// When true, include raw GPX/FIT/Strava/HealthKit JSON blobs. Defaults to false: those four
@@ -1217,7 +1214,8 @@ public static class WorkoutsEndpoints
     /// via paginated <c>GET /workouts/{id}/time-series</c> (sparse, non-interpolated samples).
     /// <c>timerTimeS</c> is FIT total timer time when known (null for non-FIT or missing Session); distinct from
     /// <c>durationS</c> (elapsed) and <c>movingTimeS</c>.
-    /// <c>heartRateZoneTimes</c> is five live zone buckets from HR series + current Settings, or JSON null.
+    /// <c>heartRateZoneTimes</c> is five zone buckets stored per workout from the HR series and the zones in effect
+    /// when last computed (import, crop, or a Relative Effort recalculation), or JSON null without an HR series.
     /// Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values
     /// are normalized for consistency.
     /// </remarks>
@@ -1225,8 +1223,6 @@ public static class WorkoutsEndpoints
         Guid id,
         TempoDbContext db,
         WeatherService weatherService,
-        HeartRateZoneService zoneService,
-        RelativeEffortService relativeEffortService,
         ILogger<Program> logger,
         [FromQuery] bool includeRaw = false)
     {
@@ -1375,8 +1371,7 @@ public static class WorkoutsEndpoints
             };
         }
 
-        var heartRateZoneTimes = await BuildHeartRateZoneTimesAsync(
-            workout.Id, db, zoneService, relativeEffortService);
+        var heartRateZoneTimes = BuildHeartRateZoneTimes(workout);
 
         return Results.Ok(new WorkoutDetailDocument
         {
@@ -1912,7 +1907,7 @@ public static class WorkoutsEndpoints
             {
                 try
                 {
-                    var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                    var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
                     if (relativeEffort.HasValue)
                     {
                         workout.RelativeEffort = relativeEffort.Value;
@@ -2493,7 +2488,8 @@ public static class WorkoutsEndpoints
             "via paginated GET /workouts/{id}/time-series (sparse, non-interpolated samples). " +
             "timerTimeS is FIT total timer time when known (null for non-FIT or missing Session); distinct from " +
             "durationS (elapsed) and movingTimeS. " +
-            "heartRateZoneTimes is five live zone buckets from HR series + current Settings, or JSON null. " +
+            "heartRateZoneTimes is five zone buckets stored per workout from the HR series and the zones in effect " +
+            "when last computed (import, crop, or a Relative Effort recalculation), or JSON null without an HR series. " +
             "Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values " +
             "are normalized for consistency.");
 
@@ -2708,54 +2704,28 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
-    /// Live time-in-zone buckets from HR series + current Settings (or null when hidden).
+    /// Time-in-zone buckets from the stored per-workout zone seconds, or null when the workout has no HR series
+    /// (or zone seconds have not been computed yet).
     /// </summary>
-    private static async Task<List<HrZoneTimeDocument>?> BuildHeartRateZoneTimesAsync(
-        Guid workoutId,
-        TempoDbContext db,
-        HeartRateZoneService zoneService,
-        RelativeEffortService relativeEffortService)
+    private static List<HrZoneTimeDocument>? BuildHeartRateZoneTimes(Workout workout)
     {
-        var series = await db.WorkoutTimeSeries
-            .AsNoTracking()
-            .Where(ts => ts.WorkoutId == workoutId && ts.HeartRateBpm.HasValue)
-            .OrderBy(ts => ts.ElapsedSeconds)
-            .Select(ts => new WorkoutTimeSeries
-            {
-                ElapsedSeconds = ts.ElapsedSeconds,
-                HeartRateBpm = ts.HeartRateBpm
-            })
-            .ToListAsync();
+        int?[] zoneSeconds =
+        [
+            workout.ZoneSecondsZ1,
+            workout.ZoneSecondsZ2,
+            workout.ZoneSecondsZ3,
+            workout.ZoneSecondsZ4,
+            workout.ZoneSecondsZ5,
+        ];
 
-        if (series.Count == 0)
+        if (zoneSeconds.Any(s => !s.HasValue))
         {
             return null;
         }
 
-        var settings = await db.UserSettings.AsNoTracking().FirstOrDefaultAsync();
-        if (settings == null)
-        {
-            return null;
-        }
-
-        var zones = zoneService.GetZonesFromUserSettings(settings);
-        var timeInZones = relativeEffortService.TryGetTimeInZones(series, zones);
-        if (timeInZones == null)
-        {
-            return null;
-        }
-
-        var result = new List<HrZoneTimeDocument>(5);
-        for (int i = 0; i < 5; i++)
-        {
-            result.Add(new HrZoneTimeDocument
-            {
-                Zone = i + 1,
-                TimeS = (int)Math.Round(timeInZones[i])
-            });
-        }
-
-        return result;
+        return zoneSeconds
+            .Select((s, i) => new HrZoneTimeDocument { Zone = i + 1, TimeS = s!.Value })
+            .ToList();
     }
 
 }

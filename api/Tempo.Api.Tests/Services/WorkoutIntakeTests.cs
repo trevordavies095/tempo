@@ -1341,6 +1341,71 @@ public class WorkoutIntakeTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PersistAsync_WithHrSeries_StoresZoneSecondsAndMarker()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var intake = CreateIntakeWithRealRelativeEffort();
+        var (decoded, overlay) = CreateHealthKitOutdoorDecoded();
+
+        var result = await intake.PersistAsync(decoded, overlay);
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == result.Workout!.Id);
+        stored.ZoneSecondsComputedAt.Should().NotBeNull();
+        int?[] zones = [stored.ZoneSecondsZ1, stored.ZoneSecondsZ2, stored.ZoneSecondsZ3, stored.ZoneSecondsZ4, stored.ZoneSecondsZ5];
+        zones.Should().OnlyContain(z => z.HasValue);
+        zones.Sum(z => z!.Value).Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task PersistAsync_SessionHrWithoutSeries_StoresNullZoneSecondsWithMarker()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        var intake = CreateIntakeWithRealRelativeEffort();
+        var start = new System.DateTime(2024, 6, 15, 10, 0, 0, System.DateTimeKind.Utc);
+        var decoded = new DecodedWorkout
+        {
+            StartedAt = start,
+            DurationS = 1800,
+            DistanceM = 5000,
+            TrackPoints =
+            [
+                new() { Time = start, Latitude = 37.7749, Longitude = -122.4194, DistanceM = 0 },
+                new() { Time = start.AddSeconds(1800), Latitude = 37.7949, Longitude = -122.3994, DistanceM = 5000 }
+            ]
+        };
+
+        var result = await intake.PersistAsync(decoded, new WorkoutIntakeOverlay { AvgHeartRateBpm = 150 });
+
+        result.Action.Should().Be("created");
+        var stored = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == result.Workout!.Id);
+        stored.RelativeEffort.Should().NotBeNull("Relative Effort keeps its average-HR fallback");
+        stored.ZoneSecondsComputedAt.Should().NotBeNull();
+        stored.ZoneSecondsZ1.Should().BeNull();
+        stored.ZoneSecondsZ5.Should().BeNull();
+    }
+
+    private WorkoutIntake CreateIntakeWithRealRelativeEffort()
+    {
+        var elevationConfig = new ElevationCalculationConfig
+        {
+            NoiseThresholdMeters = 2.0,
+            MinDistanceMeters = 10.0
+        };
+        return new WorkoutIntake(
+            _db,
+            _gpxParser,
+            _fitParser,
+            new TrackGeometry(elevationConfig),
+            _weather,
+            new HeartRateZoneService(),
+            new RelativeEffortService(),
+            _bestEfforts,
+            new SplitHeartRateService(),
+            NullLogger<WorkoutIntake>.Instance);
+    }
+
+    [Fact]
     public async Task PersistAsync_HaversineGps_LeavesStartDistanceMNull()
     {
         await TestDataSeeder.SeedUserSettingsAsync(_db);
@@ -2015,7 +2080,7 @@ public class WorkoutIntakeTests : IAsyncLifetime
     {
         public int CallCount { get; private set; }
 
-        public int? CalculateRelativeEffort(Workout workout, List<HeartRateZone> zones, TempoDbContext db)
+        public int? RecalculateHeartRateMetrics(Workout workout, List<HeartRateZone> zones, TempoDbContext db)
         {
             CallCount++;
             return 7;
