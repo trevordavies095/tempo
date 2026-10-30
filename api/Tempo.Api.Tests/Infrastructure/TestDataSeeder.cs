@@ -476,7 +476,7 @@ public static class TestDataSeeder
         db.WorkoutSplits.RemoveRange(db.WorkoutSplits);
         db.WorkoutMedia.RemoveRange(db.WorkoutMedia);
         db.WorkoutRoutes.RemoveRange(db.WorkoutRoutes);
-        db.BestEfforts.RemoveRange(db.BestEfforts);
+        db.WorkoutBestEfforts.RemoveRange(db.WorkoutBestEfforts);
         db.WorkoutExternalIdentities.RemoveRange(db.WorkoutExternalIdentities);
         db.Workouts.RemoveRange(db.Workouts);
         db.IntervalsIcuConnections.RemoveRange(db.IntervalsIcuConnections);
@@ -503,7 +503,7 @@ public static class TestDataSeeder
             await db.WorkoutTimeSeries.ExecuteDeleteAsync();
             await db.WorkoutSplits.ExecuteDeleteAsync();
             await db.WorkoutMedia.ExecuteDeleteAsync();
-            await db.BestEfforts.ExecuteDeleteAsync();
+            await db.WorkoutBestEfforts.ExecuteDeleteAsync();
             await db.WorkoutRoutes.ExecuteDeleteAsync();
             await db.WorkoutExternalIdentities.ExecuteDeleteAsync();
             await db.Workouts.ExecuteDeleteAsync();

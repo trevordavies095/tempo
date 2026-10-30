@@ -4,13 +4,19 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace Tempo.Api.Models;
 
 /// <summary>
-/// Stores the best effort (fastest time) for each standard running distance.
-/// Best efforts are calculated from any segment within any workout.
+/// A workout's own fastest time for one standard running distance, from any segment within it.
+/// One row per (workout, distance) the workout covers; all-time and windowed bests derive from these.
 /// </summary>
-public class BestEffort
+public class WorkoutBestEffort
 {
     [Key]
     public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>
+    /// Workout this effort was found in
+    /// </summary>
+    [Required]
+    public Guid WorkoutId { get; set; }
 
     /// <summary>
     /// Distance name (e.g., "5K", "10K", "Marathon")
@@ -27,31 +33,12 @@ public class BestEffort
     public double DistanceM { get; set; }
 
     /// <summary>
-    /// Fastest time in seconds for this distance
+    /// Fastest time in seconds for this distance within the workout
     /// </summary>
     [Required]
     public int TimeS { get; set; }
-
-    /// <summary>
-    /// Workout ID where this best effort was achieved
-    /// </summary>
-    [Required]
-    public Guid WorkoutId { get; set; }
-
-    /// <summary>
-    /// Date of the workout where this best effort was achieved
-    /// </summary>
-    [Required]
-    public DateTime WorkoutDate { get; set; }
-
-    /// <summary>
-    /// When this best effort was calculated/updated
-    /// </summary>
-    [Required]
-    public DateTime CalculatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation property
     [ForeignKey(nameof(WorkoutId))]
     public Workout Workout { get; set; } = null!;
 }
-

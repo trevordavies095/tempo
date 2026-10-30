@@ -832,6 +832,50 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         zonesEl[2].GetProperty("timeS").GetInt32().Should().BeGreaterThan(0);
     }
 
+    [Fact]
+    public async Task CropWorkout_ReplacesWorkoutBestEfforts()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db,
+                durationS: 1800,
+                distanceM: 5000,
+                includeTimeSeries: true);
+            var bestEffortService = scope.ServiceProvider.GetRequiredService<BestEffortService>();
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+            (await db.WorkoutBestEfforts.AnyAsync(wbe => wbe.WorkoutId == workout.Id && wbe.Distance == "5K"))
+                .Should().BeTrue();
+            workoutId = workout.Id;
+        }
+
+        var cropBody = new StringContent(
+            JsonSerializer.Serialize(new { startTrimSeconds = 60, endTrimSeconds = 60 }),
+            Encoding.UTF8,
+            "application/json");
+        var response = await client.PostAsync($"/workouts/{workoutId}/crop", cropBody);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var cropped = await db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workoutId);
+            cropped.DistanceM.Should().BeLessThan(5000);
+
+            var rows = await db.WorkoutBestEfforts.AsNoTracking()
+                .Where(wbe => wbe.WorkoutId == workoutId)
+                .ToListAsync();
+            // The cropped workout no longer covers 5K; shorter distances are recomputed
+            rows.Select(r => r.Distance).Should().NotContain("5K").And.Contain("1K");
+            rows.Should().OnlyHaveUniqueItems(r => r.Distance);
+        }
+    }
+
     #endregion
 
     #region UpdateWorkout Tests
@@ -1599,46 +1643,61 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
     }
 
     [Fact]
-    public async Task DeleteWorkout_DeletesBestEfforts_WhenWorkoutHasBestEfforts()
+    public async Task DeleteWorkout_RecordHolder_PreviousBestReturns()
     {
-        // Arrange
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
-        
-        Workout workout;
-        BestEffort bestEffort;
+
+        Guid fasterId;
+        Guid slowerId;
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            workout = await TestDataSeeder.SeedWorkoutAsync(db, distanceM: 5000);
-            await TestDataSeeder.SeedWorkoutWithRouteAsync(db, workout);
-            
-            // Create best effort referencing this workout
-            bestEffort = new BestEffort
-            {
-                Distance = "5K",
-                DistanceM = 5000,
-                TimeS = 1200,
-                WorkoutId = workout.Id,
-                WorkoutDate = workout.StartedAt,
-                CalculatedAt = DateTime.UtcNow
-            };
-            db.BestEfforts.Add(bestEffort);
-            await db.SaveChangesAsync();
+            var slower = await TestDataSeeder.SeedWorkoutCompleteAsync(db, distanceM: 5000, durationS: 1500);
+            var faster = await TestDataSeeder.SeedWorkoutCompleteAsync(db, distanceM: 5000, durationS: 1200);
+            await scope.ServiceProvider.GetRequiredService<BestEffortService>().CalculateAllBestEffortsAsync(db);
+            fasterId = faster.Id;
+            slowerId = slower.Id;
         }
 
-        // Act
-        var response = await client.DeleteAsync($"/workouts/{workout.Id}");
-
-        // Assert
+        var response = await client.DeleteAsync($"/workouts/{fasterId}");
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        
-        // Verify best effort deleted (cascade delete)
+
+        var bestEfforts = await client.GetFromJsonAsync<JsonElement>("/stats/best-efforts");
+        var fiveK = bestEfforts.GetProperty("distances").EnumerateArray()
+            .Single(d => d.GetProperty("distance").GetString() == "5K");
+        fiveK.GetProperty("timeS").GetInt32().Should().Be(1500);
+        fiveK.GetProperty("workoutId").GetString().Should().Be(slowerId.ToString());
+    }
+
+    [Fact]
+    public async Task DeleteWorkout_DeletesWorkoutBestEfforts()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        Guid otherWorkoutId;
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var remainingBestEffort = await db.BestEfforts.FindAsync(bestEffort.Id);
-            remainingBestEffort.Should().BeNull();
+            var bestEffortService = scope.ServiceProvider.GetRequiredService<BestEffortService>();
+            var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(db, distanceM: 5000, durationS: 1200);
+            var other = await TestDataSeeder.SeedWorkoutCompleteAsync(db, distanceM: 5000, durationS: 1500);
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, other);
+            workoutId = workout.Id;
+            otherWorkoutId = other.Id;
+        }
+
+        var response = await client.DeleteAsync($"/workouts/{workoutId}");
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            (await db.WorkoutBestEfforts.AnyAsync(wbe => wbe.WorkoutId == workoutId)).Should().BeFalse();
+            (await db.WorkoutBestEfforts.AnyAsync(wbe => wbe.WorkoutId == otherWorkoutId)).Should().BeTrue();
         }
     }
 

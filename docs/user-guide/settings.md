@@ -297,8 +297,6 @@ The export includes everything in your Tempo instance:
   - Unit preferences (metric/imperial)
   - Default shoe reference
 
-- **Best Efforts** - All best effort records for standard distances
-
 The intervals.icu API key is **not** included. Reconnect under Settings → Integrations after restore.
 
 - **Manifest File** - Metadata about the export including:
@@ -322,8 +320,7 @@ tempo-export-{timestamp}.zip
 │   ├── routes.json
 │   ├── splits.json
 │   ├── time-series.json
-│   ├── media-metadata.json
-│   └── best-efforts.json
+│   └── media-metadata.json
 ├── workouts/              # Binary files organized by workout
 │   ├── {workoutId}/
 │   │   ├── raw/          # Original workout files (GPX/FIT/CSV)
@@ -386,7 +383,8 @@ The import restores all data from the export file:
 - **Workout Splits** - All distance-based splits
 - **Workout Time Series** - All time-series data points
 - **Media Files** - All photos and videos attached to workouts
-- **Best Efforts** - All best effort records for standard distances
+
+Best efforts are not part of the export. After a restore, Tempo recalculates them from the restored workouts in the background, so they can take a few minutes to reappear on a large library. Exports from older versions that include `best-efforts.json` still restore; that file is ignored.
 
 #### Duplicate Detection
 
@@ -394,7 +392,6 @@ Tempo automatically detects and skips duplicates during import:
 
 - **Workouts**: Detected by start time, distance, and duration (within small tolerance)
 - **Shoes**: Detected by brand and model (exact match)
-- **Best Efforts**: Detected by distance (one best effort per distance)
 - **Settings**: Only one settings record exists (replaces existing)
 
 Duplicates are automatically skipped and reported in the import summary. You can view detailed warnings and errors in the import results.

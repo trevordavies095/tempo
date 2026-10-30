@@ -2107,6 +2107,134 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetBestEfforts_WithWindow_ExcludesWorkoutsOutsideRange()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid olderFasterId;
+        Guid newerSlowerId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var olderFaster = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 1, 10, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1200);
+            var newerSlower = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 3, 10, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1500);
+            await scope.ServiceProvider.GetRequiredService<BestEffortService>().CalculateAllBestEffortsAsync(db);
+            olderFasterId = olderFaster.Id;
+            newerSlowerId = newerSlower.Id;
+        }
+
+        var allTime = FindDistance(await GetBestEffortsJsonAsync(client, ""), "5K");
+        allTime!.Value.GetProperty("workoutId").GetString().Should().Be(olderFasterId.ToString());
+
+        var block = FindDistance(await GetBestEffortsJsonAsync(client, "?from=2026-03-01"), "5K");
+        block.Should().NotBeNull();
+        block!.Value.GetProperty("timeS").GetInt32().Should().Be(1500);
+        block.Value.GetProperty("workoutId").GetString().Should().Be(newerSlowerId.ToString());
+        block.Value.GetProperty("workoutDate").GetString().Should().Be("2026-03-10");
+
+        var beforeBlock = FindDistance(await GetBestEffortsJsonAsync(client, "?to=2026-02-28"), "5K");
+        beforeBlock!.Value.GetProperty("workoutId").GetString().Should().Be(olderFasterId.ToString());
+
+        var empty = await GetBestEffortsJsonAsync(client, "?from=2026-02-01&to=2026-02-28");
+        empty.GetProperty("distances").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetBestEfforts_WithWindow_IncludesWorkoutsOnBoundaryDates()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1500);
+            await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 3, 31, 23, 59, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1400);
+            await scope.ServiceProvider.GetRequiredService<BestEffortService>().CalculateAllBestEffortsAsync(db);
+        }
+
+        var onFrom = FindDistance(await GetBestEffortsJsonAsync(client, "?from=2026-03-01&to=2026-03-01"), "5K");
+        onFrom!.Value.GetProperty("timeS").GetInt32().Should().Be(1500);
+
+        var onTo = FindDistance(await GetBestEffortsJsonAsync(client, "?from=2026-03-31&to=2026-03-31"), "5K");
+        onTo!.Value.GetProperty("timeS").GetInt32().Should().Be(1400);
+    }
+
+    [Fact]
+    public async Task GetBestEfforts_WithSince_ReturnsPrWithPreviousTime()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid prWorkoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var bestEffortService = scope.ServiceProvider.GetRequiredService<BestEffortService>();
+            var earlier = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1500);
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, earlier);
+            var pr = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 10, 28, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1200);
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, pr);
+            prWorkoutId = pr.Id;
+        }
+
+        var prs = await GetBestEffortsJsonAsync(client, "?since=2026-10-26");
+        var fiveK = FindDistance(prs, "5K");
+        fiveK.Should().NotBeNull();
+        fiveK!.Value.GetProperty("timeS").GetInt32().Should().Be(1200);
+        fiveK.Value.GetProperty("previousTimeS").GetInt32().Should().Be(1500);
+        fiveK.Value.GetProperty("workoutId").GetString().Should().Be(prWorkoutId.ToString());
+
+        // Without since: same rows as before, previousTimeS present and null
+        var allTime = await GetBestEffortsJsonAsync(client, "");
+        allTime.GetProperty("distances").EnumerateArray()
+            .Should().NotBeEmpty()
+            .And.OnlyContain(d => d.GetProperty("previousTimeS").ValueKind == JsonValueKind.Null);
+    }
+
+    [Theory]
+    [InlineData("?since=yesterday")]
+    [InlineData("?from=2026-13-01")]
+    [InlineData("?to=03/01/2026")]
+    [InlineData("?from=2026-03-02&to=2026-03-01")]
+    public async Task GetBestEfforts_WithInvalidWindow_Returns400(string query)
+    {
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var response = await client.GetAsync($"/stats/best-efforts{query}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("error").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    private static async Task<JsonElement> GetBestEffortsJsonAsync(HttpClient client, string query)
+    {
+        var response = await client.GetAsync($"/stats/best-efforts{query}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    private static JsonElement? FindDistance(JsonElement document, string distance)
+    {
+        foreach (var item in document.GetProperty("distances").EnumerateArray())
+        {
+            if (item.GetProperty("distance").GetString() == distance)
+            {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    [Fact]
     public async Task RecalculateBestEfforts_SuccessfullyRecalculatesAllBestEfforts()
     {
         // Arrange

@@ -134,8 +134,7 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
             "data/routes.json",
             "data/splits.json",
             "data/time-series.json",
-            "data/media-metadata.json",
-            "data/best-efforts.json"
+            "data/media-metadata.json"
         };
 
         foreach (var file in expectedFiles)
@@ -258,7 +257,7 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         dataFormat.TryGetProperty("splits", out _).Should().BeTrue();
         dataFormat.TryGetProperty("timeSeries", out _).Should().BeTrue();
         dataFormat.TryGetProperty("mediaMetadata", out _).Should().BeTrue();
-        dataFormat.TryGetProperty("bestEfforts", out _).Should().BeTrue();
+        dataFormat.TryGetProperty("bestEfforts", out _).Should().BeFalse();
     }
 
     [Fact]
@@ -283,8 +282,7 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
             "data/routes.json",
             "data/splits.json",
             "data/time-series.json",
-            "data/media-metadata.json",
-            "data/best-efforts.json"
+            "data/media-metadata.json"
         };
 
         foreach (var file in jsonFiles)
@@ -313,17 +311,14 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(_db, shoeId: shoe.Id);
         await TestDataSeeder.SeedUserSettingsAsync(_db, defaultShoeId: shoe.Id);
         
-        // Create a best effort
-        var bestEffort = new BestEffort
+        // Per-workout best efforts are derived; they must not be exported
+        _db.WorkoutBestEfforts.Add(new WorkoutBestEffort
         {
             WorkoutId = workout.Id,
-            Distance = "1km",
+            Distance = "1K",
             DistanceM = 1000.0,
-            TimeS = 240,
-            WorkoutDate = workout.StartedAt,
-            CalculatedAt = DateTime.UtcNow
-        };
-        _db.BestEfforts.Add(bestEffort);
+            TimeS = 240
+        });
         await _db.SaveChangesAsync();
 
         // Act
@@ -346,7 +341,7 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         archive.GetEntry("data/splits.json").Should().NotBeNull();
         archive.GetEntry("data/time-series.json").Should().NotBeNull();
         archive.GetEntry("data/media-metadata.json").Should().NotBeNull();
-        archive.GetEntry("data/best-efforts.json").Should().NotBeNull();
+        archive.GetEntry("data/best-efforts.json").Should().BeNull();
         
         // Verify README exists
         archive.GetEntry("README.txt").Should().NotBeNull();
@@ -361,7 +356,8 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         var statistics = manifest!.GetProperty("statistics");
         statistics.GetProperty("shoes").GetInt32().Should().Be(1);
         statistics.GetProperty("workouts").GetInt32().Should().Be(1);
-        statistics.GetProperty("bestEfforts").GetInt32().Should().Be(1);
+        statistics.TryGetProperty("bestEfforts", out _).Should().BeFalse();
+        manifest.GetProperty("dataFormat").TryGetProperty("bestEfforts", out _).Should().BeFalse();
     }
 
     private async Task<Workout> SeedTestDataAsync()

@@ -20,7 +20,6 @@ public class ImportJobStatistics
     public ImportJobItemStatistics Splits { get; set; } = new();
     public ImportJobItemStatistics TimeSeries { get; set; } = new();
     public ImportJobItemStatistics Media { get; set; } = new();
-    public ImportJobItemStatistics BestEfforts { get; set; } = new();
     public ImportJobItemStatistics RawFiles { get; set; } = new();
 }
 

@@ -29,7 +29,8 @@ public static class DatabaseMigrationHelper
         { "Shoes", "20251201120000_AddShoeTracking" },
         { "ImportJobs", "20260816180637_AddImportJobs" },
         { "WorkoutExternalIdentities", "20260916003924_AddWorkoutExternalIdentities" },
-        { "IntervalsIcuConnections", "20260916223516_AddIntervalsIcuConnection" }
+        { "IntervalsIcuConnections", "20260916223516_AddIntervalsIcuConnection" },
+        { "WorkoutBestEfforts", "20261030220307_AddWorkoutBestEfforts" }
     };
 
     /// <summary>

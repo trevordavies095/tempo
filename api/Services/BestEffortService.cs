@@ -41,22 +41,95 @@ public class BestEffortService : IBestEffortService
     }
 
     /// <summary>
-    /// Get all stored best efforts from the database.
+    /// Fastest per-workout best effort for each distance, optionally limited to workouts started within
+    /// [<paramref name="from"/>, <paramref name="to"/>] (inclusive UTC dates). Ties go to the earliest workout.
+    /// Distances with no effort in range are omitted.
     /// </summary>
-    public async Task<List<BestEffortResult>> GetBestEffortsAsync(TempoDbContext db)
+    public async Task<List<BestEffortResult>> GetBestEffortsAsync(
+        TempoDbContext db,
+        DateOnly? from = null,
+        DateOnly? to = null)
     {
-        var bestEfforts = await db.BestEfforts
-            .OrderBy(be => be.DistanceM)
+        var efforts = db.WorkoutBestEfforts.AsNoTracking().AsQueryable();
+        if (from is { } fromDate)
+        {
+            var fromUtc = fromDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            efforts = efforts.Where(wbe => wbe.Workout.StartedAt >= fromUtc);
+        }
+        if (to is { } toDate)
+        {
+            var toExclusiveUtc = toDate.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            efforts = efforts.Where(wbe => wbe.Workout.StartedAt < toExclusiveUtc);
+        }
+
+        var bestEfforts = await efforts
+            .GroupBy(wbe => wbe.Distance)
+            .Select(g => g
+                .OrderBy(wbe => wbe.TimeS)
+                .ThenBy(wbe => wbe.Workout.StartedAt)
+                .Select(wbe => new
+                {
+                    wbe.Distance,
+                    wbe.DistanceM,
+                    wbe.TimeS,
+                    wbe.WorkoutId,
+                    wbe.Workout.StartedAt
+                })
+                .First())
             .ToListAsync();
 
-        return bestEfforts.Select(be => new BestEffortResult
+        return bestEfforts
+            .OrderBy(be => be.DistanceM)
+            .Select(be => new BestEffortResult
+            {
+                Distance = be.Distance,
+                DistanceM = be.DistanceM,
+                TimeS = be.TimeS,
+                WorkoutId = be.WorkoutId.ToString(),
+                WorkoutDate = be.StartedAt.ToString("yyyy-MM-dd")
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Best efforts that were PRs when set on or after <paramref name="since"/>: per distance, the fastest effort
+    /// dated in [since, to] if it beats every effort dated before since (only from <paramref name="from"/> on, when
+    /// given). That is the latest PR in the range, since each PR is faster than the last. Ties are not PRs.
+    /// <see cref="BestEffortResult.PreviousTimeS"/> is the best before since, or null when there was none.
+    /// </summary>
+    public async Task<List<BestEffortResult>> GetBestEffortPrsAsync(
+        TempoDbContext db,
+        DateOnly since,
+        DateOnly? from = null,
+        DateOnly? to = null)
+    {
+        var postFrom = from is { } fromDate && fromDate > since ? fromDate : since;
+        var bestsSince = await GetBestEffortsAsync(db, postFrom, to);
+        if (bestsSince.Count == 0)
         {
-            Distance = be.Distance,
-            DistanceM = be.DistanceM,
-            TimeS = be.TimeS,
-            WorkoutId = be.WorkoutId.ToString(),
-            WorkoutDate = be.WorkoutDate.ToString("yyyy-MM-dd")
-        }).ToList();
+            return bestsSince;
+        }
+
+        var bestsBefore = since == DateOnly.MinValue
+            ? []
+            : await GetBestEffortsAsync(db, from, since.AddDays(-1));
+        var previousByDistance = bestsBefore.ToDictionary(b => b.Distance, b => b.TimeS);
+
+        var prs = new List<BestEffortResult>();
+        foreach (var best in bestsSince)
+        {
+            if (previousByDistance.TryGetValue(best.Distance, out var previousTimeS))
+            {
+                if (best.TimeS >= previousTimeS)
+                {
+                    continue;
+                }
+                best.PreviousTimeS = previousTimeS;
+            }
+            prs.Add(best);
+        }
+
+        return prs;
     }
 
     /// <summary>
@@ -74,12 +147,35 @@ public class BestEffortService : IBestEffortService
             return null; // Workout is too short
         }
 
-        // Try time series method first (most accurate)
-        var timeSeries = await db.WorkoutTimeSeries
-            .Where(ts => ts.WorkoutId == workout.Id && ts.DistanceM.HasValue)
+        var timeSeries = await LoadDistanceTimeSeriesAsync(db, workout.Id);
+        return CalculateBestEffortForWorkout(workout, timeSeries, distanceName, targetDistanceM);
+    }
+
+    private static Task<List<WorkoutTimeSeries>> LoadDistanceTimeSeriesAsync(TempoDbContext db, Guid workoutId)
+    {
+        return db.WorkoutTimeSeries
+            .AsNoTracking()
+            .Where(ts => ts.WorkoutId == workoutId && ts.DistanceM.HasValue)
             .OrderBy(ts => ts.ElapsedSeconds)
             .ToListAsync();
+    }
 
+    /// <summary>
+    /// Calculate best effort for a workout and target distance from an already-loaded time series,
+    /// so callers computing every distance load the series once.
+    /// </summary>
+    private BestEffortResult? CalculateBestEffortForWorkout(
+        Workout workout,
+        List<WorkoutTimeSeries> timeSeries,
+        string distanceName,
+        double targetDistanceM)
+    {
+        if (workout.DistanceM < targetDistanceM)
+        {
+            return null; // Workout is too short
+        }
+
+        // Try time series method first (most accurate)
         int? bestTimeS = null;
 
         if (timeSeries.Count > 0)
@@ -306,73 +402,77 @@ public class BestEffortService : IBestEffortService
     }
 
     /// <summary>
-    /// Calculate all best efforts across all workouts (full recalculation).
+    /// Recompute a workout's <see cref="WorkoutBestEffort"/> rows: one per standard distance it covers,
+    /// replacing any it already has, and stamp <see cref="Workout.BestEffortsComputedAt"/>.
+    /// The workout must be tracked with its Route loaded (route fallback). Saves changes.
+    /// </summary>
+    public async Task<List<BestEffortResult>> ReplaceWorkoutBestEffortsAsync(TempoDbContext db, Workout workout)
+    {
+        var timeSeries = await LoadDistanceTimeSeriesAsync(db, workout.Id);
+
+        var results = new List<BestEffortResult>();
+        foreach (var (distanceName, targetDistanceM) in StandardDistances)
+        {
+            var result = CalculateBestEffortForWorkout(workout, timeSeries, distanceName, targetDistanceM);
+            if (result != null)
+            {
+                results.Add(result);
+            }
+        }
+
+        var existingRows = await db.WorkoutBestEfforts
+            .Where(wbe => wbe.WorkoutId == workout.Id)
+            .ToListAsync();
+        db.WorkoutBestEfforts.RemoveRange(existingRows);
+
+        db.WorkoutBestEfforts.AddRange(results.Select(r => new WorkoutBestEffort
+        {
+            WorkoutId = workout.Id,
+            Distance = r.Distance,
+            DistanceM = r.DistanceM,
+            TimeS = r.TimeS
+        }));
+
+        workout.BestEffortsComputedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        _logger.LogDebug("Stored {Count} workout best efforts for workout {WorkoutId}", results.Count, workout.Id);
+
+        return results;
+    }
+
+    /// <summary>
+    /// Rebuild every workout's <see cref="WorkoutBestEffort"/> rows (full recalculation) and return
+    /// the resulting all-time best efforts.
     /// </summary>
     public async Task<List<BestEffortResult>> CalculateAllBestEffortsAsync(TempoDbContext db)
     {
         _logger.LogInformation("Starting full recalculation of best efforts");
 
-        // Clear existing best efforts
-        await ClearBestEffortsAsync(db);
+        await db.WorkoutBestEfforts.ExecuteDeleteAsync();
 
-        var results = new Dictionary<string, BestEffortResult>();
-
-        // Get all workouts ordered by distance (descending) to process longer workouts first
         var workouts = await db.Workouts
             .Include(w => w.Route)
-            .OrderByDescending(w => w.DistanceM)
             .ToListAsync();
 
-        foreach (var distanceEntry in StandardDistances.OrderByDescending(d => d.Value))
+        foreach (var workout in workouts)
         {
-            var distanceName = distanceEntry.Key;
-            var targetDistanceM = distanceEntry.Value;
-
-            _logger.LogDebug("Calculating best effort for {Distance} ({DistanceM}m)", distanceName, targetDistanceM);
-
-            // Only process workouts that are long enough
-            var qualifyingWorkouts = workouts.Where(w => w.DistanceM >= targetDistanceM).ToList();
-
-            foreach (var workout in qualifyingWorkouts)
-            {
-                var result = await CalculateBestEffortForWorkoutAsync(db, workout, distanceName, targetDistanceM);
-                if (result != null)
-                {
-                    // Update if this is faster than current best
-                    if (!results.ContainsKey(distanceName) || result.TimeS < results[distanceName].TimeS)
-                    {
-                        results[distanceName] = result;
-                    }
-                }
-            }
+            await ReplaceWorkoutBestEffortsAsync(db, workout);
         }
 
-        // Save all best efforts to database
-        var bestEffortsToSave = results.Values.Select(r => new BestEffort
-        {
-            Distance = r.Distance,
-            DistanceM = r.DistanceM,
-            TimeS = r.TimeS,
-            WorkoutId = Guid.Parse(r.WorkoutId),
-            WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(r.WorkoutDate), DateTimeKind.Utc),
-            CalculatedAt = DateTime.UtcNow
-        }).ToList();
+        var results = await GetBestEffortsAsync(db);
 
-        db.BestEfforts.AddRange(bestEffortsToSave);
-        await db.SaveChangesAsync();
+        _logger.LogInformation("Completed recalculation of best efforts. Found {Count} best efforts", results.Count);
 
-        _logger.LogInformation("Completed recalculation of best efforts. Found {Count} best efforts", bestEffortsToSave.Count);
-
-        return results.Values.OrderBy(r => r.DistanceM).ToList();
+        return results;
     }
 
     /// <summary>
-    /// Update best efforts incrementally for a new workout.
-    /// Only checks distances where the workout is long enough and updates if faster.
+    /// Compute and store best efforts for a new or changed (e.g. cropped) workout.
     /// </summary>
     public async Task UpdateBestEffortsForNewWorkoutAsync(TempoDbContext db, Workout workout)
     {
-        _logger.LogDebug("Updating best efforts for new workout {WorkoutId} (distance: {DistanceM}m)", workout.Id, workout.DistanceM);
+        _logger.LogDebug("Updating best efforts for workout {WorkoutId} (distance: {DistanceM}m)", workout.Id, workout.DistanceM);
 
         // Load workout with route
         var workoutWithRoute = await db.Workouts
@@ -385,146 +485,7 @@ public class BestEffortService : IBestEffortService
             return;
         }
 
-        // Get all existing best efforts BEFORE making any changes to ensure we preserve them
-        // Use AsNoTracking() to avoid change tracking issues, then query fresh when needed
-        var allExistingBestEfforts = await db.BestEfforts
-            .AsNoTracking()
-            .Select(be => be.Distance)
-            .ToListAsync();
-
-        _logger.LogDebug("Found {Count} existing best efforts before update: {Distances}", 
-            allExistingBestEfforts.Count, 
-            string.Join(", ", allExistingBestEfforts));
-
-        var createdCount = 0;
-        var updatedCount = 0;
-        var preservedCount = 0;
-        var processedDistances = new List<string>();
-
-        foreach (var distanceEntry in StandardDistances)
-        {
-            var distanceName = distanceEntry.Key;
-            var targetDistanceM = distanceEntry.Value;
-
-            // Skip if workout is too short
-            if (workoutWithRoute.DistanceM < targetDistanceM)
-            {
-                _logger.LogDebug("Skipping {Distance} ({DistanceM}m) - workout too short ({WorkoutDistanceM}m)", 
-                    distanceName, targetDistanceM, workoutWithRoute.DistanceM);
-                continue;
-            }
-
-            processedDistances.Add(distanceName);
-
-            // Calculate best effort for this distance from the new workout
-            var newBestEffort = await CalculateBestEffortForWorkoutAsync(db, workoutWithRoute, distanceName, targetDistanceM);
-            if (newBestEffort == null)
-            {
-                _logger.LogDebug("Could not calculate best effort for {Distance} from workout {WorkoutId}", 
-                    distanceName, workoutWithRoute.Id);
-                continue;
-            }
-
-            // Query for existing best effort using AsNoTracking first to check existence,
-            // then load with tracking only if we need to update it
-            var existingBestEffort = await db.BestEfforts
-                .FirstOrDefaultAsync(be => be.Distance == distanceName);
-
-            if (existingBestEffort == null)
-            {
-                // No existing best effort, create new one
-                // Ensure StartedAt is UTC (defensive check)
-                var workoutDate = workoutWithRoute.StartedAt.Kind == DateTimeKind.Utc
-                    ? workoutWithRoute.StartedAt
-                    : DateTime.SpecifyKind(workoutWithRoute.StartedAt, DateTimeKind.Utc);
-                
-                var bestEffort = new BestEffort
-                {
-                    Distance = distanceName,
-                    DistanceM = targetDistanceM,
-                    TimeS = newBestEffort.TimeS,
-                    WorkoutId = workoutWithRoute.Id,
-                    WorkoutDate = workoutDate,
-                    CalculatedAt = DateTime.UtcNow
-                };
-                db.BestEfforts.Add(bestEffort);
-                createdCount++;
-                _logger.LogDebug("Created new best effort for {Distance}: {TimeS}s from workout {WorkoutId}", 
-                    distanceName, newBestEffort.TimeS, workoutWithRoute.Id);
-            }
-            else if (newBestEffort.TimeS < existingBestEffort.TimeS)
-            {
-                // New workout has faster time, update
-                // Ensure StartedAt is UTC (defensive check)
-                var workoutDate = workoutWithRoute.StartedAt.Kind == DateTimeKind.Utc
-                    ? workoutWithRoute.StartedAt
-                    : DateTime.SpecifyKind(workoutWithRoute.StartedAt, DateTimeKind.Utc);
-                
-                _logger.LogDebug("Updating best effort for {Distance}: {OldTimeS}s -> {NewTimeS}s (workout {WorkoutId})", 
-                    distanceName, existingBestEffort.TimeS, newBestEffort.TimeS, workoutWithRoute.Id);
-                
-                existingBestEffort.TimeS = newBestEffort.TimeS;
-                existingBestEffort.WorkoutId = workoutWithRoute.Id;
-                existingBestEffort.WorkoutDate = workoutDate;
-                existingBestEffort.CalculatedAt = DateTime.UtcNow;
-                updatedCount++;
-            }
-            else
-            {
-                // Existing best effort is faster, preserve it
-                preservedCount++;
-                _logger.LogDebug("Preserving existing best effort for {Distance}: {TimeS}s (new workout: {NewTimeS}s)", 
-                    distanceName, existingBestEffort.TimeS, newBestEffort.TimeS);
-            }
-        }
-
-        if (createdCount > 0 || updatedCount > 0)
-        {
-            await db.SaveChangesAsync();
-            _logger.LogInformation("Updated best efforts for workout {WorkoutId}: {Created} created, {Updated} updated, {Preserved} preserved", 
-                workout.Id, createdCount, updatedCount, preservedCount);
-        }
-        else
-        {
-            _logger.LogDebug("No best efforts updated for workout {WorkoutId} (all preserved or none qualified)", workout.Id);
-        }
-
-        // Verification: Ensure all existing best efforts for unprocessed distances are still present
-        // Only verify distances that actually existed before the update (intersect with allExistingBestEfforts)
-        var unprocessedDistances = StandardDistances.Keys.Except(processedDistances).ToList();
-        var unprocessedDistancesThatExisted = unprocessedDistances.Intersect(allExistingBestEfforts).ToList();
-        
-        if (unprocessedDistancesThatExisted.Any())
-        {
-            var verificationBestEfforts = await db.BestEfforts
-                .AsNoTracking()
-                .Where(be => unprocessedDistancesThatExisted.Contains(be.Distance))
-                .Select(be => be.Distance)
-                .ToListAsync();
-
-            var missingDistances = unprocessedDistancesThatExisted.Except(verificationBestEfforts).ToList();
-            if (missingDistances.Any())
-            {
-                _logger.LogWarning("Best efforts missing for unprocessed distances after update: {Distances}", 
-                    string.Join(", ", missingDistances));
-            }
-            else
-            {
-                _logger.LogDebug("Verification passed: All {Count} unprocessed best efforts are preserved", 
-                    verificationBestEfforts.Count);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Clear all stored best efforts from the database.
-    /// </summary>
-    public async Task ClearBestEffortsAsync(TempoDbContext db)
-    {
-        var allBestEfforts = await db.BestEfforts.ToListAsync();
-        db.BestEfforts.RemoveRange(allBestEfforts);
-        await db.SaveChangesAsync();
-        _logger.LogInformation("Cleared {Count} best efforts from database", allBestEfforts.Count);
+        await ReplaceWorkoutBestEffortsAsync(db, workoutWithRoute);
     }
 
     /// <summary>
@@ -537,6 +498,7 @@ public class BestEffortService : IBestEffortService
         public int TimeS { get; set; }
         public string WorkoutId { get; set; } = string.Empty;
         public string WorkoutDate { get; set; } = string.Empty;
+        public int? PreviousTimeS { get; set; }
     }
 }
 
