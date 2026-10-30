@@ -151,6 +151,12 @@ public class ImportJobWorker : BackgroundService
 
                 ApplyTempoProgressFromResult(completed, result, completed.Total);
 
+                // Restored workouts arrive without per-workout best efforts; fill them in the background.
+                if (result.Statistics.Workouts.Imported > 0)
+                {
+                    scope.ServiceProvider.GetRequiredService<BestEffortBackfillSignal>().Request();
+                }
+
                 if (await IsCancelRequestedAsync(db, jobId))
                 {
                     await FailJobAsync(db, completed, ImportJobErrorMessages.Cancelled, logger);
@@ -314,17 +320,17 @@ public class ImportJobWorker : BackgroundService
 
     private static int SumImported(ImportService.ImportStatistics s) =>
         s.Settings.Imported + s.Shoes.Imported + s.Workouts.Imported + s.Routes.Imported
-        + s.Splits.Imported + s.TimeSeries.Imported + s.Media.Imported + s.BestEfforts.Imported
+        + s.Splits.Imported + s.TimeSeries.Imported + s.Media.Imported
         + s.RawFiles.Imported;
 
     private static int SumSkipped(ImportService.ImportStatistics s) =>
         s.Settings.Skipped + s.Shoes.Skipped + s.Workouts.Skipped + s.Routes.Skipped
-        + s.Splits.Skipped + s.TimeSeries.Skipped + s.Media.Skipped + s.BestEfforts.Skipped
+        + s.Splits.Skipped + s.TimeSeries.Skipped + s.Media.Skipped
         + s.RawFiles.Skipped;
 
     private static int SumErrors(ImportService.ImportStatistics s) =>
         s.Settings.Errors + s.Shoes.Errors + s.Workouts.Errors + s.Routes.Errors
-        + s.Splits.Errors + s.TimeSeries.Errors + s.Media.Errors + s.BestEfforts.Errors
+        + s.Splits.Errors + s.TimeSeries.Errors + s.Media.Errors
         + s.RawFiles.Errors;
 
     private static ImportJobStatistics ToJobStatistics(ImportService.ImportStatistics s) => new()
@@ -336,7 +342,6 @@ public class ImportJobWorker : BackgroundService
         Splits = MapItem(s.Splits),
         TimeSeries = MapItem(s.TimeSeries),
         Media = MapItem(s.Media),
-        BestEfforts = MapItem(s.BestEfforts),
         RawFiles = MapItem(s.RawFiles)
     };
 

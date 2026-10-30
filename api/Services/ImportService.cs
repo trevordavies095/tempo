@@ -151,8 +151,6 @@ public class ImportService
             cancellationToken.ThrowIfCancellationRequested();
             await ImportTimeSeriesAsync(tempDir, manifest, result, progress);
             cancellationToken.ThrowIfCancellationRequested();
-            await ImportBestEffortsAsync(tempDir, manifest, result, progress);
-            cancellationToken.ThrowIfCancellationRequested();
             await ImportMediaFilesAsync(tempDir, manifest, result, progress);
             cancellationToken.ThrowIfCancellationRequested();
             await ImportRawFilesAsync(tempDir, manifest, result, importedWorkoutIds, progress);
@@ -302,8 +300,7 @@ public class ImportService
             dataFormat.Routes,
             dataFormat.Splits,
             dataFormat.TimeSeries,
-            dataFormat.MediaMetadata,
-            dataFormat.BestEfforts
+            dataFormat.MediaMetadata
         };
 
         foreach (var file in requiredFiles)
@@ -1222,159 +1219,6 @@ public class ImportService
         }
     }
 
-    private async Task ImportBestEffortsAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
-    {
-        var dataFormat = RequireDataFormat(manifest);
-        if (string.IsNullOrEmpty(dataFormat.BestEfforts))
-        {
-            result.Warnings.Add("Best efforts file path is missing in export manifest");
-            return;
-        }
-
-        var bestEffortsPath = ValidateManifestPath(tempDir, dataFormat.BestEfforts);
-        if (!File.Exists(bestEffortsPath))
-        {
-            result.Warnings.Add("Best efforts file not found in export");
-            return;
-        }
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(bestEffortsPath);
-            var bestEfforts = JsonSerializer.Deserialize<List<BestEffort>>(json, JsonOptions) ?? new List<BestEffort>();
-
-            // Track best efforts we've already processed in this batch to avoid duplicates within the same import
-            var processedBestEffortIds = new HashSet<Guid>();
-            var processedDistances = new HashSet<string>();
-            // Track best efforts added in this batch - only update statistics after successful save
-            var bestEffortsImportedCount = 0;
-
-            foreach (var bestEffort in bestEfforts)
-            {
-                progress.CancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                // Skip null elements (can occur when deserializing JSON arrays)
-                if (bestEffort == null)
-                {
-                    result.Statistics.BestEfforts.Errors++;
-                    result.Errors.Add("Null best effort element found in export, skipping");
-                    continue;
-                }
-
-                try
-                {
-                    // Validate GUID
-                    if (bestEffort.Id == Guid.Empty)
-                    {
-                        result.Statistics.BestEfforts.Errors++;
-                        result.Errors.Add($"Invalid GUID for best effort {bestEffort.Distance}");
-                        continue;
-                    }
-
-                    // Check if we've already processed this best effort in the current batch
-                    if (processedBestEffortIds.Contains(bestEffort.Id))
-                    {
-                        result.Statistics.BestEfforts.Skipped++;
-                        result.Warnings.Add($"Duplicate best effort in export (same GUID): {bestEffort.Distance}");
-                        continue;
-                    }
-
-                    // Check if we've already processed this distance in the current batch
-                    if (processedDistances.Contains(bestEffort.Distance))
-                    {
-                        result.Statistics.BestEfforts.Skipped++;
-                        result.Warnings.Add($"Duplicate best effort in export (same Distance): {bestEffort.Distance}");
-                        continue;
-                    }
-
-                    // Validate workout exists
-                    var workoutExists = await _db.Workouts.AnyAsync(w => w.Id == bestEffort.WorkoutId);
-                    if (!workoutExists)
-                    {
-                        result.Statistics.BestEfforts.Skipped++;
-                        result.Warnings.Add($"Best effort references non-existent workout {bestEffort.WorkoutId}, skipping");
-                        continue;
-                    }
-
-                    // Check for duplicate by Distance (unique constraint) in database
-                    var existing = await _db.BestEfforts
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(b => b.Distance == bestEffort.Distance);
-
-                    if (existing != null)
-                    {
-                        result.Statistics.BestEfforts.Skipped++;
-                        result.Warnings.Add($"Best effort for {bestEffort.Distance} already exists, skipping");
-                        continue;
-                    }
-
-                    // Check if GUID already exists in database
-                    var existingById = await _db.BestEfforts
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(b => b.Id == bestEffort.Id);
-                    if (existingById != null)
-                    {
-                        result.Statistics.BestEfforts.Skipped++;
-                        result.Warnings.Add($"Best effort with GUID {bestEffort.Id} already exists, skipping");
-                        continue;
-                    }
-
-                    // Clear navigation property
-                    bestEffort.Workout = null!;
-
-                    _db.BestEfforts.Add(bestEffort);
-                    processedBestEffortIds.Add(bestEffort.Id);
-                    processedDistances.Add(bestEffort.Distance);
-                    bestEffortsImportedCount++;
-                }
-                catch (Exception ex)
-                {
-                    result.Statistics.BestEfforts.Errors++;
-                    var bestEffortInfo = bestEffort != null 
-                        ? $"ID: {bestEffort.Id}" 
-                        : "null best effort";
-                    result.Errors.Add($"Error importing best effort {bestEffortInfo}: {ex.Message}");
-                    _logger.LogError(ex, "Error importing best effort {BestEffortId}", bestEffort?.Id);
-                }
-            
-                }
-                finally
-                {
-                    await progress.ReportAsync(result);
-                }
-            }
-
-            try
-            {
-                await _db.SaveChangesAsync();
-                // Only update statistics after successful save
-                result.Statistics.BestEfforts.Imported += bestEffortsImportedCount;
-                await progress.ReportAsync(result);
-                _logger.LogInformation("Imported {Count} best efforts", bestEffortsImportedCount);
-            }
-            catch (Exception saveEx)
-            {
-                // Clear change tracker to prevent failed entities from being saved again in subsequent import methods
-                _db.ChangeTracker.Clear();
-                result.Statistics.BestEfforts.Errors++;
-                result.Errors.Add($"Error saving best efforts to database: {saveEx.Message}");
-                _logger.LogError(saveEx, "Error saving best efforts to database");
-                throw; // Re-throw to be caught by outer catch block
-            }
-        }
-        catch (Exception ex)
-        {
-            // Only add "reading" error if it's not already a save error (which was handled in inner catch)
-            // SaveChangesAsync throws DbUpdateException or DbUpdateConcurrencyException
-            if (ex is not DbUpdateException && ex is not DbUpdateConcurrencyException)
-            {
-                result.Errors.Add($"Error reading best efforts file: {ex.Message}");
-                _logger.LogError(ex, "Error reading best efforts file");
-            }
-        }
-    }
-
     private async Task ImportMediaFilesAsync(string tempDir, ExportManifest manifest, ImportResult result, ProgressGate progress)
     {
         var dataFormat = RequireDataFormat(manifest);
@@ -1686,7 +1530,7 @@ public class ImportService
         var fromManifest = stats == null
             ? 0
             : stats.Settings + stats.Shoes + stats.Workouts + stats.Routes
-              + stats.Splits + stats.TimeSeries + stats.MediaFiles + stats.BestEfforts;
+              + stats.Splits + stats.TimeSeries + stats.MediaFiles;
         return fromManifest + CountRawFilesOnDisk(tempDir);
     }
 
@@ -1722,7 +1566,6 @@ public class ImportService
             + CountItem(statistics.Splits)
             + CountItem(statistics.TimeSeries)
             + CountItem(statistics.Media)
-            + CountItem(statistics.BestEfforts)
             + CountItem(statistics.RawFiles);
     }
 
@@ -1781,7 +1624,6 @@ public class ImportService
         public int Splits { get; set; }
         public int TimeSeries { get; set; }
         public int MediaFiles { get; set; }
-        public int BestEfforts { get; set; }
         public long TotalSizeBytes { get; set; }
     }
 
@@ -1794,7 +1636,6 @@ public class ImportService
         public string Splits { get; set; } = string.Empty;
         public string TimeSeries { get; set; } = string.Empty;
         public string MediaMetadata { get; set; } = string.Empty;
-        public string BestEfforts { get; set; } = string.Empty;
     }
 
     private class RouteImportData
@@ -1823,7 +1664,6 @@ public class ImportService
         public ItemStatistics Splits { get; set; } = new();
         public ItemStatistics TimeSeries { get; set; } = new();
         public ItemStatistics Media { get; set; } = new();
-        public ItemStatistics BestEfforts { get; set; } = new();
         public ItemStatistics RawFiles { get; set; } = new();
     }
 

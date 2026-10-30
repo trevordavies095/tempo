@@ -17,7 +17,6 @@ public class TempoDbContext : DbContext
     public DbSet<UserSettings> UserSettings { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<ApiKey> ApiKeys { get; set; }
-    public DbSet<BestEffort> BestEfforts { get; set; }
     public DbSet<WorkoutBestEffort> WorkoutBestEfforts { get; set; }
     public DbSet<Shoe> Shoes { get; set; }
     public DbSet<ImportJob> ImportJobs { get; set; }
@@ -133,20 +132,6 @@ public class TempoDbContext : DbContext
             // TryAuthenticateUserAsync: WHERE KeyPrefix = @p AND RevokedAt IS NULL
             entity.HasIndex(e => e.KeyPrefix)
                 .HasFilter("\"RevokedAt\" IS NULL");
-        });
-
-        modelBuilder.Entity<BestEffort>(entity =>
-        {
-            entity.HasOne(e => e.Workout)
-                .WithMany()
-                .HasForeignKey(e => e.WorkoutId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            // Unique constraint: one best effort per distance
-            entity.HasIndex(e => e.Distance).IsUnique();
-            
-            // Index for efficient queries
-            entity.HasIndex(e => e.DistanceM);
         });
 
         modelBuilder.Entity<WorkoutBestEffort>(entity =>

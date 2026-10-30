@@ -195,6 +195,7 @@ builder.Services.AddScoped<DeviceLapBackfillService>();
 builder.Services.AddHostedService<DeviceLapBackfillWorker>();
 builder.Services.AddScoped<ZoneSecondsBackfillService>();
 builder.Services.AddHostedService<ZoneSecondsBackfillWorker>();
+builder.Services.AddSingleton<BestEffortBackfillSignal>();
 builder.Services.AddScoped<BestEffortBackfillService>();
 builder.Services.AddHostedService<BestEffortBackfillWorker>();
 builder.Services.AddScoped<SplitRecalculationService>();

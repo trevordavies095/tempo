@@ -465,7 +465,6 @@ export interface ImportJobStatistics {
   splits: { imported: number; skipped: number; errors: number };
   timeSeries: { imported: number; skipped: number; errors: number };
   media: { imported: number; skipped: number; errors: number };
-  bestEfforts: { imported: number; skipped: number; errors: number };
   rawFiles: { imported: number; skipped: number; errors: number };
 }
 
@@ -528,7 +527,6 @@ export function importJobToExportImportResponse(job: ImportJob): ExportImportRes
       splits: stats?.splits ?? emptyItemStats(),
       timeSeries: stats?.timeSeries ?? emptyItemStats(),
       media: stats?.media ?? emptyItemStats(),
-      bestEfforts: stats?.bestEfforts ?? emptyItemStats(),
       rawFiles: stats?.rawFiles ?? emptyItemStats(),
     },
     warnings: job.warnings ?? [],
@@ -566,7 +564,6 @@ export interface ExportImportResponse {
     splits: { imported: number; skipped: number; errors: number };
     timeSeries: { imported: number; skipped: number; errors: number };
     media: { imported: number; skipped: number; errors: number };
-    bestEfforts: { imported: number; skipped: number; errors: number };
     rawFiles: { imported: number; skipped: number; errors: number };
   };
   warnings: string[];

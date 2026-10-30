@@ -1643,47 +1643,31 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
     }
 
     [Fact]
-    public async Task DeleteWorkout_DeletesBestEfforts_WhenWorkoutHasBestEfforts()
+    public async Task DeleteWorkout_RecordHolder_PreviousBestReturns()
     {
-        // Arrange
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
-        
-        Workout workout;
-        BestEffort bestEffort;
+
+        Guid fasterId;
+        Guid slowerId;
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            workout = await TestDataSeeder.SeedWorkoutAsync(db, distanceM: 5000);
-            await TestDataSeeder.SeedWorkoutWithRouteAsync(db, workout);
-            
-            // Create best effort referencing this workout
-            bestEffort = new BestEffort
-            {
-                Distance = "5K",
-                DistanceM = 5000,
-                TimeS = 1200,
-                WorkoutId = workout.Id,
-                WorkoutDate = workout.StartedAt,
-                CalculatedAt = DateTime.UtcNow
-            };
-            db.BestEfforts.Add(bestEffort);
-            await db.SaveChangesAsync();
+            var slower = await TestDataSeeder.SeedWorkoutCompleteAsync(db, distanceM: 5000, durationS: 1500);
+            var faster = await TestDataSeeder.SeedWorkoutCompleteAsync(db, distanceM: 5000, durationS: 1200);
+            await scope.ServiceProvider.GetRequiredService<BestEffortService>().CalculateAllBestEffortsAsync(db);
+            fasterId = faster.Id;
+            slowerId = slower.Id;
         }
 
-        // Act
-        var response = await client.DeleteAsync($"/workouts/{workout.Id}");
-
-        // Assert
+        var response = await client.DeleteAsync($"/workouts/{fasterId}");
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        
-        // Verify best effort deleted (cascade delete)
-        using (var scope = _factory.Server.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var remainingBestEffort = await db.BestEfforts.FindAsync(bestEffort.Id);
-            remainingBestEffort.Should().BeNull();
-        }
+
+        var bestEfforts = await client.GetFromJsonAsync<JsonElement>("/stats/best-efforts");
+        var fiveK = bestEfforts.GetProperty("distances").EnumerateArray()
+            .Single(d => d.GetProperty("distance").GetString() == "5K");
+        fiveK.GetProperty("timeS").GetInt32().Should().Be(1500);
+        fiveK.GetProperty("workoutId").GetString().Should().Be(slowerId.ToString());
     }
 
     [Fact]

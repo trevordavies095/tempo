@@ -67,44 +67,6 @@ namespace Tempo.Api.Migrations
                     b.ToTable("ApiKeys");
                 });
 
-            modelBuilder.Entity("Tempo.Api.Models.BestEffort", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CalculatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Distance")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<double>("DistanceM")
-                        .HasColumnType("double precision");
-
-                    b.Property<int>("TimeS")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("WorkoutDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("WorkoutId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Distance")
-                        .IsUnique();
-
-                    b.HasIndex("DistanceM");
-
-                    b.HasIndex("WorkoutId");
-
-                    b.ToTable("BestEfforts");
-                });
-
             modelBuilder.Entity("Tempo.Api.Models.ImportJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -794,17 +756,6 @@ namespace Tempo.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Tempo.Api.Models.BestEffort", b =>
-                {
-                    b.HasOne("Tempo.Api.Models.Workout", "Workout")
-                        .WithMany()
-                        .HasForeignKey("WorkoutId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Workout");
                 });
 
             modelBuilder.Entity("Tempo.Api.Models.UserSettings", b =>

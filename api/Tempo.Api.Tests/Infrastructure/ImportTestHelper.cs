@@ -34,11 +34,9 @@ public static class ImportTestHelper
         int? expectedSplitsImported = null,
         int? expectedTimeSeriesImported = null,
         int? expectedMediaImported = null,
-        int? expectedBestEffortsImported = null,
         int? expectedRawFilesImported = null,
         int? expectedShoesSkipped = null,
         int? expectedWorkoutsSkipped = null,
-        int? expectedBestEffortsSkipped = null,
         int? expectedErrors = null)
     {
         result.Should().NotBeNull();
@@ -88,11 +86,6 @@ public static class ImportTestHelper
             result.Statistics.Media.Imported.Should().Be(expectedMediaImported.Value);
         }
 
-        if (expectedBestEffortsImported.HasValue)
-        {
-            result.Statistics.BestEfforts.Imported.Should().Be(expectedBestEffortsImported.Value);
-        }
-
         if (expectedRawFilesImported.HasValue)
         {
             result.Statistics.RawFiles.Imported.Should().Be(expectedRawFilesImported.Value);
@@ -106,11 +99,6 @@ public static class ImportTestHelper
         if (expectedWorkoutsSkipped.HasValue)
         {
             result.Statistics.Workouts.Skipped.Should().Be(expectedWorkoutsSkipped.Value);
-        }
-
-        if (expectedBestEffortsSkipped.HasValue)
-        {
-            result.Statistics.BestEfforts.Skipped.Should().Be(expectedBestEffortsSkipped.Value);
         }
 
         if (expectedErrors.HasValue)
@@ -135,7 +123,6 @@ public static class ImportTestHelper
         comparison.SplitsCount = await importedDb.WorkoutSplits.CountAsync();
         comparison.TimeSeriesCount = await importedDb.WorkoutTimeSeries.CountAsync();
         comparison.MediaCount = await importedDb.WorkoutMedia.CountAsync();
-        comparison.BestEffortsCount = await importedDb.BestEfforts.CountAsync();
         comparison.SettingsCount = await importedDb.UserSettings.CountAsync();
 
         // Compare totals
@@ -149,7 +136,6 @@ public static class ImportTestHelper
         var originalSplitsCount = await originalDb.WorkoutSplits.CountAsync();
         var originalTimeSeriesCount = await originalDb.WorkoutTimeSeries.CountAsync();
         var originalMediaCount = await originalDb.WorkoutMedia.CountAsync();
-        var originalBestEffortsCount = await originalDb.BestEfforts.CountAsync();
         var originalSettingsCount = await originalDb.UserSettings.CountAsync();
         var originalTotalDistanceM = await originalDb.Workouts.SumAsync(w => w.DistanceM);
         var originalTotalDurationS = await originalDb.Workouts.SumAsync(w => w.DurationS);
@@ -160,7 +146,6 @@ public static class ImportTestHelper
         comparison.OriginalSplitsCount = originalSplitsCount;
         comparison.OriginalTimeSeriesCount = originalTimeSeriesCount;
         comparison.OriginalMediaCount = originalMediaCount;
-        comparison.OriginalBestEffortsCount = originalBestEffortsCount;
         comparison.OriginalSettingsCount = originalSettingsCount;
         comparison.OriginalTotalDistanceM = originalTotalDistanceM;
         comparison.OriginalTotalDurationS = originalTotalDurationS;
@@ -173,10 +158,6 @@ public static class ImportTestHelper
         var originalWorkoutIds = await originalDb.Workouts.Select(w => w.Id).ToListAsync();
         var importedWorkoutIds = await importedDb.Workouts.Select(w => w.Id).ToListAsync();
         comparison.WorkoutGuidsPreserved = originalWorkoutIds.All(id => importedWorkoutIds.Contains(id));
-
-        var originalBestEffortIds = await originalDb.BestEfforts.Select(be => be.Id).ToListAsync();
-        var importedBestEffortIds = await importedDb.BestEfforts.Select(be => be.Id).ToListAsync();
-        comparison.BestEffortGuidsPreserved = originalBestEffortIds.All(id => importedBestEffortIds.Contains(id));
 
         // Compare timestamps (with tolerance for database precision)
         var originalWorkouts = await originalDb.Workouts
@@ -360,7 +341,6 @@ public static class ImportTestHelper
         public int SplitsCount { get; set; }
         public int TimeSeriesCount { get; set; }
         public int MediaCount { get; set; }
-        public int BestEffortsCount { get; set; }
         public int SettingsCount { get; set; }
         public double TotalDistanceM { get; set; }
         public int TotalDurationS { get; set; }
@@ -371,14 +351,13 @@ public static class ImportTestHelper
         public int OriginalSplitsCount { get; set; }
         public int OriginalTimeSeriesCount { get; set; }
         public int OriginalMediaCount { get; set; }
-        public int OriginalBestEffortsCount { get; set; }
         public int OriginalSettingsCount { get; set; }
         public double OriginalTotalDistanceM { get; set; }
         public int OriginalTotalDurationS { get; set; }
 
         public bool ShoeGuidsPreserved { get; set; }
         public bool WorkoutGuidsPreserved { get; set; }
-        public bool BestEffortGuidsPreserved { get; set; }
+        public bool BestEffortsMatch { get; set; }
         public bool TimestampsPreserved { get; set; }
         public bool RelationshipsPreserved { get; set; }
     }

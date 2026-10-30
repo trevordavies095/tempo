@@ -166,13 +166,7 @@ public class ExportService
             await WriteJsonEntryAsync(mediaMetadataEntry, mediaMetadata, jsonOptions);
             statistics.MediaFiles = mediaMetadata.Count;
 
-            // 8. Export best efforts
-            var bestEfforts = await GetBestEffortsAsync();
-            var bestEffortsEntry = archive.CreateEntry("data/best-efforts.json");
-            await WriteJsonEntryAsync(bestEffortsEntry, bestEfforts, jsonOptions);
-            statistics.BestEfforts = bestEfforts.Count;
-
-            // 9. Export binary files (raw workout files and media files)
+            // 8. Export binary files (raw workout files and media files)
             long totalSizeBytes = 0;
             foreach (var workout in workouts)
             {
@@ -221,12 +215,12 @@ public class ExportService
 
             statistics.TotalSizeBytes = totalSizeBytes;
 
-            // 10. Create manifest
+            // 9. Create manifest
             var manifest = CreateManifest(exportDate, statistics, settings != null);
             var manifestEntry = archive.CreateEntry("manifest.json");
             await WriteJsonEntryAsync(manifestEntry, manifest, jsonOptions);
 
-            // 11. Create README
+            // 10. Create README
             var readmeEntry = archive.CreateEntry("README.txt");
             using (var entryStream = new StreamWriter(readmeEntry.Open(), Encoding.UTF8))
             {
@@ -300,14 +294,6 @@ public class ExportService
             .ToListAsync();
     }
 
-    private async Task<List<BestEffort>> GetBestEffortsAsync()
-    {
-        return await _db.BestEfforts
-            .AsNoTracking()
-            .OrderBy(b => b.DistanceM)
-            .ToListAsync();
-    }
-
     private async Task WriteJsonEntryAsync<T>(ZipArchiveEntry entry, T data, JsonSerializerOptions options)
     {
         using (var entryStream = entry.Open())
@@ -361,8 +347,7 @@ public class ExportService
                 Routes = "data/routes.json",
                 Splits = "data/splits.json",
                 TimeSeries = "data/time-series.json",
-                MediaMetadata = "data/media-metadata.json",
-                BestEfforts = "data/best-efforts.json"
+                MediaMetadata = "data/media-metadata.json"
             }
         };
     }
@@ -385,7 +370,6 @@ Structure:
   - splits.json          All workout split records
   - time-series.json     All time series data points
   - media-metadata.json  Media file metadata
-  - best-efforts.json    Best effort records
 - workouts/              Binary files organized by workout
   - {workoutId}/
     - raw/               Original workout files (GPX, FIT, CSV)
@@ -421,7 +405,6 @@ For more information, visit: https://github.com/trevordavies095/tempo
         public int Splits { get; set; }
         public int TimeSeries { get; set; }
         public int MediaFiles { get; set; }
-        public int BestEfforts { get; set; }
         public long TotalSizeBytes { get; set; }
     }
 
@@ -434,7 +417,6 @@ For more information, visit: https://github.com/trevordavies095/tempo
         public string Splits { get; set; } = string.Empty;
         public string TimeSeries { get; set; } = string.Empty;
         public string MediaMetadata { get; set; } = string.Empty;
-        public string BestEfforts { get; set; } = string.Empty;
     }
 }
 

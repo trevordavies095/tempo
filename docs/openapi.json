@@ -1079,8 +1079,26 @@
           "Stats"
         ],
         "summary": "Get best efforts for all standard distances",
-        "description": "Returns the fastest time achieved for each standard running distance (400m through Marathon).\nBest efforts are calculated from any segment within any workout, not just workouts of that exact distance.",
+        "description": "Returns the fastest time achieved for each standard running distance (400m through Marathon).\nBest efforts are calculated from any segment within any workout, not just workouts of that exact distance.\nWith from/to, only workouts started within the range count; distances with no effort in range are omitted.",
         "operationId": "GetBestEfforts",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Optional first workout date to include (yyyy-MM-dd, UTC, inclusive)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Optional last workout date to include (yyyy-MM-dd, UTC, inclusive)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -1088,6 +1106,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BestEffortsDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -3124,9 +3152,6 @@
             "$ref": "#/components/schemas/ImportJobItemStatistics"
           },
           "media": {
-            "$ref": "#/components/schemas/ImportJobItemStatistics"
-          },
-          "bestEfforts": {
             "$ref": "#/components/schemas/ImportJobItemStatistics"
           },
           "rawFiles": {

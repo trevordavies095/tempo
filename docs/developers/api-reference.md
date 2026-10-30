@@ -326,8 +326,7 @@ tempo-export-{timestamp}.zip
 │   ├── routes.json
 │   ├── splits.json
 │   ├── time-series.json
-│   ├── media-metadata.json
-│   └── best-efforts.json
+│   └── media-metadata.json
 ├── workouts/              # Binary files organized by workout
 │   ├── {workoutId}/
 │   │   ├── raw/          # Original workout files
@@ -353,8 +352,7 @@ tempo-export-{timestamp}.zip
     "settings": 1,
     "routes": 150,
     "splits": 1500,
-    "timeSeries": 45000,
-    "bestEfforts": 10
+    "timeSeries": 45000
   },
   "dataFormat": {
     "settings": "data/settings.json",
@@ -363,8 +361,7 @@ tempo-export-{timestamp}.zip
     "routes": "data/routes.json",
     "splits": "data/splits.json",
     "timeSeries": "data/time-series.json",
-    "mediaMetadata": "data/media-metadata.json",
-    "bestEfforts": "data/best-efforts.json"
+    "mediaMetadata": "data/media-metadata.json"
   }
 }
 ```
@@ -605,7 +602,13 @@ Get your fastest times for standard distances:
 GET /stats/best-efforts
 ```
 
-Returns your best effort times for all supported distances (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, Half-Marathon, 30K, Marathon). Best efforts are calculated from any segment within any workout, not just workouts of that exact distance.
+Returns your best effort times for all supported distances (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, Half-Marathon, 30K, Marathon). Best efforts are calculated from any segment within any workout, not just workouts of that exact distance. When two workouts tie, the earlier one is returned.
+
+Limit results to a date range (for example the current training block) with optional `from` and `to` query parameters (`yyyy-MM-dd`, inclusive, compared against the workout's UTC start date). Distances with no effort in the range are omitted. A malformed date, or `from` after `to`, returns `400` with `{ "error": "…" }`.
+
+```http
+GET /stats/best-efforts?from=2026-08-01&to=2026-10-31
+```
 
 Response format:
 ```json
@@ -616,7 +619,7 @@ Response format:
       "distanceM": 5000,
       "timeS": 1200,
       "workoutId": "guid-here",
-      "workoutDate": "2025-01-15T10:30:00Z"
+      "workoutDate": "2025-01-15"
     }
   ]
 }
@@ -630,7 +633,7 @@ Recalculate all best efforts across all workouts:
 POST /stats/best-efforts/recalculate
 ```
 
-Performs a full recalculation of all best efforts. This may take some time depending on the number of workouts and time series data.
+Recomputes every workout's best efforts. This may take some time depending on the number of workouts and time series data.
 
 Response format:
 ```json

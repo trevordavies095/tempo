@@ -51,7 +51,7 @@ public class BestEffortBackfillServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RunAsync_FillsRowsForUnmarkedWorkouts_LeavesRecords_AndIsIdempotent()
+    public async Task RunAsync_FillsRowsForUnmarkedWorkouts_AndIsIdempotent()
     {
         var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(_db, distanceM: 5000, durationS: 1200);
         _db.ChangeTracker.Clear();
@@ -66,7 +66,6 @@ public class BestEffortBackfillServiceTests : IAsyncLifetime
         rows.Single(r => r.Distance == "5K").TimeS.Should().Be(1200);
         (await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workout.Id))
             .BestEffortsComputedAt.Should().NotBeNull();
-        (await _db.BestEfforts.AnyAsync()).Should().BeFalse();
 
         _logger.Messages.Clear();
         var second = await _service.RunAsync();

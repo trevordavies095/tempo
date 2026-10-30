@@ -248,17 +248,6 @@ export function TempoExportImport(props: TempoExportImportProps = {}) {
                     </span>
                   )}
                 </div>
-                <div>
-                  <span className="font-medium">Best Efforts:</span>{' '}
-                  <span className="text-muted">
-                    {importResult.statistics.bestEfforts.imported} imported
-                  </span>
-                  {importResult.statistics.bestEfforts.skipped > 0 && (
-                    <span className="text-muted ml-1">
-                      ({importResult.statistics.bestEfforts.skipped} skipped)
-                    </span>
-                  )}
-                </div>
               </div>
 
               {importResult.warnings && importResult.warnings.length > 0 && (
