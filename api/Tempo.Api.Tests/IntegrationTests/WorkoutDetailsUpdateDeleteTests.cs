@@ -1124,6 +1124,43 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         error!.Error.Should().Contain("Invalid runType");
     }
 
+    [Theory]
+    [InlineData("threshold")]
+    [InlineData("Tempo")]
+    public async Task UpdateWorkout_Returns400_ForNearMissRunTypes(string runType)
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db);
+            workout.RunType = RunTypes.EasyRun;
+            await db.SaveChangesAsync();
+        }
+
+        var updateRequest = new { runType };
+        var content = new StringContent(JsonSerializer.Serialize(updateRequest), Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PatchAsync($"/workouts/{workout.Id}", content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        error!.Error.Should().Contain("Invalid runType");
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var stored = await db.Workouts.AsNoTracking().FirstAsync(w => w.Id == workout.Id);
+            stored.RunType.Should().Be(RunTypes.EasyRun);
+        }
+    }
+
     [Fact]
     public async Task UpdateWorkout_AcceptsValidRunTypes()
     {

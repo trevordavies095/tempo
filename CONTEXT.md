@@ -95,7 +95,7 @@ Hard-gated first-run wizard on the command center after registration (optional T
 _Avoid_: setup wizard as UserSettings, re-run setup from Settings
 
 **Run type**:
-Classification of a Workout (Easy, Workout, Long Run, Race, and the same set the product already uses).
+Classification of a Workout, one of: Easy Run, Recovery, Walk-Run, Long Run, Workout, Threshold, Intervals, Hills, Fartlek, Race. Threshold covers tempo/threshold sessions (named to avoid clashing with the product); Workout is the generic quality session. Imports default to Easy Run, so consumers read it as "untagged or easy".
 _Avoid_: tag, category (when meaning run type)
 
 **Highlight**:

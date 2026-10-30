@@ -1464,8 +1464,14 @@
             "schema": {
               "enum": [
                 "Easy Run",
+                "Recovery",
+                "Walk-Run",
                 "Long Run",
                 "Workout",
+                "Threshold",
+                "Intervals",
+                "Hills",
+                "Fartlek",
                 "Race"
               ],
               "type": "string"
@@ -3552,8 +3558,14 @@
           "runType": {
             "enum": [
               "Easy Run",
+              "Recovery",
+              "Walk-Run",
               "Long Run",
               "Workout",
+              "Threshold",
+              "Intervals",
+              "Hills",
+              "Fartlek",
               "Race"
             ],
             "type": "string",
