@@ -1,13 +1,11 @@
 import { type SortColumn } from '@/hooks/useActivitiesFilters';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { RUN_TYPES } from '@/lib/runTypes';
 
-const RUN_TYPES = [
+const RUN_TYPE_OPTIONS = [
   { value: '', label: 'All Run Types' },
-  { value: 'Race', label: 'Race' },
-  { value: 'Workout', label: 'Workout' },
-  { value: 'Long Run', label: 'Long Run' },
-  { value: 'Easy Run', label: 'Easy Run' },
+  ...RUN_TYPES.map((type) => ({ value: type, label: type })),
 ];
 
 const fieldClass =
@@ -65,7 +63,7 @@ export default function ActivitiesFilters({
             onChange={(e) => onRunTypeChange(e.target.value)}
             className="w-full px-4 py-2 border border-border rounded-tempo bg-raised text-ink focus:outline-none focus:ring-2 focus:ring-volt"
           >
-            {RUN_TYPES.map((type) => (
+            {RUN_TYPE_OPTIONS.map((type) => (
               <option key={type.value} value={type.value}>
                 {type.label}
               </option>

@@ -1460,8 +1460,14 @@
           {
             "name": "runType",
             "in": "query",
-            "description": "Filter by run type (e.g., \"Race\", \"Workout\", \"Long Run\", \"Easy Run\")",
+            "description": "Filter by run type (exact match; one of the values in the runType enum)",
             "schema": {
+              "enum": [
+                "Easy Run",
+                "Long Run",
+                "Workout",
+                "Race"
+              ],
               "type": "string"
             }
           },
@@ -1995,7 +2001,7 @@
           "Workouts"
         ],
         "summary": "Update workout",
-        "description": "Updates workout RunType, Notes, Name, ShoeId, and/or Rpe. All fields are optional - only provided fields are updated.\nRunType must be one of: \"Race\", \"Workout\", \"Long Run\", \"Easy Run\", or null.\nName must be 200 characters or less.\nRpe must be a whole number from 1 to 10, or null to clear.",
+        "description": "Updates workout RunType, Notes, Name, ShoeId, and/or Rpe. All fields are optional - only provided fields are updated.\nRunType must be one of the values in the runType enum, or null.\nName must be 200 characters or less.\nRpe must be a whole number from 1 to 10, or null to clear.",
         "operationId": "UpdateWorkout",
         "parameters": [
           {
@@ -2009,6 +2015,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -3529,6 +3545,46 @@
         },
         "additionalProperties": false,
         "description": "Request model for updating unit preference"
+      },
+      "UpdateWorkoutRequest": {
+        "type": "object",
+        "properties": {
+          "runType": {
+            "enum": [
+              "Easy Run",
+              "Long Run",
+              "Workout",
+              "Race"
+            ],
+            "type": "string",
+            "description": "Run type, or null to clear.",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "description": "Free-text notes, or null to clear.",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "description": "Workout name (200 characters or less), or null to clear.",
+            "nullable": true
+          },
+          "shoeId": {
+            "type": "string",
+            "description": "Shoe to assign (must exist and not be retired), or null to clear.",
+            "format": "uuid",
+            "nullable": true
+          },
+          "rpe": {
+            "type": "integer",
+            "description": "Rate of perceived exertion, a whole number from 1 to 10, or null to clear.",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Body of `PATCH /workouts/{id}`. Every field is optional: only fields present in the body are updated,\nand an explicit `null` clears the field. Documentation shape only; the handler reads the raw JSON so it\ncan tell an absent field from `null`."
       },
       "VersionInfo": {
         "required": [
