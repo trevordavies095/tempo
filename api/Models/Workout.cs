@@ -72,6 +72,30 @@ public class Workout
     // Relative Effort (calculated from heart rate zones)
     public int? RelativeEffort { get; set; }
 
+    // Time in HR zones 1–5 (whole seconds) from the HR series and the zones in effect when last computed.
+    // Null when the workout has no HR series. Derived; omitted from Tempo ZIP export.
+    [JsonIgnore]
+    public int? ZoneSecondsZ1 { get; set; }
+
+    [JsonIgnore]
+    public int? ZoneSecondsZ2 { get; set; }
+
+    [JsonIgnore]
+    public int? ZoneSecondsZ3 { get; set; }
+
+    [JsonIgnore]
+    public int? ZoneSecondsZ4 { get; set; }
+
+    [JsonIgnore]
+    public int? ZoneSecondsZ5 { get; set; }
+
+    /// <summary>
+    /// When zone seconds were last computed (stamped even when the result is null). Null means not yet
+    /// computed; the startup zone-seconds backfill picks those up.
+    /// </summary>
+    [JsonIgnore]
+    public DateTime? ZoneSecondsComputedAt { get; set; }
+
     /// <summary>
     /// Rate of Perceived Exertion (1–10). Athlete-set on overview, or filled from FIT
     /// session <c>workout_rpe</c> (Borg CR10 × 10) when null. Not Feel; not relative effort.

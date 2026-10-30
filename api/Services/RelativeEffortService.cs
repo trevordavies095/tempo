@@ -11,22 +11,52 @@ public class RelativeEffortService : IRelativeEffortService
     private static readonly int[] ZoneWeights = { 1, 2, 3, 4, 5 };
 
     /// <summary>
-    /// Calculate Relative Effort for a workout using heart rate zones.
-    /// Attempts to use WorkoutTimeSeries data first, falls back to raw data or average heart rate approximation.
+    /// Compute Relative Effort and time in zones from one HR series read. Writes
+    /// <see cref="Workout.ZoneSecondsZ1"/>..<see cref="Workout.ZoneSecondsZ5"/> (null without an HR series)
+    /// and stamps <see cref="Workout.ZoneSecondsComputedAt"/>; returns Relative Effort for the caller to assign.
+    /// Leaves the workout untouched when zones are invalid. Caller saves.
     /// </summary>
-    public int? CalculateRelativeEffort(Workout workout, List<HeartRateZone> zones, TempoDbContext db)
+    public int? RecalculateHeartRateMetrics(Workout workout, List<HeartRateZone> zones, TempoDbContext db)
     {
         if (zones == null || zones.Count != 5)
         {
             return null; // Invalid zones
         }
 
-        // Try to use time series data first (most accurate)
-        var timeSeries = db.WorkoutTimeSeries
-            .Where(ts => ts.WorkoutId == workout.Id && ts.HeartRateBpm.HasValue)
+        var timeSeries = LoadHeartRateSeries(workout.Id, db);
+        var timeInZones = TryGetTimeInZones(timeSeries, zones);
+
+        workout.ZoneSecondsZ1 = RoundZoneSeconds(timeInZones, 0);
+        workout.ZoneSecondsZ2 = RoundZoneSeconds(timeInZones, 1);
+        workout.ZoneSecondsZ3 = RoundZoneSeconds(timeInZones, 2);
+        workout.ZoneSecondsZ4 = RoundZoneSeconds(timeInZones, 3);
+        workout.ZoneSecondsZ5 = RoundZoneSeconds(timeInZones, 4);
+        workout.ZoneSecondsComputedAt = DateTime.UtcNow;
+
+        return CalculateRelativeEffort(workout, zones, timeSeries);
+    }
+
+    private static int? RoundZoneSeconds(double[]? timeInZones, int index) =>
+        timeInZones == null ? null : (int)Math.Round(timeInZones[index]);
+
+    private static List<WorkoutTimeSeries> LoadHeartRateSeries(Guid workoutId, TempoDbContext db) =>
+        db.WorkoutTimeSeries
+            .AsNoTracking()
+            .Where(ts => ts.WorkoutId == workoutId && ts.HeartRateBpm.HasValue)
             .OrderBy(ts => ts.ElapsedSeconds)
+            .Select(ts => new WorkoutTimeSeries
+            {
+                ElapsedSeconds = ts.ElapsedSeconds,
+                HeartRateBpm = ts.HeartRateBpm
+            })
             .ToList();
 
+    /// <summary>
+    /// Calculate Relative Effort for a workout using heart rate zones.
+    /// Uses the HR time series first, falls back to raw data or average heart rate approximation.
+    /// </summary>
+    private int? CalculateRelativeEffort(Workout workout, List<HeartRateZone> zones, List<WorkoutTimeSeries> timeSeries)
+    {
         if (timeSeries.Count > 0)
         {
             return CalculateFromTimeSeries(timeSeries, zones);

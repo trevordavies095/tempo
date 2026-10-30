@@ -128,31 +128,47 @@ public static class StatsEndpoints
             return new BucketAggregates(0, 0, 0, 0, 0, null);
         }
 
-        var baseQuery = db.Workouts.AsNoTracking()
-            .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc);
+        // One round trip per window: every metric is a (conditional) aggregate over the same rows.
+        var row = await db.Workouts.AsNoTracking()
+            .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Runs = g.Count(),
+                DistanceM = g.Sum(w => w.DistanceM),
+                DurationS = g.Sum(w => (long)w.DurationS),
+                ElevationGainM = g.Sum(w => w.ElevGainM ?? 0.0),
+                RelativeEffortSum = g.Sum(w => w.RelativeEffort ?? 0),
+                // Easy-run HR: RunType Easy Run / Recovery with avg HR and positive duration, duration-weighted.
+                EasyDurationS = g.Sum(w =>
+                    (w.RunType == RunTypes.EasyRun || w.RunType == RunTypes.Recovery) &&
+                    w.AvgHeartRateBpm != null && w.DurationS > 0
+                        ? (long)w.DurationS
+                        : 0L),
+                EasyWeightedHr = g.Sum(w =>
+                    (w.RunType == RunTypes.EasyRun || w.RunType == RunTypes.Recovery) &&
+                    w.AvgHeartRateBpm != null && w.DurationS > 0
+                        ? (double)w.AvgHeartRateBpm!.Value * w.DurationS
+                        : 0.0)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var runs = await baseQuery.CountAsync(cancellationToken);
-        var distanceM = await baseQuery.SumAsync(w => (double?)w.DistanceM, cancellationToken) ?? 0.0;
-        var durationS = await baseQuery.SumAsync(w => (long?)w.DurationS, cancellationToken) ?? 0L;
-        var elevationGainM = await baseQuery.SumAsync(w => (double?)(w.ElevGainM ?? 0.0), cancellationToken) ?? 0.0;
-        var relativeEffortSum = await baseQuery.SumAsync(w => (int?)w.RelativeEffort, cancellationToken) ?? 0;
-
-        var easyQuery = baseQuery.Where(w =>
-            (w.RunType == RunTypes.EasyRun || w.RunType == RunTypes.Recovery) &&
-            w.AvgHeartRateBpm != null &&
-            w.DurationS > 0);
-
-        var easyDur = await easyQuery.SumAsync(w => (long?)w.DurationS, cancellationToken) ?? 0L;
-        double? easyHrAvg = null;
-        if (easyDur > 0)
+        if (row == null)
         {
-            var weighted = await easyQuery.SumAsync(
-                w => (double)w.AvgHeartRateBpm!.Value * w.DurationS,
-                cancellationToken);
-            easyHrAvg = Math.Round(weighted / easyDur, 1, MidpointRounding.AwayFromZero);
+            return new BucketAggregates(0, 0, 0, 0, 0, null);
         }
 
-        return new BucketAggregates(runs, distanceM, durationS, elevationGainM, relativeEffortSum, easyHrAvg);
+        double? easyHrAvg = row.EasyDurationS > 0
+            ? Math.Round(row.EasyWeightedHr / row.EasyDurationS, 1, MidpointRounding.AwayFromZero)
+            : null;
+
+        return new BucketAggregates(
+            row.Runs,
+            row.DistanceM,
+            row.DurationS,
+            row.ElevationGainM,
+            row.RelativeEffortSum,
+            easyHrAvg);
     }
 
     private static double AverageDouble(double a, double b, double c) => (a + b + c) / 3.0;

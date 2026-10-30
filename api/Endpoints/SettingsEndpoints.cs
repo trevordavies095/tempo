@@ -294,7 +294,7 @@ public static class SettingsEndpoints
                         {
                             try
                             {
-                                var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                                var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
                                 if (relativeEffort.HasValue)
                                 {
                                     workout.RelativeEffort = relativeEffort.Value;

@@ -426,7 +426,7 @@ Detail does **not** include an embedded `timeSeries` array. Heart-rate and other
 
 Detail includes top-level `healthKitUuid` when the workout was imported (or stamped) from HealthKit.
 Detail also includes nullable `timerTimeS` next to `movingTimeS`. `durationS` is always elapsed.
-Detail also includes `heartRateZoneTimes`: five `{ zone, timeS }` objects (zones 1–5) or JSON `null`, computed live from HR time series and current Settings zones (same buckets as Relative Effort). Not present on list GET.
+Detail also includes `heartRateZoneTimes`: five `{ zone, timeS }` objects (zones 1–5) or JSON `null`, stored per workout from the HR time series and the Settings zones in effect when last computed (same buckets as Relative Effort). Recomputed on import, crop, and Relative Effort recalculation (including Settings save with recalculate existing); JSON `null` without an HR series. Not present on list GET.
 List/detail `avgCadenceRpm` / `maxCadenceRpm` are steps per minute (both feet), despite the `*Rpm` names — typical running values ~160, not single-leg ~80.
 ### Update Workout
 

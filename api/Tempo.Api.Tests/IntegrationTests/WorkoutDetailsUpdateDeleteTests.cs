@@ -494,7 +494,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
     }
 
     [Fact]
-    public async Task GetWorkout_ReturnsHeartRateZoneTimes_WhenSeriesAndSettingsExist()
+    public async Task GetWorkout_ReturnsStoredHeartRateZoneTimes_AfterRecalculateEffort()
     {
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
@@ -516,6 +516,9 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
             await db.SaveChangesAsync();
             workoutId = workout.Id;
         }
+
+        var recalc = await client.PostAsync($"/workouts/{workoutId}/recalculate-effort", null);
+        recalc.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await client.GetAsync($"/workouts/{workoutId}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -539,10 +542,76 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         var zoneTimes = result!.HeartRateZoneTimes;
         zoneTimes.Should().NotBeNull();
         var times = zoneTimes!;
-        times.Should().HaveCount(5);
-        times[0].TimeS.Should().BeGreaterThan(0);
-        times[2].TimeS.Should().BeGreaterThan(0);
-        times[4].TimeS.Should().BeGreaterThan(0);
+        // 10 s spacing; last sample counts 1 s.
+        times.Select(t => t.TimeS).Should().Equal(20, 0, 20, 0, 11);
+    }
+
+    [Fact]
+    public async Task GetWorkout_ReturnsNullHeartRateZoneTimes_WhenZoneSecondsNotComputed()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30);
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Not Computed", durationS: 60);
+            db.WorkoutTimeSeries.AddRange(
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 0, HeartRateBpm = 140 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 10, HeartRateBpm = 140 });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var response = await client.GetAsync($"/workouts/{workoutId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result!.HeartRateZoneTimes.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RecalculateRelativeEffort_AfterZoneChange_UpdatesStoredZoneTimes()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30); // 140 bpm → Z3 (133–152)
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Zone Change", durationS: 60);
+            db.WorkoutTimeSeries.AddRange(
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 0, HeartRateBpm = 140 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 10, HeartRateBpm = 140 });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        (await client.PostAsync($"/workouts/{workoutId}/recalculate-effort", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var before = await client.GetFromJsonAsync<WorkoutDetailResponse>($"/workouts/{workoutId}");
+        before!.HeartRateZoneTimes!.Select(t => t.TimeS).Should().Equal(0, 0, 11, 0, 0);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var settings = await db.UserSettings.SingleAsync();
+            settings.Zone3MaxBpm = 135; // 140 bpm → Z4
+            settings.Zone4MinBpm = 135;
+            await db.SaveChangesAsync();
+        }
+
+        // Stored values do not move until a recalculation, same as Relative Effort.
+        var stale = await client.GetFromJsonAsync<WorkoutDetailResponse>($"/workouts/{workoutId}");
+        stale!.HeartRateZoneTimes!.Select(t => t.TimeS).Should().Equal(0, 0, 11, 0, 0);
+
+        (await client.PostAsync("/workouts/recalculate-relative-effort", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var after = await client.GetFromJsonAsync<WorkoutDetailResponse>($"/workouts/{workoutId}");
+        after!.HeartRateZoneTimes!.Select(t => t.TimeS).Should().Equal(0, 0, 0, 11, 0);
     }
 
     [Fact]
@@ -610,6 +679,9 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
             await db.SaveChangesAsync();
             workoutId = workout.Id;
         }
+
+        (await client.PostAsync($"/workouts/{workoutId}/recalculate-effort", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await client.GetAsync($"/workouts/{workoutId}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);

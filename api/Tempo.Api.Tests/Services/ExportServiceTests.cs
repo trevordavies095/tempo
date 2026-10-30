@@ -430,6 +430,29 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
     }
 
     [Fact]
+    public async Task ExportAllDataAsync_WorkoutsJsonOmitsZoneSeconds()
+    {
+        await CleanDatabaseAsync();
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db);
+        workout.ZoneSecondsZ1 = 60;
+        workout.ZoneSecondsZ2 = 120;
+        workout.ZoneSecondsZ3 = 180;
+        workout.ZoneSecondsZ4 = 240;
+        workout.ZoneSecondsZ5 = 300;
+        workout.ZoneSecondsComputedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        using var zipStream = new MemoryStream();
+        await _exportService.ExportAllDataAsync(zipStream);
+        zipStream.Position = 0;
+
+        using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+        using var workoutsStream = archive.GetEntry("data/workouts.json")!.Open();
+        var workoutsJson = await new StreamReader(workoutsStream).ReadToEndAsync();
+        workoutsJson.Should().NotContainEquivalentOf("zoneSeconds");
+    }
+
+    [Fact]
     public async Task ExportAllDataAsync_RoutesJsonDoesNotIncludePreviewGeoJson()
     {
         await CleanDatabaseAsync();
