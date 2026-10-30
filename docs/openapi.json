@@ -1079,7 +1079,7 @@
           "Stats"
         ],
         "summary": "Get best efforts for all standard distances",
-        "description": "Returns the fastest time achieved for each standard running distance (400m through Marathon).\nBest efforts are calculated from any segment within any workout, not just workouts of that exact distance.\nWith from/to, only workouts started within the range count; distances with no effort in range are omitted.",
+        "description": "Returns the fastest time achieved for each standard running distance (400m through Marathon).\nBest efforts are calculated from any segment within any workout, not just workouts of that exact distance.\nWith from/to, only workouts started within the range count; distances with no effort in range are omitted.\nWith since, each distance appears only if an effort on or after since beat every earlier effort (from on, when given).\nThe row is the latest such PR, and previousTimeS is the best before since (null when there was none).",
         "operationId": "GetBestEfforts",
         "parameters": [
           {
@@ -1094,6 +1094,14 @@
             "name": "to",
             "in": "query",
             "description": "Optional last workout date to include (yyyy-MM-dd, UTC, inclusive)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Optional date (yyyy-MM-dd, UTC): return only PRs set on or after it, with previousTimeS",
             "schema": {
               "type": "string"
             }
@@ -2638,6 +2646,12 @@
           "workoutDate": {
             "minLength": 1,
             "type": "string"
+          },
+          "previousTimeS": {
+            "type": "integer",
+            "description": "With `since`: the best time before the PR, or null when it was the first effort at this distance.\nAlways null without `since`.",
+            "format": "int32",
+            "nullable": true
           }
         },
         "additionalProperties": false,

@@ -493,6 +493,130 @@ public class BestEffortServiceTests : IAsyncLifetime
 
     #endregion
 
+    #region GetBestEffortPrsAsync Tests
+
+    private static readonly DateOnly Since = new(2026, 10, 26);
+
+    [Fact]
+    public async Task GetBestEffortPrsAsync_BeatenAfterSince_ReturnsNewTimeWithPrevious()
+    {
+        await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300);
+        var pr = await SeedDatedEffortAsync(new DateOnly(2026, 10, 28), "5K", 1250);
+
+        var result = await _service.GetBestEffortPrsAsync(_db, Since);
+
+        var fiveK = result.Should().ContainSingle().Which;
+        fiveK.TimeS.Should().Be(1250);
+        fiveK.PreviousTimeS.Should().Be(1300);
+        fiveK.WorkoutId.Should().Be(pr.Id.ToString());
+        fiveK.WorkoutDate.Should().Be("2026-10-28");
+    }
+
+    [Fact]
+    public async Task GetBestEffortPrsAsync_TwoPrsAfterSince_ReturnsLatestWithBestBeforeSince()
+    {
+        await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300);
+        await SeedDatedEffortAsync(new DateOnly(2026, 10, 27), "5K", 1280);
+        await SeedDatedEffortAsync(new DateOnly(2026, 10, 29), "5K", 1260);
+
+        var result = await _service.GetBestEffortPrsAsync(_db, Since);
+
+        var fiveK = result.Should().ContainSingle().Which;
+        fiveK.TimeS.Should().Be(1260);
+        fiveK.PreviousTimeS.Should().Be(1300);
+        fiveK.WorkoutDate.Should().Be("2026-10-29");
+    }
+
+    [Theory]
+    [InlineData(1350)] // slower
+    [InlineData(1300)] // tie is not a PR
+    public async Task GetBestEffortPrsAsync_NotFasterThanBefore_ReturnsNothing(int timeAfterSinceS)
+    {
+        await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300);
+        await SeedDatedEffortAsync(new DateOnly(2026, 10, 28), "5K", timeAfterSinceS);
+
+        var result = await _service.GetBestEffortPrsAsync(_db, Since);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetBestEffortPrsAsync_FirstEverEffort_HasNullPrevious()
+    {
+        await SeedDatedEffortAsync(new DateOnly(2026, 10, 28), "10K", 2700);
+
+        var result = await _service.GetBestEffortPrsAsync(_db, Since);
+
+        var tenK = result.Should().ContainSingle().Which;
+        tenK.Distance.Should().Be("10K");
+        tenK.PreviousTimeS.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetBestEffortPrsAsync_JudgesByWorkoutDate_NotStoreOrder()
+    {
+        // Newer, slower effort stored first; older, faster one imported afterwards
+        await SeedDatedEffortAsync(new DateOnly(2026, 10, 28), "5K", 1300);
+        await SeedDatedEffortAsync(new DateOnly(2024, 5, 1), "5K", 1200);
+
+        var result = await _service.GetBestEffortPrsAsync(_db, Since);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetBestEffortPrsAsync_WithFrom_ReturnsSeasonBestThatIsNotAllTime()
+    {
+        await SeedDatedEffortAsync(new DateOnly(2023, 5, 1), "5K", 1150); // all-time best, before the block
+        await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300); // block best before since
+        await SeedDatedEffortAsync(new DateOnly(2026, 10, 28), "5K", 1250);
+
+        var allTime = await _service.GetBestEffortPrsAsync(_db, Since);
+        var season = await _service.GetBestEffortPrsAsync(_db, Since, from: new DateOnly(2026, 8, 1));
+
+        allTime.Should().BeEmpty();
+        var fiveK = season.Should().ContainSingle().Which;
+        fiveK.TimeS.Should().Be(1250);
+        fiveK.PreviousTimeS.Should().Be(1300);
+    }
+
+    [Fact]
+    public async Task GetBestEffortPrsAsync_SinceBeforeFrom_FastestInWindowWithNullPrevious()
+    {
+        await SeedDatedEffortAsync(new DateOnly(2026, 7, 1), "5K", 1150);
+        await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300);
+        await SeedDatedEffortAsync(new DateOnly(2026, 9, 15), "5K", 1280);
+
+        var result = await _service.GetBestEffortPrsAsync(
+            _db, new DateOnly(2026, 1, 1), from: new DateOnly(2026, 8, 1));
+
+        var fiveK = result.Should().ContainSingle().Which;
+        fiveK.TimeS.Should().Be(1280);
+        fiveK.PreviousTimeS.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetBestEffortPrsAsync_SinceAfterTo_ReturnsNothing()
+    {
+        await SeedDatedEffortAsync(new DateOnly(2026, 10, 28), "5K", 1250);
+
+        var result = await _service.GetBestEffortPrsAsync(_db, Since, to: new DateOnly(2026, 10, 1));
+
+        result.Should().BeEmpty();
+    }
+
+    private async Task<Workout> SeedDatedEffortAsync(DateOnly date, string distance, int timeS)
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(
+            _db,
+            startedAt: date.ToDateTime(new TimeOnly(8, 0), DateTimeKind.Utc),
+            distanceM: 10000);
+        await SeedWorkoutBestEffortAsync(workout, distance, timeS);
+        return workout;
+    }
+
+    #endregion
+
     #region StandardDistances Tests
 
     [Fact]

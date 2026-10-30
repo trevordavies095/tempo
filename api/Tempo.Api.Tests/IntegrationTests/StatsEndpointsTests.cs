@@ -2165,7 +2165,42 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         onTo!.Value.GetProperty("timeS").GetInt32().Should().Be(1400);
     }
 
+    [Fact]
+    public async Task GetBestEfforts_WithSince_ReturnsPrWithPreviousTime()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid prWorkoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var bestEffortService = scope.ServiceProvider.GetRequiredService<BestEffortService>();
+            var earlier = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1500);
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, earlier);
+            var pr = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 10, 28, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1200);
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, pr);
+            prWorkoutId = pr.Id;
+        }
+
+        var prs = await GetBestEffortsJsonAsync(client, "?since=2026-10-26");
+        var fiveK = FindDistance(prs, "5K");
+        fiveK.Should().NotBeNull();
+        fiveK!.Value.GetProperty("timeS").GetInt32().Should().Be(1200);
+        fiveK.Value.GetProperty("previousTimeS").GetInt32().Should().Be(1500);
+        fiveK.Value.GetProperty("workoutId").GetString().Should().Be(prWorkoutId.ToString());
+
+        // Without since: same rows as before, previousTimeS present and null
+        var allTime = await GetBestEffortsJsonAsync(client, "");
+        allTime.GetProperty("distances").EnumerateArray()
+            .Should().NotBeEmpty()
+            .And.OnlyContain(d => d.GetProperty("previousTimeS").ValueKind == JsonValueKind.Null);
+    }
+
     [Theory]
+    [InlineData("?since=yesterday")]
     [InlineData("?from=2026-13-01")]
     [InlineData("?to=03/01/2026")]
     [InlineData("?from=2026-03-02&to=2026-03-01")]

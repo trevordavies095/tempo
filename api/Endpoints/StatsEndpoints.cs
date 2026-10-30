@@ -684,17 +684,21 @@ public static class StatsEndpoints
     /// <param name="bestEffortService">Best effort service</param>
     /// <param name="from">Optional first workout date to include (yyyy-MM-dd, UTC, inclusive)</param>
     /// <param name="to">Optional last workout date to include (yyyy-MM-dd, UTC, inclusive)</param>
+    /// <param name="since">Optional date (yyyy-MM-dd, UTC): return only PRs set on or after it, with previousTimeS</param>
     /// <returns>List of best effort times for each standard distance</returns>
     /// <remarks>
     /// Returns the fastest time achieved for each standard running distance (400m through Marathon).
     /// Best efforts are calculated from any segment within any workout, not just workouts of that exact distance.
     /// With from/to, only workouts started within the range count; distances with no effort in range are omitted.
+    /// With since, each distance appears only if an effort on or after since beat every earlier effort (from on, when given).
+    /// The row is the latest such PR, and previousTimeS is the best before since (null when there was none).
     /// </remarks>
     private static async Task<IResult> GetBestEfforts(
         TempoDbContext db,
         BestEffortService bestEffortService,
         [FromQuery] string? from = null,
-        [FromQuery] string? to = null)
+        [FromQuery] string? to = null,
+        [FromQuery] string? since = null)
     {
         if (!TryParseBestEffortDate(from, out var fromDate))
         {
@@ -708,10 +712,16 @@ public static class StatsEndpoints
         {
             return Results.BadRequest(new ErrorResponse { Error = "from must be on or before to." });
         }
+        if (!TryParseBestEffortDate(since, out var sinceDate))
+        {
+            return Results.BadRequest(new ErrorResponse { Error = "Invalid since; use yyyy-MM-dd." });
+        }
 
         try
         {
-            var bestEfforts = await bestEffortService.GetBestEffortsAsync(db, fromDate, toDate);
+            var bestEfforts = sinceDate is { } sinceValue
+                ? await bestEffortService.GetBestEffortPrsAsync(db, sinceValue, fromDate, toDate)
+                : await bestEffortService.GetBestEffortsAsync(db, fromDate, toDate);
             return Results.Ok(new BestEffortsDocument
             {
                 Distances = bestEfforts.Select(b => new BestEffortDistanceDocument
@@ -720,7 +730,8 @@ public static class StatsEndpoints
                     DistanceM = b.DistanceM,
                     TimeS = b.TimeS,
                     WorkoutId = b.WorkoutId,
-                    WorkoutDate = b.WorkoutDate
+                    WorkoutDate = b.WorkoutDate,
+                    PreviousTimeS = b.PreviousTimeS
                 }).ToList()
             });
         }
@@ -1197,6 +1208,7 @@ public static class StatsEndpoints
             .WithSummary("Get best efforts")
             .WithDescription("Returns the fastest time achieved for each standard running distance (400m through Marathon). Best efforts are calculated from any segment within any workout. " +
                 "Optional from and to (yyyy-MM-dd, inclusive, compared against the workout's UTC start date) limit results to workouts in that range; distances with no effort in range are omitted. " +
+                "Optional since (yyyy-MM-dd) returns only PRs set on or after that date: per distance, the latest effort that beat every earlier-dated effort (from on, when given), with previousTimeS the best before since (null when first ever). previousTimeS is null without since. " +
                 "Ties go to the earliest workout. A malformed date or from after to returns 400.");
 
         group.MapPost("/best-efforts/recalculate", RecalculateBestEfforts)

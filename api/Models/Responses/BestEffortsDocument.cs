@@ -37,4 +37,11 @@ public class BestEffortDistanceDocument
     [Required]
     [JsonPropertyName("workoutDate")]
     public string WorkoutDate { get; set; } = string.Empty;
+
+    /// <summary>
+    /// With <c>since</c>: the best time before the PR, or null when it was the first effort at this distance.
+    /// Always null without <c>since</c>.
+    /// </summary>
+    [JsonPropertyName("previousTimeS")]
+    public int? PreviousTimeS { get; set; }
 }

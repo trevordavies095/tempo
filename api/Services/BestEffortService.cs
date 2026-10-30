@@ -92,6 +92,47 @@ public class BestEffortService : IBestEffortService
     }
 
     /// <summary>
+    /// Best efforts that were PRs when set on or after <paramref name="since"/>: per distance, the fastest effort
+    /// dated in [since, to] if it beats every effort dated before since (only from <paramref name="from"/> on, when
+    /// given). That is the latest PR in the range, since each PR is faster than the last. Ties are not PRs.
+    /// <see cref="BestEffortResult.PreviousTimeS"/> is the best before since, or null when there was none.
+    /// </summary>
+    public async Task<List<BestEffortResult>> GetBestEffortPrsAsync(
+        TempoDbContext db,
+        DateOnly since,
+        DateOnly? from = null,
+        DateOnly? to = null)
+    {
+        var postFrom = from is { } fromDate && fromDate > since ? fromDate : since;
+        var bestsSince = await GetBestEffortsAsync(db, postFrom, to);
+        if (bestsSince.Count == 0)
+        {
+            return bestsSince;
+        }
+
+        var bestsBefore = since == DateOnly.MinValue
+            ? []
+            : await GetBestEffortsAsync(db, from, since.AddDays(-1));
+        var previousByDistance = bestsBefore.ToDictionary(b => b.Distance, b => b.TimeS);
+
+        var prs = new List<BestEffortResult>();
+        foreach (var best in bestsSince)
+        {
+            if (previousByDistance.TryGetValue(best.Distance, out var previousTimeS))
+            {
+                if (best.TimeS >= previousTimeS)
+                {
+                    continue;
+                }
+                best.PreviousTimeS = previousTimeS;
+            }
+            prs.Add(best);
+        }
+
+        return prs;
+    }
+
+    /// <summary>
     /// Calculate best effort for a specific workout and target distance.
     /// Returns the fastest time (in seconds) for the target distance, or null if not found.
     /// </summary>
@@ -457,6 +498,7 @@ public class BestEffortService : IBestEffortService
         public int TimeS { get; set; }
         public string WorkoutId { get; set; } = string.Empty;
         public string WorkoutDate { get; set; } = string.Empty;
+        public int? PreviousTimeS { get; set; }
     }
 }
 
