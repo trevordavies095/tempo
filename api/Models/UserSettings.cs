@@ -44,6 +44,10 @@ public class UserSettings
     public int Zone5MinBpm { get; set; }
     public int Zone5MaxBpm { get; set; }
 
+    // Athlete-set thresholds (nullable; cleared when unknown)
+    public int? ThresholdPaceS { get; set; } // seconds per km
+    public int? ThresholdHeartRateBpm { get; set; }
+
     [MaxLength(20)]
     public string? UnitPreference { get; set; } // "metric" or "imperial", default "metric"
 
