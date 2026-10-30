@@ -466,6 +466,77 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetWeeklyRecap_EasyHeartRate_IncludesRecoveryExcludesWalkRun()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var easy = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 9, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 6000,
+                durationS: 1800,
+                name: "Easy");
+            easy.RunType = RunTypes.EasyRun;
+            easy.AvgHeartRateBpm = 140;
+            var recovery = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 3500,
+                durationS: 1200,
+                name: "Recovery");
+            recovery.RunType = RunTypes.Recovery;
+            recovery.AvgHeartRateBpm = 130;
+            var walkRun = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 11, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 4000,
+                durationS: 1500,
+                name: "Walk-Run");
+            walkRun.RunType = RunTypes.WalkRun;
+            walkRun.AvgHeartRateBpm = 110;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync("/stats/weekly-recap?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
+        // (140 * 1800 + 130 * 1200) / 3000; counting the Walk-Run would give 128.7
+        result!.Metrics.EasyRunAvgHeartRateBpm.Current.Should().Be(136);
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_EasyHeartRate_RecoveryOnly_IsNotNull()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var w = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 4000,
+                durationS: 1500,
+                name: "Recovery only");
+            w.RunType = RunTypes.Recovery;
+            w.AvgHeartRateBpm = 128;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync("/stats/weekly-recap?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
+        result!.Metrics.EasyRunAvgHeartRateBpm.Current.Should().Be(128);
+    }
+
+    [Fact]
     public async Task GetWeeklyRecap_IgnoresNonEasyRunsForHeartRateAverage()
     {
         await EnsureCleanDatabaseAsync();
