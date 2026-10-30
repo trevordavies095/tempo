@@ -356,7 +356,7 @@
           "Settings"
         ],
         "summary": "Get heart rate zones configuration",
-        "description": "Returns the current heart rate zones configuration. If no settings exist, returns default zones\ncalculated using age-based method with age 30 (max HR = 190).",
+        "description": "Returns the current heart rate zones configuration. If no settings exist, returns default zones\ncalculated using age-based method with age 30 (max HR = 190). maxHeartRateBpm is resolved for every\nmethod; observedMaxHeartRateBpm is the highest workout max HR in the last 12 months (readings above\n230 ignored), or null without HR data.",
         "operationId": "GetHeartRateZones",
         "responses": {
           "200": {
@@ -499,6 +499,78 @@
           },
           "400": {
             "description": "Bad Request"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/settings/thresholds": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get threshold pace and heart rate",
+        "description": "The suggestion is Daniels VDOT from the best 5K or 10K effort in the last 90 days, with T-pace at 88% of\nVDOT; the faster of the two wins. It is returned whether or not a threshold is set and is never saved.",
+        "operationId": "GetThresholds",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThresholdsDocument"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update threshold pace and heart rate",
+        "description": "Replaces both values: an omitted or null field clears it. Threshold pace must be 120-900 seconds per km\nand threshold heart rate 60-230 BPM. Creates the settings row with default zones if none exists.",
+        "operationId": "UpdateThresholds",
+        "requestBody": {
+          "description": "Thresholds update request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateThresholdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThresholdsDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "500": {
+            "description": "Internal Server Error"
           }
         },
         "security": [
@@ -2991,6 +3063,7 @@
       "HeartRateZonesDocument": {
         "required": [
           "calculationMethod",
+          "maxHeartRateBpm",
           "zones"
         ],
         "type": "object",
@@ -3011,6 +3084,12 @@
           },
           "maxHeartRateBpm": {
             "type": "integer",
+            "description": "Max HR resolved for the calculation method: 220 - age (AgeBased), the entered max (Karvonen),\nor the top of zone 5 (Custom). Always present.",
+            "format": "int32"
+          },
+          "observedMaxHeartRateBpm": {
+            "type": "integer",
+            "description": "Highest workout max HR in the last 12 months, ignoring readings above 230 bpm. Informational only;\nnever feeds into Tempo.Api.Models.Responses.HeartRateZonesDocument.MaxHeartRateBpm. Null when no workout in the window has HR data.",
             "format": "int32",
             "nullable": true
           },
@@ -3483,6 +3562,64 @@
         },
         "additionalProperties": false
       },
+      "ThresholdSuggestionSourceDocument": {
+        "required": [
+          "distance",
+          "timeS",
+          "workoutDate",
+          "workoutId"
+        ],
+        "type": "object",
+        "properties": {
+          "distance": {
+            "minLength": 1,
+            "type": "string",
+            "description": "Best-effort distance label: \"5K\" or \"10K\"."
+          },
+          "timeS": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "workoutDate": {
+            "minLength": 1,
+            "type": "string",
+            "description": "UTC date the workout started (yyyy-MM-dd)."
+          },
+          "workoutId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ThresholdsDocument": {
+        "type": "object",
+        "properties": {
+          "thresholdPaceS": {
+            "type": "integer",
+            "description": "Athlete-set threshold pace in seconds per kilometre, or null when not set.",
+            "format": "int32",
+            "nullable": true
+          },
+          "thresholdHeartRateBpm": {
+            "type": "integer",
+            "description": "Athlete-set threshold heart rate in BPM, or null when not set.",
+            "format": "int32",
+            "nullable": true
+          },
+          "suggestedThresholdPaceS": {
+            "type": "integer",
+            "description": "Read-only suggested threshold pace in seconds per km: Daniels VDOT from the best 5K or 10K effort in the\nlast 90 days, with T-pace at 88% of VDOT. Present whether or not a threshold is set; null when no effort qualifies.",
+            "format": "int32",
+            "nullable": true
+          },
+          "suggestedFrom": {
+            "$ref": "#/components/schemas/ThresholdSuggestionSourceDocument"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Body of `GET` and `PUT /settings/thresholds`."
+      },
       "UnitPreferenceDocument": {
         "required": [
           "unitPreference"
@@ -3578,6 +3715,25 @@
         },
         "additionalProperties": false,
         "description": "Request model for updating heart rate zones with optional recalculation"
+      },
+      "UpdateThresholdsRequest": {
+        "type": "object",
+        "properties": {
+          "thresholdPaceS": {
+            "type": "integer",
+            "description": "Threshold pace in seconds per kilometre (120-900), or null to clear",
+            "format": "int32",
+            "nullable": true
+          },
+          "thresholdHeartRateBpm": {
+            "type": "integer",
+            "description": "Threshold heart rate in BPM (60-230), or null to clear",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Request model for updating thresholds. Both fields are replaced; null clears."
       },
       "UpdateUnitPreferenceRequest": {
         "type": "object",

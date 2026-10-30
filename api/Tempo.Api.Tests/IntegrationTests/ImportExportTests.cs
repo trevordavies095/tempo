@@ -567,6 +567,51 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ImportExport_RoundTrip_RestoresThresholdsOntoExistingSettings()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var settings = await TestDataSeeder.SeedUserSettingsAsync(db);
+            settings.ThresholdPaceS = 255;
+            settings.ThresholdHeartRateBpm = 172;
+            await db.SaveChangesAsync();
+        }
+
+        var exportZip = await ImportTestHelper.CreateExportZipWithDataAsync(client);
+
+        // Clear the thresholds on the existing row so restore takes the update-existing path
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var settings = await db.UserSettings.SingleAsync();
+            settings.ThresholdPaceS = null;
+            settings.ThresholdHeartRateBpm = null;
+            await db.SaveChangesAsync();
+        }
+
+        exportZip.Position = 0;
+        var formContent = new MultipartFormDataContent();
+        var streamContent = new StreamContent(exportZip);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        formContent.Add(streamContent, "file", "export.zip");
+
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
+        importResult.Success.Should().BeTrue();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var restored = await db.UserSettings.AsNoTracking().SingleAsync();
+            restored.ThresholdPaceS.Should().Be(255);
+            restored.ThresholdHeartRateBpm.Should().Be(172);
+        }
+    }
+
+    [Fact]
     public async Task ImportExport_RoundTrip_PreservesDistanceAndDeviceLapKinds()
     {
         await EnsureCleanDatabaseAsync();

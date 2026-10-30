@@ -178,6 +178,7 @@ builder.Services.AddScoped<RelativeEffortService>();
 builder.Services.AddScoped<IRelativeEffortService>(sp => sp.GetRequiredService<RelativeEffortService>());
 builder.Services.AddScoped<BestEffortService>();
 builder.Services.AddScoped<IBestEffortService>(sp => sp.GetRequiredService<BestEffortService>());
+builder.Services.AddScoped<ThresholdSuggestionService>();
 builder.Services.AddScoped<BulkImportService>();
 builder.Services.AddScoped<StravaBulkImportOrchestrator>();
 builder.Services.AddSingleton<ImportJobQueue>();

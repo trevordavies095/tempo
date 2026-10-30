@@ -54,6 +54,34 @@ export function formatPace(secondsPerKm: number, unit: UnitPreference = 'metric'
   }
 }
 
+const METERS_PER_MILE = 1609.344;
+
+/**
+ * Format pace for an editable field: M:SS per km or per mile, without the unit suffix
+ * @param secondsPerKm Pace in seconds per kilometer
+ * @param unit Unit preference ('metric' or 'imperial'), defaults to 'metric'
+ * @returns String like "4:15"
+ */
+export function formatPaceInput(secondsPerKm: number, unit: UnitPreference = 'metric'): string {
+  const total = Math.round(unit === 'imperial' ? secondsPerKm * (METERS_PER_MILE / 1000) : secondsPerKm);
+  return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
+}
+
+/**
+ * Parse an M:SS pace typed in the user's unit back to seconds per km
+ * @param input Text like "4:15" (per km) or "6:50" (per mile)
+ * @param unit Unit preference the text is in
+ * @returns Whole seconds per km, or null when the text is not M:SS
+ */
+export function parsePaceInput(input: string, unit: UnitPreference = 'metric'): number | null {
+  const match = /^(\d{1,2}):([0-5]\d)$/.exec(input.trim());
+  if (!match) {
+    return null;
+  }
+  const secondsPerUnit = Number(match[1]) * 60 + Number(match[2]);
+  return Math.round(unit === 'imperial' ? secondsPerUnit / (METERS_PER_MILE / 1000) : secondsPerUnit);
+}
+
 /**
  * Format date from ISO string to readable format
  * @param dateString ISO date string

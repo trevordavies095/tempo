@@ -1143,7 +1143,10 @@ export interface HeartRateZoneSettings {
   calculationMethod: HeartRateCalculationMethod;
   age: number | null;
   restingHeartRateBpm: number | null;
-  maxHeartRateBpm: number | null;
+  /** Resolved for the method: 220 - age, the Karvonen max, or the top of zone 5 */
+  maxHeartRateBpm: number;
+  /** Highest workout max HR in the last 12 months (readings above 230 ignored), null without HR data */
+  observedMaxHeartRateBpm: number | null;
   zones: HeartRateZone[];
   isFirstTimeSetup?: boolean;
 }
@@ -1183,6 +1186,56 @@ export async function updateHeartRateZones(
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to update heart rate zones: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface ThresholdSettings {
+  /** Seconds per kilometre */
+  thresholdPaceS: number | null;
+  thresholdHeartRateBpm: number | null;
+}
+
+export interface ThresholdSuggestionSource {
+  distance: string;
+  timeS: number;
+  /** UTC start date, yyyy-MM-dd */
+  workoutDate: string;
+  workoutId: string;
+}
+
+export interface ThresholdsResponse extends ThresholdSettings {
+  /** Read-only Daniels T-pace (seconds per km) from the best 5K/10K in the last 90 days */
+  suggestedThresholdPaceS: number | null;
+  suggestedFrom: ThresholdSuggestionSource | null;
+}
+
+export async function getThresholds(): Promise<ThresholdsResponse> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/thresholds`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch thresholds: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function updateThresholds(thresholds: ThresholdSettings): Promise<ThresholdsResponse> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/thresholds`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(thresholds),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update thresholds: ${response.status}`);
   }
 
   return response.json();

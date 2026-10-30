@@ -22,6 +22,7 @@ import { ShoeManagementSection } from '@/components/ShoeManagementSection';
 import { ExportImportSection } from '@/components/ExportImportSection';
 import { IntervalsIcuSection } from '@/components/IntervalsIcuSection';
 import { ApiKeySection } from '@/components/ApiKeySection';
+import ThresholdsSection from '@/components/ThresholdsSection';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
@@ -36,6 +37,12 @@ import {
   getPasswordLengthAndBytesError,
 } from '@/lib/passwordPolicy';
 import { resolveSupportSnapshot } from '@/lib/supportSnapshot';
+
+const MAX_HR_SOURCE: Record<HeartRateCalculationMethod, string> = {
+  AgeBased: 'age-based',
+  Karvonen: 'entered',
+  Custom: 'top of zone 5',
+};
 
 const fieldClass =
   'w-full px-3 py-2 border border-border rounded-tempo bg-canvas text-ink focus:outline-none focus:ring-2 focus:ring-volt';
@@ -352,6 +359,17 @@ function SettingsPageContent() {
                 Configure your heart rate zones for training analysis. Choose a calculation method or set custom zones.
               </p>
 
+              {hrZones && (
+                <p className="text-sm text-ink mb-6">
+                  Max HR {hrZones.maxHeartRateBpm} BPM ({MAX_HR_SOURCE[hrZones.calculationMethod]})
+                  {hrZones.observedMaxHeartRateBpm !== null && (
+                    <span className="text-muted">
+                      {' '}· Highest recorded {hrZones.observedMaxHeartRateBpm} BPM in the last 12 months
+                    </span>
+                  )}
+                </p>
+              )}
+
               {isLoading ? (
                 <div className="text-muted">Loading...</div>
               ) : (
@@ -537,6 +555,7 @@ function SettingsPageContent() {
                 </>
               )}
             </Card>
+            <ThresholdsSection />
           </div>
 
           <div className="space-y-4">

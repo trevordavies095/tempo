@@ -109,7 +109,9 @@ public static class DatabaseMigrationHelper
         { ("WorkoutSplits", "StartDistanceM"), "20260915164417_AddWorkoutSplitKindAndElapsedBounds" },
         { ("Workouts", "TimerTimeS"), "20260915174809_AddWorkoutTimerTimeS" },
         { ("Workouts", "SplitHeartRateBackfill"), "20260918010157_AddWorkoutSplitHeartRateBackfill" },
-        { ("ApiKeys", "KeyCiphertext"), "20261025201000_AddApiKeyCiphertextAndSingleActiveKey" }
+        { ("ApiKeys", "KeyCiphertext"), "20261025201000_AddApiKeyCiphertextAndSingleActiveKey" },
+        { ("UserSettings", "ThresholdPaceS"), "20261030224850_AddUserSettingsThresholds" },
+        { ("UserSettings", "ThresholdHeartRateBpm"), "20261030224850_AddUserSettingsThresholds" }
     };
 
     private const string ProductVersion = "10.0.0";

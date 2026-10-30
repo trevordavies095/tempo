@@ -279,6 +279,12 @@ namespace Tempo.Api.Migrations
                     b.Property<int?>("RestingHeartRateBpm")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("ThresholdHeartRateBpm")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ThresholdPaceS")
+                        .HasColumnType("integer");
+
                     b.Property<string>("UnitPreference")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");

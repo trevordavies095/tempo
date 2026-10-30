@@ -378,6 +378,8 @@ public class ImportService
                 existing.Zone5MinBpm = settings.Zone5MinBpm;
                 existing.Zone5MaxBpm = settings.Zone5MaxBpm;
                 existing.UnitPreference = settings.UnitPreference;
+                existing.ThresholdPaceS = settings.ThresholdPaceS;
+                existing.ThresholdHeartRateBpm = settings.ThresholdHeartRateBpm;
                 
                 // Validate shoe reference if present (must exist and not be retired)
                 if (settings.DefaultShoeId.HasValue)

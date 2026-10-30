@@ -32,6 +32,7 @@ export function TempoExportImport(props: TempoExportImportProps = {}) {
       invalidateWorkoutQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: ['heart-rate-zones'] });
       queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
+      queryClient.invalidateQueries({ queryKey: ['thresholds'] });
       try {
         const unitPref = await getUnitPreference();
         setUnitPreference(unitPref.unitPreference);
