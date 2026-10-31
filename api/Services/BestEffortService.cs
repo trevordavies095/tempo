@@ -95,7 +95,9 @@ public class BestEffortService : IBestEffortService
     /// Best efforts that were PRs when set on or after <paramref name="since"/>: per distance, the fastest effort
     /// dated in [since, to] if it beats every effort dated before since (only from <paramref name="from"/> on, when
     /// given). That is the latest PR in the range, since each PR is faster than the last. Ties are not PRs.
-    /// <see cref="BestEffortResult.PreviousTimeS"/> is the best before since, or null when there was none.
+    /// <see cref="BestEffortResult.PreviousTimeS"/> is the best before since, or null when there was none;
+    /// <see cref="BestEffortResult.PreviousWorkoutId"/> and <see cref="BestEffortResult.PreviousWorkoutDate"/> name
+    /// the workout it was set in.
     /// </summary>
     public async Task<List<BestEffortResult>> GetBestEffortPrsAsync(
         TempoDbContext db,
@@ -113,18 +115,20 @@ public class BestEffortService : IBestEffortService
         var bestsBefore = since == DateOnly.MinValue
             ? []
             : await GetBestEffortsAsync(db, from, since.AddDays(-1));
-        var previousByDistance = bestsBefore.ToDictionary(b => b.Distance, b => b.TimeS);
+        var previousByDistance = bestsBefore.ToDictionary(b => b.Distance);
 
         var prs = new List<BestEffortResult>();
         foreach (var best in bestsSince)
         {
-            if (previousByDistance.TryGetValue(best.Distance, out var previousTimeS))
+            if (previousByDistance.TryGetValue(best.Distance, out var previous))
             {
-                if (best.TimeS >= previousTimeS)
+                if (best.TimeS >= previous.TimeS)
                 {
                     continue;
                 }
-                best.PreviousTimeS = previousTimeS;
+                best.PreviousTimeS = previous.TimeS;
+                best.PreviousWorkoutId = previous.WorkoutId;
+                best.PreviousWorkoutDate = previous.WorkoutDate;
             }
             prs.Add(best);
         }
@@ -499,6 +503,8 @@ public class BestEffortService : IBestEffortService
         public string WorkoutId { get; set; } = string.Empty;
         public string WorkoutDate { get; set; } = string.Empty;
         public int? PreviousTimeS { get; set; }
+        public string? PreviousWorkoutId { get; set; }
+        public string? PreviousWorkoutDate { get; set; }
     }
 }
 

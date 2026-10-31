@@ -684,14 +684,15 @@ public static class StatsEndpoints
     /// <param name="bestEffortService">Best effort service</param>
     /// <param name="from">Optional first workout date to include (yyyy-MM-dd, UTC, inclusive)</param>
     /// <param name="to">Optional last workout date to include (yyyy-MM-dd, UTC, inclusive)</param>
-    /// <param name="since">Optional date (yyyy-MM-dd, UTC): return only PRs set on or after it, with previousTimeS</param>
+    /// <param name="since">Optional date (yyyy-MM-dd, UTC): return only PRs set on or after it, with previousTimeS, previousWorkoutId and previousWorkoutDate</param>
     /// <returns>List of best effort times for each standard distance</returns>
     /// <remarks>
     /// Returns the fastest time achieved for each standard running distance (400m through Marathon).
     /// Best efforts are calculated from any segment within any workout, not just workouts of that exact distance.
     /// With from/to, only workouts started within the range count; distances with no effort in range are omitted.
     /// With since, each distance appears only if an effort on or after since beat every earlier effort (from on, when given).
-    /// The row is the latest such PR, and previousTimeS is the best before since (null when there was none).
+    /// The row is the latest such PR, and previousTimeS is the best before since (null when there was none);
+    /// previousWorkoutId and previousWorkoutDate name the workout it was set in, null alongside previousTimeS.
     /// </remarks>
     private static async Task<IResult> GetBestEfforts(
         TempoDbContext db,
@@ -731,7 +732,9 @@ public static class StatsEndpoints
                     TimeS = b.TimeS,
                     WorkoutId = b.WorkoutId,
                     WorkoutDate = b.WorkoutDate,
-                    PreviousTimeS = b.PreviousTimeS
+                    PreviousTimeS = b.PreviousTimeS,
+                    PreviousWorkoutId = b.PreviousWorkoutId,
+                    PreviousWorkoutDate = b.PreviousWorkoutDate
                 }).ToList()
             });
         }
@@ -1208,7 +1211,7 @@ public static class StatsEndpoints
             .WithSummary("Get best efforts")
             .WithDescription("Returns the fastest time achieved for each standard running distance (400m through Marathon). Best efforts are calculated from any segment within any workout. " +
                 "Optional from and to (yyyy-MM-dd, inclusive, compared against the workout's UTC start date) limit results to workouts in that range; distances with no effort in range are omitted. " +
-                "Optional since (yyyy-MM-dd) returns only PRs set on or after that date: per distance, the latest effort that beat every earlier-dated effort (from on, when given), with previousTimeS the best before since (null when first ever). previousTimeS is null without since. " +
+                "Optional since (yyyy-MM-dd) returns only PRs set on or after that date: per distance, the latest effort that beat every earlier-dated effort (from on, when given), with previousTimeS the best before since (null when first ever) and previousWorkoutId/previousWorkoutDate the workout it was set in. The three previous fields are null together, and always null without since. " +
                 "Ties go to the earliest workout. A malformed date or from after to returns 400.");
 
         group.MapPost("/best-efforts/recalculate", RecalculateBestEfforts)

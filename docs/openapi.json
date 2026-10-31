@@ -1151,7 +1151,7 @@
           "Stats"
         ],
         "summary": "Get best efforts for all standard distances",
-        "description": "Returns the fastest time achieved for each standard running distance (400m through Marathon).\nBest efforts are calculated from any segment within any workout, not just workouts of that exact distance.\nWith from/to, only workouts started within the range count; distances with no effort in range are omitted.\nWith since, each distance appears only if an effort on or after since beat every earlier effort (from on, when given).\nThe row is the latest such PR, and previousTimeS is the best before since (null when there was none).",
+        "description": "Returns the fastest time achieved for each standard running distance (400m through Marathon).\nBest efforts are calculated from any segment within any workout, not just workouts of that exact distance.\nWith from/to, only workouts started within the range count; distances with no effort in range are omitted.\nWith since, each distance appears only if an effort on or after since beat every earlier effort (from on, when given).\nThe row is the latest such PR, and previousTimeS is the best before since (null when there was none);\npreviousWorkoutId and previousWorkoutDate name the workout it was set in, null alongside previousTimeS.",
         "operationId": "GetBestEfforts",
         "parameters": [
           {
@@ -1173,7 +1173,7 @@
           {
             "name": "since",
             "in": "query",
-            "description": "Optional date (yyyy-MM-dd, UTC): return only PRs set on or after it, with previousTimeS",
+            "description": "Optional date (yyyy-MM-dd, UTC): return only PRs set on or after it, with previousTimeS, previousWorkoutId and previousWorkoutDate",
             "schema": {
               "type": "string"
             }
@@ -2723,6 +2723,16 @@
             "type": "integer",
             "description": "With `since`: the best time before the PR, or null when it was the first effort at this distance.\nAlways null without `since`.",
             "format": "int32",
+            "nullable": true
+          },
+          "previousWorkoutId": {
+            "type": "string",
+            "description": "The workout the previous best was set in; null whenever `previousTimeS` is.",
+            "nullable": true
+          },
+          "previousWorkoutDate": {
+            "type": "string",
+            "description": "UTC start date (yyyy-MM-dd) of the workout the previous best was set in, the same form as `workoutDate`;\nnull whenever `previousTimeS` is.",
             "nullable": true
           }
         },
