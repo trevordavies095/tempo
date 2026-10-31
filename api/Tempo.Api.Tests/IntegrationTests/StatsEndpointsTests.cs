@@ -2172,6 +2172,7 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
 
         Guid prWorkoutId;
+        Guid earlierWorkoutId;
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
@@ -2179,6 +2180,7 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
             var earlier = await TestDataSeeder.SeedWorkoutCompleteAsync(
                 db, startedAt: new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1500);
             await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, earlier);
+            earlierWorkoutId = earlier.Id;
             var pr = await TestDataSeeder.SeedWorkoutCompleteAsync(
                 db, startedAt: new DateTime(2026, 10, 28, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1200);
             await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, pr);
@@ -2191,12 +2193,16 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         fiveK!.Value.GetProperty("timeS").GetInt32().Should().Be(1200);
         fiveK.Value.GetProperty("previousTimeS").GetInt32().Should().Be(1500);
         fiveK.Value.GetProperty("workoutId").GetString().Should().Be(prWorkoutId.ToString());
+        fiveK.Value.GetProperty("previousWorkoutId").GetString().Should().Be(earlierWorkoutId.ToString());
+        fiveK.Value.GetProperty("previousWorkoutDate").GetString().Should().Be("2026-09-01");
 
-        // Without since: same rows as before, previousTimeS present and null
+        // Without since: same rows as before, previous fields present and null
         var allTime = await GetBestEffortsJsonAsync(client, "");
         allTime.GetProperty("distances").EnumerateArray()
             .Should().NotBeEmpty()
-            .And.OnlyContain(d => d.GetProperty("previousTimeS").ValueKind == JsonValueKind.Null);
+            .And.OnlyContain(d => d.GetProperty("previousTimeS").ValueKind == JsonValueKind.Null
+                && d.GetProperty("previousWorkoutId").ValueKind == JsonValueKind.Null
+                && d.GetProperty("previousWorkoutDate").ValueKind == JsonValueKind.Null);
     }
 
     [Theory]

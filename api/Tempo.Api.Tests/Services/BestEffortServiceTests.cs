@@ -500,7 +500,7 @@ public class BestEffortServiceTests : IAsyncLifetime
     [Fact]
     public async Task GetBestEffortPrsAsync_BeatenAfterSince_ReturnsNewTimeWithPrevious()
     {
-        await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300);
+        var previous = await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300);
         var pr = await SeedDatedEffortAsync(new DateOnly(2026, 10, 28), "5K", 1250);
 
         var result = await _service.GetBestEffortPrsAsync(_db, Since);
@@ -510,6 +510,22 @@ public class BestEffortServiceTests : IAsyncLifetime
         fiveK.PreviousTimeS.Should().Be(1300);
         fiveK.WorkoutId.Should().Be(pr.Id.ToString());
         fiveK.WorkoutDate.Should().Be("2026-10-28");
+        fiveK.PreviousWorkoutId.Should().Be(previous.Id.ToString());
+        fiveK.PreviousWorkoutDate.Should().Be("2026-09-01");
+    }
+
+    [Fact]
+    public async Task GetBestEffortPrsAsync_PreviousBestTied_UsesEarlierWorkout()
+    {
+        await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300);
+        var earlier = await SeedDatedEffortAsync(new DateOnly(2026, 8, 1), "5K", 1300);
+        await SeedDatedEffortAsync(new DateOnly(2026, 10, 28), "5K", 1250);
+
+        var result = await _service.GetBestEffortPrsAsync(_db, Since);
+
+        var fiveK = result.Should().ContainSingle().Which;
+        fiveK.PreviousWorkoutId.Should().Be(earlier.Id.ToString());
+        fiveK.PreviousWorkoutDate.Should().Be("2026-08-01");
     }
 
     [Fact]
@@ -550,6 +566,8 @@ public class BestEffortServiceTests : IAsyncLifetime
         var tenK = result.Should().ContainSingle().Which;
         tenK.Distance.Should().Be("10K");
         tenK.PreviousTimeS.Should().BeNull();
+        tenK.PreviousWorkoutId.Should().BeNull();
+        tenK.PreviousWorkoutDate.Should().BeNull();
     }
 
     [Fact]
@@ -568,7 +586,7 @@ public class BestEffortServiceTests : IAsyncLifetime
     public async Task GetBestEffortPrsAsync_WithFrom_ReturnsSeasonBestThatIsNotAllTime()
     {
         await SeedDatedEffortAsync(new DateOnly(2023, 5, 1), "5K", 1150); // all-time best, before the block
-        await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300); // block best before since
+        var blockBest = await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300); // block best before since
         await SeedDatedEffortAsync(new DateOnly(2026, 10, 28), "5K", 1250);
 
         var allTime = await _service.GetBestEffortPrsAsync(_db, Since);
@@ -578,6 +596,8 @@ public class BestEffortServiceTests : IAsyncLifetime
         var fiveK = season.Should().ContainSingle().Which;
         fiveK.TimeS.Should().Be(1250);
         fiveK.PreviousTimeS.Should().Be(1300);
+        fiveK.PreviousWorkoutId.Should().Be(blockBest.Id.ToString());
+        fiveK.PreviousWorkoutDate.Should().Be("2026-09-01");
     }
 
     [Fact]
@@ -593,6 +613,8 @@ public class BestEffortServiceTests : IAsyncLifetime
         var fiveK = result.Should().ContainSingle().Which;
         fiveK.TimeS.Should().Be(1280);
         fiveK.PreviousTimeS.Should().BeNull();
+        fiveK.PreviousWorkoutId.Should().BeNull();
+        fiveK.PreviousWorkoutDate.Should().BeNull();
     }
 
     [Fact]

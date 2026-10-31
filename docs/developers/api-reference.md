@@ -610,7 +610,7 @@ Limit results to a date range (for example the current training block) with opti
 GET /stats/best-efforts?from=2026-08-01&to=2026-10-31
 ```
 
-Ask which personal records were set recently with `since` (`yyyy-MM-dd`). Each distance appears only if an effort dated on or after `since` beat every earlier effort; the row is the latest such PR, and `previousTimeS` is the best time before `since` (`null` the first time you run that distance). Equal times are not PRs. Combine with `from` to get season bests: only efforts from `from` on count as the previous best. `previousTimeS` is always present and `null` without `since`.
+Ask which personal records were set recently with `since` (`yyyy-MM-dd`). Each distance appears only if an effort dated on or after `since` beat every earlier effort; the row is the latest such PR, and `previousTimeS` is the best time before `since` (`null` the first time you run that distance). `previousWorkoutId` and `previousWorkoutDate` (`yyyy-MM-dd`, UTC, like `workoutDate`) name the workout that previous best was set in; when two earlier workouts tie, the earlier one is used. Equal times are not PRs. Combine with `from` to get season bests: only efforts from `from` on count as the previous best. The three `previous…` fields are always present, `null` together, and `null` without `since`.
 
 ```http
 GET /stats/best-efforts?since=2026-10-26
@@ -626,8 +626,10 @@ Response format:
       "distanceM": 5000,
       "timeS": 1200,
       "workoutId": "guid-here",
-      "workoutDate": "2025-01-15",
-      "previousTimeS": null
+      "workoutDate": "2026-10-28",
+      "previousTimeS": 1325,
+      "previousWorkoutId": "guid-here",
+      "previousWorkoutDate": "2026-03-14"
     }
   ]
 }
