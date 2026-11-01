@@ -32,6 +32,7 @@ export function TempoExportImport(props: TempoExportImportProps = {}) {
       invalidateWorkoutQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: ['heart-rate-zones'] });
       queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
+      queryClient.invalidateQueries({ queryKey: ['thresholds'] });
       try {
         const unitPref = await getUnitPreference();
         setUnitPreference(unitPref.unitPreference);
@@ -245,17 +246,6 @@ export function TempoExportImport(props: TempoExportImportProps = {}) {
                   {importResult.statistics.media.skipped > 0 && (
                     <span className="text-muted ml-1">
                       ({importResult.statistics.media.skipped} skipped)
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <span className="font-medium">Best Efforts:</span>{' '}
-                  <span className="text-muted">
-                    {importResult.statistics.bestEfforts.imported} imported
-                  </span>
-                  {importResult.statistics.bestEfforts.skipped > 0 && (
-                    <span className="text-muted ml-1">
-                      ({importResult.statistics.bestEfforts.skipped} skipped)
                     </span>
                   )}
                 </div>

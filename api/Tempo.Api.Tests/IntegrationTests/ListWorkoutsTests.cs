@@ -600,6 +600,36 @@ public class ListWorkoutsTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ListWorkouts_FiltersByNewRunType()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var threshold = await TestDataSeeder.SeedWorkoutAsync(db, name: "Threshold");
+            threshold.RunType = RunTypes.Threshold;
+            var intervals = await TestDataSeeder.SeedWorkoutAsync(db, name: "Intervals");
+            intervals.RunType = RunTypes.Intervals;
+            var easy = await TestDataSeeder.SeedWorkoutAsync(db, name: "Easy Run");
+            easy.RunType = RunTypes.EasyRun;
+            await db.SaveChangesAsync();
+        }
+
+        // Act
+        var response = await client.GetAsync("/workouts?runType=Threshold");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutsListResponse>();
+        result!.TotalCount.Should().Be(1);
+        var item = (JsonElement)result.Items.Single();
+        item.GetProperty("runType").GetString().Should().Be(RunTypes.Threshold);
+    }
+
+    [Fact]
     public async Task ListWorkouts_ReturnsEmpty_WhenRunTypeNoMatches()
     {
         // Arrange

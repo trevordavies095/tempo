@@ -239,6 +239,20 @@ After you connect, Tempo looks for new running activities about every 15 minutes
 
 The connection is **not** included in a Tempo export ZIP. After restore, connect again in Settings.
 
+## API Key
+
+Tools such as [tempo-cli](https://github.com/trevordavies095/tempo-cli) and the Tempo extension for Claude Desktop use an API key to read your Tempo data. You manage it under **Settings → Account → API key**.
+
+- **Generate key** creates your key. You can have one key at a time.
+- **Show** / **Hide** displays the full key. **Copy** puts it on your clipboard.
+- **Revoke** turns the key off immediately. Anything using it stops working until you give it a new key. After revoking, you can generate a new one.
+
+**Keep the key private.** It can read and change your Tempo data (it cannot change your password or manage API keys). Do not paste it into shared channels or commit it to a repository.
+
+If the card says the key **can't be shown**, it was created before Tempo could display keys, or the server's `JWT__SecretKey` was changed. The key still works. Revoke it and generate a new one if you need to see it.
+
+API keys are **not** included in a Tempo export ZIP. After restore, generate a new key.
+
 ## Export / Import
 
 Tempo allows you to export all your data in a portable ZIP format for backup, migration, or data portability. Under **Migrate / restore**, you can restore a previous Tempo export or import a Strava archive after onboarding.
@@ -283,8 +297,6 @@ The export includes everything in your Tempo instance:
   - Unit preferences (metric/imperial)
   - Default shoe reference
 
-- **Best Efforts** - All best effort records for standard distances
-
 The intervals.icu API key is **not** included. Reconnect under Settings → Integrations after restore.
 
 - **Manifest File** - Metadata about the export including:
@@ -308,8 +320,7 @@ tempo-export-{timestamp}.zip
 │   ├── routes.json
 │   ├── splits.json
 │   ├── time-series.json
-│   ├── media-metadata.json
-│   └── best-efforts.json
+│   └── media-metadata.json
 ├── workouts/              # Binary files organized by workout
 │   ├── {workoutId}/
 │   │   ├── raw/          # Original workout files (GPX/FIT/CSV)
@@ -372,7 +383,8 @@ The import restores all data from the export file:
 - **Workout Splits** - All distance-based splits
 - **Workout Time Series** - All time-series data points
 - **Media Files** - All photos and videos attached to workouts
-- **Best Efforts** - All best effort records for standard distances
+
+Best efforts are not part of the export. After a restore, Tempo recalculates them from the restored workouts in the background, so they can take a few minutes to reappear on a large library. Exports from older versions that include `best-efforts.json` still restore; that file is ignored.
 
 #### Duplicate Detection
 
@@ -380,7 +392,6 @@ Tempo automatically detects and skips duplicates during import:
 
 - **Workouts**: Detected by start time, distance, and duration (within small tolerance)
 - **Shoes**: Detected by brand and model (exact match)
-- **Best Efforts**: Detected by distance (one best effort per distance)
 - **Settings**: Only one settings record exists (replaces existing)
 
 Duplicates are automatically skipped and reported in the import summary. You can view detailed warnings and errors in the import results.

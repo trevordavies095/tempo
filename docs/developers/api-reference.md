@@ -12,11 +12,13 @@ Complete reference for the Tempo REST API.
 Most endpoints require authentication. Tempo accepts **`Authorization: Bearer`** in two forms:
 
 - **JWT** — Usually issued after login and sent automatically as the httpOnly cookie `authToken`. The same JWT can be sent as a Bearer token when calling the API directly (e.g. `curl`).
-- **API key** — Admin-issued secret for machine clients (prefix `tmp_`). Use for read-only automation and the planned CLI: set something like `TEMPO_API_KEY` and send `Authorization: Bearer <key>`. The server distinguishes keys from JWTs by the `tmp_` prefix.
+- **API key** — Secret for machine clients such as tempo-cli (prefix `tmp_`). Generate it in **Settings → Account → API key**, set something like `TEMPO_API_KEY`, and send `Authorization: Bearer <key>`. The server distinguishes keys from JWTs by the `tmp_` prefix.
 
-API keys work on normal protected routes (for example `GET /auth/me`, `GET /workouts`, stats, settings, shoes). **Creating, listing, and revoking API keys** requires a full interactive JWT session (`POST/GET/DELETE /auth/api-keys`); those routes do not accept an API key.
+API keys work on all normal protected routes, **including writes** (for example `GET /auth/me`, `GET /workouts`, imports, stats, settings, shoes). They are not read-only. **Creating, listing, revealing, and revoking API keys** and changing the password require a full interactive JWT session; those routes do not accept an API key (403).
 
 ### API keys (CLI and automation)
+
+Each user has **one active key**. The usual path is Settings → Account → API key (Generate, Show, Copy, Revoke). The endpoints below back that card.
 
 **Create** (session required — log in first so the `authToken` cookie is set, or use a cookie jar with `POST /auth/login`):
 
@@ -30,7 +32,7 @@ Cookie: authToken=…
 }
 ```
 
-Response **201**: includes `id`, `label`, `keyPrefix`, `createdAt`, and **`key`** (full secret) **once**. Store it immediately; later listing never returns the secret.
+Response **201**: includes `id`, `label`, `keyPrefix`, `createdAt`, and **`key`** (full secret). Response **409** `{ "error": "An active API key already exists. …" }` when you already have an active key; revoke it first.
 
 **List** (session only):
 
@@ -38,7 +40,15 @@ Response **201**: includes `id`, `label`, `keyPrefix`, `createdAt`, and **`key`*
 GET /auth/api-keys
 ```
 
-Returns metadata per key: `id`, `label`, `keyPrefix`, `createdAt`, `revokedAt`.
+Returns metadata per key, including revoked keys: `id`, `label`, `keyPrefix`, `createdAt`, `revokedAt`, `canReveal`. Never returns the secret. `canReveal` is `false` for keys created before Tempo stored an encrypted copy.
+
+**Reveal** (session only):
+
+```http
+POST /auth/api-keys/{id}/reveal
+```
+
+Response **200** `{ "key": "tmp_…" }` for your active key. **404** if the key is revoked or not yours. **409** `{ "error": "This key can't be displayed. …" }` if it has no readable encrypted copy (created before reveal existed, or `JWT:SecretKey` was rotated); the key still authenticates.
 
 **Revoke** (session only):
 
@@ -65,7 +75,7 @@ export TEMPO_API_KEY='tmp_…'
 curl -sS -H "Authorization: Bearer $TEMPO_API_KEY" http://localhost:5001/auth/me
 ```
 
-Do not log API keys or commit them to version control. Rotate by revoking the key and creating a new one.
+Do not log API keys or commit them to version control. Rotate by revoking the key and creating a new one. Tempo stores each key hashed (for authentication) and AES-GCM encrypted with a key derived from `JWT:SecretKey` (so Settings can show it).
 
 ### Register
 
@@ -316,8 +326,7 @@ tempo-export-{timestamp}.zip
 │   ├── routes.json
 │   ├── splits.json
 │   ├── time-series.json
-│   ├── media-metadata.json
-│   └── best-efforts.json
+│   └── media-metadata.json
 ├── workouts/              # Binary files organized by workout
 │   ├── {workoutId}/
 │   │   ├── raw/          # Original workout files
@@ -343,8 +352,7 @@ tempo-export-{timestamp}.zip
     "settings": 1,
     "routes": 150,
     "splits": 1500,
-    "timeSeries": 45000,
-    "bestEfforts": 10
+    "timeSeries": 45000
   },
   "dataFormat": {
     "settings": "data/settings.json",
@@ -353,8 +361,7 @@ tempo-export-{timestamp}.zip
     "routes": "data/routes.json",
     "splits": "data/splits.json",
     "timeSeries": "data/time-series.json",
-    "mediaMetadata": "data/media-metadata.json",
-    "bestEfforts": "data/best-efforts.json"
+    "mediaMetadata": "data/media-metadata.json"
   }
 }
 ```
@@ -378,6 +385,7 @@ Query parameters:
 - `endDate` - Filter by end date (ISO 8601)
 - `page` - Page number (default: 1)
 - `pageSize` - Items per page (default: 20)
+- `runType` - Exact-match filter on run type (one of the values listed under [Update Workout](#update-workout)); an unknown value returns an empty page
 
 List and detail responses include nullable `healthKitUuid` for tempo-ios already-imported badging.
 List and detail also include nullable `timerTimeS` (FIT timer seconds when present). `durationS` remains elapsed (wall clock); do not treat it as timer time.
@@ -411,9 +419,13 @@ Get detailed workout information:
 GET /workouts/{id}
 ```
 
+Detail does **not** include an embedded `timeSeries` array. Heart-rate and other per-sample sensors are only available via [Get Workout Time Series](#get-workout-time-series) (`GET /workouts/{id}/time-series`; sparse, non-interpolated).
+
 Detail includes top-level `healthKitUuid` when the workout was imported (or stamped) from HealthKit.
 Detail also includes nullable `timerTimeS` next to `movingTimeS`. `durationS` is always elapsed.
-Detail also includes `heartRateZoneTimes`: five `{ zone, timeS }` objects (zones 1–5) or JSON `null`, computed live from HR time series and current Settings zones (same buckets as Relative Effort). Not present on list GET.
+Detail also includes `heartRateZoneTimes`: five `{ zone, timeS }` objects (zones 1–5) or JSON `null`, stored per workout from the HR time series and the Settings zones in effect when last computed (same buckets as Relative Effort). Recomputed on import, crop, and Relative Effort recalculation (including Settings save with recalculate existing); JSON `null` without an HR series. Not present on list GET.
+List/detail `avgCadenceRpm` / `maxCadenceRpm` are steps per minute (both feet), despite the `*Rpm` names — typical running values ~160, not single-leg ~80.
+Each split also includes nullable `intensity`, `trigger`, and `stepIndex` from the FIT lap message on `device_lap` rows. `intensity` is snake_case (`active`, `rest`, `warmup`, `cooldown`, `recovery`, `interval`, `other`); `trigger` is snake_case `lap_trigger` (`manual`, `time`, `distance`, `position_start`, `session_end`, …); `stepIndex` is the structured-workout step (`wkt_step_index`). All three are JSON `null` on `distance` splits and on HealthKit, Strava CSV, and GPX workouts, so clients that pick out work reps need a pace-based fallback.
 ### Update Workout
 
 Update workout details (e.g., activity name, shoe assignment):
@@ -423,14 +435,20 @@ PATCH /workouts/{id}
 Content-Type: application/json
 
 {
-  "activityName": "New Activity Name",
+  "name": "New Activity Name",
+  "runType": "Threshold",
   "shoeId": "guid-here"
 }
 ```
 
+All fields are optional; only fields present in the body are updated, and `null` clears a field.
+
 Fields:
-- `activityName` (string, optional) - New activity name
-- `shoeId` (Guid, optional, nullable) - Shoe ID to assign to this workout. Set to `null` to remove shoe assignment.
+- `name` (string, nullable) - Workout name, 200 characters or less
+- `runType` (string, nullable) - One of `Easy Run`, `Recovery`, `Walk-Run`, `Long Run`, `Workout`, `Threshold`, `Intervals`, `Hills`, `Fartlek`, `Race` (case-sensitive; also published as the `runType` enum in [openapi.json](../openapi.json)). Anything else returns `400`.
+- `notes` (string, nullable) - Free-text notes
+- `shoeId` (Guid, nullable) - Shoe ID to assign to this workout (must exist and not be retired). Set to `null` to remove shoe assignment.
+- `rpe` (integer, nullable) - Rate of perceived exertion, a whole number from 1 to 10
 
 ### Delete Workout
 
@@ -510,7 +528,9 @@ Query parameters:
 - `page` - Page number (default: 1)
 - `pageSize` - Items per page (default: 1000, maximum: 5000)
 
-Each item includes `elapsedSeconds` plus optional sensors: `distanceM`, `heartRateBpm`, `cadenceRpm` (steps/min), `powerWatts`, `speedMps`, `gradePercent`, `elevationM`, `temperatureC`, `verticalSpeedMps`. Null fields mean that sensor was not recorded at that sample. Samples are sparse (not every elapsed second). The server does not interpolate. Ordering is ascending by `elapsedSeconds`, then by row id.
+This is the only API surface for per-sample series; workout detail does not embed time-series.
+
+Each item includes `elapsedSeconds` plus optional sensors: `distanceM`, `heartRateBpm`, `cadenceRpm` (steps/min, both feet — not single-leg RPM; same unit as list/detail `avgCadenceRpm` / `maxCadenceRpm`), `powerWatts`, `speedMps`, `gradePercent`, `elevationM`, `temperatureC`, `verticalSpeedMps`. Null fields mean that sensor was not recorded at that sample. Samples are sparse (not every elapsed second). The server does not interpolate. Ordering is ascending by `elapsedSeconds`, then by row id.
 
 The command-center overview client follows pages until complete or 20,000 samples and still renders what it loaded.
 
@@ -529,9 +549,12 @@ Query Parameters:
 Returns a list of similar route matches with:
 - `workoutId` - ID of the similar workout
 - `similarityScore` - Route similarity score (0-100%)
-- `distanceDifferenceM` - Distance difference in meters
-- `timeDifferenceS` - Time difference in seconds
-- `paceDifferenceS` - Pace difference in seconds per km
+- `timeDifferenceS` - Time difference in seconds (match − subject; negative = faster)
+- `paceDifferenceS` - Pace difference in seconds per km (match − subject; negative = faster)
+- `avgHeartRateBpm` - Match average heart rate when available
+- `avgHeartRateDifferenceBpm` - Match − subject avg HR (negative = lower HR than subject; null if either lacks HR)
+- `name`, `runType` - Match workout name and run type when set
+- `relativeEffort`, `elevGainM` - Match effort and elevation when available
 
 ## Statistics
 
@@ -579,7 +602,20 @@ Get your fastest times for standard distances:
 GET /stats/best-efforts
 ```
 
-Returns your best effort times for all supported distances (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, Half-Marathon, 30K, Marathon). Best efforts are calculated from any segment within any workout, not just workouts of that exact distance.
+Returns your best effort times for all supported distances (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, Half-Marathon, 30K, Marathon). Best efforts are calculated from any segment within any workout, not just workouts of that exact distance. When two workouts tie, the earlier one is returned.
+
+Limit results to a date range (for example the current training block) with optional `from` and `to` query parameters (`yyyy-MM-dd`, inclusive, compared against the workout's UTC start date). Distances with no effort in the range are omitted. A malformed date, or `from` after `to`, returns `400` with `{ "error": "…" }`.
+
+```http
+GET /stats/best-efforts?from=2026-08-01&to=2026-10-31
+```
+
+Ask which personal records were set recently with `since` (`yyyy-MM-dd`). Each distance appears only if an effort dated on or after `since` beat every earlier effort; the row is the latest such PR, and `previousTimeS` is the best time before `since` (`null` the first time you run that distance). `previousWorkoutId` and `previousWorkoutDate` (`yyyy-MM-dd`, UTC, like `workoutDate`) name the workout that previous best was set in; when two earlier workouts tie, the earlier one is used. Equal times are not PRs. Combine with `from` to get season bests: only efforts from `from` on count as the previous best. The three `previous…` fields are always present, `null` together, and `null` without `since`.
+
+```http
+GET /stats/best-efforts?since=2026-10-26
+GET /stats/best-efforts?from=2026-08-01&since=2026-10-26
+```
 
 Response format:
 ```json
@@ -590,7 +626,10 @@ Response format:
       "distanceM": 5000,
       "timeS": 1200,
       "workoutId": "guid-here",
-      "workoutDate": "2025-01-15T10:30:00Z"
+      "workoutDate": "2026-10-28",
+      "previousTimeS": 1325,
+      "previousWorkoutId": "guid-here",
+      "previousWorkoutDate": "2026-03-14"
     }
   ]
 }
@@ -604,7 +643,7 @@ Recalculate all best efforts across all workouts:
 POST /stats/best-efforts/recalculate
 ```
 
-Performs a full recalculation of all best efforts. This may take some time depending on the number of workouts and time series data.
+Recomputes every workout's best efforts. This may take some time depending on the number of workouts and time series data.
 
 Response format:
 ```json
@@ -929,6 +968,8 @@ Other endpoints may include extra fields (for example `details`) where noted abo
 ## OpenAPI contract
 
 The canonical machine-readable API document is **[openapi.json](../openapi.json)** in this repository (on the `develop` integration branch). Use it for client generation and to stay aligned with the read-only CLI.
+
+Coach and CLI integration GETs (`/workouts`, `/workouts/{id}`, time-series, similar-routes, weekly-recap, relative-effort, best-efforts, shoes, heart-rate zones, unit preference, and `/auth/me`) publish typed `200` response schemas (and `{ "error": "…" }` bodies where those status codes are declared). After changing routes or response DTOs, regenerate the file with the Swashbuckle CLI steps in the repository README so CI’s OpenAPI diff stays green.
 
 ## Interactive Documentation
 

@@ -762,7 +762,8 @@ public class WorkoutIntake
                 Laps = fitResult.Laps,
                 Name = null,
                 RawGpxDataJson = null,
-                RawFitDataJson = fitResult.RawFitDataJson,
+                // Fresh parse already carries lap annotations; keep the startup annotation step away.
+                RawFitDataJson = DeviceLapBackfillService.StampLapAnnotationsApplied(fitResult.RawFitDataJson),
                 RawFileData = rawFileData,
                 RawFileName = fileName,
                 RawFileType = fileType
@@ -820,7 +821,7 @@ public class WorkoutIntake
             RawGpxData = decoded.RawGpxDataJson,
             RawFitData = decoded.RawFitDataJson,
             Source = overlay?.Source ?? (isGpx ? "gpx_import" : "fit_import"),
-            RunType = "Easy Run",
+            RunType = RunTypes.EasyRun,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -1124,12 +1125,14 @@ public class WorkoutIntake
             }
 
             var zones = _zoneService.GetZonesFromUserSettings(settings);
-            var relativeEffort = _relativeEffortService.CalculateRelativeEffort(workout, zones, _db);
+            var relativeEffort = _relativeEffortService.RecalculateHeartRateMetrics(workout, zones, _db);
             if (relativeEffort.HasValue)
             {
                 workout.RelativeEffort = relativeEffort.Value;
-                await _db.SaveChangesAsync();
             }
+
+            // Zone seconds and their marker are written even when Relative Effort is null.
+            await _db.SaveChangesAsync();
         }
         catch (Exception ex)
         {

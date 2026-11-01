@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Models.Responses;
 using Tempo.Api.Services;
 using Tempo.Api.Utils;
 
@@ -13,21 +14,6 @@ public static class WorkoutsEndpoints
 {
     private const int TimeSeriesDefaultPageSize = 1000;
     private const int TimeSeriesMaxPageSize = 5000;
-
-    // Response class for similar routes
-    private class SimilarRouteResponse
-    {
-        public Guid WorkoutId { get; set; }
-        public DateTime StartedAt { get; set; }
-        public int DurationS { get; set; }
-        public double DistanceM { get; set; }
-        public double AvgPaceS { get; set; }
-        public double? SimilarityScore { get; set; }
-        public int? TimeDifferenceS { get; set; } // Negative = faster, Positive = slower
-        public double? PaceDifferenceS { get; set; } // Negative = faster pace
-        public int? RelativeEffort { get; set; }
-        public double? ElevGainM { get; set; }
-    }
 
     /// <summary>
     /// Import a HealthKit workout from tempo-ios (JSON decode adapter → PersistAsync).
@@ -177,7 +163,7 @@ public static class WorkoutsEndpoints
     /// <param name="minDistanceM">Minimum distance in meters</param>
     /// <param name="maxDistanceM">Maximum distance in meters</param>
     /// <param name="keyword">Search keyword (searches Name, Device, and Source fields)</param>
-    /// <param name="runType">Filter by run type (e.g., "Race", "Workout", "Long Run", "Easy Run")</param>
+    /// <param name="runType">Filter by run type (exact match; one of the values in the runType enum)</param>
     /// <param name="sortBy">Sort field: "name", "duration", "distance", "elevation", "relativeeffort", or default "startedAt"</param>
     /// <param name="sortOrder">Sort order: "asc" or "desc" (default: "desc" for startedAt)</param>
     /// <returns>Paginated list of workouts with metadata</returns>
@@ -291,7 +277,7 @@ public static class WorkoutsEndpoints
         // Validate page number
         if (page > totalPages && totalPages > 0)
         {
-            return Results.NotFound(new { error = "Page not found" });
+            return Results.NotFound(new ErrorResponse { Error = "Page not found" });
         }
 
         // Apply dynamic sorting
@@ -362,50 +348,50 @@ public static class WorkoutsEndpoints
                     logger);
             }
 
-            return new
+            return new WorkoutListItemDocument
             {
-                id = w.Id,
-                startedAt = w.StartedAt,
-                durationS = w.DurationS,
-                distanceM = w.DistanceM,
-                avgPaceS = w.AvgPaceS,
-                elevGainM = w.ElevGainM,
-                elevLossM = w.ElevLossM,
-                minElevM = w.MinElevM,
-                maxElevM = w.MaxElevM,
-                maxSpeedMps = w.MaxSpeedMps,
-                avgSpeedMps = w.AvgSpeedMps,
-                movingTimeS = w.MovingTimeS,
-                timerTimeS = w.TimerTimeS,
-                maxHeartRateBpm = w.MaxHeartRateBpm,
-                avgHeartRateBpm = w.AvgHeartRateBpm,
-                minHeartRateBpm = w.MinHeartRateBpm,
-                maxCadenceRpm = w.MaxCadenceRpm,
-                avgCadenceRpm = w.AvgCadenceRpm,
-                maxPowerWatts = w.MaxPowerWatts,
-                avgPowerWatts = w.AvgPowerWatts,
-                calories = w.Calories,
-                relativeEffort = w.RelativeEffort,
-                rpe = w.Rpe,
-                runType = w.RunType,
-                source = w.Source,
-                device = w.Device,
-                healthKitUuid = w.HealthKitUuid,
-                name = w.Name,
-                hasRoute,
-                route = routeGeoJson,
-                splitsCount = row.SplitsCount,
-                media = listMedia.GetValueOrDefault(w.Id) ?? []
+                Id = w.Id,
+                StartedAt = w.StartedAt,
+                DurationS = w.DurationS,
+                DistanceM = w.DistanceM,
+                AvgPaceS = w.AvgPaceS,
+                ElevGainM = w.ElevGainM,
+                ElevLossM = w.ElevLossM,
+                MinElevM = w.MinElevM,
+                MaxElevM = w.MaxElevM,
+                MaxSpeedMps = w.MaxSpeedMps,
+                AvgSpeedMps = w.AvgSpeedMps,
+                MovingTimeS = w.MovingTimeS,
+                TimerTimeS = w.TimerTimeS,
+                MaxHeartRateBpm = w.MaxHeartRateBpm,
+                AvgHeartRateBpm = w.AvgHeartRateBpm,
+                MinHeartRateBpm = w.MinHeartRateBpm,
+                MaxCadenceRpm = w.MaxCadenceRpm,
+                AvgCadenceRpm = w.AvgCadenceRpm,
+                MaxPowerWatts = w.MaxPowerWatts,
+                AvgPowerWatts = w.AvgPowerWatts,
+                Calories = w.Calories,
+                RelativeEffort = w.RelativeEffort,
+                Rpe = w.Rpe,
+                RunType = w.RunType,
+                Source = w.Source,
+                Device = w.Device,
+                HealthKitUuid = w.HealthKitUuid,
+                Name = w.Name,
+                HasRoute = hasRoute,
+                Route = routeGeoJson,
+                SplitsCount = row.SplitsCount,
+                Media = listMedia.GetValueOrDefault(w.Id) ?? []
             };
         }).ToList();
 
-        return Results.Ok(new
+        return Results.Ok(new PagedResponse<WorkoutListItemDocument>
         {
-            items,
-            totalCount,
-            page,
-            pageSize,
-            totalPages
+            Items = items,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages
         });
     }
 
@@ -446,13 +432,13 @@ public static class WorkoutsEndpoints
             r => (r.PreviewGeoJson, fallbacks.GetValueOrDefault(r.WorkoutId)));
     }
 
-    private static async Task<Dictionary<Guid, List<object>>> LoadListMediaAsync(
+    private static async Task<Dictionary<Guid, List<MediaRefDocument>>> LoadListMediaAsync(
         TempoDbContext db,
         List<Guid> workoutIds)
     {
         if (workoutIds.Count == 0)
         {
-            return new Dictionary<Guid, List<object>>();
+            return new Dictionary<Guid, List<MediaRefDocument>>();
         }
 
         var rows = await WorkoutQueryService.QueryListMedia(db, workoutIds).ToListAsync();
@@ -460,7 +446,7 @@ public static class WorkoutsEndpoints
             .GroupBy(m => m.WorkoutId)
             .ToDictionary(
                 g => g.Key,
-                g => g.Select(m => (object)new { id = m.Id, mimeType = m.MimeType }).ToList());
+                g => g.Select(m => new MediaRefDocument { Id = m.Id, MimeType = m.MimeType }).ToList());
     }
 
     private static object? DeserializeListRoute(
@@ -818,7 +804,7 @@ public static class WorkoutsEndpoints
             }
 
             var zones = zoneService.GetZonesFromUserSettings(settings);
-            var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+            var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
             
             workout.RelativeEffort = relativeEffort;
             await db.SaveChangesAsync();
@@ -986,13 +972,6 @@ public static class WorkoutsEndpoints
                 return Results.BadRequest(new { error = $"Cannot crop entire workout. Trim values ({startTrimSeconds}s + {endTrimSeconds}s) must be less than workout duration ({workout.DurationS}s)" });
             }
 
-            // Check which best efforts reference this workout before cropping
-            // This is needed to recalculate best efforts for distances the workout may no longer qualify for after cropping
-            var affectedBestEfforts = await db.BestEfforts
-                .Where(be => be.WorkoutId == id)
-                .Select(be => be.Distance)
-                .ToListAsync();
-
             try
         {
             // Perform crop
@@ -1007,12 +986,12 @@ public static class WorkoutsEndpoints
             if (settings != null)
             {
                 var zones = zoneService.GetZonesFromUserSettings(settings);
-                var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
                 workout.RelativeEffort = relativeEffort;
                 await db.SaveChangesAsync();
             }
 
-            // Update best efforts since distance/duration changed
+            // Recompute the workout's best efforts since distance/duration changed
             try
             {
                 await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
@@ -1021,108 +1000,6 @@ public static class WorkoutsEndpoints
             {
                 logger.LogWarning(ex, "Failed to update best efforts after cropping workout {WorkoutId}", workout.Id);
                 // Don't fail crop if best effort update fails
-            }
-
-            // Recalculate affected best efforts if this workout previously held records
-            // for distances it may no longer qualify for after cropping
-            if (affectedBestEfforts.Any())
-            {
-                try
-                {
-                    // Reload workout to get updated distance after crop
-                    await db.Entry(workout).ReloadAsync();
-                    // Reload Route navigation property (needed for best effort calculation fallback)
-                    await db.Entry(workout).Reference(w => w.Route).LoadAsync();
-                    
-                    // For each affected distance, check if workout still qualifies
-                    foreach (var distanceName in affectedBestEfforts)
-                    {
-                        if (BestEffortService.StandardDistances.TryGetValue(distanceName, out var targetDistanceM))
-                        {
-                            // Check if workout still qualifies for this distance
-                            var stillQualifies = workout.DistanceM >= targetDistanceM;
-                            
-                            // Check if this workout still holds the record
-                            var currentBestEffort = await db.BestEfforts
-                                .FirstOrDefaultAsync(be => be.Distance == distanceName);
-                            
-                            var workoutStillHoldsRecord = currentBestEffort != null && currentBestEffort.WorkoutId == id;
-                            
-                            // If workout still holds the record, verify it can actually achieve the stored time
-                            // This handles the case where cropping removed the fast segment that set the record
-                            var storedTimeNoLongerAchievable = false;
-                            if (workoutStillHoldsRecord && currentBestEffort != null && stillQualifies)
-                            {
-                                var croppedWorkoutBestEffort = await bestEffortService.CalculateBestEffortForWorkoutAsync(
-                                    db, workout, distanceName, targetDistanceM);
-                                
-                                // If the cropped workout's best effort is slower than the stored time,
-                                // the stored time is no longer achievable and we need to recalculate
-                                if (croppedWorkoutBestEffort == null || croppedWorkoutBestEffort.TimeS > currentBestEffort.TimeS)
-                                {
-                                    storedTimeNoLongerAchievable = true;
-                                }
-                            }
-                            
-                            // If workout no longer qualifies OR no longer holds the record OR stored time is no longer achievable, recalculate from all workouts
-                            if (!stillQualifies || !workoutStillHoldsRecord || storedTimeNoLongerAchievable)
-                            {
-                                var qualifyingWorkouts = await db.Workouts
-                                    .Include(w => w.Route)
-                                    .Where(w => w.DistanceM >= targetDistanceM)
-                                    .ToListAsync();
-
-                                BestEffortService.BestEffortResult? newBestEffort = null;
-                                foreach (var remainingWorkout in qualifyingWorkouts)
-                                {
-                                    var result = await bestEffortService.CalculateBestEffortForWorkoutAsync(
-                                        db, remainingWorkout, distanceName, targetDistanceM);
-                                    if (result != null && (newBestEffort == null || result.TimeS < newBestEffort.TimeS))
-                                    {
-                                        newBestEffort = result;
-                                    }
-                                }
-
-                                // Update or remove best effort
-                                if (newBestEffort != null)
-                                {
-                                    if (currentBestEffort != null)
-                                    {
-                                        currentBestEffort.TimeS = newBestEffort.TimeS;
-                                        currentBestEffort.WorkoutId = Guid.Parse(newBestEffort.WorkoutId);
-                                        currentBestEffort.WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc);
-                                        currentBestEffort.CalculatedAt = DateTime.UtcNow;
-                                    }
-                                    else
-                                    {
-                                        db.BestEfforts.Add(new BestEffort
-                                        {
-                                            Distance = distanceName,
-                                            DistanceM = targetDistanceM,
-                                            TimeS = newBestEffort.TimeS,
-                                            WorkoutId = Guid.Parse(newBestEffort.WorkoutId),
-                                            WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc),
-                                            CalculatedAt = DateTime.UtcNow
-                                        });
-                                    }
-                                }
-                                else if (currentBestEffort != null)
-                                {
-                                    // No qualifying workouts remain, remove best effort
-                                    db.BestEfforts.Remove(currentBestEffort);
-                                }
-                            }
-                        }
-                    }
-
-                    await db.SaveChangesAsync();
-                    logger.LogInformation("Recalculated affected best efforts after cropping workout {WorkoutId}", id);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to recalculate affected best efforts after cropping workout {WorkoutId}", id);
-                    // Don't fail crop if best effort recalculation fails
-                }
             }
 
             // Reload workout with updated data
@@ -1155,11 +1032,13 @@ public static class WorkoutsEndpoints
                 avgHeartRateBpm = s.AvgHeartRateBpm,
                 startElapsedS = s.StartElapsedS,
                 endElapsedS = s.EndElapsedS,
-                startDistanceM = s.StartDistanceM
+                startDistanceM = s.StartDistanceM,
+                intensity = s.Intensity,
+                trigger = s.Trigger,
+                stepIndex = s.StepIndex
             }).ToList();
 
-            var heartRateZoneTimes = await BuildHeartRateZoneTimesAsync(
-                workout.Id, db, zoneService, relativeEffortService);
+            var heartRateZoneTimes = BuildHeartRateZoneTimes(workout);
 
             return Results.Ok(new
             {
@@ -1215,8 +1094,6 @@ public static class WorkoutsEndpoints
     /// <param name="id">Workout ID</param>
     /// <param name="db">Database context</param>
     /// <param name="weatherService">Weather service</param>
-    /// <param name="zoneService">Heart rate zone service</param>
-    /// <param name="relativeEffortService">Relative effort service (time-in-zone extractor)</param>
     /// <param name="logger">Logger instance</param>
     /// <param name="includeRaw">
     /// When true, include raw GPX/FIT/Strava/HealthKit JSON blobs. Defaults to false: those four
@@ -1226,10 +1103,15 @@ public static class WorkoutsEndpoints
     /// <remarks>
     /// Retrieves complete workout data including route (as GeoJSON), splits, and weather information.
     /// Each split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null),
-    /// startElapsedS, endElapsedS, and startDistanceM (number or null).
+    /// startElapsedS, endElapsedS, startDistanceM (number or null), and the FIT device-lap fields
+    /// intensity, trigger (snake_case strings or null) and stepIndex (number or null). Those three are
+    /// null for distance splits and for HealthKit, Strava CSV and GPX sources.
+    /// Does not include an embedded timeSeries array; heart-rate and other per-sample sensors are only available
+    /// via paginated <c>GET /workouts/{id}/time-series</c> (sparse, non-interpolated samples).
     /// <c>timerTimeS</c> is FIT total timer time when known (null for non-FIT or missing Session); distinct from
     /// <c>durationS</c> (elapsed) and <c>movingTimeS</c>.
-    /// <c>heartRateZoneTimes</c> is five live zone buckets from HR series + current Settings, or JSON null.
+    /// <c>heartRateZoneTimes</c> is five zone buckets stored per workout from the HR series and the zones in effect
+    /// when last computed (import, crop, or a Relative Effort recalculation), or JSON null without an HR series.
     /// Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values
     /// are normalized for consistency.
     /// </remarks>
@@ -1237,8 +1119,6 @@ public static class WorkoutsEndpoints
         Guid id,
         TempoDbContext db,
         WeatherService weatherService,
-        HeartRateZoneService zoneService,
-        RelativeEffortService relativeEffortService,
         ILogger<Program> logger,
         [FromQuery] bool includeRaw = false)
     {
@@ -1247,7 +1127,7 @@ public static class WorkoutsEndpoints
 
         if (workout == null)
         {
-            return Results.NotFound(new { error = "Workout not found" });
+            return Results.NotFound(new ErrorResponse { Error = "Workout not found" });
         }
 
         // Parse route GeoJSON if exists
@@ -1307,17 +1187,20 @@ public static class WorkoutsEndpoints
         }
 
         // Map splits (device_lap if any, else distance)
-        var splits = WorkoutSplitDisplay.SelectDisplayList(workout.Splits).Select(s => new
+        var splits = WorkoutSplitDisplay.SelectDisplayList(workout.Splits).Select(s => new WorkoutSplitDocument
         {
-            idx = s.Idx,
-            kind = s.Kind,
-            distanceM = s.DistanceM,
-            durationS = s.DurationS,
-            paceS = s.PaceS,
-            avgHeartRateBpm = s.AvgHeartRateBpm,
-            startElapsedS = s.StartElapsedS,
-            endElapsedS = s.EndElapsedS,
-            startDistanceM = s.StartDistanceM
+            Idx = s.Idx,
+            Kind = s.Kind,
+            DistanceM = s.DistanceM,
+            DurationS = s.DurationS,
+            PaceS = s.PaceS,
+            AvgHeartRateBpm = s.AvgHeartRateBpm,
+            StartElapsedS = s.StartElapsedS,
+            EndElapsedS = s.EndElapsedS,
+            StartDistanceM = s.StartDistanceM,
+            Intensity = s.Intensity,
+            Trigger = s.Trigger,
+            StepIndex = s.StepIndex
         }).ToList();
 
         // Raw JSONB blobs are opt-in: default query projects them out, so skip deserialize too.
@@ -1376,69 +1259,78 @@ public static class WorkoutsEndpoints
             }
         }
 
-        // Include shoe information if assigned
-        object? shoe = null;
+        WorkoutShoeRefDocument? shoe = null;
         if (workout.Shoe != null)
         {
-            shoe = new
+            shoe = new WorkoutShoeRefDocument
             {
-                id = workout.Shoe.Id,
-                brand = workout.Shoe.Brand,
-                model = workout.Shoe.Model
+                Id = workout.Shoe.Id,
+                Brand = workout.Shoe.Brand,
+                Model = workout.Shoe.Model
             };
         }
 
-        var heartRateZoneTimes = await BuildHeartRateZoneTimesAsync(
-            workout.Id, db, zoneService, relativeEffortService);
+        var heartRateZoneTimes = BuildHeartRateZoneTimes(workout);
 
-        return Results.Ok(new
+        return Results.Ok(new WorkoutDetailDocument
         {
-            id = workout.Id,
-            startedAt = workout.StartedAt,
-            durationS = workout.DurationS,
-            distanceM = workout.DistanceM,
-            avgPaceS = workout.AvgPaceS,
-            elevGainM = workout.ElevGainM,
-            elevLossM = workout.ElevLossM,
-            minElevM = workout.MinElevM,
-            maxElevM = workout.MaxElevM,
-            maxSpeedMps = workout.MaxSpeedMps,
-            avgSpeedMps = workout.AvgSpeedMps,
-            movingTimeS = workout.MovingTimeS,
-            timerTimeS = workout.TimerTimeS,
-            maxHeartRateBpm = workout.MaxHeartRateBpm,
-            avgHeartRateBpm = workout.AvgHeartRateBpm,
-            minHeartRateBpm = workout.MinHeartRateBpm,
-            maxCadenceRpm = workout.MaxCadenceRpm,
-            avgCadenceRpm = workout.AvgCadenceRpm,
-            maxPowerWatts = workout.MaxPowerWatts,
-            avgPowerWatts = workout.AvgPowerWatts,
-            calories = workout.Calories,
-            relativeEffort = workout.RelativeEffort,
-            heartRateZoneTimes,
-            rpe = workout.Rpe,
-            runType = workout.RunType,
-            notes = workout.Notes,
-            source = workout.Source,
-            device = workout.Device,
-            healthKitUuid = workout.HealthKitUuid,
-            name = workout.Name,
-            shoeId = workout.ShoeId,
-            shoe = shoe,
-            weather = weather,
-            rawGpxData = rawGpxData,
-            rawFitData = rawFitData,
-            rawStravaData = rawStravaData,
-            rawHealthKitData = rawHealthKitData,
-            createdAt = workout.CreatedAt,
-            route = routeGeoJson,
-            splits = splits
+            Id = workout.Id,
+            StartedAt = workout.StartedAt,
+            DurationS = workout.DurationS,
+            DistanceM = workout.DistanceM,
+            AvgPaceS = workout.AvgPaceS,
+            ElevGainM = workout.ElevGainM,
+            ElevLossM = workout.ElevLossM,
+            MinElevM = workout.MinElevM,
+            MaxElevM = workout.MaxElevM,
+            MaxSpeedMps = workout.MaxSpeedMps,
+            AvgSpeedMps = workout.AvgSpeedMps,
+            MovingTimeS = workout.MovingTimeS,
+            TimerTimeS = workout.TimerTimeS,
+            MaxHeartRateBpm = workout.MaxHeartRateBpm,
+            AvgHeartRateBpm = workout.AvgHeartRateBpm,
+            MinHeartRateBpm = workout.MinHeartRateBpm,
+            MaxCadenceRpm = workout.MaxCadenceRpm,
+            AvgCadenceRpm = workout.AvgCadenceRpm,
+            MaxPowerWatts = workout.MaxPowerWatts,
+            AvgPowerWatts = workout.AvgPowerWatts,
+            Calories = workout.Calories,
+            RelativeEffort = workout.RelativeEffort,
+            HeartRateZoneTimes = heartRateZoneTimes,
+            Rpe = workout.Rpe,
+            RunType = workout.RunType,
+            Notes = workout.Notes,
+            Source = workout.Source,
+            Device = workout.Device,
+            HealthKitUuid = workout.HealthKitUuid,
+            Name = workout.Name,
+            ShoeId = workout.ShoeId,
+            Shoe = shoe,
+            Weather = weather,
+            RawGpxData = rawGpxData,
+            RawFitData = rawFitData,
+            RawStravaData = rawStravaData,
+            RawHealthKitData = rawHealthKitData,
+            CreatedAt = workout.CreatedAt,
+            Route = routeGeoJson,
+            Splits = splits
         });
     }
 
     /// <summary>
     /// Paginated WorkoutTimeSeries samples for a workout.
     /// </summary>
+    /// <remarks>
+    /// The only API surface for per-sample series; <c>GET /workouts/{id}</c> does not embed time-series.
+    /// Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors:
+    /// distanceM, heartRateBpm, cadenceRpm (steps/min, both feet; not single-leg RPM), powerWatts, speedMps,
+    /// gradePercent, elevationM, temperatureC, verticalSpeedMps.
+    /// Null fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second
+    /// is present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed.
+    /// The server does not interpolate missing seconds; clients may interpolate if needed.
+    /// Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second.
+    /// Default pageSize is 1000 with a maximum of 5000; use multiple requests for long activities.
+    /// </remarks>
     private static async Task<IResult> GetWorkoutTimeSeries(
         Guid id,
         TempoDbContext db,
@@ -1448,7 +1340,7 @@ public static class WorkoutsEndpoints
         var workoutExists = await db.Workouts.AsNoTracking().AnyAsync(w => w.Id == id);
         if (!workoutExists)
         {
-            return Results.NotFound(new { error = "Workout not found" });
+            return Results.NotFound(new ErrorResponse { Error = "Workout not found" });
         }
 
         if (page < 1)
@@ -1478,34 +1370,34 @@ public static class WorkoutsEndpoints
         var pageOutOfRange = totalPages > 0 ? page > totalPages : page > 1;
         if (pageOutOfRange)
         {
-            return Results.NotFound(new { error = "Page not found" });
+            return Results.NotFound(new ErrorResponse { Error = "Page not found" });
         }
 
         var rows = await query
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(ts => new
+            .Select(ts => new WorkoutTimeSeriesPointDocument
             {
-                elapsedSeconds = ts.ElapsedSeconds,
-                distanceM = ts.DistanceM,
-                heartRateBpm = ts.HeartRateBpm.HasValue ? (int?)ts.HeartRateBpm.Value : null,
-                cadenceRpm = ts.CadenceRpm.HasValue ? (int?)ts.CadenceRpm.Value : null,
-                powerWatts = ts.PowerWatts.HasValue ? (int?)ts.PowerWatts.Value : null,
-                speedMps = ts.SpeedMps,
-                gradePercent = ts.GradePercent,
-                elevationM = ts.ElevationM,
-                temperatureC = ts.TemperatureC.HasValue ? (int?)ts.TemperatureC.Value : null,
-                verticalSpeedMps = ts.VerticalSpeedMps
+                ElapsedSeconds = ts.ElapsedSeconds,
+                DistanceM = ts.DistanceM,
+                HeartRateBpm = ts.HeartRateBpm.HasValue ? (int?)ts.HeartRateBpm.Value : null,
+                CadenceRpm = ts.CadenceRpm.HasValue ? (int?)ts.CadenceRpm.Value : null,
+                PowerWatts = ts.PowerWatts.HasValue ? (int?)ts.PowerWatts.Value : null,
+                SpeedMps = ts.SpeedMps,
+                GradePercent = ts.GradePercent,
+                ElevationM = ts.ElevationM,
+                TemperatureC = ts.TemperatureC.HasValue ? (int?)ts.TemperatureC.Value : null,
+                VerticalSpeedMps = ts.VerticalSpeedMps
             })
             .ToListAsync();
 
-        return Results.Ok(new
+        return Results.Ok(new PagedResponse<WorkoutTimeSeriesPointDocument>
         {
-            items = rows,
-            page,
-            pageSize,
-            totalCount,
-            totalPages
+            Items = rows,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            TotalPages = totalPages
         });
     }
 
@@ -1540,13 +1432,13 @@ public static class WorkoutsEndpoints
 
             if (currentWorkout == null)
             {
-                return Results.NotFound(new { error = "Workout not found" });
+                return Results.NotFound(new ErrorResponse { Error = "Workout not found" });
             }
 
             // Verify workout has route data
             if (currentWorkout.Route == null || string.IsNullOrEmpty(currentWorkout.Route.RouteGeoJson))
             {
-                return Results.BadRequest(new { error = "Workout has no route data" });
+                return Results.BadRequest(new ErrorResponse { Error = "Workout has no route data" });
             }
 
             // Find similar routes
@@ -1555,10 +1447,9 @@ public static class WorkoutsEndpoints
             // Get current workout details for comparison
             var currentDurationS = currentWorkout.DurationS;
             var currentAvgPaceS = currentWorkout.AvgPaceS;
-            var currentRelativeEffort = currentWorkout.RelativeEffort;
-            var currentElevGainM = currentWorkout.ElevGainM;
+            var currentAvgHeartRateBpm = currentWorkout.AvgHeartRateBpm;
 
-            // Load full workout details for matches to access RelativeEffort and ElevGainM
+            // Load full workout details for matches (effort, elev, HR, name, runType)
             var matchWorkoutIds = similarRoutes.Select(m => m.WorkoutId).ToList();
             var matchWorkouts = await db.Workouts
                 .AsNoTracking()
@@ -1570,7 +1461,7 @@ public static class WorkoutsEndpoints
             {
                 matchWorkouts.TryGetValue(match.WorkoutId, out var matchWorkout);
 
-                return new SimilarRouteResponse
+                return new SimilarRouteDocument
                 {
                     WorkoutId = match.WorkoutId,
                     StartedAt = match.StartedAt,
@@ -1581,7 +1472,15 @@ public static class WorkoutsEndpoints
                     TimeDifferenceS = match.DurationS - currentDurationS, // Negative = faster, Positive = slower
                     PaceDifferenceS = match.AvgPaceS - currentAvgPaceS, // Negative = faster pace
                     RelativeEffort = matchWorkout?.RelativeEffort,
-                    ElevGainM = matchWorkout?.ElevGainM
+                    ElevGainM = matchWorkout?.ElevGainM,
+                    AvgHeartRateBpm = matchWorkout?.AvgHeartRateBpm,
+                    AvgHeartRateDifferenceBpm =
+                        matchWorkout?.AvgHeartRateBpm is byte matchHr
+                        && currentAvgHeartRateBpm is byte currentHr
+                            ? matchHr - currentHr
+                            : null,
+                    Name = matchWorkout?.Name,
+                    RunType = matchWorkout?.RunType
                 };
             }).ToList();
 
@@ -1907,7 +1806,7 @@ public static class WorkoutsEndpoints
             {
                 try
                 {
-                    var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                    var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
                     if (relativeEffort.HasValue)
                     {
                         workout.RelativeEffort = relativeEffort.Value;
@@ -2016,7 +1915,7 @@ public static class WorkoutsEndpoints
     /// <returns>Updated workout fields</returns>
     /// <remarks>
     /// Updates workout RunType, Notes, Name, ShoeId, and/or Rpe. All fields are optional - only provided fields are updated.
-    /// RunType must be one of: "Race", "Workout", "Long Run", "Easy Run", or null.
+    /// RunType must be one of the values in the runType enum, or null.
     /// Name must be 200 characters or less.
     /// Rpe must be a whole number from 1 to 10, or null to clear.
     /// </remarks>
@@ -2071,10 +1970,9 @@ public static class WorkoutsEndpoints
                 return Results.BadRequest(new { error = "runType must be a string or null" });
             }
 
-            var validRunTypes = new[] { "Race", "Workout", "Long Run", "Easy Run" };
-            if (runTypeValue != null && !validRunTypes.Contains(runTypeValue))
+            if (runTypeValue != null && !RunTypes.IsValid(runTypeValue))
             {
-                return Results.BadRequest(new { error = $"Invalid runType. Must be one of: {string.Join(", ", validRunTypes)}, or null" });
+                return Results.BadRequest(new { error = $"Invalid runType. Must be one of: {string.Join(", ", RunTypes.All)}, or null" });
             }
             workout.RunType = runTypeValue;
         }
@@ -2213,7 +2111,6 @@ public static class WorkoutsEndpoints
     /// <param name="id">Workout ID</param>
     /// <param name="db">Database context</param>
     /// <param name="mediaConfig">Media storage configuration</param>
-    /// <param name="bestEffortService">Best effort service</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>No content on success</returns>
     /// <remarks>
@@ -2224,7 +2121,6 @@ public static class WorkoutsEndpoints
         Guid id,
         TempoDbContext db,
         MediaStorageConfig mediaConfig,
-        BestEffortService bestEffortService,
         ILogger<Program> logger)
     {
         // Find workout with related media
@@ -2237,12 +2133,6 @@ public static class WorkoutsEndpoints
         {
             return Results.NotFound(new { error = "Workout not found" });
         }
-
-        // Check which best efforts reference this workout before deletion
-        var affectedBestEfforts = await db.BestEfforts
-            .Where(be => be.WorkoutId == id)
-            .Select(be => be.Distance)
-            .ToListAsync();
 
         // Delete all media files from filesystem
         foreach (var media in workout.Media)
@@ -2282,80 +2172,9 @@ public static class WorkoutsEndpoints
             // Continue with deletion even if directory deletion fails
         }
 
-        // Delete workout (cascade will handle route, splits, and media records)
+        // Delete workout (cascade will handle route, splits, media records, and per-workout best efforts)
         db.Workouts.Remove(workout);
         await db.SaveChangesAsync();
-
-        // Recalculate affected best efforts if this workout was referenced
-        if (affectedBestEfforts.Any())
-        {
-            try
-            {
-                // For each affected distance, recalculate from all remaining workouts
-                foreach (var distanceName in affectedBestEfforts)
-                {
-                    if (BestEffortService.StandardDistances.TryGetValue(distanceName, out var targetDistanceM))
-                    {
-                        // Find best effort from remaining workouts for this distance
-                        var qualifyingWorkouts = await db.Workouts
-                            .Include(w => w.Route)
-                            .Where(w => w.DistanceM >= targetDistanceM && w.Id != id)
-                            .ToListAsync();
-
-                        BestEffortService.BestEffortResult? newBestEffort = null;
-                        foreach (var remainingWorkout in qualifyingWorkouts)
-                        {
-                            var result = await bestEffortService.CalculateBestEffortForWorkoutAsync(
-                                db, remainingWorkout, distanceName, targetDistanceM);
-                            if (result != null && (newBestEffort == null || result.TimeS < newBestEffort.TimeS))
-                            {
-                                newBestEffort = result;
-                            }
-                        }
-
-                        // Update or remove best effort
-                        var existingBestEffort = await db.BestEfforts
-                            .FirstOrDefaultAsync(be => be.Distance == distanceName);
-
-                        if (newBestEffort != null)
-                        {
-                            if (existingBestEffort != null)
-                            {
-                                existingBestEffort.TimeS = newBestEffort.TimeS;
-                                existingBestEffort.WorkoutId = Guid.Parse(newBestEffort.WorkoutId);
-                                existingBestEffort.WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc);
-                                existingBestEffort.CalculatedAt = DateTime.UtcNow;
-                            }
-                            else
-                            {
-                                db.BestEfforts.Add(new BestEffort
-                                {
-                                    Distance = distanceName,
-                                    DistanceM = targetDistanceM,
-                                    TimeS = newBestEffort.TimeS,
-                                    WorkoutId = Guid.Parse(newBestEffort.WorkoutId),
-                                    WorkoutDate = DateTime.SpecifyKind(DateTime.Parse(newBestEffort.WorkoutDate), DateTimeKind.Utc),
-                                    CalculatedAt = DateTime.UtcNow
-                                });
-                            }
-                        }
-                        else if (existingBestEffort != null)
-                        {
-                            // No qualifying workouts remain, remove best effort
-                            db.BestEfforts.Remove(existingBestEffort);
-                        }
-                    }
-                }
-
-                await db.SaveChangesAsync();
-                logger.LogInformation("Recalculated {Count} best efforts after deleting workout {WorkoutId}", affectedBestEfforts.Count, id);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to recalculate best efforts after deleting workout {WorkoutId}", id);
-                // Don't fail deletion if best effort recalculation fails
-            }
-        }
 
         logger.LogInformation("Deleted workout {WorkoutId}", id);
 
@@ -2395,8 +2214,8 @@ public static class WorkoutsEndpoints
 
         group.MapGet("", ListWorkouts)
         .WithName("ListWorkouts")
-        .Produces(200)
-        .Produces(404)
+        .Produces<PagedResponse<WorkoutListItemDocument>>(200)
+        .Produces<ErrorResponse>(404)
         .WithSummary("List workouts")
         .WithDescription("Returns a paginated list of workouts with optional filtering. Item route is a simplified preview when stored; otherwise the full route. Each item includes media { id, mimeType } and splitsCount.");
 
@@ -2457,19 +2276,20 @@ public static class WorkoutsEndpoints
 
         group.MapGet("/{id:guid}/similar-routes", GetSimilarRoutes)
         .WithName("GetSimilarRoutes")
-        .Produces(200)
-        .Produces(400)
-        .Produces(404)
+        .Produces<List<SimilarRouteDocument>>(200)
+        .Produces<ErrorResponse>(400)
+        .Produces<ErrorResponse>(404)
         .WithSummary("Get similar routes")
         .WithDescription("Returns previous workouts that were completed on similar routes, allowing users to compare their current performance with past efforts. Includes time and pace differences compared to the current workout. Requires the workout to have route data.");
 
         group.MapGet("/{id:guid}/time-series", GetWorkoutTimeSeries)
         .WithName("GetWorkoutTimeSeries")
-        .Produces(200)
-        .Produces(404)
+        .Produces<PagedResponse<WorkoutTimeSeriesPointDocument>>(200)
+        .Produces<ErrorResponse>(404)
         .WithSummary("Get workout time series")
         .WithDescription(
-            "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm (steps/min), powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. " +
+            "The only API surface for per-sample series; GET /workouts/{id} does not embed time-series. " +
+            "Returns paginated WorkoutTimeSeries samples. Each item includes elapsedSeconds plus optional sensors: distanceM, heartRateBpm, cadenceRpm (steps/min, both feet; not single-leg RPM), powerWatts, speedMps, gradePercent, elevationM, temperatureC, verticalSpeedMps. " +
             "Null fields mean that sensor was not recorded at that sample. Samples are sparse: not every elapsed second is present. GPX imports may be sparse; FIT files are often about one sample per second but not guaranteed. " +
             "The server does not interpolate missing seconds; clients may interpolate if needed. " +
             "Ordering is ascending by elapsedSeconds, then by row id when multiple samples share the same second. " +
@@ -2477,13 +2297,19 @@ public static class WorkoutsEndpoints
 
         group.MapGet("/{id:guid}", GetWorkout)
         .WithName("GetWorkout")
-        .Produces(200)
-        .Produces(404)
+        .Produces<WorkoutDetailDocument>(200)
+        .Produces<ErrorResponse>(404)
         .WithSummary("Get workout details")
         .WithDescription(
             "Retrieves complete workout data including route (as GeoJSON), splits, and weather information. " +
             "Each split includes idx, kind, distanceM, durationS, paceS, avgHeartRateBpm (number or null), " +
             "startElapsedS, endElapsedS, and startDistanceM (number or null). " +
+            "Does not include an embedded timeSeries array; heart-rate and other per-sample sensors are only available " +
+            "via paginated GET /workouts/{id}/time-series (sparse, non-interpolated samples). " +
+            "timerTimeS is FIT total timer time when known (null for non-FIT or missing Session); distinct from " +
+            "durationS (elapsed) and movingTimeS. " +
+            "heartRateZoneTimes is five zone buckets stored per workout from the HR series and the zones in effect " +
+            "when last computed (import, crop, or a Relative Effort recalculation), or JSON null without an HR series. " +
             "Raw GPX/FIT/Strava/HealthKit blobs are JSON null unless includeRaw=true. Weather humidity values " +
             "are normalized for consistency.");
 
@@ -2590,6 +2416,7 @@ public static class WorkoutsEndpoints
 
         group.MapPatch("/{id:guid}", UpdateWorkout)
         .WithName("UpdateWorkout")
+        .Accepts<UpdateWorkoutRequest>("application/json")
         .Produces(200)
         .Produces(400)
         .Produces(404)
@@ -2697,54 +2524,28 @@ public static class WorkoutsEndpoints
     }
 
     /// <summary>
-    /// Live time-in-zone buckets from HR series + current Settings (or null when hidden).
+    /// Time-in-zone buckets from the stored per-workout zone seconds, or null when the workout has no HR series
+    /// (or zone seconds have not been computed yet).
     /// </summary>
-    private static async Task<object[]?> BuildHeartRateZoneTimesAsync(
-        Guid workoutId,
-        TempoDbContext db,
-        HeartRateZoneService zoneService,
-        RelativeEffortService relativeEffortService)
+    private static List<HrZoneTimeDocument>? BuildHeartRateZoneTimes(Workout workout)
     {
-        var series = await db.WorkoutTimeSeries
-            .AsNoTracking()
-            .Where(ts => ts.WorkoutId == workoutId && ts.HeartRateBpm.HasValue)
-            .OrderBy(ts => ts.ElapsedSeconds)
-            .Select(ts => new WorkoutTimeSeries
-            {
-                ElapsedSeconds = ts.ElapsedSeconds,
-                HeartRateBpm = ts.HeartRateBpm
-            })
-            .ToListAsync();
+        int?[] zoneSeconds =
+        [
+            workout.ZoneSecondsZ1,
+            workout.ZoneSecondsZ2,
+            workout.ZoneSecondsZ3,
+            workout.ZoneSecondsZ4,
+            workout.ZoneSecondsZ5,
+        ];
 
-        if (series.Count == 0)
+        if (zoneSeconds.Any(s => !s.HasValue))
         {
             return null;
         }
 
-        var settings = await db.UserSettings.AsNoTracking().FirstOrDefaultAsync();
-        if (settings == null)
-        {
-            return null;
-        }
-
-        var zones = zoneService.GetZonesFromUserSettings(settings);
-        var timeInZones = relativeEffortService.TryGetTimeInZones(series, zones);
-        if (timeInZones == null)
-        {
-            return null;
-        }
-
-        var result = new object[5];
-        for (int i = 0; i < 5; i++)
-        {
-            result[i] = new
-            {
-                zone = i + 1,
-                timeS = (int)Math.Round(timeInZones[i])
-            };
-        }
-
-        return result;
+        return zoneSeconds
+            .Select((s, i) => new HrZoneTimeDocument { Zone = i + 1, TimeS = s!.Value })
+            .ToList();
     }
 
 }

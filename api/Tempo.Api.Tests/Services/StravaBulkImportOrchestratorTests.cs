@@ -180,7 +180,7 @@ public class StravaBulkImportOrchestratorTests : IAsyncLifetime
 
     private sealed class FakeRelativeEffortService : IRelativeEffortService
     {
-        public int? CalculateRelativeEffort(Workout workout, List<HeartRateZone> zones, TempoDbContext db) => null;
+        public int? RecalculateHeartRateMetrics(Workout workout, List<HeartRateZone> zones, TempoDbContext db) => null;
     }
 
     private sealed class FakeBestEffortService : IBestEffortService

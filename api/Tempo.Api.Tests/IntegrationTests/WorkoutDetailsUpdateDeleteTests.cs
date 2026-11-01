@@ -186,6 +186,47 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         result.Splits[2].StartElapsedS.Should().Be(721);
         result.Splits[2].EndElapsedS.Should().Be(1083);
         result.Splits.Should().OnlyContain(s => s.StartDistanceM == null);
+
+        using var raw = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        foreach (var split in raw.RootElement.GetProperty("splits").EnumerateArray())
+        {
+            split.GetProperty("intensity").ValueKind.Should().Be(JsonValueKind.Null);
+            split.GetProperty("trigger").ValueKind.Should().Be(JsonValueKind.Null);
+            split.GetProperty("stepIndex").ValueKind.Should().Be(JsonValueKind.Null);
+        }
+    }
+
+    [Fact]
+    public async Task GetWorkout_DeviceLaps_IncludeIntensityTriggerAndStepIndex()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Intervals");
+
+            var laps = new List<WorkoutSplit>
+            {
+                new() { WorkoutId = workout.Id, Kind = WorkoutSplitKinds.DeviceLap, Idx = 0, DistanceM = 800, DurationS = 180, PaceS = 225, Intensity = "active", Trigger = "distance", StepIndex = 1 },
+                new() { WorkoutId = workout.Id, Kind = WorkoutSplitKinds.DeviceLap, Idx = 1, DistanceM = 300, DurationS = 120, PaceS = 400, Intensity = "rest", Trigger = "time", StepIndex = 2 },
+                new() { WorkoutId = workout.Id, Kind = WorkoutSplitKinds.DeviceLap, Idx = 2, DistanceM = 500, DurationS = 200, PaceS = 400 }
+            };
+            WorkoutSplitElapsed.FillFromCumulativeDuration(laps);
+            db.WorkoutSplits.AddRange(laps);
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync($"/workouts/{workout.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result!.Splits.Should().HaveCount(3);
+        result.Splits.Select(s => s.Intensity).Should().Equal("active", "rest", null);
+        result.Splits.Select(s => s.Trigger).Should().Equal("distance", "time", null);
+        result.Splits.Select(s => s.StepIndex).Should().Equal(1, 2, null);
     }
 
     [Fact]
@@ -494,7 +535,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
     }
 
     [Fact]
-    public async Task GetWorkout_ReturnsHeartRateZoneTimes_WhenSeriesAndSettingsExist()
+    public async Task GetWorkout_ReturnsStoredHeartRateZoneTimes_AfterRecalculateEffort()
     {
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
@@ -516,6 +557,9 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
             await db.SaveChangesAsync();
             workoutId = workout.Id;
         }
+
+        var recalc = await client.PostAsync($"/workouts/{workoutId}/recalculate-effort", null);
+        recalc.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await client.GetAsync($"/workouts/{workoutId}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -539,10 +583,76 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         var zoneTimes = result!.HeartRateZoneTimes;
         zoneTimes.Should().NotBeNull();
         var times = zoneTimes!;
-        times.Should().HaveCount(5);
-        times[0].TimeS.Should().BeGreaterThan(0);
-        times[2].TimeS.Should().BeGreaterThan(0);
-        times[4].TimeS.Should().BeGreaterThan(0);
+        // 10 s spacing; last sample counts 1 s.
+        times.Select(t => t.TimeS).Should().Equal(20, 0, 20, 0, 11);
+    }
+
+    [Fact]
+    public async Task GetWorkout_ReturnsNullHeartRateZoneTimes_WhenZoneSecondsNotComputed()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30);
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Not Computed", durationS: 60);
+            db.WorkoutTimeSeries.AddRange(
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 0, HeartRateBpm = 140 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 10, HeartRateBpm = 140 });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var response = await client.GetAsync($"/workouts/{workoutId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WorkoutDetailResponse>();
+        result!.HeartRateZoneTimes.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RecalculateRelativeEffort_AfterZoneChange_UpdatesStoredZoneTimes()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30); // 140 bpm → Z3 (133–152)
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, name: "Zone Change", durationS: 60);
+            db.WorkoutTimeSeries.AddRange(
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 0, HeartRateBpm = 140 },
+                new WorkoutTimeSeries { WorkoutId = workout.Id, ElapsedSeconds = 10, HeartRateBpm = 140 });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        (await client.PostAsync($"/workouts/{workoutId}/recalculate-effort", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var before = await client.GetFromJsonAsync<WorkoutDetailResponse>($"/workouts/{workoutId}");
+        before!.HeartRateZoneTimes!.Select(t => t.TimeS).Should().Equal(0, 0, 11, 0, 0);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var settings = await db.UserSettings.SingleAsync();
+            settings.Zone3MaxBpm = 135; // 140 bpm → Z4
+            settings.Zone4MinBpm = 135;
+            await db.SaveChangesAsync();
+        }
+
+        // Stored values do not move until a recalculation, same as Relative Effort.
+        var stale = await client.GetFromJsonAsync<WorkoutDetailResponse>($"/workouts/{workoutId}");
+        stale!.HeartRateZoneTimes!.Select(t => t.TimeS).Should().Equal(0, 0, 11, 0, 0);
+
+        (await client.PostAsync("/workouts/recalculate-relative-effort", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var after = await client.GetFromJsonAsync<WorkoutDetailResponse>($"/workouts/{workoutId}");
+        after!.HeartRateZoneTimes!.Select(t => t.TimeS).Should().Equal(0, 0, 0, 11, 0);
     }
 
     [Fact]
@@ -610,6 +720,9 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
             await db.SaveChangesAsync();
             workoutId = workout.Id;
         }
+
+        (await client.PostAsync($"/workouts/{workoutId}/recalculate-effort", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await client.GetAsync($"/workouts/{workoutId}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -717,6 +830,50 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         }
         totalTimeS.Should().BeGreaterThan(0);
         zonesEl[2].GetProperty("timeS").GetInt32().Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task CropWorkout_ReplacesWorkoutBestEfforts()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db,
+                durationS: 1800,
+                distanceM: 5000,
+                includeTimeSeries: true);
+            var bestEffortService = scope.ServiceProvider.GetRequiredService<BestEffortService>();
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+            (await db.WorkoutBestEfforts.AnyAsync(wbe => wbe.WorkoutId == workout.Id && wbe.Distance == "5K"))
+                .Should().BeTrue();
+            workoutId = workout.Id;
+        }
+
+        var cropBody = new StringContent(
+            JsonSerializer.Serialize(new { startTrimSeconds = 60, endTrimSeconds = 60 }),
+            Encoding.UTF8,
+            "application/json");
+        var response = await client.PostAsync($"/workouts/{workoutId}/crop", cropBody);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var cropped = await db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workoutId);
+            cropped.DistanceM.Should().BeLessThan(5000);
+
+            var rows = await db.WorkoutBestEfforts.AsNoTracking()
+                .Where(wbe => wbe.WorkoutId == workoutId)
+                .ToListAsync();
+            // The cropped workout no longer covers 5K; shorter distances are recomputed
+            rows.Select(r => r.Distance).Should().NotContain("5K").And.Contain("1K");
+            rows.Should().OnlyHaveUniqueItems(r => r.Distance);
+        }
     }
 
     #endregion
@@ -1124,6 +1281,43 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         error!.Error.Should().Contain("Invalid runType");
     }
 
+    [Theory]
+    [InlineData("threshold")]
+    [InlineData("Tempo")]
+    public async Task UpdateWorkout_Returns400_ForNearMissRunTypes(string runType)
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Workout workout;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            workout = await TestDataSeeder.SeedWorkoutAsync(db);
+            workout.RunType = RunTypes.EasyRun;
+            await db.SaveChangesAsync();
+        }
+
+        var updateRequest = new { runType };
+        var content = new StringContent(JsonSerializer.Serialize(updateRequest), Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PatchAsync($"/workouts/{workout.Id}", content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        error!.Error.Should().Contain("Invalid runType");
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var stored = await db.Workouts.AsNoTracking().FirstAsync(w => w.Id == workout.Id);
+            stored.RunType.Should().Be(RunTypes.EasyRun);
+        }
+    }
+
     [Fact]
     public async Task UpdateWorkout_AcceptsValidRunTypes()
     {
@@ -1131,9 +1325,7 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
         
-        var validRunTypes = new[] { "Race", "Workout", "Long Run", "Easy Run" };
-        
-        foreach (var runType in validRunTypes)
+        foreach (var runType in RunTypes.All)
         {
             await EnsureCleanDatabaseAsync();
             
@@ -1451,46 +1643,61 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
     }
 
     [Fact]
-    public async Task DeleteWorkout_DeletesBestEfforts_WhenWorkoutHasBestEfforts()
+    public async Task DeleteWorkout_RecordHolder_PreviousBestReturns()
     {
-        // Arrange
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
-        
-        Workout workout;
-        BestEffort bestEffort;
+
+        Guid fasterId;
+        Guid slowerId;
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            workout = await TestDataSeeder.SeedWorkoutAsync(db, distanceM: 5000);
-            await TestDataSeeder.SeedWorkoutWithRouteAsync(db, workout);
-            
-            // Create best effort referencing this workout
-            bestEffort = new BestEffort
-            {
-                Distance = "5K",
-                DistanceM = 5000,
-                TimeS = 1200,
-                WorkoutId = workout.Id,
-                WorkoutDate = workout.StartedAt,
-                CalculatedAt = DateTime.UtcNow
-            };
-            db.BestEfforts.Add(bestEffort);
-            await db.SaveChangesAsync();
+            var slower = await TestDataSeeder.SeedWorkoutCompleteAsync(db, distanceM: 5000, durationS: 1500);
+            var faster = await TestDataSeeder.SeedWorkoutCompleteAsync(db, distanceM: 5000, durationS: 1200);
+            await scope.ServiceProvider.GetRequiredService<BestEffortService>().CalculateAllBestEffortsAsync(db);
+            fasterId = faster.Id;
+            slowerId = slower.Id;
         }
 
-        // Act
-        var response = await client.DeleteAsync($"/workouts/{workout.Id}");
-
-        // Assert
+        var response = await client.DeleteAsync($"/workouts/{fasterId}");
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        
-        // Verify best effort deleted (cascade delete)
+
+        var bestEfforts = await client.GetFromJsonAsync<JsonElement>("/stats/best-efforts");
+        var fiveK = bestEfforts.GetProperty("distances").EnumerateArray()
+            .Single(d => d.GetProperty("distance").GetString() == "5K");
+        fiveK.GetProperty("timeS").GetInt32().Should().Be(1500);
+        fiveK.GetProperty("workoutId").GetString().Should().Be(slowerId.ToString());
+    }
+
+    [Fact]
+    public async Task DeleteWorkout_DeletesWorkoutBestEfforts()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        Guid otherWorkoutId;
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var remainingBestEffort = await db.BestEfforts.FindAsync(bestEffort.Id);
-            remainingBestEffort.Should().BeNull();
+            var bestEffortService = scope.ServiceProvider.GetRequiredService<BestEffortService>();
+            var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(db, distanceM: 5000, durationS: 1200);
+            var other = await TestDataSeeder.SeedWorkoutCompleteAsync(db, distanceM: 5000, durationS: 1500);
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, other);
+            workoutId = workout.Id;
+            otherWorkoutId = other.Id;
+        }
+
+        var response = await client.DeleteAsync($"/workouts/{workoutId}");
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            (await db.WorkoutBestEfforts.AnyAsync(wbe => wbe.WorkoutId == workoutId)).Should().BeFalse();
+            (await db.WorkoutBestEfforts.AnyAsync(wbe => wbe.WorkoutId == otherWorkoutId)).Should().BeTrue();
         }
     }
 
@@ -1681,6 +1888,9 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         public int StartElapsedS { get; set; }
         public int EndElapsedS { get; set; }
         public double? StartDistanceM { get; set; }
+        public string? Intensity { get; set; }
+        public string? Trigger { get; set; }
+        public int? StepIndex { get; set; }
     }
 
     private class ShoeResponse

@@ -62,8 +62,6 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         Workout? workout1 = null;
         Workout? workout2 = null;
         Workout? workout3 = null;
-        BestEffort? bestEffort1 = null;
-        BestEffort? bestEffort2 = null;
 
         using (var scope = _factory.Server.Services.CreateScope())
         {
@@ -95,27 +93,8 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             await TestDataSeeder.SeedWorkoutWithMediaAsync(
                 db, workout1, mediaConfig.RootPath, count: 2);
 
-            // Create best efforts
-            bestEffort1 = new BestEffort
-            {
-                Distance = "5K",
-                DistanceM = 5000,
-                TimeS = 1800,
-                WorkoutId = workout1.Id,
-                WorkoutDate = workout1.StartedAt,
-                CalculatedAt = DateTime.UtcNow
-            };
-            bestEffort2 = new BestEffort
-            {
-                Distance = "10K",
-                DistanceM = 10000,
-                TimeS = 3600,
-                WorkoutId = workout2.Id,
-                WorkoutDate = workout2.StartedAt,
-                CalculatedAt = DateTime.UtcNow
-            };
-            db.BestEfforts.AddRange(bestEffort1, bestEffort2);
-            await db.SaveChangesAsync();
+            // Compute per-workout best efforts (derived; not exported)
+            await scope.ServiceProvider.GetRequiredService<BestEffortService>().CalculateAllBestEffortsAsync(db);
         }
 
         // Export data
@@ -146,7 +125,6 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         importResult.Statistics.Splits.Imported.Should().BeGreaterThan(0);
         importResult.Statistics.TimeSeries.Imported.Should().BeGreaterThan(0);
         importResult.Statistics.Media.Imported.Should().Be(2);
-        importResult.Statistics.BestEfforts.Imported.Should().Be(2);
         importResult.Statistics.RawFiles.Imported.Should().Be(1);
 
         // Verify all entities imported correctly
@@ -161,8 +139,11 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             (await db.WorkoutSplits.CountAsync()).Should().BeGreaterThan(0);
             (await db.WorkoutTimeSeries.CountAsync()).Should().BeGreaterThan(0);
             (await db.WorkoutMedia.CountAsync()).Should().Be(2);
-            (await db.BestEfforts.CountAsync()).Should().Be(2);
             (await db.UserSettings.CountAsync()).Should().Be(1);
+
+            // Best efforts are recomputed after restore, not imported
+            (await db.WorkoutBestEfforts.CountAsync()).Should().Be(0);
+            (await db.Workouts.AllAsync(w => w.BestEffortsComputedAt == null)).Should().BeTrue();
 
             // Verify GUIDs preserved
             (await db.Shoes.AnyAsync(s => s.Id == shoe1!.Id)).Should().BeTrue();
@@ -170,8 +151,6 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             (await db.Workouts.AnyAsync(w => w.Id == workout1!.Id)).Should().BeTrue();
             (await db.Workouts.AnyAsync(w => w.Id == workout2!.Id)).Should().BeTrue();
             (await db.Workouts.AnyAsync(w => w.Id == workout3!.Id)).Should().BeTrue();
-            (await db.BestEfforts.AnyAsync(be => be.Id == bestEffort1!.Id)).Should().BeTrue();
-            (await db.BestEfforts.AnyAsync(be => be.Id == bestEffort2!.Id)).Should().BeTrue();
 
             // Verify relationships
             var importedWorkout1 = await db.Workouts
@@ -361,45 +340,26 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
-    public async Task ImportExport_DuplicateBestEfforts_ByGuid_SkipsDuplicates()
+    public async Task ImportExport_OldArchiveWithBestEffortsFile_IgnoresIt()
     {
         // Arrange
         await EnsureCleanDatabaseAsync();
         var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
 
-        BestEffort existingBestEffort = null!;
-        Workout workout = null!;
-        using (var scope = _factory.Server.Services.CreateScope())
+        var workoutId = Guid.NewGuid();
+        // Archive from a version that still exported all-time best-effort records
+        var oldBestEffort = new
         {
-            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            workout = await TestDataSeeder.SeedWorkoutAsync(db);
-            existingBestEffort = new BestEffort
-            {
-                Distance = "5K",
-                DistanceM = 5000,
-                TimeS = 1800,
-                WorkoutId = workout.Id,
-                WorkoutDate = workout.StartedAt,
-                CalculatedAt = DateTime.UtcNow
-            };
-            db.BestEfforts.Add(existingBestEffort);
-            await db.SaveChangesAsync();
-        }
-
-        // Create export ZIP with duplicate best effort (same GUID)
-        var duplicateBestEffort = new BestEffort
-        {
-            Id = existingBestEffort.Id, // Same GUID
+            Id = Guid.NewGuid(),
             Distance = "5K",
-            DistanceM = 5000,
+            DistanceM = 5000.0,
             TimeS = 1800,
-            WorkoutId = workout.Id,
-            WorkoutDate = workout.StartedAt,
+            WorkoutId = workoutId,
+            WorkoutDate = DateTime.UtcNow.AddHours(-1),
             CalculatedAt = DateTime.UtcNow
         };
+        var zipStream = CreateExportZipWithBestEfforts(new object[] { oldBestEffort }, workoutId);
 
-        var zipStream = CreateExportZipWithBestEfforts(new[] { duplicateBestEffort }, workout.Id);
-        
         // Import
         var formContent = new MultipartFormDataContent();
         var streamContent = new StreamContent(zipStream);
@@ -409,62 +369,12 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         var importResult = await ImportExportAndWaitAsync(client, formContent);
         importResult.Should().NotBeNull();
         importResult!.Success.Should().BeTrue();
-        importResult.Statistics.BestEfforts.Imported.Should().Be(0);
-        importResult.Statistics.BestEfforts.Skipped.Should().Be(1);
-        importResult.Warnings.Should().Contain(w => w.Contains("already exists") || w.Contains("GUID"));
-    }
+        importResult.Statistics.Workouts.Imported.Should().Be(1);
 
-    [Fact]
-    public async Task ImportExport_DuplicateBestEfforts_ByDistance_SkipsDuplicates()
-    {
-        // Arrange
-        await EnsureCleanDatabaseAsync();
-        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
-
-        Workout workout = null!;
-        using (var scope = _factory.Server.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            workout = await TestDataSeeder.SeedWorkoutAsync(db);
-            var existingBestEffort = new BestEffort
-            {
-                Distance = "5K",
-                DistanceM = 5000,
-                TimeS = 1800,
-                WorkoutId = workout.Id,
-                WorkoutDate = workout.StartedAt,
-                CalculatedAt = DateTime.UtcNow
-            };
-            db.BestEfforts.Add(existingBestEffort);
-            await db.SaveChangesAsync();
-        }
-
-        // Create export ZIP with duplicate best effort (different GUID, same Distance)
-        var duplicateBestEffort = new BestEffort
-        {
-            Id = Guid.NewGuid(), // Different GUID
-            Distance = "5K", // Same Distance
-            DistanceM = 5000,
-            TimeS = 1800,
-            WorkoutId = workout.Id,
-            WorkoutDate = workout.StartedAt,
-            CalculatedAt = DateTime.UtcNow
-        };
-
-        var zipStream = CreateExportZipWithBestEfforts(new[] { duplicateBestEffort }, workout.Id);
-        
-        // Import
-        var formContent = new MultipartFormDataContent();
-        var streamContent = new StreamContent(zipStream);
-        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
-        formContent.Add(streamContent, "file", "export.zip");
-
-        var importResult = await ImportExportAndWaitAsync(client, formContent);
-        importResult.Should().NotBeNull();
-        importResult!.Success.Should().BeTrue();
-        importResult.Statistics.BestEfforts.Imported.Should().Be(0);
-        importResult.Statistics.BestEfforts.Skipped.Should().Be(1);
-        importResult.Warnings.Should().Contain(w => w.Contains("already exists") || w.Contains("Distance"));
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.WorkoutBestEfforts.AnyAsync()).Should().BeFalse();
+        (await db.Workouts.SingleAsync(w => w.Id == workoutId)).BestEffortsComputedAt.Should().BeNull();
     }
 
     [Fact]
@@ -498,25 +408,16 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
 
             await TestDataSeeder.SeedWorkoutWithMediaAsync(db, workout1, mediaConfig.RootPath, count: 1);
 
-            var bestEffort = new BestEffort
-            {
-                Distance = "5K",
-                DistanceM = 5000,
-                TimeS = 1800,
-                WorkoutId = workout1.Id,
-                WorkoutDate = workout1.StartedAt,
-                CalculatedAt = DateTime.UtcNow
-            };
-            db.BestEfforts.Add(bestEffort);
-            await db.SaveChangesAsync();
+            await scope.ServiceProvider.GetRequiredService<BestEffortService>().CalculateAllBestEffortsAsync(db);
         }
 
         // Get original database state (query all data before scope is disposed)
         int originalShoesCount, originalWorkoutsCount, originalRoutesCount, originalSplitsCount;
-        int originalTimeSeriesCount, originalMediaCount, originalBestEffortsCount, originalSettingsCount;
+        int originalTimeSeriesCount, originalMediaCount, originalSettingsCount;
         double originalTotalDistanceM;
         int originalTotalDurationS;
-        List<Guid> originalShoeIds, originalWorkoutIds, originalBestEffortIds;
+        List<Guid> originalShoeIds, originalWorkoutIds;
+        List<BestEffortService.BestEffortResult> originalBestEfforts;
         List<WorkoutData> originalWorkoutData;
         List<WorkoutRouteData> originalWorkoutRoutePairs;
 
@@ -529,13 +430,12 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             originalSplitsCount = await db.WorkoutSplits.CountAsync();
             originalTimeSeriesCount = await db.WorkoutTimeSeries.CountAsync();
             originalMediaCount = await db.WorkoutMedia.CountAsync();
-            originalBestEffortsCount = await db.BestEfforts.CountAsync();
             originalSettingsCount = await db.UserSettings.CountAsync();
             originalTotalDistanceM = await db.Workouts.SumAsync(w => w.DistanceM);
             originalTotalDurationS = await db.Workouts.SumAsync(w => w.DurationS);
             originalShoeIds = await db.Shoes.Select(s => s.Id).ToListAsync();
             originalWorkoutIds = await db.Workouts.Select(w => w.Id).ToListAsync();
-            originalBestEffortIds = await db.BestEfforts.Select(be => be.Id).ToListAsync();
+            originalBestEfforts = await scope.ServiceProvider.GetRequiredService<BestEffortService>().GetBestEffortsAsync(db);
             originalWorkoutData = await db.Workouts
                 .Select(w => new WorkoutData { Id = w.Id, StartedAt = w.StartedAt, CreatedAt = w.CreatedAt, ShoeId = w.ShoeId })
                 .ToListAsync();
@@ -573,7 +473,6 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
                 SplitsCount = await db.WorkoutSplits.CountAsync(),
                 TimeSeriesCount = await db.WorkoutTimeSeries.CountAsync(),
                 MediaCount = await db.WorkoutMedia.CountAsync(),
-                BestEffortsCount = await db.BestEfforts.CountAsync(),
                 SettingsCount = await db.UserSettings.CountAsync(),
                 TotalDistanceM = await db.Workouts.SumAsync(w => w.DistanceM),
                 TotalDurationS = await db.Workouts.SumAsync(w => w.DurationS)
@@ -585,7 +484,6 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             comparison.OriginalSplitsCount = originalSplitsCount;
             comparison.OriginalTimeSeriesCount = originalTimeSeriesCount;
             comparison.OriginalMediaCount = originalMediaCount;
-            comparison.OriginalBestEffortsCount = originalBestEffortsCount;
             comparison.OriginalSettingsCount = originalSettingsCount;
             comparison.OriginalTotalDistanceM = originalTotalDistanceM;
             comparison.OriginalTotalDurationS = originalTotalDurationS;
@@ -596,8 +494,12 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             var importedWorkoutIds = await db.Workouts.Select(w => w.Id).ToListAsync();
             comparison.WorkoutGuidsPreserved = originalWorkoutIds.All(id => importedWorkoutIds.Contains(id));
 
-            var importedBestEffortIds = await db.BestEfforts.Select(be => be.Id).ToListAsync();
-            comparison.BestEffortGuidsPreserved = originalBestEffortIds.All(id => importedBestEffortIds.Contains(id));
+            // Best efforts are recomputed by the backfill after restore
+            await scope.ServiceProvider.GetRequiredService<BestEffortBackfillService>().RunAsync();
+            var bestEffortService = scope.ServiceProvider.GetRequiredService<BestEffortService>();
+            comparison.BestEffortsMatch = (await bestEffortService.GetBestEffortsAsync(db))
+                .Select(be => (be.Distance, be.TimeS, be.WorkoutId))
+                .SequenceEqual(originalBestEfforts.Select(be => (be.Distance, be.TimeS, be.WorkoutId)));
 
             var importedWorkoutData = await db.Workouts
                 .Select(w => new WorkoutData { Id = w.Id, StartedAt = w.StartedAt, CreatedAt = w.CreatedAt })
@@ -645,7 +547,6 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             comparison.SplitsCount.Should().Be(comparison.OriginalSplitsCount);
             comparison.TimeSeriesCount.Should().Be(comparison.OriginalTimeSeriesCount);
             comparison.MediaCount.Should().Be(comparison.OriginalMediaCount);
-            comparison.BestEffortsCount.Should().Be(comparison.OriginalBestEffortsCount);
             comparison.SettingsCount.Should().Be(comparison.OriginalSettingsCount);
 
             // Verify totals match
@@ -655,13 +556,58 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             // Verify GUIDs preserved
             comparison.ShoeGuidsPreserved.Should().BeTrue();
             comparison.WorkoutGuidsPreserved.Should().BeTrue();
-            comparison.BestEffortGuidsPreserved.Should().BeTrue();
+            comparison.BestEffortsMatch.Should().BeTrue();
 
             // Verify timestamps preserved
             comparison.TimestampsPreserved.Should().BeTrue();
 
             // Verify relationships preserved
             comparison.RelationshipsPreserved.Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task ImportExport_RoundTrip_RestoresThresholdsOntoExistingSettings()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var settings = await TestDataSeeder.SeedUserSettingsAsync(db);
+            settings.ThresholdPaceS = 255;
+            settings.ThresholdHeartRateBpm = 172;
+            await db.SaveChangesAsync();
+        }
+
+        var exportZip = await ImportTestHelper.CreateExportZipWithDataAsync(client);
+
+        // Clear the thresholds on the existing row so restore takes the update-existing path
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var settings = await db.UserSettings.SingleAsync();
+            settings.ThresholdPaceS = null;
+            settings.ThresholdHeartRateBpm = null;
+            await db.SaveChangesAsync();
+        }
+
+        exportZip.Position = 0;
+        var formContent = new MultipartFormDataContent();
+        var streamContent = new StreamContent(exportZip);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        formContent.Add(streamContent, "file", "export.zip");
+
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
+        importResult.Success.Should().BeTrue();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var restored = await db.UserSettings.AsNoTracking().SingleAsync();
+            restored.ThresholdPaceS.Should().Be(255);
+            restored.ThresholdHeartRateBpm.Should().Be(172);
         }
     }
 
@@ -696,6 +642,17 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
                 workout,
                 (0, 1600, 650, 0, 650),
                 (1, 3400, 1150, 650, 1800));
+
+            var seededLaps = await db.WorkoutSplits
+                .Where(s => s.WorkoutId == workoutId && s.Kind == WorkoutSplitKinds.DeviceLap)
+                .OrderBy(s => s.Idx)
+                .ToListAsync();
+            seededLaps[0].Intensity = "active";
+            seededLaps[0].Trigger = "distance";
+            seededLaps[0].StepIndex = 1;
+            seededLaps[1].Intensity = "rest";
+            seededLaps[1].Trigger = "position_start";
+            seededLaps[1].StepIndex = 2;
 
             await db.SaveChangesAsync();
 
@@ -753,6 +710,53 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
 
             restored.Count(s => s.Kind == WorkoutSplitKinds.DeviceLap).Should().Be(2);
             restored.Count(s => s.Kind == WorkoutSplitKinds.Distance).Should().BeGreaterThan(0);
+
+            var restoredLaps = restored
+                .Where(s => s.Kind == WorkoutSplitKinds.DeviceLap)
+                .OrderBy(s => s.Idx)
+                .ToList();
+            restoredLaps.Select(s => s.Intensity).Should().Equal("active", "rest");
+            restoredLaps.Select(s => s.Trigger).Should().Equal("distance", "position_start");
+            restoredLaps.Select(s => s.StepIndex).Should().Equal(1, 2);
+            restored.Where(s => s.Kind == WorkoutSplitKinds.Distance)
+                .Should().OnlyContain(s => s.Intensity == null && s.Trigger == null && s.StepIndex == null);
+        }
+    }
+
+    [Fact]
+    public async Task ImportExport_OldZipSplitsMissingLapAnnotations_RestoresNull()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var workoutId = Guid.NewGuid();
+        var startedAt = DateTime.UtcNow.AddHours(-2);
+        var oldSplits = new object[]
+        {
+            new { id = Guid.NewGuid(), workoutId, kind = WorkoutSplitKinds.DeviceLap, idx = 0, distanceM = 1000.0, durationS = 300, paceS = 300.0, startElapsedS = 0, endElapsedS = 300 },
+            new { id = Guid.NewGuid(), workoutId, kind = WorkoutSplitKinds.DeviceLap, idx = 1, distanceM = 1000.0, durationS = 300, paceS = 300.0, startElapsedS = 300, endElapsedS = 600 }
+        };
+        var zip = CreateExportZipWithWorkoutJsonOmittingTimerTimeS(
+            workoutId, startedAt, durationS: 600, distanceM: 2000, avgPaceS: 300, splits: oldSplits);
+
+        var formContent = new MultipartFormDataContent();
+        var streamContent = new StreamContent(zip);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        formContent.Add(streamContent, "file", "export-old.zip");
+
+        var importResult = await ImportExportAndWaitAsync(client, formContent);
+        importResult.Success.Should().BeTrue();
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var restored = await db.WorkoutSplits.AsNoTracking()
+                .Where(s => s.WorkoutId == workoutId)
+                .ToListAsync();
+            restored.Should().HaveCount(2);
+            restored.Should().OnlyContain(s =>
+                s.Kind == WorkoutSplitKinds.DeviceLap &&
+                s.Intensity == null && s.Trigger == null && s.StepIndex == null);
         }
     }
 
@@ -1005,7 +1009,8 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         DateTime startedAt,
         int durationS,
         double distanceM,
-        double avgPaceS)
+        double avgPaceS,
+        object[]? splits = null)
     {
         var workoutWithoutTimer = new
         {
@@ -1034,7 +1039,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
                     shoes = 0,
                     workouts = 1,
                     routes = 0,
-                    splits = 0,
+                    splits = splits?.Length ?? 0,
                     timeSeries = 0,
                     mediaFiles = 0,
                     bestEfforts = 0,
@@ -1063,7 +1068,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             CreateJsonFile(archive, "data/shoes.json", Array.Empty<object>());
             CreateJsonFile(archive, "data/workouts.json", new[] { workoutWithoutTimer });
             CreateJsonFile(archive, "data/routes.json", Array.Empty<object>());
-            CreateJsonFile(archive, "data/splits.json", Array.Empty<object>());
+            CreateJsonFile(archive, "data/splits.json", splits ?? Array.Empty<object>());
             CreateJsonFile(archive, "data/time-series.json", Array.Empty<object>());
             CreateJsonFile(archive, "data/media-metadata.json", Array.Empty<object>());
             CreateJsonFile(archive, "data/best-efforts.json", Array.Empty<object>());
@@ -1073,7 +1078,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         return zipStream;
     }
 
-    private MemoryStream CreateExportZipWithBestEfforts(BestEffort[] bestEfforts, Guid workoutId)
+    private MemoryStream CreateExportZipWithBestEfforts(object[] bestEfforts, Guid workoutId)
     {
         var zipStream = new MemoryStream();
         using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
@@ -1191,7 +1196,6 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
                 Splits = MapItem(stats.Splits),
                 TimeSeries = MapItem(stats.TimeSeries),
                 Media = MapItem(stats.Media),
-                BestEfforts = MapItem(stats.BestEfforts),
                 RawFiles = MapItem(stats.RawFiles)
             },
             Warnings = job.Warnings,
@@ -1236,7 +1240,6 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
         public ItemStatisticsDto Splits { get; set; } = new();
         public ItemStatisticsDto TimeSeries { get; set; } = new();
         public ItemStatisticsDto Media { get; set; } = new();
-        public ItemStatisticsDto BestEfforts { get; set; } = new();
         public ItemStatisticsDto RawFiles { get; set; } = new();
     }
 

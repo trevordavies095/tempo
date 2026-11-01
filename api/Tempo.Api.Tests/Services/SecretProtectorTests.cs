@@ -6,18 +6,18 @@ using Xunit;
 
 namespace Tempo.Api.Tests.Services;
 
-public class IntervalsIcuSecretProtectorTests
+public class SecretProtectorTests
 {
-    private static IntervalsIcuSecretProtector CreateProtector(string secret)
-    {
-        var config = new ConfigurationBuilder()
+    private static IConfiguration CreateConfig(string secret) =>
+        new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["JWT:SecretKey"] = secret
             })
             .Build();
-        return new IntervalsIcuSecretProtector(config);
-    }
+
+    private static IntervalsIcuSecretProtector CreateProtector(string secret) =>
+        new(CreateConfig(secret));
 
     [Fact]
     public void Constructor_WithMissingSecretKey_Throws()
@@ -53,5 +53,18 @@ public class IntervalsIcuSecretProtectorTests
         var blob = first.Encrypt("icu-personal-key");
 
         Assert.ThrowsAny<CryptographicException>(() => second.Decrypt(blob));
+    }
+
+    [Fact]
+    public void Decrypt_WithDifferentPurpose_Fails()
+    {
+        const string secret = "test-secret-key-that-is-at-least-32-characters-long";
+        var intervals = new IntervalsIcuSecretProtector(CreateConfig(secret));
+        var apiKeys = new ApiKeySecretProtector(CreateConfig(secret));
+
+        var blob = apiKeys.Encrypt("tmp_secret");
+
+        apiKeys.Decrypt(blob).Should().Be("tmp_secret");
+        Assert.ThrowsAny<CryptographicException>(() => intervals.Decrypt(blob));
     }
 }

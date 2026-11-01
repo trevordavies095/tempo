@@ -316,12 +316,40 @@ public class FitParserService
                 var lapTrigger = lap.GetLapTrigger();
                 if (lapTrigger.HasValue && lapTrigger.Value != LapTrigger.Invalid)
                 {
-                    trigger = lapTrigger.Value.ToString();
+                    trigger = DeviceLapAnnotations.Normalize(lapTrigger.Value.ToString());
                 }
             }
             catch
             {
                 // LapTrigger may be unset
+            }
+
+            string? intensity = null;
+            try
+            {
+                var lapIntensity = lap.GetIntensity();
+                if (lapIntensity.HasValue && lapIntensity.Value != Intensity.Invalid)
+                {
+                    intensity = DeviceLapAnnotations.Normalize(lapIntensity.Value.ToString());
+                }
+            }
+            catch
+            {
+                // Intensity may be unset
+            }
+
+            int? stepIndex = null;
+            try
+            {
+                var wktStepIndex = lap.GetWktStepIndex();
+                if (wktStepIndex.HasValue && wktStepIndex.Value != ushort.MaxValue)
+                {
+                    stepIndex = wktStepIndex.Value;
+                }
+            }
+            catch
+            {
+                // WktStepIndex may be unset
             }
 
             laps.Add(new DeviceLapSummary
@@ -332,7 +360,9 @@ public class FitParserService
                 TimerS = lap.GetTotalTimerTime(),
                 ElapsedS = lap.GetTotalElapsedTime(),
                 AvgHeartRateBpm = lap.GetAvgHeartRate(),
-                LapTrigger = trigger
+                LapTrigger = trigger,
+                Intensity = intensity,
+                StepIndex = stepIndex
             });
         }
 
@@ -366,7 +396,9 @@ public class FitParserService
                 timer = l.TimerS,
                 distance = l.DistanceM,
                 avgHeartRate = l.AvgHeartRateBpm,
-                trigger = l.LapTrigger
+                trigger = l.LapTrigger,
+                intensity = l.Intensity,
+                stepIndex = l.StepIndex
             }).ToList(),
             trackPoints = trackPoints.Select(p => new
             {

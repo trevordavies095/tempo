@@ -134,8 +134,7 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
             "data/routes.json",
             "data/splits.json",
             "data/time-series.json",
-            "data/media-metadata.json",
-            "data/best-efforts.json"
+            "data/media-metadata.json"
         };
 
         foreach (var file in expectedFiles)
@@ -258,7 +257,7 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         dataFormat.TryGetProperty("splits", out _).Should().BeTrue();
         dataFormat.TryGetProperty("timeSeries", out _).Should().BeTrue();
         dataFormat.TryGetProperty("mediaMetadata", out _).Should().BeTrue();
-        dataFormat.TryGetProperty("bestEfforts", out _).Should().BeTrue();
+        dataFormat.TryGetProperty("bestEfforts", out _).Should().BeFalse();
     }
 
     [Fact]
@@ -283,8 +282,7 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
             "data/routes.json",
             "data/splits.json",
             "data/time-series.json",
-            "data/media-metadata.json",
-            "data/best-efforts.json"
+            "data/media-metadata.json"
         };
 
         foreach (var file in jsonFiles)
@@ -313,17 +311,14 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(_db, shoeId: shoe.Id);
         await TestDataSeeder.SeedUserSettingsAsync(_db, defaultShoeId: shoe.Id);
         
-        // Create a best effort
-        var bestEffort = new BestEffort
+        // Per-workout best efforts are derived; they must not be exported
+        _db.WorkoutBestEfforts.Add(new WorkoutBestEffort
         {
             WorkoutId = workout.Id,
-            Distance = "1km",
+            Distance = "1K",
             DistanceM = 1000.0,
-            TimeS = 240,
-            WorkoutDate = workout.StartedAt,
-            CalculatedAt = DateTime.UtcNow
-        };
-        _db.BestEfforts.Add(bestEffort);
+            TimeS = 240
+        });
         await _db.SaveChangesAsync();
 
         // Act
@@ -346,7 +341,7 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         archive.GetEntry("data/splits.json").Should().NotBeNull();
         archive.GetEntry("data/time-series.json").Should().NotBeNull();
         archive.GetEntry("data/media-metadata.json").Should().NotBeNull();
-        archive.GetEntry("data/best-efforts.json").Should().NotBeNull();
+        archive.GetEntry("data/best-efforts.json").Should().BeNull();
         
         // Verify README exists
         archive.GetEntry("README.txt").Should().NotBeNull();
@@ -361,7 +356,8 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         var statistics = manifest!.GetProperty("statistics");
         statistics.GetProperty("shoes").GetInt32().Should().Be(1);
         statistics.GetProperty("workouts").GetInt32().Should().Be(1);
-        statistics.GetProperty("bestEfforts").GetInt32().Should().Be(1);
+        statistics.TryGetProperty("bestEfforts", out _).Should().BeFalse();
+        manifest.GetProperty("dataFormat").TryGetProperty("bestEfforts", out _).Should().BeFalse();
     }
 
     private async Task<Workout> SeedTestDataAsync()
@@ -427,6 +423,29 @@ public class ExportServiceTests : IClassFixture<TempoWebApplicationFactory>, IDi
         workouts![0].TryGetProperty("splitHeartRateBackfill", out _).Should().BeFalse();
         workouts[0].TryGetProperty("SplitHeartRateBackfill", out _).Should().BeFalse();
         workouts[0].GetProperty("id").GetGuid().Should().Be(workout.Id);
+    }
+
+    [Fact]
+    public async Task ExportAllDataAsync_WorkoutsJsonOmitsZoneSeconds()
+    {
+        await CleanDatabaseAsync();
+        var workout = await TestDataSeeder.SeedWorkoutAsync(_db);
+        workout.ZoneSecondsZ1 = 60;
+        workout.ZoneSecondsZ2 = 120;
+        workout.ZoneSecondsZ3 = 180;
+        workout.ZoneSecondsZ4 = 240;
+        workout.ZoneSecondsZ5 = 300;
+        workout.ZoneSecondsComputedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        using var zipStream = new MemoryStream();
+        await _exportService.ExportAllDataAsync(zipStream);
+        zipStream.Position = 0;
+
+        using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+        using var workoutsStream = archive.GetEntry("data/workouts.json")!.Open();
+        var workoutsJson = await new StreamReader(workoutsStream).ReadToEndAsync();
+        workoutsJson.Should().NotContainEquivalentOf("zoneSeconds");
     }
 
     [Fact]

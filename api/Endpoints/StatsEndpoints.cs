@@ -3,14 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Models.Responses;
 using Tempo.Api.Services;
 
 namespace Tempo.Api.Endpoints;
 
 public static class StatsEndpoints
 {
-    private const string EasyRunType = "Easy Run";
-
     /// <summary>
     /// Aggregates for a single UTC-inclusive workout window [startUtc, endUtc].
     /// </summary>
@@ -20,7 +19,11 @@ public static class StatsEndpoints
         long DurationS,
         double ElevationGainM,
         int RelativeEffortSum,
-        double? EasyRunAvgHeartRateBpm);
+        double? EasyRunAvgHeartRateBpm,
+        long MovingTimeS,
+        double LongestRunDistanceM,
+        int LongestRunDurationS,
+        long[]? ZoneSeconds);
 
     private sealed record UtcRange(DateTime StartUtc, DateTime EndUtc);
 
@@ -126,35 +129,122 @@ public static class StatsEndpoints
     {
         if (range.EndUtc < range.StartUtc)
         {
-            return new BucketAggregates(0, 0, 0, 0, 0, null);
+            return EmptyBucket;
         }
 
-        var baseQuery = db.Workouts.AsNoTracking()
-            .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc);
+        // One round trip per window: every metric is a (conditional) aggregate over the same rows.
+        var row = await db.Workouts.AsNoTracking()
+            .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Runs = g.Count(),
+                DistanceM = g.Sum(w => w.DistanceM),
+                DurationS = g.Sum(w => (long)w.DurationS),
+                ElevationGainM = g.Sum(w => w.ElevGainM ?? 0.0),
+                RelativeEffortSum = g.Sum(w => w.RelativeEffort ?? 0),
+                // Moving time falls back to elapsed when the source has no moving time.
+                MovingTimeS = g.Sum(w => (long)(w.MovingTimeS ?? w.DurationS)),
+                LongestRunDistanceM = g.Max(w => w.DistanceM),
+                LongestRunDurationS = g.Max(w => w.MovingTimeS ?? w.DurationS),
+                // Easy-run HR: RunType Easy Run / Recovery with avg HR and positive duration, duration-weighted.
+                EasyDurationS = g.Sum(w =>
+                    (w.RunType == RunTypes.EasyRun || w.RunType == RunTypes.Recovery) &&
+                    w.AvgHeartRateBpm != null && w.DurationS > 0
+                        ? (long)w.DurationS
+                        : 0L),
+                EasyWeightedHr = g.Sum(w =>
+                    (w.RunType == RunTypes.EasyRun || w.RunType == RunTypes.Recovery) &&
+                    w.AvgHeartRateBpm != null && w.DurationS > 0
+                        ? (double)w.AvgHeartRateBpm!.Value * w.DurationS
+                        : 0.0),
+                // Stored per-workout zone seconds; the five columns are written together, so Z1 marks "has HR".
+                ZonedRuns = g.Count(w => w.ZoneSecondsZ1 != null),
+                ZoneSecondsZ1 = g.Sum(w => (long)(w.ZoneSecondsZ1 ?? 0)),
+                ZoneSecondsZ2 = g.Sum(w => (long)(w.ZoneSecondsZ2 ?? 0)),
+                ZoneSecondsZ3 = g.Sum(w => (long)(w.ZoneSecondsZ3 ?? 0)),
+                ZoneSecondsZ4 = g.Sum(w => (long)(w.ZoneSecondsZ4 ?? 0)),
+                ZoneSecondsZ5 = g.Sum(w => (long)(w.ZoneSecondsZ5 ?? 0))
+            })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var runs = await baseQuery.CountAsync(cancellationToken);
-        var distanceM = await baseQuery.SumAsync(w => (double?)w.DistanceM, cancellationToken) ?? 0.0;
-        var durationS = await baseQuery.SumAsync(w => (long?)w.DurationS, cancellationToken) ?? 0L;
-        var elevationGainM = await baseQuery.SumAsync(w => (double?)(w.ElevGainM ?? 0.0), cancellationToken) ?? 0.0;
-        var relativeEffortSum = await baseQuery.SumAsync(w => (int?)w.RelativeEffort, cancellationToken) ?? 0;
-
-        var easyQuery = baseQuery.Where(w =>
-            w.RunType == EasyRunType &&
-            w.AvgHeartRateBpm != null &&
-            w.DurationS > 0);
-
-        var easyDur = await easyQuery.SumAsync(w => (long?)w.DurationS, cancellationToken) ?? 0L;
-        double? easyHrAvg = null;
-        if (easyDur > 0)
+        if (row == null)
         {
-            var weighted = await easyQuery.SumAsync(
-                w => (double)w.AvgHeartRateBpm!.Value * w.DurationS,
-                cancellationToken);
-            easyHrAvg = Math.Round(weighted / easyDur, 1, MidpointRounding.AwayFromZero);
+            return EmptyBucket;
         }
 
-        return new BucketAggregates(runs, distanceM, durationS, elevationGainM, relativeEffortSum, easyHrAvg);
+        double? easyHrAvg = row.EasyDurationS > 0
+            ? Math.Round(row.EasyWeightedHr / row.EasyDurationS, 1, MidpointRounding.AwayFromZero)
+            : null;
+
+        return new BucketAggregates(
+            row.Runs,
+            row.DistanceM,
+            row.DurationS,
+            row.ElevationGainM,
+            row.RelativeEffortSum,
+            easyHrAvg,
+            row.MovingTimeS,
+            row.LongestRunDistanceM,
+            row.LongestRunDurationS,
+            row.ZonedRuns > 0
+                ? [row.ZoneSecondsZ1, row.ZoneSecondsZ2, row.ZoneSecondsZ3, row.ZoneSecondsZ4, row.ZoneSecondsZ5]
+                : null);
     }
+
+    private static readonly BucketAggregates EmptyBucket = new(0, 0, 0, 0, 0, null, 0, 0, 0, null);
+
+    /// <summary>
+    /// Run counts by <c>RunType</c> for one window: canonical types in display order, then any legacy values,
+    /// then <c>Unspecified</c> for workouts without a run type. Types with no runs are omitted.
+    /// </summary>
+    private static async Task<Dictionary<string, int>> GetRunsByTypeAsync(
+        TempoDbContext db,
+        UtcRange range,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (range.EndUtc < range.StartUtc)
+        {
+            return result;
+        }
+
+        var counts = await db.Workouts.AsNoTracking()
+            .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc)
+            .GroupBy(w => w.RunType)
+            .Select(g => new { RunType = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        // Canonical types first (display order), then legacy values, then Unspecified.
+        int SortRank(string? runType)
+        {
+            if (runType == null)
+            {
+                return int.MaxValue;
+            }
+
+            for (var i = 0; i < RunTypes.All.Count; i++)
+            {
+                if (RunTypes.All[i] == runType)
+                {
+                    return i;
+                }
+            }
+
+            return RunTypes.All.Count;
+        }
+
+        foreach (var c in counts
+            .OrderBy(c => SortRank(c.RunType))
+            .ThenBy(c => c.RunType, StringComparer.Ordinal))
+        {
+            result[c.RunType ?? UnspecifiedRunType] = c.Count;
+        }
+
+        return result;
+    }
+
+    private const string UnspecifiedRunType = "Unspecified";
 
     private static double AverageDouble(double a, double b, double c) => (a + b + c) / 3.0;
 
@@ -172,67 +262,91 @@ public static class StatsEndpoints
         return Math.Round(values.Average(), 1, MidpointRounding.AwayFromZero);
     }
 
-    private static object MetricInt(
+    private static WeeklyRecapMetricIntDocument MetricInt(
         int current,
         int previous,
         double trailingAvg,
         int? deltaVsPrevious)
     {
-        return new
+        return new WeeklyRecapMetricIntDocument
         {
-            current,
-            previous,
-            trailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
-            deltaVsPrevious
+            Current = current,
+            Previous = previous,
+            TrailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
+            DeltaVsPrevious = deltaVsPrevious
         };
     }
 
-    private static object MetricLong(
+    private static WeeklyRecapMetricLongDocument MetricLong(
         long current,
         long previous,
         double trailingAvg,
         long? deltaVsPrevious)
     {
-        return new
+        return new WeeklyRecapMetricLongDocument
         {
-            current,
-            previous,
-            trailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
-            deltaVsPrevious
+            Current = current,
+            Previous = previous,
+            TrailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
+            DeltaVsPrevious = deltaVsPrevious
         };
     }
 
-    private static object MetricDouble(
+    private static WeeklyRecapMetricDoubleDocument MetricDouble(
         double current,
         double previous,
         double trailingAvg,
         double? deltaVsPrevious)
     {
-        return new
+        return new WeeklyRecapMetricDoubleDocument
         {
-            current,
-            previous,
-            trailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
-            deltaVsPrevious
+            Current = current,
+            Previous = previous,
+            TrailingAvg = Math.Round(trailingAvg, 2, MidpointRounding.AwayFromZero),
+            DeltaVsPrevious = deltaVsPrevious
         };
     }
 
-    private static object MetricNullableDouble(
+    /// <summary>
+    /// Zone <paramref name="zoneIndex"/> (0-based) seconds as a nullable metric: null for a week without HR, trailing
+    /// average over weeks that have a value, delta null when either week is null.
+    /// </summary>
+    private static WeeklyRecapMetricNullableLongDocument MetricZoneSeconds(
+        BucketAggregates current,
+        BucketAggregates previous,
+        BucketAggregates t2,
+        BucketAggregates t3,
+        int zoneIndex)
+    {
+        long? Zone(BucketAggregates bucket) => bucket.ZoneSeconds?[zoneIndex];
+
+        var cur = Zone(current);
+        var prev = Zone(previous);
+        return new WeeklyRecapMetricNullableLongDocument
+        {
+            Current = cur,
+            Previous = prev,
+            TrailingAvg = AverageNullableDouble(prev, Zone(t2), Zone(t3)),
+            DeltaVsPrevious = cur.HasValue && prev.HasValue ? cur.Value - prev.Value : null
+        };
+    }
+
+    private static WeeklyRecapMetricNullableDoubleDocument MetricNullableDouble(
         double? current,
         double? previous,
         double? trailingAvg,
         double? deltaVsPrevious)
     {
-        return new
+        return new WeeklyRecapMetricNullableDoubleDocument
         {
-            current,
-            previous,
-            trailingAvg = trailingAvg.HasValue
+            Current = current,
+            Previous = previous,
+            TrailingAvg = trailingAvg.HasValue
                 ? Math.Round(trailingAvg.Value, 1, MidpointRounding.AwayFromZero)
-                : (double?)null,
-            deltaVsPrevious = deltaVsPrevious.HasValue
+                : null,
+            DeltaVsPrevious = deltaVsPrevious.HasValue
                 ? Math.Round(deltaVsPrevious.Value, 1, MidpointRounding.AwayFromZero)
-                : (double?)null
+                : null
         };
     }
 
@@ -362,35 +476,38 @@ public static class StatsEndpoints
     /// <param name="db">Database context</param>
     /// <param name="logger">Logger instance</param>
     /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC)</param>
+    /// <param name="referenceDate">Optional local calendar date (yyyy-MM-dd) that selects which Monday–Sunday week is treated as &quot;current&quot;; defaults to today in the offset frame.</param>
     /// <returns>Cumulative relative effort for the current week and 3-week average range</returns>
     /// <remarks>
-    /// Returns cumulative relative effort for the current week (Monday-Sunday) and calculates
+    /// Returns cumulative relative effort for the selected week (Monday-Sunday) and calculates
     /// the 3-week average and range from the previous 3 complete weeks.
+    /// Week boundaries match <c>/stats/weekly-recap</c>; the current week query uses the full Mon–Sun window (not week-to-date).
     /// </remarks>
     private static async Task<IResult> GetRelativeEffortStats(
         TempoDbContext db,
         ILogger<Program> logger,
-        [FromQuery] int? timezoneOffsetMinutes = null)
+        [FromQuery] int? timezoneOffsetMinutes = null,
+        [FromQuery] string? referenceDate = null)
     {
-        // Get current week boundaries (Monday-Sunday) in the specified timezone
-        var now = DateTime.UtcNow;
-        if (timezoneOffsetMinutes.HasValue)
+        DateTime? referenceLocalDate = null;
+        if (!string.IsNullOrWhiteSpace(referenceDate))
         {
-            now = now.AddMinutes(timezoneOffsetMinutes.Value);
+            if (!DateTime.TryParse(referenceDate, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
+            {
+                return Results.BadRequest(new ErrorResponse { Error = "Invalid referenceDate; use yyyy-MM-dd." });
+            }
+
+            referenceLocalDate = parsed.Date;
         }
 
-        // Calculate start of current week (Monday)
-        var daysSinceMonday = ((int)now.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        var weekStart = now.Date.AddDays(-daysSinceMonday);
-        var weekEnd = weekStart.AddDays(7).AddTicks(-1);
+        var utcNow = DateTime.UtcNow;
+        var ctx = BuildWeeklyRecapUtcContext(utcNow, timezoneOffsetMinutes, referenceLocalDate);
 
-        // Convert back to UTC for database query
-        var weekStartUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(weekStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(weekStart, DateTimeKind.Utc);
-        var weekEndUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(weekEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(weekEnd, DateTimeKind.Utc);
+        // Full Mon–Sun window (not week-to-date CurrentRange) so the cumulative chart always has 7 day slots.
+        var weekStart = ctx.WeekStartLocal;
+        var weekEnd = ctx.WeekEndLocal;
+        var weekStartUtc = LocalDateRangeStartToUtc(weekStart, timezoneOffsetMinutes);
+        var weekEndUtc = LocalDateRangeEndToUtc(weekEnd, timezoneOffsetMinutes);
 
         // Query workouts for the current week with relative effort
         var currentWeekWorkouts = await db.Workouts
@@ -426,22 +543,13 @@ public static class StatsEndpoints
             cumulativeEffort[i] = runningTotal;
         }
 
-        // Calculate previous 3 complete weeks
+        // Previous 3 complete weeks (same windows as weekly-recap trailing averages)
+        var previousRanges = new[] { ctx.PreviousWeekRange, ctx.TrailingWeek2, ctx.TrailingWeek3 };
         var previousWeeks = new List<int>();
-        for (int weekOffset = 1; weekOffset <= 3; weekOffset++)
+        foreach (var range in previousRanges)
         {
-            var prevWeekStart = weekStart.AddDays(-7 * weekOffset);
-            var prevWeekEnd = prevWeekStart.AddDays(7).AddTicks(-1);
-
-            var prevWeekStartUtc = timezoneOffsetMinutes.HasValue
-                ? DateTime.SpecifyKind(prevWeekStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-                : DateTime.SpecifyKind(prevWeekStart, DateTimeKind.Utc);
-            var prevWeekEndUtc = timezoneOffsetMinutes.HasValue
-                ? DateTime.SpecifyKind(prevWeekEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-                : DateTime.SpecifyKind(prevWeekEnd, DateTimeKind.Utc);
-
             var prevWeekTotal = await db.Workouts
-                .Where(w => w.StartedAt >= prevWeekStartUtc && w.StartedAt <= prevWeekEndUtc)
+                .Where(w => w.StartedAt >= range.StartUtc && w.StartedAt <= range.EndUtc)
                 .AsNoTracking()
                 .SumAsync(w => (int?)w.RelativeEffort) ?? 0;
 
@@ -456,16 +564,16 @@ public static class StatsEndpoints
         // Calculate current week total (last cumulative value)
         var currentWeekTotal = cumulativeEffort[6];
 
-        return Results.Ok(new
+        return Results.Ok(new RelativeEffortStatsDocument
         {
-            weekStart = weekStart.ToString("yyyy-MM-dd"),
-            weekEnd = weekEnd.ToString("yyyy-MM-dd"),
-            currentWeek = cumulativeEffort,
-            previousWeeks = previousWeeks,
-            threeWeekAverage = Math.Round(threeWeekAverage, 1),
-            rangeMin = rangeMin,
-            rangeMax = rangeMax,
-            currentWeekTotal = currentWeekTotal
+            WeekStart = weekStart.ToString("yyyy-MM-dd"),
+            WeekEnd = weekEnd.Date.ToString("yyyy-MM-dd"),
+            CurrentWeek = cumulativeEffort,
+            PreviousWeeks = previousWeeks,
+            ThreeWeekAverage = Math.Round(threeWeekAverage, 1),
+            RangeMin = rangeMin,
+            RangeMax = rangeMax,
+            CurrentWeekTotal = currentWeekTotal
         });
     }
 
@@ -476,12 +584,15 @@ public static class StatsEndpoints
     /// <param name="logger">Logger instance</param>
     /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC), same as other stats endpoints.</param>
     /// <param name="referenceDate">Optional local calendar date (yyyy-MM-dd) that selects which Monday–Sunday week is treated as &quot;current&quot;; defaults to today in the offset frame.</param>
-    /// <returns>Counts, distance, duration, elevation, relative effort, and easy-run HR with current (week-to-date), previous week, trailing 3-week average, and week-over-week deltas.</returns>
+    /// <returns>Counts, distance, duration, moving time, longest run, elevation, relative effort, and easy-run HR with current (week-to-date), previous week, trailing 3-week average, and week-over-week deltas; plus current-week runs by type.</returns>
     /// <remarks>
     /// Week boundaries are Monday 00:00 through Sunday 23:59:59.999 in the local frame implied by <paramref name="timezoneOffsetMinutes"/>.
     /// The current window is [weekStartUtc, min(UTC now, weekEndUtc)] so mid-week responses reflect week-to-date; the response field <c>currentWeekIsPartial</c> is true when UTC now falls inside the current week window.
     /// Trailing averages use the three full calendar weeks immediately before the current week (offsets -1, -2, -3), matching <c>/stats/relative-effort</c>.
-    /// Elevation uses SUM(COALESCE(ElevGainM, 0)). Relative effort sums only non-null values. Easy-run HR uses RunType &quot;Easy Run&quot; with duration-weighted average HR; weeks with no qualifying runs return null for that metric.
+    /// Moving time and longest-run duration use MovingTimeS, falling back to DurationS when null. Longest-run distance and duration are independent maxima (may be different workouts); 0 for a week with no runs.
+    /// Zone seconds (<c>zoneSecondsZ1</c>..<c>zoneSecondsZ5</c>) sum the stored per-workout values (same as <c>heartRateZoneTimes</c> on workout detail); a week with no HR series is null, trailing averages use only weeks with a value, and the delta is null when either week is null.
+    /// <c>runsByType</c> covers the current window only: counts keyed by exact RunType, zero counts omitted, null RunType counted as &quot;Unspecified&quot;.
+    /// Elevation uses SUM(COALESCE(ElevGainM, 0)). Relative effort sums only non-null values. Easy-run HR uses RunType &quot;Easy Run&quot; or &quot;Recovery&quot; (not &quot;Walk-Run&quot;) with duration-weighted average HR; weeks with no qualifying runs return null for that metric.
     /// Deleted workouts do not appear. Fixed-offset timezones do not model DST; clients should send the offset in effect for the user at request time.
     /// </remarks>
     private static async Task<IResult> GetWeeklyRecap(
@@ -495,7 +606,7 @@ public static class StatsEndpoints
         {
             if (!DateTime.TryParse(referenceDate, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
             {
-                return Results.BadRequest(new { error = "Invalid referenceDate; use yyyy-MM-dd." });
+                return Results.BadRequest(new ErrorResponse { Error = "Invalid referenceDate; use yyyy-MM-dd." });
             }
 
             referenceLocalDate = parsed.Date;
@@ -515,31 +626,53 @@ public static class StatsEndpoints
         var trElev = AverageDouble(previous.ElevationGainM, t2.ElevationGainM, t3.ElevationGainM);
         var trEffort = AverageDouble(previous.RelativeEffortSum, t2.RelativeEffortSum, t3.RelativeEffortSum);
         var trEasyHr = AverageNullableDouble(previous.EasyRunAvgHeartRateBpm, t2.EasyRunAvgHeartRateBpm, t3.EasyRunAvgHeartRateBpm);
+        var trMoving = AverageDouble(previous.MovingTimeS, t2.MovingTimeS, t3.MovingTimeS);
+        var trLongestDist = AverageDouble(previous.LongestRunDistanceM, t2.LongestRunDistanceM, t3.LongestRunDistanceM);
+        var trLongestDur = AverageDouble(previous.LongestRunDurationS, t2.LongestRunDurationS, t3.LongestRunDurationS);
+
+        var runsByType = await GetRunsByTypeAsync(db, ctx.CurrentRange);
 
         double? easyDelta = current.EasyRunAvgHeartRateBpm.HasValue && previous.EasyRunAvgHeartRateBpm.HasValue
             ? current.EasyRunAvgHeartRateBpm.Value - previous.EasyRunAvgHeartRateBpm.Value
             : null;
 
-        return Results.Ok(new
+        return Results.Ok(new WeeklyRecapDocument
         {
-            weekStart = ctx.WeekStartLocal.ToString("yyyy-MM-dd"),
-            weekEnd = ctx.WeekEndLocal.Date.ToString("yyyy-MM-dd"),
-            referenceDate = ctx.ReferenceLocalDate.ToString("yyyy-MM-dd"),
-            timezoneOffsetMinutes,
-            currentWeekIsPartial = ctx.CurrentWeekIsPartial,
-            generatedAtUtc = utcNow.ToString("O"),
-            metrics = new
+            WeekStart = ctx.WeekStartLocal.ToString("yyyy-MM-dd"),
+            WeekEnd = ctx.WeekEndLocal.Date.ToString("yyyy-MM-dd"),
+            ReferenceDate = ctx.ReferenceLocalDate.ToString("yyyy-MM-dd"),
+            TimezoneOffsetMinutes = timezoneOffsetMinutes,
+            CurrentWeekIsPartial = ctx.CurrentWeekIsPartial,
+            GeneratedAtUtc = utcNow.ToString("O"),
+            Metrics = new WeeklyRecapMetricsDocument
             {
-                runs = MetricInt(current.Runs, previous.Runs, trRuns, current.Runs - previous.Runs),
-                distanceM = MetricDouble(current.DistanceM, previous.DistanceM, trDist, current.DistanceM - previous.DistanceM),
-                durationS = MetricLong(current.DurationS, previous.DurationS, trDur, current.DurationS - previous.DurationS),
-                elevationGainM = MetricDouble(current.ElevationGainM, previous.ElevationGainM, trElev, current.ElevationGainM - previous.ElevationGainM),
-                relativeEffortSum = MetricInt(current.RelativeEffortSum, previous.RelativeEffortSum, trEffort, current.RelativeEffortSum - previous.RelativeEffortSum),
-                easyRunAvgHeartRateBpm = MetricNullableDouble(
+                Runs = MetricInt(current.Runs, previous.Runs, trRuns, current.Runs - previous.Runs),
+                DistanceM = MetricDouble(current.DistanceM, previous.DistanceM, trDist, current.DistanceM - previous.DistanceM),
+                DurationS = MetricLong(current.DurationS, previous.DurationS, trDur, current.DurationS - previous.DurationS),
+                ElevationGainM = MetricDouble(current.ElevationGainM, previous.ElevationGainM, trElev, current.ElevationGainM - previous.ElevationGainM),
+                RelativeEffortSum = MetricInt(current.RelativeEffortSum, previous.RelativeEffortSum, trEffort, current.RelativeEffortSum - previous.RelativeEffortSum),
+                EasyRunAvgHeartRateBpm = MetricNullableDouble(
                     current.EasyRunAvgHeartRateBpm,
                     previous.EasyRunAvgHeartRateBpm,
                     trEasyHr,
-                    easyDelta)
+                    easyDelta),
+                MovingTimeS = MetricLong(current.MovingTimeS, previous.MovingTimeS, trMoving, current.MovingTimeS - previous.MovingTimeS),
+                LongestRunDistanceM = MetricDouble(
+                    current.LongestRunDistanceM,
+                    previous.LongestRunDistanceM,
+                    trLongestDist,
+                    current.LongestRunDistanceM - previous.LongestRunDistanceM),
+                LongestRunDurationS = MetricInt(
+                    current.LongestRunDurationS,
+                    previous.LongestRunDurationS,
+                    trLongestDur,
+                    current.LongestRunDurationS - previous.LongestRunDurationS),
+                RunsByType = runsByType,
+                ZoneSecondsZ1 = MetricZoneSeconds(current, previous, t2, t3, 0),
+                ZoneSecondsZ2 = MetricZoneSeconds(current, previous, t2, t3, 1),
+                ZoneSecondsZ3 = MetricZoneSeconds(current, previous, t2, t3, 2),
+                ZoneSecondsZ4 = MetricZoneSeconds(current, previous, t2, t3, 3),
+                ZoneSecondsZ5 = MetricZoneSeconds(current, previous, t2, t3, 4)
             }
         });
     }
@@ -549,24 +682,84 @@ public static class StatsEndpoints
     /// </summary>
     /// <param name="db">Database context</param>
     /// <param name="bestEffortService">Best effort service</param>
+    /// <param name="from">Optional first workout date to include (yyyy-MM-dd, UTC, inclusive)</param>
+    /// <param name="to">Optional last workout date to include (yyyy-MM-dd, UTC, inclusive)</param>
+    /// <param name="since">Optional date (yyyy-MM-dd, UTC): return only PRs set on or after it, with previousTimeS, previousWorkoutId and previousWorkoutDate</param>
     /// <returns>List of best effort times for each standard distance</returns>
     /// <remarks>
     /// Returns the fastest time achieved for each standard running distance (400m through Marathon).
     /// Best efforts are calculated from any segment within any workout, not just workouts of that exact distance.
+    /// With from/to, only workouts started within the range count; distances with no effort in range are omitted.
+    /// With since, each distance appears only if an effort on or after since beat every earlier effort (from on, when given).
+    /// The row is the latest such PR, and previousTimeS is the best before since (null when there was none);
+    /// previousWorkoutId and previousWorkoutDate name the workout it was set in, null alongside previousTimeS.
     /// </remarks>
     private static async Task<IResult> GetBestEfforts(
         TempoDbContext db,
-        BestEffortService bestEffortService)
+        BestEffortService bestEffortService,
+        [FromQuery] string? from = null,
+        [FromQuery] string? to = null,
+        [FromQuery] string? since = null)
     {
+        if (!TryParseBestEffortDate(from, out var fromDate))
+        {
+            return Results.BadRequest(new ErrorResponse { Error = "Invalid from; use yyyy-MM-dd." });
+        }
+        if (!TryParseBestEffortDate(to, out var toDate))
+        {
+            return Results.BadRequest(new ErrorResponse { Error = "Invalid to; use yyyy-MM-dd." });
+        }
+        if (fromDate > toDate)
+        {
+            return Results.BadRequest(new ErrorResponse { Error = "from must be on or before to." });
+        }
+        if (!TryParseBestEffortDate(since, out var sinceDate))
+        {
+            return Results.BadRequest(new ErrorResponse { Error = "Invalid since; use yyyy-MM-dd." });
+        }
+
         try
         {
-            var bestEfforts = await bestEffortService.GetBestEffortsAsync(db);
-            return Results.Ok(new { distances = bestEfforts });
+            var bestEfforts = sinceDate is { } sinceValue
+                ? await bestEffortService.GetBestEffortPrsAsync(db, sinceValue, fromDate, toDate)
+                : await bestEffortService.GetBestEffortsAsync(db, fromDate, toDate);
+            return Results.Ok(new BestEffortsDocument
+            {
+                Distances = bestEfforts.Select(b => new BestEffortDistanceDocument
+                {
+                    Distance = b.Distance,
+                    DistanceM = b.DistanceM,
+                    TimeS = b.TimeS,
+                    WorkoutId = b.WorkoutId,
+                    WorkoutDate = b.WorkoutDate,
+                    PreviousTimeS = b.PreviousTimeS,
+                    PreviousWorkoutId = b.PreviousWorkoutId,
+                    PreviousWorkoutDate = b.PreviousWorkoutDate
+                }).ToList()
+            });
         }
         catch (Exception ex)
         {
             return Results.Problem($"Failed to retrieve best efforts: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Parses an optional yyyy-MM-dd best-effort query date. Empty means not given; false means malformed.
+    /// </summary>
+    private static bool TryParseBestEffortDate(string? value, out DateOnly? date)
+    {
+        date = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+        if (!DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+        {
+            return false;
+        }
+        date = parsed;
+        return true;
     }
 
     /// <summary>
@@ -991,25 +1184,35 @@ public static class StatsEndpoints
 
         group.MapGet("/relative-effort", GetRelativeEffortStats)
             .WithName("GetRelativeEffortStats")
-            .Produces(200)
+            .Produces<RelativeEffortStatsDocument>(200)
+            .Produces<ErrorResponse>(400)
             .WithSummary("Get relative effort stats")
-            .WithDescription("Returns cumulative relative effort for the current week and 3-week average range");
+            .WithDescription(
+                "Returns cumulative relative effort for the current week (Monday-Sunday) and the 3-week average and range from the previous 3 complete weeks. " +
+                "Optional referenceDate (yyyy-MM-dd) selects the calendar week in the timezoneOffsetMinutes frame.");
 
         group.MapGet("/weekly-recap", GetWeeklyRecap)
             .WithName("GetWeeklyRecap")
-            .Produces(200)
-            .Produces(400)
+            .Produces<WeeklyRecapDocument>(200)
+            .Produces<ErrorResponse>(400)
             .WithSummary("Get weekly recap aggregates")
             .WithDescription(
-                "Returns run count, distance, duration, elevation gain, relative effort sum, and easy-run average HR for the current (week-to-date) window, previous full week, and trailing 3-week averages, with week-over-week deltas. " +
+                "Returns run count, distance, duration, moving time, longest run (distance and duration), elevation gain, relative effort sum, and easy-run average HR for the current (week-to-date) window, previous full week, and trailing 3-week averages, with week-over-week deltas. " +
                 "Optional referenceDate (yyyy-MM-dd) selects the calendar week in the timezoneOffsetMinutes frame. " +
-                "Easy runs are RunType \"Easy Run\" with duration-weighted average heart rate.");
+                "Easy runs are RunType \"Easy Run\" or \"Recovery\" (not \"Walk-Run\") with duration-weighted average heart rate. " +
+                "Moving time and longest-run duration fall back to elapsed duration when moving time is missing; longest-run distance and duration are independent maxima, 0 for a week with no runs. " +
+                "zoneSecondsZ1..Z5 sum each workout's stored heartRateZoneTimes; null for a week with no HR series, trailing average over weeks with a value, delta null when either week is null. " +
+                "runsByType is current window only: counts keyed by exact runType, zero counts omitted, no runType counted as \"Unspecified\".");
 
         group.MapGet("/best-efforts", GetBestEfforts)
             .WithName("GetBestEfforts")
-            .Produces(200)
+            .Produces<BestEffortsDocument>(200)
+            .Produces<ErrorResponse>(400)
             .WithSummary("Get best efforts")
-            .WithDescription("Returns the fastest time achieved for each standard running distance (400m through Marathon). Best efforts are calculated from any segment within any workout.");
+            .WithDescription("Returns the fastest time achieved for each standard running distance (400m through Marathon). Best efforts are calculated from any segment within any workout. " +
+                "Optional from and to (yyyy-MM-dd, inclusive, compared against the workout's UTC start date) limit results to workouts in that range; distances with no effort in range are omitted. " +
+                "Optional since (yyyy-MM-dd) returns only PRs set on or after that date: per distance, the latest effort that beat every earlier-dated effort (from on, when given), with previousTimeS the best before since (null when first ever) and previousWorkoutId/previousWorkoutDate the workout it was set in. The three previous fields are null together, and always null without since. " +
+                "Ties go to the earliest workout. A malformed date or from after to returns 400.");
 
         group.MapPost("/best-efforts/recalculate", RecalculateBestEfforts)
             .WithName("RecalculateBestEfforts")

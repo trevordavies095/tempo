@@ -48,7 +48,7 @@ public class RelativeEffortServiceTests : IAsyncLifetime
         var workout = await SeedWorkoutWithTimeSeriesAsync(_db, heartRateValues: new byte[] { 120, 130, 140, 150, 160 });
 
         // Act
-        var result = _service.CalculateRelativeEffort(workout, zones, _db);
+        var result = _service.RecalculateHeartRateMetrics(workout, zones, _db);
 
         // Assert
         result.Should().NotBeNull();
@@ -63,7 +63,7 @@ public class RelativeEffortServiceTests : IAsyncLifetime
         var workout = await SeedWorkoutWithRawFitDataAsync(_db, avgHeartRate: 150);
 
         // Act
-        var result = _service.CalculateRelativeEffort(workout, zones, _db);
+        var result = _service.RecalculateHeartRateMetrics(workout, zones, _db);
 
         // Assert
         result.Should().NotBeNull();
@@ -78,7 +78,7 @@ public class RelativeEffortServiceTests : IAsyncLifetime
         var workout = await SeedWorkoutAsync(_db, avgHeartRateBpm: 150, durationS: 1800);
 
         // Act
-        var result = _service.CalculateRelativeEffort(workout, zones, _db);
+        var result = _service.RecalculateHeartRateMetrics(workout, zones, _db);
 
         // Assert
         result.Should().NotBeNull();
@@ -93,7 +93,7 @@ public class RelativeEffortServiceTests : IAsyncLifetime
         var workout = await SeedWorkoutAsync(_db, avgHeartRateBpm: null, durationS: 1800);
 
         // Act
-        var result = _service.CalculateRelativeEffort(workout, zones, _db);
+        var result = _service.RecalculateHeartRateMetrics(workout, zones, _db);
 
         // Assert
         result.Should().BeNull();
@@ -107,7 +107,7 @@ public class RelativeEffortServiceTests : IAsyncLifetime
         var workout = await SeedWorkoutAsync(_db, avgHeartRateBpm: 150, durationS: 1800);
 
         // Act
-        var result = _service.CalculateRelativeEffort(workout, zones!, _db);
+        var result = _service.RecalculateHeartRateMetrics(workout, zones!, _db);
 
         // Assert
         result.Should().BeNull();
@@ -121,10 +121,59 @@ public class RelativeEffortServiceTests : IAsyncLifetime
         var workout = await SeedWorkoutAsync(_db, avgHeartRateBpm: 150, durationS: 1800);
 
         // Act
-        var result = _service.CalculateRelativeEffort(workout, zones, _db);
+        var result = _service.RecalculateHeartRateMetrics(workout, zones, _db);
 
         // Assert
         result.Should().BeNull();
+    }
+
+    #endregion
+
+    #region RecalculateHeartRateMetrics zone seconds Tests
+
+    [Fact]
+    public async Task RecalculateHeartRateMetrics_WithTimeSeries_StoresRoundedZoneSecondsAndMarker()
+    {
+        var zones = CreateValidZones();
+        // 10 s spacing; last sample counts 1 s. Z1 = 20, Z3 = 20, Z5 = 11.
+        var workout = await SeedWorkoutWithTimeSeriesAsync(_db, heartRateValues: new byte[] { 100, 100, 140, 140, 180, 180 });
+
+        var result = _service.RecalculateHeartRateMetrics(workout, zones, _db);
+
+        result.Should().BeGreaterThan(0);
+        workout.ZoneSecondsZ1.Should().Be(20);
+        workout.ZoneSecondsZ2.Should().Be(0);
+        workout.ZoneSecondsZ3.Should().Be(20);
+        workout.ZoneSecondsZ4.Should().Be(0);
+        workout.ZoneSecondsZ5.Should().Be(11);
+        workout.ZoneSecondsComputedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task RecalculateHeartRateMetrics_WithAvgHrOnly_StoresNullZonesAndStampsMarker()
+    {
+        var zones = CreateValidZones();
+        var workout = await SeedWorkoutAsync(_db, avgHeartRateBpm: 150);
+
+        var result = _service.RecalculateHeartRateMetrics(workout, zones, _db);
+
+        result.Should().NotBeNull();
+        workout.ZoneSecondsZ1.Should().BeNull();
+        workout.ZoneSecondsZ3.Should().BeNull();
+        workout.ZoneSecondsZ5.Should().BeNull();
+        workout.ZoneSecondsComputedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task RecalculateHeartRateMetrics_WithInvalidZones_LeavesWorkoutUnmarked()
+    {
+        var workout = await SeedWorkoutWithTimeSeriesAsync(_db, heartRateValues: new byte[] { 140, 140 });
+
+        var result = _service.RecalculateHeartRateMetrics(workout, CreateValidZones().Take(3).ToList(), _db);
+
+        result.Should().BeNull();
+        workout.ZoneSecondsZ3.Should().BeNull();
+        workout.ZoneSecondsComputedAt.Should().BeNull();
     }
 
     #endregion

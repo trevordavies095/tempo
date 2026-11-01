@@ -110,6 +110,216 @@ public class DeviceLapBackfillServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public void PostgresAnnotationCandidateSql_UsesJsonbPath()
+    {
+        var sql = DeviceLapBackfillService.PostgresAnnotationCandidateSql;
+
+        sql.Should().Contain("->>'lapAnnotationsBackfill'");
+        sql.Should().NotContain("\"lapAnnotationsBackfill\":");
+        sql.Should().NotContain("::text LIKE");
+    }
+
+    [Fact]
+    public async Task RunAnnotationsAsync_FillsExistingDeviceLapsInPlace_LeavesOtherColumns()
+    {
+        var (workout, seeded) = await SeedAnnotationCandidateAsync();
+        var before = seeded
+            .Select(s => (s.Id, s.DistanceM, s.DurationS, s.PaceS, s.StartElapsedS, s.EndElapsedS, s.StartDistanceM, s.AvgHeartRateBpm))
+            .ToList();
+        _db.ChangeTracker.Clear();
+
+        var processed = await _service.RunAnnotationsAsync();
+
+        processed.Should().Be(1);
+        var laps = await DeviceLapsAsync(workout.Id);
+        laps.Select(s => s.Intensity).Should().Equal("warmup", "active", "rest");
+        laps.Select(s => s.Trigger).Should().Equal("manual", "distance", "time");
+        laps.Select(s => s.StepIndex).Should().Equal(0, 1, 2);
+        laps.Select(s => (s.Id, s.DistanceM, s.DurationS, s.PaceS, s.StartElapsedS, s.EndElapsedS, s.StartDistanceM, s.AvgHeartRateBpm))
+            .Should().Equal(before);
+
+        var stored = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workout.Id);
+        AnnotationMarker(stored.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerApplied);
+        Marker(stored.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerApplied);
+    }
+
+    [Fact]
+    public async Task RunAnnotationsAsync_SecondRun_IsNoOp()
+    {
+        await SeedAnnotationCandidateAsync();
+        _db.ChangeTracker.Clear();
+        (await _service.RunAnnotationsAsync()).Should().Be(1);
+
+        (await _service.RunAnnotationsAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RunAnnotationsAsync_LapCountMismatch_StampsSkipped_NoRowChanges()
+    {
+        var (workout, _) = await SeedAnnotationCandidateAsync(deviceLapRows: 2);
+        _db.ChangeTracker.Clear();
+
+        (await _service.RunAnnotationsAsync()).Should().Be(1);
+
+        var laps = await DeviceLapsAsync(workout.Id);
+        laps.Should().HaveCount(2);
+        laps.Should().OnlyContain(s => s.Intensity == null && s.Trigger == null && s.StepIndex == null);
+        var stored = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workout.Id);
+        AnnotationMarker(stored.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerSkippedMismatch);
+    }
+
+    [Fact]
+    public async Task RunAnnotationsAsync_CroppedWorkout_StampsSkippedCrop_NoRowChanges()
+    {
+        var (workout, _) = await SeedAnnotationCandidateAsync(durationS: 600, sessionElapsed: 900);
+        _db.ChangeTracker.Clear();
+
+        (await _service.RunAnnotationsAsync()).Should().Be(1);
+
+        (await DeviceLapsAsync(workout.Id))
+            .Should().OnlyContain(s => s.Intensity == null && s.Trigger == null && s.StepIndex == null);
+        var stored = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workout.Id);
+        AnnotationMarker(stored.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerSkippedCrop);
+    }
+
+    [Fact]
+    public async Task RunAnnotationsAsync_UnparseableFit_StampsUnparseable_AndLogs()
+    {
+        var (workout, _) = await SeedAnnotationCandidateAsync();
+        workout.RawFileData = [0x01, 0x02, 0x03, 0x04];
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        (await _service.RunAnnotationsAsync()).Should().Be(1);
+
+        var stored = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workout.Id);
+        AnnotationMarker(stored.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerUnparseable);
+        _logger.Messages.Should().Contain(m => m.Contains("Device lap annotation backfill failed"));
+        (await DeviceLapsAsync(workout.Id)).Should().OnlyContain(s => s.Intensity == null);
+    }
+
+    [Fact]
+    public async Task RunAnnotationsAsync_JsonWithoutFitBytes_StampsUnrecoverable_LeavesNull()
+    {
+        var (workout, _) = await SeedAnnotationCandidateAsync();
+        workout.RawFileData = null;
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        (await _service.RunAnnotationsAsync()).Should().Be(1);
+
+        var stored = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workout.Id);
+        AnnotationMarker(stored.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerUnrecoverable);
+        (await DeviceLapsAsync(workout.Id)).Should().OnlyContain(s => s.Intensity == null);
+        (await _service.RunAnnotationsAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RunAnnotationsAsync_IgnoresWorkoutsWithoutDeviceLaps()
+    {
+        var workout = await SeedFitCandidateAsync(durationS: 900, distanceM: 2800);
+        workout.RawFileData = CreateFitWithLaps(900, 900, IntervalLaps);
+        workout.RawFitData = """{"session":{"totalElapsedTime":900}}""";
+        await _db.SaveChangesAsync();
+
+        (await _service.RunAnnotationsAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RunAsync_ReparsedFitBytes_WritesAnnotatedLaps_AndStampsAnnotationsApplied()
+    {
+        var workout = await SeedFitCandidateAsync(durationS: 900, distanceM: 2800);
+        workout.RawFileData = CreateFitWithLaps(900, 900, IntervalLaps);
+        workout.RawFileName = "intervals.fit";
+        workout.RawFitData = """{"session":{"totalElapsedTime":900},"source":"fit_import"}""";
+        await _db.SaveChangesAsync();
+
+        (await _service.RunAsync()).Should().Be(1);
+
+        var laps = await DeviceLapsAsync(workout.Id);
+        laps.Select(s => s.Intensity).Should().Equal("warmup", "active", "rest");
+        laps.Select(s => s.StepIndex).Should().Equal(0, 1, 2);
+        var stored = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workout.Id);
+        AnnotationMarker(stored.RawFitData!).Should().Be(DeviceLapBackfillService.MarkerApplied);
+        _db.ChangeTracker.Clear();
+        (await _service.RunAnnotationsAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RunAsync_FromLegacyJsonLaps_DoesNotStampAnnotations_SoAnnotationStepFillsThem()
+    {
+        var workout = await SeedFitCandidateAsync(durationS: 900, distanceM: 2800);
+        workout.RawFileData = CreateFitWithLaps(900, 900, IntervalLaps);
+        workout.RawFileName = "intervals.fit";
+        workout.RawFitData = BuildRawFitWithLaps(
+            sessionElapsed: 900,
+            laps:
+            [
+                LapJson(FixtureStart, distance: 1000, timer: 300, elapsed: 300),
+                LapJson(FixtureStart.AddSeconds(300), distance: 1000, timer: 300, elapsed: 300),
+                LapJson(FixtureStart.AddSeconds(600), distance: 800, timer: 300, elapsed: 300)
+            ]);
+        await _db.SaveChangesAsync();
+
+        (await _service.RunAsync()).Should().Be(1);
+        var afterLaps = await _db.Workouts.AsNoTracking().SingleAsync(w => w.Id == workout.Id);
+        AnnotationMarker(afterLaps.RawFitData!).Should().BeNull();
+        _db.ChangeTracker.Clear();
+
+        (await _service.RunAnnotationsAsync()).Should().Be(1);
+
+        (await DeviceLapsAsync(workout.Id)).Select(s => s.Intensity).Should().Equal("warmup", "active", "rest");
+    }
+
+    private Task<List<WorkoutSplit>> DeviceLapsAsync(Guid workoutId) =>
+        _db.WorkoutSplits.AsNoTracking()
+            .Where(s => s.WorkoutId == workoutId && s.Kind == WorkoutSplitKinds.DeviceLap)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+
+    [Fact]
+    public async Task RunAsync_JsonLaps_NormalizesLegacyTrigger_AndCarriesAnnotations()
+    {
+        var workout = await SeedFitCandidateAsync(durationS: 600);
+        workout.RawFitData = BuildRawFitWithLaps(
+            sessionElapsed: 600,
+            laps:
+            [
+                new
+                {
+                    start = FixtureStart.ToString("O"),
+                    timestamp = FixtureStart.AddSeconds(300).ToString("O"),
+                    distance = 1000.0,
+                    timer = 300.0,
+                    elapsed = 300.0,
+                    trigger = "PositionStart"
+                },
+                new
+                {
+                    start = FixtureStart.AddSeconds(300).ToString("O"),
+                    timestamp = FixtureStart.AddSeconds(600).ToString("O"),
+                    distance = 800.0,
+                    timer = 300.0,
+                    elapsed = 300.0,
+                    trigger = "time",
+                    intensity = "rest",
+                    stepIndex = 2
+                }
+            ]);
+        await _db.SaveChangesAsync();
+
+        await _service.RunAsync();
+
+        var deviceLaps = await _db.WorkoutSplits
+            .Where(s => s.WorkoutId == workout.Id && s.Kind == WorkoutSplitKinds.DeviceLap)
+            .OrderBy(s => s.Idx)
+            .ToListAsync();
+        deviceLaps.Select(s => s.Trigger).Should().Equal("position_start", "time");
+        deviceLaps.Select(s => s.Intensity).Should().Equal(null, "rest");
+        deviceLaps.Select(s => s.StepIndex).Should().Equal(null, 2);
+    }
+
+    [Fact]
     public async Task RunAsync_ReparsesFitBytes_WhenLapsMissingFromJson()
     {
         var start = FixtureStart;
@@ -455,6 +665,50 @@ public class DeviceLapBackfillServiceTests : IAsyncLifetime
         await _db.WorkoutSplits.CountAsync(
             s => s.WorkoutId == workoutId && s.Kind == WorkoutSplitKinds.DeviceLap);
 
+    private static string? AnnotationMarker(string rawFitData)
+    {
+        using var doc = JsonDocument.Parse(rawFitData);
+        return doc.RootElement.TryGetProperty(DeviceLapBackfillService.LapAnnotationsBackfillKey, out var el)
+            ? el.GetString()
+            : null;
+    }
+
+    private static readonly SyntheticLap[] IntervalLaps =
+    [
+        new(FixtureStart, 300f, 300f, 1000f, 140, LapTrigger.Manual, Intensity.Warmup, 0),
+        new(FixtureStart.AddSeconds(300), 300f, 300f, 1000f, 170, LapTrigger.Distance, Intensity.Active, 1),
+        new(FixtureStart.AddSeconds(600), 300f, 300f, 800f, 150, LapTrigger.Time, Intensity.Rest, 2)
+    ];
+
+    /// <summary>
+    /// Workout that already has device laps (pre-annotation) plus the FIT bytes that wrote them.
+    /// </summary>
+    private async Task<(Workout Workout, List<WorkoutSplit> Laps)> SeedAnnotationCandidateAsync(
+        int durationS = 900,
+        int sessionElapsed = 900,
+        int deviceLapRows = 3)
+    {
+        var workout = await SeedFitCandidateAsync(durationS: durationS, distanceM: 2800);
+        workout.RawFileData = CreateFitWithLaps(sessionElapsed, sessionElapsed, IntervalLaps);
+        workout.RawFileName = "intervals.fit";
+        workout.RawFitData =
+            $$"""{"session":{"totalElapsedTime":{{sessionElapsed}}},"laps":[],"lapsBackfill":"applied"}""";
+        await _db.SaveChangesAsync();
+
+        var rows = new[] { (0, 1000.0, 300, 0, 300), (1, 1000.0, 300, 300, 600), (2, 800.0, 300, 600, 900) }
+            .Take(deviceLapRows)
+            .ToArray();
+        var laps = await TestDataSeeder.SeedDeviceLapsAsync(_db, workout, rows);
+        foreach (var lap in laps)
+        {
+            lap.AvgHeartRateBpm = 155;
+            lap.StartDistanceM = lap.Idx * 1000.0;
+        }
+
+        await _db.SaveChangesAsync();
+        return (workout, laps);
+    }
+
     private static string? Marker(string rawFitData)
     {
         using var doc = JsonDocument.Parse(rawFitData);
@@ -496,7 +750,9 @@ public class DeviceLapBackfillServiceTests : IAsyncLifetime
         float TimerSeconds,
         float DistanceMeters,
         byte? AvgHeartRate,
-        LapTrigger Trigger);
+        LapTrigger Trigger,
+        Intensity? Intensity = null,
+        ushort? StepIndex = null);
 
     private static byte[] CreateFitWithLaps(
         float elapsedSeconds,
@@ -536,6 +792,16 @@ public class DeviceLapBackfillServiceTests : IAsyncLifetime
             }
 
             lap.SetLapTrigger(lapDef.Trigger);
+            if (lapDef.Intensity.HasValue)
+            {
+                lap.SetIntensity(lapDef.Intensity.Value);
+            }
+
+            if (lapDef.StepIndex.HasValue)
+            {
+                lap.SetWktStepIndex(lapDef.StepIndex.Value);
+            }
+
             encode.Write(lap);
         }
 

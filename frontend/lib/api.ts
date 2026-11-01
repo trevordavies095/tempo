@@ -465,7 +465,6 @@ export interface ImportJobStatistics {
   splits: { imported: number; skipped: number; errors: number };
   timeSeries: { imported: number; skipped: number; errors: number };
   media: { imported: number; skipped: number; errors: number };
-  bestEfforts: { imported: number; skipped: number; errors: number };
   rawFiles: { imported: number; skipped: number; errors: number };
 }
 
@@ -528,7 +527,6 @@ export function importJobToExportImportResponse(job: ImportJob): ExportImportRes
       splits: stats?.splits ?? emptyItemStats(),
       timeSeries: stats?.timeSeries ?? emptyItemStats(),
       media: stats?.media ?? emptyItemStats(),
-      bestEfforts: stats?.bestEfforts ?? emptyItemStats(),
       rawFiles: stats?.rawFiles ?? emptyItemStats(),
     },
     warnings: job.warnings ?? [],
@@ -566,7 +564,6 @@ export interface ExportImportResponse {
     splits: { imported: number; skipped: number; errors: number };
     timeSeries: { imported: number; skipped: number; errors: number };
     media: { imported: number; skipped: number; errors: number };
-    bestEfforts: { imported: number; skipped: number; errors: number };
     rawFiles: { imported: number; skipped: number; errors: number };
   };
   warnings: string[];
@@ -1146,7 +1143,10 @@ export interface HeartRateZoneSettings {
   calculationMethod: HeartRateCalculationMethod;
   age: number | null;
   restingHeartRateBpm: number | null;
-  maxHeartRateBpm: number | null;
+  /** Resolved for the method: 220 - age, the Karvonen max, or the top of zone 5 */
+  maxHeartRateBpm: number;
+  /** Highest workout max HR in the last 12 months (readings above 230 ignored), null without HR data */
+  observedMaxHeartRateBpm: number | null;
   zones: HeartRateZone[];
   isFirstTimeSetup?: boolean;
 }
@@ -1186,6 +1186,56 @@ export async function updateHeartRateZones(
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
     throw new Error(error.error || `Failed to update heart rate zones: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface ThresholdSettings {
+  /** Seconds per kilometre */
+  thresholdPaceS: number | null;
+  thresholdHeartRateBpm: number | null;
+}
+
+export interface ThresholdSuggestionSource {
+  distance: string;
+  timeS: number;
+  /** UTC start date, yyyy-MM-dd */
+  workoutDate: string;
+  workoutId: string;
+}
+
+export interface ThresholdsResponse extends ThresholdSettings {
+  /** Read-only Daniels T-pace (seconds per km) from the best 5K/10K in the last 90 days */
+  suggestedThresholdPaceS: number | null;
+  suggestedFrom: ThresholdSuggestionSource | null;
+}
+
+export async function getThresholds(): Promise<ThresholdsResponse> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/thresholds`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch thresholds: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function updateThresholds(thresholds: ThresholdSettings): Promise<ThresholdsResponse> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/settings/thresholds`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(thresholds),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to update thresholds: ${response.status}`);
   }
 
   return response.json();
@@ -1593,6 +1643,79 @@ export async function changePassword(
   return response.json();
 }
 
+export interface ApiKeySummary {
+  id: string;
+  label: string | null;
+  keyPrefix: string;
+  createdAt: string;
+  revokedAt: string | null;
+  canReveal: boolean;
+}
+
+export interface CreatedApiKey {
+  id: string;
+  label: string | null;
+  key: string;
+  keyPrefix: string;
+  createdAt: string;
+}
+
+export async function listApiKeys(): Promise<ApiKeySummary[]> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/api-keys`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load API key: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function createApiKey(label?: string): Promise<CreatedApiKey> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/api-keys`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ label: label ?? null }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to generate API key: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function revealApiKey(id: string): Promise<string> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/api-keys/${encodeURIComponent(id)}/reveal`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+    throw new Error(error.error || `Failed to show API key: ${response.status}`);
+  }
+
+  const body: { key: string } = await response.json();
+  return body.key;
+}
+
+export async function revokeApiKey(id: string): Promise<void> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/auth/api-keys/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to revoke API key: ${response.status}`);
+  }
+}
+
 export async function checkRegistrationAvailable(): Promise<RegistrationAvailableResponse> {
   const response = await fetch(`${API_BASE_URL}/auth/registration-available`, {
     method: 'GET',
@@ -1787,6 +1910,11 @@ export interface SimilarRoute {
   paceDifferenceS?: number; // Negative = faster pace
   relativeEffort?: number | null;
   elevGainM?: number | null;
+  avgHeartRateBpm?: number | null;
+  /** Negative = match has lower avg HR than the subject (match − subject). */
+  avgHeartRateDifferenceBpm?: number | null;
+  name?: string | null;
+  runType?: string | null;
 }
 
 export async function getSimilarRoutes(workoutId: string, maxResults?: number): Promise<SimilarRoute[]> {

@@ -1,6 +1,7 @@
 # Local agent / editor scratch (not product source)
 .cursor/
 .scratch/
+.worktrees/
 .vscode/
 .idea/
 CLAUDE.md

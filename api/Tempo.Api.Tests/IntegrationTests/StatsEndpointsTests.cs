@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -407,6 +408,13 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result.Metrics.Runs.DeltaVsPrevious.Should().Be(0);
         result.Metrics.RelativeEffortSum.Current.Should().Be(0);
         result.Metrics.EasyRunAvgHeartRateBpm.Current.Should().BeNull();
+        result.Metrics.MovingTimeS.Current.Should().Be(0);
+        result.Metrics.LongestRunDistanceM.Current.Should().Be(0);
+        result.Metrics.LongestRunDurationS.Current.Should().Be(0);
+        result.Metrics.RunsByType.Should().BeEmpty();
+        result.Metrics.ZoneSecondsZ1.Current.Should().BeNull();
+        result.Metrics.ZoneSecondsZ1.TrailingAvg.Should().BeNull();
+        result.Metrics.ZoneSecondsZ1.DeltaVsPrevious.Should().BeNull();
         result.ReferenceDate.Should().Be("2020-06-10");
     }
 
@@ -466,6 +474,77 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetWeeklyRecap_EasyHeartRate_IncludesRecoveryExcludesWalkRun()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var easy = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 9, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 6000,
+                durationS: 1800,
+                name: "Easy");
+            easy.RunType = RunTypes.EasyRun;
+            easy.AvgHeartRateBpm = 140;
+            var recovery = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 3500,
+                durationS: 1200,
+                name: "Recovery");
+            recovery.RunType = RunTypes.Recovery;
+            recovery.AvgHeartRateBpm = 130;
+            var walkRun = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 11, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 4000,
+                durationS: 1500,
+                name: "Walk-Run");
+            walkRun.RunType = RunTypes.WalkRun;
+            walkRun.AvgHeartRateBpm = 110;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync("/stats/weekly-recap?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
+        // (140 * 1800 + 130 * 1200) / 3000; counting the Walk-Run would give 128.7
+        result!.Metrics.EasyRunAvgHeartRateBpm.Current.Should().Be(136);
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_EasyHeartRate_RecoveryOnly_IsNotNull()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var w = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 4000,
+                durationS: 1500,
+                name: "Recovery only");
+            w.RunType = RunTypes.Recovery;
+            w.AvgHeartRateBpm = 128;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync("/stats/weekly-recap?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
+        result!.Metrics.EasyRunAvgHeartRateBpm.Current.Should().Be(128);
+    }
+
+    [Fact]
     public async Task GetWeeklyRecap_IgnoresNonEasyRunsForHeartRateAverage()
     {
         await EnsureCleanDatabaseAsync();
@@ -490,6 +569,195 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<WeeklyRecapResponse>();
         result!.Metrics.EasyRunAvgHeartRateBpm.Current.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_ReturnsMovingTimeLongestRunAndRunsByType()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            // Current week 2020-06-08..14
+            await SeedRecapRunAsync(db, new DateTime(2020, 6, 8, 12, 0, 0, DateTimeKind.Utc), 10000, 3600, 3300, "Long Run");
+            await SeedRecapRunAsync(db, new DateTime(2020, 6, 9, 12, 0, 0, DateTimeKind.Utc), 5000, 4000, null, null);
+            await SeedRecapRunAsync(db, new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc), 3000, 1200, 1100, "Easy Run");
+            await SeedRecapRunAsync(db, new DateTime(2020, 6, 11, 12, 0, 0, DateTimeKind.Utc), 1000, 300, 300, "legacy-jog");
+            // Previous week 2020-06-01..07
+            await SeedRecapRunAsync(db, new DateTime(2020, 6, 5, 12, 0, 0, DateTimeKind.Utc), 8000, 3000, 2800, "Race");
+            // Trailing week 2 2020-05-25..31; trailing week 3 empty
+            await SeedRecapRunAsync(db, new DateTime(2020, 5, 27, 12, 0, 0, DateTimeKind.Utc), 6000, 2400, 2400, "Easy Run");
+        }
+
+        var response = await client.GetAsync("/stats/weekly-recap?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        var metrics = JsonSerializer.Deserialize<WeeklyRecapResponse>(json, JsonSerializerOptions.Web)!.Metrics;
+
+        // Moving time falls back to elapsed (4000) for the run without moving time.
+        metrics.MovingTimeS.Current.Should().Be(3300 + 4000 + 1100 + 300);
+        metrics.MovingTimeS.Previous.Should().Be(2800);
+        metrics.MovingTimeS.TrailingAvg.Should().Be(1733.33);
+        metrics.MovingTimeS.DeltaVsPrevious.Should().Be(8700 - 2800);
+
+        // Longest distance and longest duration come from different workouts.
+        metrics.LongestRunDistanceM.Current.Should().Be(10000);
+        metrics.LongestRunDistanceM.Previous.Should().Be(8000);
+        metrics.LongestRunDistanceM.TrailingAvg.Should().Be(4666.67);
+        metrics.LongestRunDistanceM.DeltaVsPrevious.Should().Be(2000);
+
+        metrics.LongestRunDurationS.Current.Should().Be(4000);
+        metrics.LongestRunDurationS.Previous.Should().Be(2800);
+        metrics.LongestRunDurationS.TrailingAvg.Should().Be(1733.33);
+        metrics.LongestRunDurationS.DeltaVsPrevious.Should().Be(1200);
+
+        // Current week only; canonical types in display order, then legacy values, then Unspecified.
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("metrics").GetProperty("runsByType").EnumerateObject()
+            .Select(p => (p.Name, p.Value.GetInt32()))
+            .Should().Equal(("Easy Run", 1), ("Long Run", 1), ("legacy-jog", 1), ("Unspecified", 1));
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_ZoneSeconds_EqualSumOfWorkoutDetailHeartRateZoneTimes()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var workoutIds = new List<Guid>();
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30); // Z1 95–114, Z3 133–152, Z5 171–190
+            var zoned = await TestDataSeeder.SeedWorkoutAsync(
+                db, startedAt: new DateTime(2020, 6, 8, 12, 0, 0, DateTimeKind.Utc), durationS: 60);
+            var zoned2 = await TestDataSeeder.SeedWorkoutAsync(
+                db, startedAt: new DateTime(2020, 6, 9, 12, 0, 0, DateTimeKind.Utc), durationS: 60);
+            var noHr = await TestDataSeeder.SeedWorkoutAsync(
+                db, startedAt: new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc), durationS: 60);
+            AddHrSeries(db, zoned.Id, 110, 110, 140, 180);
+            AddHrSeries(db, zoned2.Id, 140, 140, 160);
+            await db.SaveChangesAsync();
+            workoutIds.AddRange([zoned.Id, zoned2.Id, noHr.Id]);
+        }
+
+        // Compute stored zone seconds the way import does.
+        foreach (var id in workoutIds)
+        {
+            (await client.PostAsync($"/workouts/{id}/recalculate-effort", null))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var expected = new long[5];
+        foreach (var id in workoutIds)
+        {
+            using var detail = JsonDocument.Parse(await client.GetStringAsync($"/workouts/{id}"));
+            var zones = detail.RootElement.GetProperty("heartRateZoneTimes");
+            if (zones.ValueKind == JsonValueKind.Null)
+            {
+                continue;
+            }
+
+            foreach (var zone in zones.EnumerateArray())
+            {
+                expected[zone.GetProperty("zone").GetInt32() - 1] += zone.GetProperty("timeS").GetInt32();
+            }
+        }
+
+        expected.Sum().Should().BeGreaterThan(0);
+
+        var recap = await client.GetFromJsonAsync<WeeklyRecapResponse>("/stats/weekly-recap?referenceDate=2020-06-10");
+        var metrics = recap!.Metrics;
+        new[]
+        {
+            metrics.ZoneSecondsZ1.Current,
+            metrics.ZoneSecondsZ2.Current,
+            metrics.ZoneSecondsZ3.Current,
+            metrics.ZoneSecondsZ4.Current,
+            metrics.ZoneSecondsZ5.Current,
+        }.Should().Equal(expected.Select(e => (long?)e));
+        metrics.ZoneSecondsZ3.Previous.Should().BeNull();
+        metrics.ZoneSecondsZ3.DeltaVsPrevious.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetWeeklyRecap_ZoneSeconds_NullWithoutHr_TrailingAveragesOnlyWeeksWithHr()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            // Current week 2020-06-08..14: a run without HR → null.
+            await SeedZonedRunAsync(db, new DateTime(2020, 6, 9, 12, 0, 0, DateTimeKind.Utc), null);
+            // Previous week: two zoned runs summed.
+            await SeedZonedRunAsync(db, new DateTime(2020, 6, 2, 12, 0, 0, DateTimeKind.Utc), 100);
+            await SeedZonedRunAsync(db, new DateTime(2020, 6, 4, 12, 0, 0, DateTimeKind.Utc), 200);
+            // Trailing week 2 (2020-05-25..31): no HR → excluded from the trailing average.
+            await SeedZonedRunAsync(db, new DateTime(2020, 5, 27, 12, 0, 0, DateTimeKind.Utc), null);
+            // Trailing week 3 (2020-05-18..24).
+            await SeedZonedRunAsync(db, new DateTime(2020, 5, 20, 12, 0, 0, DateTimeKind.Utc), 600);
+        }
+
+        var recap = await client.GetFromJsonAsync<WeeklyRecapResponse>("/stats/weekly-recap?referenceDate=2020-06-10");
+        var z3 = recap!.Metrics.ZoneSecondsZ3;
+
+        z3.Current.Should().BeNull();
+        z3.Previous.Should().Be(300);
+        z3.TrailingAvg.Should().Be(450); // (300 + 600) / 2, week 2 has no HR
+        z3.DeltaVsPrevious.Should().BeNull();
+        recap.Metrics.ZoneSecondsZ1.Previous.Should().Be(30); // Z1 = zone 3 seconds / 10 in this fixture
+    }
+
+    private static void AddHrSeries(TempoDbContext db, Guid workoutId, params byte[] heartRates)
+    {
+        for (var i = 0; i < heartRates.Length; i++)
+        {
+            db.WorkoutTimeSeries.Add(new WorkoutTimeSeries
+            {
+                WorkoutId = workoutId,
+                ElapsedSeconds = i * 10,
+                HeartRateBpm = heartRates[i]
+            });
+        }
+    }
+
+    /// <summary>
+    /// Seeds a run with stored zone seconds: Z3 = <paramref name="zone3Seconds"/>, Z1 = a tenth of it, others 0.
+    /// Null leaves every zone null (no HR series).
+    /// </summary>
+    private static async Task SeedZonedRunAsync(TempoDbContext db, DateTime startedAt, int? zone3Seconds)
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(db, startedAt: startedAt);
+        if (zone3Seconds.HasValue)
+        {
+            workout.ZoneSecondsZ1 = zone3Seconds.Value / 10;
+            workout.ZoneSecondsZ2 = 0;
+            workout.ZoneSecondsZ3 = zone3Seconds.Value;
+            workout.ZoneSecondsZ4 = 0;
+            workout.ZoneSecondsZ5 = 0;
+        }
+
+        workout.ZoneSecondsComputedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedRecapRunAsync(
+        TempoDbContext db,
+        DateTime startedAt,
+        double distanceM,
+        int durationS,
+        int? movingTimeS,
+        string? runType)
+    {
+        var workout = await TestDataSeeder.SeedWorkoutAsync(db, startedAt: startedAt, distanceM: distanceM, durationS: durationS);
+        workout.MovingTimeS = movingTimeS;
+        workout.RunType = runType;
+        await db.SaveChangesAsync();
     }
 
     #endregion
@@ -1013,6 +1281,105 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         var result = await response.Content.ReadFromJsonAsync<RelativeEffortStatsResponse>();
         result.Should().NotBeNull();
         result!.CurrentWeek.Should().HaveCount(7);
+    }
+
+    [Fact]
+    public async Task GetRelativeEffortStats_Returns400_WhenReferenceDateInvalid()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var response = await client.GetAsync("/stats/relative-effort?referenceDate=not-a-date");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>
+    /// referenceDate 2020-06-10 -> current week 2020-06-08 .. 2020-06-14;
+    /// previous weeks: 2020-06-01..07 (100), 2020-05-25..31 (200), 2020-05-18..24 (300).
+    /// </summary>
+    [Fact]
+    public async Task GetRelativeEffortStats_UsesReferenceDate_ForHistoricalWeek()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+
+            // Current week Mon/Wed: cumulative Mon=50, Tue=50, Wed=150, …
+            var mon = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 8, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin Mon");
+            mon.RelativeEffort = 50;
+
+            var wed = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 10, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin Wed");
+            wed.RelativeEffort = 100;
+
+            // Prior week -1 (Mon 2020-06-01)
+            var prev1 = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 3, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin prev1");
+            prev1.RelativeEffort = 100;
+
+            // Prior week -2 (Mon 2020-05-25)
+            var prev2 = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 5, 27, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin prev2");
+            prev2.RelativeEffort = 200;
+
+            // Prior week -3 (Mon 2020-05-18)
+            var prev3 = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 5, 20, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin prev3");
+            prev3.RelativeEffort = 300;
+
+            // Noise in "today's" week should not affect the pinned historical week
+            var todayNoise = await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: DateTime.UtcNow.Date.AddHours(12),
+                distanceM: 5000,
+                durationS: 1800,
+                name: "RE pin today noise");
+            todayNoise.RelativeEffort = 999;
+
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync("/stats/relative-effort?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<RelativeEffortStatsResponse>();
+        result.Should().NotBeNull();
+        result!.WeekStart.Should().Be("2020-06-08");
+        result.WeekEnd.Should().Be("2020-06-14");
+        result.CurrentWeek.Should().HaveCount(7);
+        result.CurrentWeek[0].Should().Be(50);
+        result.CurrentWeek[1].Should().Be(50);
+        result.CurrentWeek[2].Should().Be(150);
+        result.CurrentWeekTotal.Should().Be(150);
+        result.PreviousWeeks.Should().Equal(100, 200, 300);
+        result.ThreeWeekAverage.Should().BeApproximately(200.0, 0.1);
+        result.RangeMin.Should().Be(100);
+        result.RangeMax.Should().Be(300);
     }
 
     #endregion
@@ -1740,6 +2107,140 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetBestEfforts_WithWindow_ExcludesWorkoutsOutsideRange()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid olderFasterId;
+        Guid newerSlowerId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var olderFaster = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 1, 10, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1200);
+            var newerSlower = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 3, 10, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1500);
+            await scope.ServiceProvider.GetRequiredService<BestEffortService>().CalculateAllBestEffortsAsync(db);
+            olderFasterId = olderFaster.Id;
+            newerSlowerId = newerSlower.Id;
+        }
+
+        var allTime = FindDistance(await GetBestEffortsJsonAsync(client, ""), "5K");
+        allTime!.Value.GetProperty("workoutId").GetString().Should().Be(olderFasterId.ToString());
+
+        var block = FindDistance(await GetBestEffortsJsonAsync(client, "?from=2026-03-01"), "5K");
+        block.Should().NotBeNull();
+        block!.Value.GetProperty("timeS").GetInt32().Should().Be(1500);
+        block.Value.GetProperty("workoutId").GetString().Should().Be(newerSlowerId.ToString());
+        block.Value.GetProperty("workoutDate").GetString().Should().Be("2026-03-10");
+
+        var beforeBlock = FindDistance(await GetBestEffortsJsonAsync(client, "?to=2026-02-28"), "5K");
+        beforeBlock!.Value.GetProperty("workoutId").GetString().Should().Be(olderFasterId.ToString());
+
+        var empty = await GetBestEffortsJsonAsync(client, "?from=2026-02-01&to=2026-02-28");
+        empty.GetProperty("distances").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetBestEfforts_WithWindow_IncludesWorkoutsOnBoundaryDates()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1500);
+            await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 3, 31, 23, 59, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1400);
+            await scope.ServiceProvider.GetRequiredService<BestEffortService>().CalculateAllBestEffortsAsync(db);
+        }
+
+        var onFrom = FindDistance(await GetBestEffortsJsonAsync(client, "?from=2026-03-01&to=2026-03-01"), "5K");
+        onFrom!.Value.GetProperty("timeS").GetInt32().Should().Be(1500);
+
+        var onTo = FindDistance(await GetBestEffortsJsonAsync(client, "?from=2026-03-31&to=2026-03-31"), "5K");
+        onTo!.Value.GetProperty("timeS").GetInt32().Should().Be(1400);
+    }
+
+    [Fact]
+    public async Task GetBestEfforts_WithSince_ReturnsPrWithPreviousTime()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid prWorkoutId;
+        Guid earlierWorkoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var bestEffortService = scope.ServiceProvider.GetRequiredService<BestEffortService>();
+            var earlier = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1500);
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, earlier);
+            earlierWorkoutId = earlier.Id;
+            var pr = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db, startedAt: new DateTime(2026, 10, 28, 8, 0, 0, DateTimeKind.Utc), distanceM: 5000, durationS: 1200);
+            await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, pr);
+            prWorkoutId = pr.Id;
+        }
+
+        var prs = await GetBestEffortsJsonAsync(client, "?since=2026-10-26");
+        var fiveK = FindDistance(prs, "5K");
+        fiveK.Should().NotBeNull();
+        fiveK!.Value.GetProperty("timeS").GetInt32().Should().Be(1200);
+        fiveK.Value.GetProperty("previousTimeS").GetInt32().Should().Be(1500);
+        fiveK.Value.GetProperty("workoutId").GetString().Should().Be(prWorkoutId.ToString());
+        fiveK.Value.GetProperty("previousWorkoutId").GetString().Should().Be(earlierWorkoutId.ToString());
+        fiveK.Value.GetProperty("previousWorkoutDate").GetString().Should().Be("2026-09-01");
+
+        // Without since: same rows as before, previous fields present and null
+        var allTime = await GetBestEffortsJsonAsync(client, "");
+        allTime.GetProperty("distances").EnumerateArray()
+            .Should().NotBeEmpty()
+            .And.OnlyContain(d => d.GetProperty("previousTimeS").ValueKind == JsonValueKind.Null
+                && d.GetProperty("previousWorkoutId").ValueKind == JsonValueKind.Null
+                && d.GetProperty("previousWorkoutDate").ValueKind == JsonValueKind.Null);
+    }
+
+    [Theory]
+    [InlineData("?since=yesterday")]
+    [InlineData("?from=2026-13-01")]
+    [InlineData("?to=03/01/2026")]
+    [InlineData("?from=2026-03-02&to=2026-03-01")]
+    public async Task GetBestEfforts_WithInvalidWindow_Returns400(string query)
+    {
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var response = await client.GetAsync($"/stats/best-efforts{query}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("error").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    private static async Task<JsonElement> GetBestEffortsJsonAsync(HttpClient client, string query)
+    {
+        var response = await client.GetAsync($"/stats/best-efforts{query}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    private static JsonElement? FindDistance(JsonElement document, string distance)
+    {
+        foreach (var item in document.GetProperty("distances").EnumerateArray())
+        {
+            if (item.GetProperty("distance").GetString() == distance)
+            {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    [Fact]
     public async Task RecalculateBestEfforts_SuccessfullyRecalculatesAllBestEfforts()
     {
         // Arrange
@@ -1961,6 +2462,23 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public WeeklyRecapMetricDouble ElevationGainM { get; set; } = null!;
         public WeeklyRecapMetricInt RelativeEffortSum { get; set; } = null!;
         public WeeklyRecapMetricNullableDouble EasyRunAvgHeartRateBpm { get; set; } = null!;
+        public WeeklyRecapMetricLong MovingTimeS { get; set; } = null!;
+        public WeeklyRecapMetricDouble LongestRunDistanceM { get; set; } = null!;
+        public WeeklyRecapMetricInt LongestRunDurationS { get; set; } = null!;
+        public Dictionary<string, int> RunsByType { get; set; } = null!;
+        public WeeklyRecapMetricNullableLong ZoneSecondsZ1 { get; set; } = null!;
+        public WeeklyRecapMetricNullableLong ZoneSecondsZ2 { get; set; } = null!;
+        public WeeklyRecapMetricNullableLong ZoneSecondsZ3 { get; set; } = null!;
+        public WeeklyRecapMetricNullableLong ZoneSecondsZ4 { get; set; } = null!;
+        public WeeklyRecapMetricNullableLong ZoneSecondsZ5 { get; set; } = null!;
+    }
+
+    private class WeeklyRecapMetricNullableLong
+    {
+        public long? Current { get; set; }
+        public long? Previous { get; set; }
+        public double? TrailingAvg { get; set; }
+        public long? DeltaVsPrevious { get; set; }
     }
 
     private class WeeklyRecapMetricInt

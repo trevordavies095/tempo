@@ -58,6 +58,7 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result!.CalculationMethod.Should().Be("AgeBased");
         result.Age.Should().Be(30);
         result.MaxHeartRateBpm.Should().Be(190); // 220 - 30
+        result.ObservedMaxHeartRateBpm.Should().BeNull(); // no workouts with HR
         result.RestingHeartRateBpm.Should().BeNull();
         result.Zones.Should().NotBeNull();
         result.Zones.Should().HaveCount(5);
@@ -93,7 +94,7 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result.Should().NotBeNull();
         result!.CalculationMethod.Should().Be("AgeBased");
         result.Age.Should().Be(35);
-        result.MaxHeartRateBpm.Should().BeNull(); // AgeBased doesn't store maxHeartRateBpm in settings
+        result.MaxHeartRateBpm.Should().Be(185); // resolved: 220 - 35
         result.RestingHeartRateBpm.Should().BeNull();
         result.Zones.Should().HaveCount(5);
     }
@@ -184,6 +185,7 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         var result = await response.Content.ReadFromJsonAsync<HeartRateZonesResponse>();
         result.Should().NotBeNull();
         result!.CalculationMethod.Should().Be("Custom");
+        result.MaxHeartRateBpm.Should().Be(200); // resolved: top of zone 5
         result.Zones.Should().HaveCount(5);
         result.Zones[0].MinBpm.Should().Be(100);
         result.Zones[0].MaxBpm.Should().Be(120);
@@ -192,6 +194,40 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
     }
 
     #endregion
+
+    [Fact]
+    public async Task GetHeartRateZones_ObservedMax_UsesLast12MonthsAndIgnoresSpikes()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30);
+
+            var inWindow = await TestDataSeeder.SeedWorkoutAsync(db, startedAt: DateTime.UtcNow.AddMonths(-2));
+            inWindow.MaxHeartRateBpm = 192;
+            var lowerInWindow = await TestDataSeeder.SeedWorkoutAsync(db, startedAt: DateTime.UtcNow.AddDays(-3));
+            lowerInWindow.MaxHeartRateBpm = 175;
+            var tooOld = await TestDataSeeder.SeedWorkoutAsync(db, startedAt: DateTime.UtcNow.AddMonths(-13));
+            tooOld.MaxHeartRateBpm = 205;
+            var spike = await TestDataSeeder.SeedWorkoutAsync(db, startedAt: DateTime.UtcNow.AddDays(-1));
+            spike.MaxHeartRateBpm = 241;
+            await TestDataSeeder.SeedWorkoutAsync(db, startedAt: DateTime.UtcNow.AddDays(-5)); // no HR
+            await db.SaveChangesAsync();
+        }
+
+        // Act
+        var response = await client.GetAsync("/settings/heart-rate-zones");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<HeartRateZonesResponse>();
+        result!.ObservedMaxHeartRateBpm.Should().Be(192);
+        result.MaxHeartRateBpm.Should().Be(190); // observed never feeds the resolved max
+    }
 
     #region UpdateHeartRateZones Tests - Validation Failures
 
@@ -397,7 +433,7 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result.Should().NotBeNull();
         result!.CalculationMethod.Should().Be("AgeBased");
         result.Age.Should().Be(30);
-        result.MaxHeartRateBpm.Should().BeNull(); // AgeBased doesn't store maxHeartRateBpm in settings
+        result.MaxHeartRateBpm.Should().Be(190); // resolved: 220 - 30
         result.IsFirstTimeSetup.Should().BeTrue();
         result.Zones.Should().HaveCount(5);
         
@@ -440,7 +476,7 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         var result = await response.Content.ReadFromJsonAsync<UpdateHeartRateZonesResponse>();
         result.Should().NotBeNull();
         result!.Age.Should().Be(35);
-        result.MaxHeartRateBpm.Should().BeNull(); // AgeBased doesn't store maxHeartRateBpm in settings
+        result.MaxHeartRateBpm.Should().Be(185); // resolved: 220 - 35
         result.IsFirstTimeSetup.Should().BeFalse();
     }
 
@@ -467,6 +503,7 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         result.Should().NotBeNull();
         result!.CalculationMethod.Should().Be("Karvonen");
         result.MaxHeartRateBpm.Should().Be(200);
+        result.ObservedMaxHeartRateBpm.Should().BeNull();
         result.RestingHeartRateBpm.Should().Be(60);
         result.Zones.Should().HaveCount(5);
         
@@ -505,6 +542,7 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         var result = await response.Content.ReadFromJsonAsync<UpdateHeartRateZonesResponse>();
         result.Should().NotBeNull();
         result!.CalculationMethod.Should().Be("Custom");
+        result.MaxHeartRateBpm.Should().Be(200); // resolved: top of zone 5
         result.Zones.Should().HaveCount(5);
         result.Zones[0].MinBpm.Should().Be(100);
         result.Zones[0].MaxBpm.Should().Be(120);
@@ -652,6 +690,192 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
 
     #endregion
 
+    #region Thresholds Tests
+
+    [Fact]
+    public async Task GetThresholds_WithNoSettings_ReturnsNulls()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        // Act
+        var response = await client.GetAsync("/settings/thresholds");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ThresholdsResponse>();
+        result!.ThresholdPaceS.Should().BeNull();
+        result.ThresholdHeartRateBpm.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateThresholds_WithValidValues_SavesAndReturnsThem()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db);
+        }
+
+        // Act
+        var response = await client.PutAsJsonAsync("/settings/thresholds",
+            new { thresholdPaceS = 255, thresholdHeartRateBpm = 172 });
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ThresholdsResponse>();
+        result!.ThresholdPaceS.Should().Be(255);
+        result.ThresholdHeartRateBpm.Should().Be(172);
+
+        var getResult = await client.GetFromJsonAsync<ThresholdsResponse>("/settings/thresholds");
+        getResult!.ThresholdPaceS.Should().Be(255);
+        getResult.ThresholdHeartRateBpm.Should().Be(172);
+    }
+
+    [Fact]
+    public async Task UpdateThresholds_WithNullOrOmittedField_ClearsIt()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        (await client.PutAsJsonAsync("/settings/thresholds",
+            new { thresholdPaceS = 255, thresholdHeartRateBpm = 172 })).EnsureSuccessStatusCode();
+
+        // Act: pace explicitly null, HR omitted
+        var response = await client.PutAsJsonAsync("/settings/thresholds", new { thresholdPaceS = (int?)null });
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var getResult = await client.GetFromJsonAsync<ThresholdsResponse>("/settings/thresholds");
+        getResult!.ThresholdPaceS.Should().BeNull();
+        getResult.ThresholdHeartRateBpm.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0, null)]
+    [InlineData(-240, null)]
+    [InlineData(119, null)]
+    [InlineData(901, null)]
+    [InlineData(null, 0)]
+    [InlineData(null, -1)]
+    [InlineData(null, 59)]
+    [InlineData(null, 231)]
+    public async Task UpdateThresholds_WithOutOfRangeValue_ReturnsBadRequest(int? paceS, int? heartRateBpm)
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        // Act
+        var response = await client.PutAsJsonAsync("/settings/thresholds",
+            new { thresholdPaceS = paceS, thresholdHeartRateBpm = heartRateBpm });
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        error!.Error.Should().NotBeNullOrEmpty();
+
+        using var scope = _factory.Server.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        (await db.UserSettings.AnyAsync()).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UpdateThresholds_WithNoSettings_CreatesRowWithDefaultZones()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        // Act
+        var response = await client.PutAsJsonAsync("/settings/thresholds",
+            new { thresholdPaceS = 300, thresholdHeartRateBpm = 165 });
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var settings = await db.UserSettings.AsNoTracking().SingleAsync();
+            settings.ThresholdPaceS.Should().Be(300);
+            settings.ThresholdHeartRateBpm.Should().Be(165);
+        }
+
+        var zones = await client.GetFromJsonAsync<HeartRateZonesResponse>("/settings/heart-rate-zones");
+        zones!.CalculationMethod.Should().Be("AgeBased");
+        zones.Age.Should().Be(30);
+        zones.MaxHeartRateBpm.Should().Be(190);
+        zones.Zones[0].MinBpm.Should().Be(95);
+        zones.Zones[4].MaxBpm.Should().Be(190);
+    }
+
+    [Fact]
+    public async Task GetThresholds_WithRecentBestEffort_ReturnsSuggestionAlongsideSetValue()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+        Guid workoutId;
+        var workoutDate = DateTime.UtcNow.AddDays(-10);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var settings = await TestDataSeeder.SeedUserSettingsAsync(db);
+            settings.ThresholdPaceS = 270;
+            var workout = await TestDataSeeder.SeedWorkoutAsync(db, startedAt: workoutDate);
+            db.WorkoutBestEfforts.Add(new WorkoutBestEffort
+            {
+                WorkoutId = workout.Id,
+                Distance = "5K",
+                DistanceM = 5000,
+                TimeS = 1200
+            });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        // Act
+        var result = await client.GetFromJsonAsync<ThresholdsResponse>("/settings/thresholds");
+
+        // Assert: suggestion is present even with a value set, and never replaces it
+        result!.ThresholdPaceS.Should().Be(270);
+        result.SuggestedThresholdPaceS.Should().Be(256);
+        result.SuggestedFrom.Should().NotBeNull();
+        result.SuggestedFrom!.Distance.Should().Be("5K");
+        result.SuggestedFrom.TimeS.Should().Be(1200);
+        result.SuggestedFrom.WorkoutDate.Should().Be(workoutDate.ToString("yyyy-MM-dd"));
+        result.SuggestedFrom.WorkoutId.Should().Be(workoutId.ToString());
+
+        // The PUT response carries the suggestion too
+        var putResponse = await client.PutAsJsonAsync("/settings/thresholds", new { thresholdPaceS = 260 });
+        var putResult = await putResponse.Content.ReadFromJsonAsync<ThresholdsResponse>();
+        putResult!.ThresholdPaceS.Should().Be(260);
+        putResult.SuggestedThresholdPaceS.Should().Be(256);
+    }
+
+    [Fact]
+    public async Task GetThresholds_WithNoQualifyingEffort_ReturnsNullSuggestion()
+    {
+        // Arrange
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        // Act
+        var result = await client.GetFromJsonAsync<ThresholdsResponse>("/settings/thresholds");
+
+        // Assert
+        result!.SuggestedThresholdPaceS.Should().BeNull();
+        result.SuggestedFrom.Should().BeNull();
+    }
+
+    #endregion
+
     #region GetCartoBasemaps Tests
 
     [Fact]
@@ -724,6 +948,7 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public int? Age { get; set; }
         public int? RestingHeartRateBpm { get; set; }
         public int? MaxHeartRateBpm { get; set; }
+        public int? ObservedMaxHeartRateBpm { get; set; }
         public List<ZoneResponse> Zones { get; set; } = new();
     }
 
@@ -740,6 +965,7 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public int? Age { get; set; }
         public int? RestingHeartRateBpm { get; set; }
         public int? MaxHeartRateBpm { get; set; }
+        public int? ObservedMaxHeartRateBpm { get; set; }
         public List<ZoneResponse> Zones { get; set; } = new();
         public bool IsFirstTimeSetup { get; set; }
     }
@@ -750,10 +976,27 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         public int? Age { get; set; }
         public int? RestingHeartRateBpm { get; set; }
         public int? MaxHeartRateBpm { get; set; }
+        public int? ObservedMaxHeartRateBpm { get; set; }
         public List<ZoneResponse> Zones { get; set; } = new();
         public bool IsFirstTimeSetup { get; set; }
         public int? RecalculatedCount { get; set; }
         public int? RecalculatedErrorCount { get; set; }
+    }
+
+    private class ThresholdsResponse
+    {
+        public int? ThresholdPaceS { get; set; }
+        public int? ThresholdHeartRateBpm { get; set; }
+        public int? SuggestedThresholdPaceS { get; set; }
+        public SuggestedFromResponse? SuggestedFrom { get; set; }
+    }
+
+    private class SuggestedFromResponse
+    {
+        public string Distance { get; set; } = string.Empty;
+        public int TimeS { get; set; }
+        public string WorkoutDate { get; set; } = string.Empty;
+        public string WorkoutId { get; set; } = string.Empty;
     }
 
     private class ErrorResponse

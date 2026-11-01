@@ -48,6 +48,10 @@ _Avoid_: GpxParser splits, GPS smoothing (as the module name)
 The persist pipeline behind `POST /workouts/import`, `POST /workouts/import/healthkit`, and Strava bulk per-file processing: decode adapter (GPX/FIT/HealthKit) then `PersistAsync` (geometry, duplicate policy, weather, relative effort, best efforts). Persist is the single pipeline; new formats enter via decoded input, not a second pipeline. Not the HTTP module and not Settings ZIP restore.
 _Avoid_: import endpoint (when meaning this module), bulk persist
 
+**Best effort**:
+The fastest time for a standard distance (400m through Marathon) over any segment of a Workout. Each Workout stores its own per distance (`WorkoutBestEffort`); all-time and date-windowed bests are the fastest of those, ties to the earliest Workout. Derived: not exported, recomputed after restore.
+_Avoid_: PR, personal record (as the stored row), BestEffort table (removed)
+
 **Workout external identity**:
 A `(source, externalId)` row linking a Workout to one upstream system. Used for intake idempotency (find / persist / unique-race) before the start/distance/elapsed stats key.
 _Avoid_: `Workout.Source` (provenance of how the Workout was ingested: `fit_import`, `healthkit`, `strava_import`, …), `HealthKitUuid` (dedicated column until a later move), activity id as a Workout column
@@ -65,7 +69,7 @@ Segment row for a Workout with `Kind` (`distance` | `device_lap`). `distance` ro
 _Avoid_: lap table, mile split (as the type name)
 
 **Device lap**:
-Product term for a `WorkoutSplit` with `Kind = device_lap` — a range the recording device wrote (FIT `lap` message, or HealthKit `laps` summaries from tempo-ios), usually auto-distance plus leftover. Authoritative for overview display when any exist. Survives unit-preference split recalc; crop deletes them. Not a separate table. Library FIT rows without `device_lap` yet are filled on startup by `DeviceLapBackfillWorker` (copies stored/reparsed FIT laps; skips cropped sessions). Not rebuilt from DistM.
+Product term for a `WorkoutSplit` with `Kind = device_lap` — a range the recording device wrote (FIT `lap` message, or HealthKit `laps` summaries from tempo-ios), usually auto-distance plus leftover. FIT laps also carry the device's `Intensity` (active, rest, warmup, …), `Trigger` and `StepIndex`, snake_case and nullable; HealthKit laps leave them null. Authoritative for overview display when any exist. Survives unit-preference split recalc; crop deletes them. Not a separate table. Library FIT rows without `device_lap` yet are filled on startup by `DeviceLapBackfillWorker` (copies stored/reparsed FIT laps; skips cropped sessions). The same worker then fills `Intensity` / `Trigger` / `StepIndex` on existing device laps in place by Idx from reparsed FIT bytes (`lapAnnotationsBackfill` marker; skips cropped sessions and lap-count mismatches; JSON-only rows stay null). Not rebuilt from DistM.
 _Avoid_: second entity/table, auto-split (when meaning the FIT lap)
 
 **WorkoutTimeSeries**:
@@ -95,7 +99,7 @@ Hard-gated first-run wizard on the command center after registration (optional T
 _Avoid_: setup wizard as UserSettings, re-run setup from Settings
 
 **Run type**:
-Classification of a Workout (Easy, Workout, Long Run, Race, and the same set the product already uses).
+Classification of a Workout, one of: Easy Run, Recovery, Walk-Run, Long Run, Workout, Threshold, Intervals, Hills, Fartlek, Race. Threshold covers tempo/threshold sessions (named to avoid clashing with the product); Workout is the generic quality session. Imports default to Easy Run, so consumers read it as "untagged or easy".
 _Avoid_: tag, category (when meaning run type)
 
 **Highlight**:

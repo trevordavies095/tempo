@@ -714,5 +714,61 @@ public class HeartRateZoneServiceTests
     }
 
     #endregion
-}
 
+    #region ResolveMaxHeartRate Tests
+
+    [Fact]
+    public void ResolveMaxHeartRate_AgeBased_Returns220MinusAge()
+    {
+        var settings = new UserSettings { CalculationMethod = HeartRateCalculationMethod.AgeBased, Age = 40 };
+        _service.ApplyZonesToUserSettings(settings, _service.CalculateZonesFromAge(40));
+
+        _service.ResolveMaxHeartRate(settings).Should().Be(180);
+    }
+
+    [Fact]
+    public void ResolveMaxHeartRate_Karvonen_ReturnsEnteredMax()
+    {
+        var settings = new UserSettings
+        {
+            CalculationMethod = HeartRateCalculationMethod.Karvonen,
+            MaxHeartRateBpm = 196,
+            RestingHeartRateBpm = 48
+        };
+        _service.ApplyZonesToUserSettings(settings, _service.CalculateZonesFromKarvonen(196, 48));
+
+        _service.ResolveMaxHeartRate(settings).Should().Be(196);
+    }
+
+    [Fact]
+    public void ResolveMaxHeartRate_Custom_ReturnsTopOfZone5()
+    {
+        var settings = new UserSettings
+        {
+            CalculationMethod = HeartRateCalculationMethod.Custom,
+            MaxHeartRateBpm = 150, // stale Karvonen input is ignored for Custom
+            Zone5MinBpm = 180,
+            Zone5MaxBpm = 203
+        };
+
+        _service.ResolveMaxHeartRate(settings).Should().Be(203);
+    }
+
+    [Theory]
+    [InlineData(HeartRateCalculationMethod.AgeBased)]
+    [InlineData(HeartRateCalculationMethod.Karvonen)]
+    public void ResolveMaxHeartRate_MissingMethodInput_FallsBackToTopOfZone5(HeartRateCalculationMethod method)
+    {
+        var settings = new UserSettings { CalculationMethod = method, Zone5MaxBpm = 188 };
+
+        _service.ResolveMaxHeartRate(settings).Should().Be(188);
+    }
+
+    [Fact]
+    public void ResolveMaxHeartRate_DefaultSettings_Returns190()
+    {
+        _service.ResolveMaxHeartRate(_service.CreateDefaultSettings()).Should().Be(190);
+    }
+
+    #endregion
+}

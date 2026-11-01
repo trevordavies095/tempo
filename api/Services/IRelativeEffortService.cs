@@ -5,5 +5,5 @@ namespace Tempo.Api.Services;
 
 public interface IRelativeEffortService
 {
-    int? CalculateRelativeEffort(Workout workout, List<HeartRateZone> zones, TempoDbContext db);
+    int? RecalculateHeartRateMetrics(Workout workout, List<HeartRateZone> zones, TempoDbContext db);
 }

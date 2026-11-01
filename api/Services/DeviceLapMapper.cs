@@ -12,8 +12,50 @@ public sealed class DeviceLapSummary
     public double? TimerS { get; init; }
     public double? ElapsedS { get; init; }
     public byte? AvgHeartRateBpm { get; init; }
-    /// <summary>FIT lap_trigger name for raw JSON only; not a persist filter.</summary>
+    /// <summary>FIT lap_trigger, snake_case (<see cref="DeviceLapAnnotations.Normalize"/>). Not a persist filter.</summary>
     public string? LapTrigger { get; init; }
+    /// <summary>FIT lap intensity, snake_case (active, rest, warmup, …). Not a persist filter.</summary>
+    public string? Intensity { get; init; }
+    /// <summary>FIT wkt_step_index for structured workouts.</summary>
+    public int? StepIndex { get; init; }
+}
+
+/// <summary>
+/// Normalizes FIT enum names (lap_trigger, intensity) to lower snake_case for persist and API.
+/// Stored lap JSON written before this normalization holds PascalCase names.
+/// </summary>
+public static class DeviceLapAnnotations
+{
+    public static string? Normalize(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        var trimmed = name.Trim();
+        var sb = new System.Text.StringBuilder(trimmed.Length + 4);
+        for (var i = 0; i < trimmed.Length; i++)
+        {
+            var c = trimmed[i];
+            if (char.IsUpper(c))
+            {
+                if (i > 0 && trimmed[i - 1] != '_')
+                {
+                    sb.Append('_');
+                }
+
+                sb.Append(char.ToLowerInvariant(c));
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+
+        var snake = sb.ToString();
+        return snake == "invalid" ? null : snake;
+    }
 }
 
 /// <summary>
@@ -63,7 +105,10 @@ public static class DeviceLapMapper
                 StartElapsedS = startElapsed,
                 EndElapsedS = endElapsed,
                 StartDistanceM = cumulativeStartDistanceM,
-                AvgHeartRateBpm = lap.AvgHeartRateBpm
+                AvgHeartRateBpm = lap.AvgHeartRateBpm,
+                Intensity = lap.Intensity,
+                Trigger = lap.LapTrigger,
+                StepIndex = lap.StepIndex
             });
 
             cumulativeStartDistanceM += lap.DistanceM;

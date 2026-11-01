@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Models.Responses;
 using Tempo.Api.Services;
 using Tempo.Api.Utils;
 
@@ -29,7 +30,7 @@ public static class ShoesEndpoints
             var filter = (status ?? "active").Trim().ToLowerInvariant();
             if (filter is not ("active" or "retired" or "all"))
             {
-                return Results.BadRequest(new { error = "status must be active, retired, or all" });
+                return Results.BadRequest(new ErrorResponse { Error = "status must be active, retired, or all" });
             }
 
             var query = db.Shoes.AsQueryable();
@@ -49,21 +50,21 @@ public static class ShoesEndpoints
             var settings = await db.UserSettings.FirstOrDefaultAsync();
             var unitPreference = settings?.UnitPreference ?? "metric";
 
-            var shoesWithMileage = new List<object>();
+            var shoesWithMileage = new List<ShoeListItemDocument>();
             foreach (var shoe in shoes)
             {
                 var totalMileage = await mileageService.GetTotalMileageAsync(db, shoe.Id, unitPreference);
-                shoesWithMileage.Add(new
+                shoesWithMileage.Add(new ShoeListItemDocument
                 {
-                    id = shoe.Id,
-                    brand = shoe.Brand,
-                    model = shoe.Model,
-                    initialMileageM = shoe.InitialMileageM,
-                    isRetired = shoe.IsRetired,
-                    totalMileage = totalMileage,
-                    unit = unitPreference == "imperial" ? "miles" : "km",
-                    createdAt = shoe.CreatedAt,
-                    updatedAt = shoe.UpdatedAt
+                    Id = shoe.Id,
+                    Brand = shoe.Brand,
+                    Model = shoe.Model,
+                    InitialMileageM = shoe.InitialMileageM,
+                    IsRetired = shoe.IsRetired,
+                    TotalMileage = totalMileage,
+                    Unit = unitPreference == "imperial" ? "miles" : "km",
+                    CreatedAt = shoe.CreatedAt,
+                    UpdatedAt = shoe.UpdatedAt
                 });
             }
 
@@ -419,8 +420,8 @@ public static class ShoesEndpoints
 
         group.MapGet("", GetShoes)
             .WithName("GetShoes")
-            .Produces(200)
-            .Produces(400)
+            .Produces<List<ShoeListItemDocument>>(200)
+            .Produces<ErrorResponse>(400)
             .Produces(500)
             .WithSummary("List shoes")
             .WithDescription("Returns shoes with calculated total mileage. Query status=active (default), retired, or all.");

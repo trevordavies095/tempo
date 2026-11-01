@@ -178,6 +178,7 @@ builder.Services.AddScoped<RelativeEffortService>();
 builder.Services.AddScoped<IRelativeEffortService>(sp => sp.GetRequiredService<RelativeEffortService>());
 builder.Services.AddScoped<BestEffortService>();
 builder.Services.AddScoped<IBestEffortService>(sp => sp.GetRequiredService<BestEffortService>());
+builder.Services.AddScoped<ThresholdSuggestionService>();
 builder.Services.AddScoped<BulkImportService>();
 builder.Services.AddScoped<StravaBulkImportOrchestrator>();
 builder.Services.AddSingleton<ImportJobQueue>();
@@ -193,6 +194,11 @@ builder.Services.AddScoped<TimerTimeBackfillService>();
 builder.Services.AddHostedService<TimerTimeBackfillWorker>();
 builder.Services.AddScoped<DeviceLapBackfillService>();
 builder.Services.AddHostedService<DeviceLapBackfillWorker>();
+builder.Services.AddScoped<ZoneSecondsBackfillService>();
+builder.Services.AddHostedService<ZoneSecondsBackfillWorker>();
+builder.Services.AddSingleton<BestEffortBackfillSignal>();
+builder.Services.AddScoped<BestEffortBackfillService>();
+builder.Services.AddHostedService<BestEffortBackfillWorker>();
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();
@@ -208,6 +214,7 @@ builder.Services.AddScoped<IWeatherService>(sp => sp.GetRequiredService<WeatherS
 builder.Services.AddScoped<WorkoutIntake>();
 builder.Services.AddScoped<HealthKitWorkoutDecoder>();
 builder.Services.AddSingleton<IntervalsIcuSecretProtector>();
+builder.Services.AddSingleton<ApiKeySecretProtector>();
 builder.Services.AddHttpClient(IntervalsIcuClient.HttpClientName, client =>
 {
     client.BaseAddress = new Uri("https://intervals.icu/api/v1/");

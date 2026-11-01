@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
+using Tempo.Api.Models.Responses;
 using Tempo.Api.Services;
 
 namespace Tempo.Api.Endpoints;
@@ -73,7 +74,9 @@ public static class SettingsEndpoints
     /// <returns>Heart rate zones configuration with calculation method and zone boundaries</returns>
     /// <remarks>
     /// Returns the current heart rate zones configuration. If no settings exist, returns default zones
-    /// calculated using age-based method with age 30 (max HR = 190).
+    /// calculated using age-based method with age 30 (max HR = 190). maxHeartRateBpm is resolved for every
+    /// method; observedMaxHeartRateBpm is the highest workout max HR in the last 12 months (readings above
+    /// 230 ignored), or null without HR data.
     /// </remarks>
     private static async Task<IResult> GetHeartRateZones(
         TempoDbContext db,
@@ -82,45 +85,23 @@ public static class SettingsEndpoints
     {
         try
         {
-            // Get the single settings record (or create default if none exists)
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-
-            if (settings == null)
-            {
-                // Return default settings (220-age with age 30 as example)
-                var defaultAge = 30;
-                var defaultZones = zoneService.CalculateZonesFromAge(defaultAge);
-                var defaultMaxHr = 220 - defaultAge;
-
-                return Results.Ok(new
-                {
-                    calculationMethod = HeartRateCalculationMethod.AgeBased.ToString(),
-                    age = defaultAge,
-                    restingHeartRateBpm = (int?)null,
-                    maxHeartRateBpm = defaultMaxHr,
-                    zones = defaultZones.Select((z, i) => new
-                    {
-                        zoneNumber = i + 1,
-                        minBpm = z.MinBpm,
-                        maxBpm = z.MaxBpm
-                    }).ToArray()
-                });
-            }
-
+            // Get the single settings record, or the age-based defaults when none exists
+            var settings = await db.UserSettings.FirstOrDefaultAsync() ?? zoneService.CreateDefaultSettings();
             var zones = zoneService.GetZonesFromUserSettings(settings);
 
-            return Results.Ok(new
+            return Results.Ok(new HeartRateZonesDocument
             {
-                calculationMethod = settings.CalculationMethod.ToString(),
-                age = settings.Age,
-                restingHeartRateBpm = settings.RestingHeartRateBpm,
-                maxHeartRateBpm = settings.MaxHeartRateBpm,
-                zones = zones.Select((z, i) => new
+                CalculationMethod = settings.CalculationMethod.ToString(),
+                Age = settings.Age,
+                RestingHeartRateBpm = settings.RestingHeartRateBpm,
+                MaxHeartRateBpm = zoneService.ResolveMaxHeartRate(settings),
+                ObservedMaxHeartRateBpm = await zoneService.GetObservedMaxHeartRateAsync(db, DateTime.UtcNow),
+                Zones = zones.Select((z, i) => new HeartRateZoneEntryDocument
                 {
-                    zoneNumber = i + 1,
-                    minBpm = z.MinBpm,
-                    maxBpm = z.MaxBpm
-                }).ToArray()
+                    ZoneNumber = i + 1,
+                    MinBpm = z.MinBpm,
+                    MaxBpm = z.MaxBpm
+                }).ToList()
             });
         }
         catch (Exception ex)
@@ -186,7 +167,8 @@ public static class SettingsEndpoints
                 calculationMethod = settings.CalculationMethod.ToString(),
                 age = settings.Age,
                 restingHeartRateBpm = settings.RestingHeartRateBpm,
-                maxHeartRateBpm = settings.MaxHeartRateBpm,
+                maxHeartRateBpm = zoneService.ResolveMaxHeartRate(settings),
+                observedMaxHeartRateBpm = await zoneService.GetObservedMaxHeartRateAsync(db, DateTime.UtcNow),
                 zones = zones.Select((z, i) => new
                 {
                     zoneNumber = i + 1,
@@ -293,7 +275,7 @@ public static class SettingsEndpoints
                         {
                             try
                             {
-                                var relativeEffort = relativeEffortService.CalculateRelativeEffort(workout, zones, db);
+                                var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
                                 if (relativeEffort.HasValue)
                                 {
                                     workout.RelativeEffort = relativeEffort.Value;
@@ -324,7 +306,8 @@ public static class SettingsEndpoints
                 calculationMethod = settings.CalculationMethod.ToString(),
                 age = settings.Age,
                 restingHeartRateBpm = settings.RestingHeartRateBpm,
-                maxHeartRateBpm = settings.MaxHeartRateBpm,
+                maxHeartRateBpm = zoneService.ResolveMaxHeartRate(settings),
+                observedMaxHeartRateBpm = await zoneService.GetObservedMaxHeartRateAsync(db, DateTime.UtcNow),
                 zones = zones.Select((z, i) => new
                 {
                     zoneNumber = i + 1,
@@ -384,7 +367,7 @@ public static class SettingsEndpoints
             var settings = await db.UserSettings.FirstOrDefaultAsync();
             var unitPreference = settings?.UnitPreference ?? "metric";
             
-            return Results.Ok(new { unitPreference });
+            return Results.Ok(new UnitPreferenceDocument { UnitPreference = unitPreference });
         }
         catch (Exception ex)
         {
@@ -437,6 +420,121 @@ public static class SettingsEndpoints
         }
     }
 
+    private const int MinThresholdPaceS = 120;
+    private const int MaxThresholdPaceS = 900;
+    private const int MinThresholdHeartRateBpm = 60;
+    private const int MaxThresholdHeartRateBpm = 230;
+
+    /// <summary>
+    /// Builds the thresholds document: the saved values plus the read-only suggestion
+    /// </summary>
+    private static async Task<ThresholdsDocument> BuildThresholdsDocumentAsync(
+        UserSettings? settings,
+        TempoDbContext db,
+        ThresholdSuggestionService suggestionService)
+    {
+        var suggestion = await suggestionService.GetSuggestionAsync(db, DateTime.UtcNow);
+
+        return new ThresholdsDocument
+        {
+            ThresholdPaceS = settings?.ThresholdPaceS,
+            ThresholdHeartRateBpm = settings?.ThresholdHeartRateBpm,
+            SuggestedThresholdPaceS = suggestion?.ThresholdPaceS,
+            SuggestedFrom = suggestion == null ? null : new ThresholdSuggestionSourceDocument
+            {
+                Distance = suggestion.Distance,
+                TimeS = suggestion.TimeS,
+                WorkoutDate = suggestion.WorkoutDate,
+                WorkoutId = suggestion.WorkoutId
+            }
+        };
+    }
+
+    /// <summary>
+    /// Get threshold pace and heart rate
+    /// </summary>
+    /// <param name="db">Database context</param>
+    /// <param name="suggestionService">Threshold suggestion service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>Athlete-set threshold pace (seconds per km) and threshold heart rate, each null when not set,
+    /// plus a suggested threshold pace</returns>
+    /// <remarks>
+    /// The suggestion is Daniels VDOT from the best 5K or 10K effort in the last 90 days, with T-pace at 88% of
+    /// VDOT; the faster of the two wins. It is returned whether or not a threshold is set and is never saved.
+    /// </remarks>
+    private static async Task<IResult> GetThresholds(
+        TempoDbContext db,
+        ThresholdSuggestionService suggestionService,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            var settings = await db.UserSettings.AsNoTracking().FirstOrDefaultAsync();
+
+            return Results.Ok(await BuildThresholdsDocumentAsync(settings, db, suggestionService));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error getting thresholds");
+            return Results.Problem("Failed to retrieve thresholds");
+        }
+    }
+
+    /// <summary>
+    /// Update threshold pace and heart rate
+    /// </summary>
+    /// <param name="request">Thresholds update request</param>
+    /// <param name="db">Database context</param>
+    /// <param name="zoneService">Heart rate zone service</param>
+    /// <param name="suggestionService">Threshold suggestion service</param>
+    /// <param name="logger">Logger instance</param>
+    /// <returns>Updated thresholds, with the suggestion as on GET</returns>
+    /// <remarks>
+    /// Replaces both values: an omitted or null field clears it. Threshold pace must be 120-900 seconds per km
+    /// and threshold heart rate 60-230 BPM. Creates the settings row with default zones if none exists.
+    /// </remarks>
+    private static async Task<IResult> UpdateThresholds(
+        [FromBody] UpdateThresholdsRequest request,
+        TempoDbContext db,
+        HeartRateZoneService zoneService,
+        ThresholdSuggestionService suggestionService,
+        ILogger<Program> logger)
+    {
+        try
+        {
+            if (request.ThresholdPaceS is { } pace &&
+                (pace < MinThresholdPaceS || pace > MaxThresholdPaceS))
+            {
+                return Results.BadRequest(new { error = $"Threshold pace must be between {MinThresholdPaceS} and {MaxThresholdPaceS} seconds per km" });
+            }
+
+            if (request.ThresholdHeartRateBpm is { } hr &&
+                (hr < MinThresholdHeartRateBpm || hr > MaxThresholdHeartRateBpm))
+            {
+                return Results.BadRequest(new { error = $"Threshold heart rate must be between {MinThresholdHeartRateBpm} and {MaxThresholdHeartRateBpm} BPM" });
+            }
+
+            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            if (settings == null)
+            {
+                settings = zoneService.CreateDefaultSettings();
+                db.UserSettings.Add(settings);
+            }
+
+            settings.ThresholdPaceS = request.ThresholdPaceS;
+            settings.ThresholdHeartRateBpm = request.ThresholdHeartRateBpm;
+            settings.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            return Results.Ok(await BuildThresholdsDocumentAsync(settings, db, suggestionService));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error updating thresholds");
+            return Results.Problem("Failed to update thresholds");
+        }
+    }
+
 
     public static void MapSettingsEndpoints(this WebApplication app)
     {
@@ -446,10 +544,10 @@ public static class SettingsEndpoints
 
         group.MapGet("/heart-rate-zones", GetHeartRateZones)
             .WithName("GetHeartRateZones")
-            .Produces(200)
+            .Produces<HeartRateZonesDocument>(200)
             .Produces(500)
             .WithSummary("Get heart rate zones")
-            .WithDescription("Returns the current heart rate zones configuration. If no settings exist, returns default zones calculated using age-based method with age 30.");
+            .WithDescription("Returns the current heart rate zones configuration. If no settings exist, returns default zones calculated using age-based method with age 30. maxHeartRateBpm is resolved for every method: 220 - age (AgeBased), the entered max (Karvonen), or the top of zone 5 (Custom). observedMaxHeartRateBpm is the highest workout max HR in the last 12 months, ignoring readings above 230 bpm; null when no workout in the window has HR data. It is informational and never changes maxHeartRateBpm.");
 
         group.MapPut("/heart-rate-zones", UpdateHeartRateZones)
             .WithName("UpdateHeartRateZones")
@@ -457,7 +555,7 @@ public static class SettingsEndpoints
             .Produces(400)
             .Produces(500)
             .WithSummary("Update heart rate zones")
-            .WithDescription("Updates heart rate zones using one of three calculation methods: AgeBased, Karvonen, or Custom.");
+            .WithDescription("Updates heart rate zones using one of three calculation methods: AgeBased, Karvonen, or Custom. The request's maxHeartRateBpm is the Karvonen input; the response's maxHeartRateBpm is resolved for the saved method, as on GET.");
 
         group.MapPost("/heart-rate-zones/update-with-recalc", UpdateHeartRateZonesWithRecalc)
             .WithName("UpdateHeartRateZonesWithRecalc")
@@ -468,7 +566,7 @@ public static class SettingsEndpoints
 
         group.MapGet("/unit-preference", GetUnitPreference)
             .WithName("GetUnitPreference")
-            .Produces(200)
+            .Produces<UnitPreferenceDocument>(200)
             .WithSummary("Get unit preference")
             .WithDescription("Returns the stored unit preference (metric or imperial), defaults to metric");
 
@@ -478,6 +576,21 @@ public static class SettingsEndpoints
             .Produces(400)
             .WithSummary("Update unit preference")
             .WithDescription("Updates the unit preference (metric or imperial)");
+
+        group.MapGet("/thresholds", GetThresholds)
+            .WithName("GetThresholds")
+            .Produces<ThresholdsDocument>(200)
+            .Produces(500)
+            .WithSummary("Get threshold pace and heart rate")
+            .WithDescription("Returns the athlete-set threshold pace (thresholdPaceS, seconds per km) and threshold heart rate (thresholdHeartRateBpm, BPM); each is null when not set. Also returns a read-only suggestedThresholdPaceS (seconds per km) computed with Jack Daniels' VDOT formula (Daniels–Gilbert equations) from the best 5K or 10K effort, including splits of longer runs, among workouts in the last 90 days, with threshold (T) pace at 88% of VDOT; when both distances qualify the faster T-pace wins. suggestedFrom gives the source effort (distance, timeS, workoutDate, workoutId). Both are null when no effort qualifies, and are present whether or not a threshold is set. The suggestion is never saved.");
+
+        group.MapPut("/thresholds", UpdateThresholds)
+            .WithName("UpdateThresholds")
+            .Produces<ThresholdsDocument>(200)
+            .Produces(400)
+            .Produces(500)
+            .WithSummary("Update threshold pace and heart rate")
+            .WithDescription("Replaces both thresholds: an omitted or null field clears it. thresholdPaceS is seconds per km and must be 120-900; thresholdHeartRateBpm must be 60-230 BPM. Out-of-range values return 400. Creates the settings row with default age-based zones if none exists. The response includes the suggestion, as on GET.");
 
         group.MapGet("/carto-basemaps", GetCartoBasemaps)
             .WithName("GetCartoBasemaps")
@@ -567,6 +680,22 @@ public static class SettingsEndpoints
         /// If true, recalculates relative effort for all qualifying workouts after updating zones
         /// </summary>
         public bool? RecalculateExisting { get; set; }
+    }
+
+    /// <summary>
+    /// Request model for updating thresholds. Both fields are replaced; null clears.
+    /// </summary>
+    public class UpdateThresholdsRequest
+    {
+        /// <summary>
+        /// Threshold pace in seconds per kilometre (120-900), or null to clear
+        /// </summary>
+        public int? ThresholdPaceS { get; set; }
+
+        /// <summary>
+        /// Threshold heart rate in BPM (60-230), or null to clear
+        /// </summary>
+        public int? ThresholdHeartRateBpm { get; set; }
     }
 
     /// <summary>

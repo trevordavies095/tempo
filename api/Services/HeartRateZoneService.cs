@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using Tempo.Api.Data;
 using Tempo.Api.Models;
 
 namespace Tempo.Api.Services;
@@ -13,6 +15,16 @@ public class HeartRateZoneService
         (0.80, 0.90), // Zone 4: 80-90%
         (0.90, 1.00)  // Zone 5: 90-100%
     };
+
+    /// <summary>
+    /// Age used for the default zones when no settings row exists (max HR 190)
+    /// </summary>
+    public const int DefaultAge = 30;
+
+    /// <summary>
+    /// Workout max HR readings above this are treated as sensor spikes when computing observed max
+    /// </summary>
+    public const int ObservedMaxCeilingBpm = 230;
 
     /// <summary>
     /// Calculate heart rate zones using the 220-age formula
@@ -165,5 +177,47 @@ public class HeartRateZoneService
             new HeartRateZone { MinBpm = settings.Zone5MinBpm, MaxBpm = settings.Zone5MaxBpm }
         };
     }
-}
 
+    /// <summary>
+    /// Settings returned (unsaved) when no settings row exists: age-based zones for <see cref="DefaultAge"/>
+    /// </summary>
+    public UserSettings CreateDefaultSettings()
+    {
+        var settings = new UserSettings
+        {
+            CalculationMethod = HeartRateCalculationMethod.AgeBased,
+            Age = DefaultAge
+        };
+        ApplyZonesToUserSettings(settings, CalculateZonesFromAge(DefaultAge));
+        return settings;
+    }
+
+    /// <summary>
+    /// The athlete's max HR under their calculation method: 220 - age (AgeBased), the stored max (Karvonen),
+    /// or the top of zone 5 (Custom, and the fallback when the method's input is missing)
+    /// </summary>
+    public int ResolveMaxHeartRate(UserSettings settings)
+    {
+        return settings.CalculationMethod switch
+        {
+            HeartRateCalculationMethod.AgeBased when settings.Age is { } age => 220 - age,
+            HeartRateCalculationMethod.Karvonen when settings.MaxHeartRateBpm is { } max => max,
+            _ => settings.Zone5MaxBpm
+        };
+    }
+
+    /// <summary>
+    /// Highest workout max HR among workouts started in the 12 months before <paramref name="nowUtc"/>,
+    /// ignoring readings above <see cref="ObservedMaxCeilingBpm"/>. Null when no workout in the window has HR data.
+    /// </summary>
+    public async Task<int?> GetObservedMaxHeartRateAsync(TempoDbContext db, DateTime nowUtc)
+    {
+        var since = nowUtc.AddMonths(-12);
+        return await db.Workouts
+            .AsNoTracking()
+            .Where(w => w.StartedAt >= since
+                && w.MaxHeartRateBpm != null
+                && w.MaxHeartRateBpm <= ObservedMaxCeilingBpm)
+            .MaxAsync(w => (int?)w.MaxHeartRateBpm);
+    }
+}

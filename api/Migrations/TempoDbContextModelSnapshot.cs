@@ -31,6 +31,9 @@ namespace Tempo.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<byte[]>("KeyCiphertext")
+                        .HasColumnType("bytea");
+
                     b.Property<string>("KeyHash")
                         .IsRequired()
                         .HasColumnType("text");
@@ -57,45 +60,11 @@ namespace Tempo.Api.Migrations
 
                     b.HasIndex("UserId");
 
+                    b.HasIndex(new[] { "UserId" }, "IX_ApiKeys_UserId_Active")
+                        .IsUnique()
+                        .HasFilter("\"RevokedAt\" IS NULL");
+
                     b.ToTable("ApiKeys");
-                });
-
-            modelBuilder.Entity("Tempo.Api.Models.BestEffort", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CalculatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Distance")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<double>("DistanceM")
-                        .HasColumnType("double precision");
-
-                    b.Property<int>("TimeS")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("WorkoutDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("WorkoutId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Distance")
-                        .IsUnique();
-
-                    b.HasIndex("DistanceM");
-
-                    b.HasIndex("WorkoutId");
-
-                    b.ToTable("BestEfforts");
                 });
 
             modelBuilder.Entity("Tempo.Api.Models.ImportJob", b =>
@@ -310,6 +279,12 @@ namespace Tempo.Api.Migrations
                     b.Property<int?>("RestingHeartRateBpm")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("ThresholdHeartRateBpm")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ThresholdPaceS")
+                        .HasColumnType("integer");
+
                     b.Property<string>("UnitPreference")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
@@ -377,6 +352,9 @@ namespace Tempo.Api.Migrations
 
                     b.Property<double?>("AvgSpeedMps")
                         .HasColumnType("double precision");
+
+                    b.Property<DateTime?>("BestEffortsComputedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("Calories")
                         .HasColumnType("integer");
@@ -486,6 +464,24 @@ namespace Tempo.Api.Migrations
                     b.Property<string>("Weather")
                         .HasColumnType("jsonb");
 
+                    b.Property<DateTime?>("ZoneSecondsComputedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ZoneSecondsZ1")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ZoneSecondsZ2")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ZoneSecondsZ3")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ZoneSecondsZ4")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ZoneSecondsZ5")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("HealthKitUuid")
@@ -522,6 +518,36 @@ namespace Tempo.Api.Migrations
                     b.HasIndex("StartedAt", "DistanceM", "DurationS");
 
                     b.ToTable("Workouts");
+                });
+
+            modelBuilder.Entity("Tempo.Api.Models.WorkoutBestEffort", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Distance")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<double>("DistanceM")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("TimeS")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("WorkoutId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Distance", "TimeS");
+
+                    b.HasIndex("WorkoutId", "Distance")
+                        .IsUnique();
+
+                    b.ToTable("WorkoutBestEfforts");
                 });
 
             modelBuilder.Entity("Tempo.Api.Models.WorkoutExternalIdentity", b =>
@@ -642,6 +668,10 @@ namespace Tempo.Api.Migrations
                     b.Property<int>("Idx")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Intensity")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -655,6 +685,13 @@ namespace Tempo.Api.Migrations
 
                     b.Property<int>("StartElapsedS")
                         .HasColumnType("integer");
+
+                    b.Property<int?>("StepIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Trigger")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<Guid>("WorkoutId")
                         .HasColumnType("uuid");
@@ -727,17 +764,6 @@ namespace Tempo.Api.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Tempo.Api.Models.BestEffort", b =>
-                {
-                    b.HasOne("Tempo.Api.Models.Workout", "Workout")
-                        .WithMany()
-                        .HasForeignKey("WorkoutId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Workout");
-                });
-
             modelBuilder.Entity("Tempo.Api.Models.UserSettings", b =>
                 {
                     b.HasOne("Tempo.Api.Models.Shoe", "DefaultShoe")
@@ -756,6 +782,17 @@ namespace Tempo.Api.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Shoe");
+                });
+
+            modelBuilder.Entity("Tempo.Api.Models.WorkoutBestEffort", b =>
+                {
+                    b.HasOne("Tempo.Api.Models.Workout", "Workout")
+                        .WithMany()
+                        .HasForeignKey("WorkoutId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workout");
                 });
 
             modelBuilder.Entity("Tempo.Api.Models.WorkoutExternalIdentity", b =>
