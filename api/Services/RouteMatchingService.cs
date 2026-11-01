@@ -40,9 +40,17 @@ public class RouteMatchingService
         int maxResults = 10,
         int maxYears = DefaultMaxYears)
     {
-        // Get the current workout without route first (to avoid JSON parsing errors)
+        // Project only the fields used; full entities carry large raw import blobs
         var currentWorkout = await _db.Workouts
-            .FirstOrDefaultAsync(w => w.Id == workoutId);
+            .Where(w => w.Id == workoutId)
+            .Select(w => new CurrentWorkoutRow
+            {
+                Id = w.Id,
+                StartedAt = w.StartedAt,
+                DistanceM = w.DistanceM,
+                RunType = w.RunType
+            })
+            .FirstOrDefaultAsync();
 
         if (currentWorkout == null)
         {
@@ -74,16 +82,8 @@ public class RouteMatchingService
             return new List<SimilarRouteMatch>();
         }
 
-        // Create WorkoutRoute object for consistency
-        currentWorkout.Route = new WorkoutRoute
-        {
-            Id = currentRouteData.Id,
-            WorkoutId = currentRouteData.WorkoutId,
-            RouteGeoJson = currentRouteData.RouteGeoJson
-        };
-
         // Extract coordinates from current route
-        var currentRouteCoords = ExtractCoordinatesFromGeoJson(currentWorkout.Route.RouteGeoJson);
+        var currentRouteCoords = ExtractCoordinatesFromGeoJson(currentRouteData.RouteGeoJson);
         if (currentRouteCoords.Count < 2)
         {
             _logger.LogWarning("Workout {WorkoutId} route has insufficient points ({Count})", workoutId, currentRouteCoords.Count);
@@ -96,10 +96,15 @@ public class RouteMatchingService
         var minDate = isRace ? DateTime.MinValue : currentWorkout.StartedAt.AddYears(-maxYears);
         var maxDate = isRace ? DateTime.MaxValue : currentWorkout.StartedAt.AddYears(maxYears); // Include workouts after current workout too
 
+        // Filter by distance similarity (within 10%) in SQL so non-matching routes are never loaded
+        var currentDistanceM = currentWorkout.DistanceM;
+        var distanceThreshold = currentDistanceM * DistanceSimilarityThresholdPercent;
+
         // Get candidate workouts without routes first (to avoid JSON parsing errors during Include)
         var candidateQuery = _db.Workouts
             .Where(w => w.Id != workoutId &&
-                       _db.WorkoutRoutes.Any(r => r.WorkoutId == w.Id));
+                       _db.WorkoutRoutes.Any(r => r.WorkoutId == w.Id) &&
+                       Math.Abs(w.DistanceM - currentDistanceM) <= distanceThreshold);
 
         // Only apply date filter for non-races
         if (!isRace)
@@ -108,7 +113,16 @@ public class RouteMatchingService
                 .Where(w => w.StartedAt >= minDate && w.StartedAt <= maxDate);
         }
 
-        var candidateWorkouts = await candidateQuery.ToListAsync();
+        var candidateWorkouts = await candidateQuery
+            .Select(w => new CandidateRow
+            {
+                Id = w.Id,
+                StartedAt = w.StartedAt,
+                DurationS = w.DurationS,
+                DistanceM = w.DistanceM,
+                AvgPaceS = w.AvgPaceS
+            })
+            .ToListAsync();
 
         // Load all route data in a single query to avoid N+1 query problem
         var candidateWorkoutIds = candidateWorkouts.Select(w => w.Id).ToList();
@@ -151,18 +165,9 @@ public class RouteMatchingService
                 continue;
             }
 
-            // Create a WorkoutRoute object for consistency with existing code
-            var route = new WorkoutRoute
-            {
-                Id = routeData.Id,
-                WorkoutId = routeData.WorkoutId,
-                RouteGeoJson = routeData.RouteGeoJson
-            };
-            candidate.Route = route;
-
-            // Quick filters: start/end proximity and distance similarity
+            // Quick filters: start/end proximity (distance similarity already applied in SQL)
             // PassQuickFilters extracts coordinates once and returns them if filters pass
-            var (passed, candidateCoords) = PassQuickFilters(currentWorkout, candidate, currentRouteCoords);
+            var (passed, candidateCoords) = PassQuickFilters(routeData.RouteGeoJson, currentRouteCoords);
             if (!passed || candidateCoords == null || candidateCoords.Count < 2)
             {
                 continue;
@@ -345,29 +350,15 @@ public class RouteMatchingService
     }
 
     /// <summary>
-    /// Checks if candidate workout passes quick filters (start/end proximity, distance similarity).
+    /// Checks if a candidate route passes the start/end proximity quick filter.
     /// Returns both the filter result and the extracted coordinates to avoid re-parsing GeoJSON.
     /// </summary>
     private (bool passed, List<(double lat, double lon)>? coords) PassQuickFilters(
-        Workout currentWorkout,
-        Workout candidate,
+        string candidateRouteGeoJson,
         List<(double lat, double lon)> currentRouteCoords)
     {
-        // Filter by distance similarity (within 10%)
-        var distanceDiff = Math.Abs(candidate.DistanceM - currentWorkout.DistanceM);
-        var distanceThreshold = currentWorkout.DistanceM * DistanceSimilarityThresholdPercent;
-        if (distanceDiff > distanceThreshold)
-        {
-            return (false, null);
-        }
-
         // Extract candidate route coordinates
-        if (candidate.Route == null || string.IsNullOrEmpty(candidate.Route.RouteGeoJson))
-        {
-            return (false, null);
-        }
-
-        var candidateCoords = ExtractCoordinatesFromGeoJson(candidate.Route.RouteGeoJson);
+        var candidateCoords = ExtractCoordinatesFromGeoJson(candidateRouteGeoJson);
         if (candidateCoords.Count < 2)
         {
             return (false, null);
@@ -481,6 +472,29 @@ public class RouteMatchingService
         // Similarity score = 100 - (average distance in meters), clamped to 0-100
         var score = 100.0 - averageDistanceM;
         return Math.Max(0.0, Math.Min(100.0, score));
+    }
+
+    /// <summary>
+    /// The current workout's fields used for matching.
+    /// </summary>
+    private class CurrentWorkoutRow
+    {
+        public Guid Id { get; set; }
+        public DateTime StartedAt { get; set; }
+        public double DistanceM { get; set; }
+        public string? RunType { get; set; }
+    }
+
+    /// <summary>
+    /// A candidate workout's fields used for matching and the response.
+    /// </summary>
+    private class CandidateRow
+    {
+        public Guid Id { get; set; }
+        public DateTime StartedAt { get; set; }
+        public int DurationS { get; set; }
+        public double DistanceM { get; set; }
+        public double AvgPaceS { get; set; }
     }
 
     /// <summary>
