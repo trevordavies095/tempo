@@ -2,12 +2,23 @@ import { formatDistance, formatDuration, formatPace } from '@/lib/format';
 import type { WorkoutDetail } from '@/lib/api';
 import type { UnitPreference } from '@/lib/settings';
 import { Card } from '@/components/ui/Card';
+import { intensityTag, splitsColumnHeader, splitsTitle } from '@/lib/splits';
 
 interface WorkoutDetailSplitsProps {
   splits: WorkoutDetail['splits'];
   unitPreference: UnitPreference;
   hoveredSplitIdx: number | null;
   onSplitHover: (idx: number | null) => void;
+}
+
+function IntensityTag({ intensity }: { intensity: string | null | undefined }) {
+  const label = intensityTag(intensity);
+  if (!label) return null;
+  return (
+    <span className="ml-2 inline-block px-2 py-px text-[11px] leading-3 font-medium rounded-full border bg-canvas text-ink border-border whitespace-nowrap">
+      {label}
+    </span>
+  );
 }
 
 export default function WorkoutDetailSplits({
@@ -21,18 +32,19 @@ export default function WorkoutDetailSplits({
   }
 
   const showHr = splits.some((s) => s.avgHeartRateBpm != null);
+  const title = splitsTitle(splits);
 
   return (
     <Card>
       <h2 className="text-lg font-semibold text-ink mb-2">
-        Splits ({splits.length})
+        {title} ({splits.length})
       </h2>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-border">
               <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-ink">
-                Split
+                {splitsColumnHeader(title)}
               </th>
               <th className="text-left py-1.5 px-2.5 text-xs font-semibold text-ink">
                 Distance
@@ -63,6 +75,7 @@ export default function WorkoutDetailSplits({
               >
                 <td className="py-1.5 px-2.5 text-xs text-ink">
                   {split.idx + 1}
+                  <IntensityTag intensity={split.intensity} />
                 </td>
                 <td className="py-1.5 px-2.5 text-xs text-ink">
                   {formatDistance(split.distanceM, unitPreference)}
