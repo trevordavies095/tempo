@@ -135,6 +135,23 @@ Track workout intensity over time:
 - **Distribution** - How effort is distributed across workouts
 - **Comparisons** - Week-over-week or month-over-month changes
 
+
+## Insights
+
+Open **Insights** in the navigation bar (after Activities) for an all-time look across your runs. The page needs at least 5 Workouts; until then it shows an **Unlock Insights** card with your progress toward that number.
+
+### Weather Extremes
+
+Up to eight tiles: Coldest, Hottest, Windiest, Most Humid, Wettest, Wildest Weather (thunderstorms), Foggiest and Snowiest. Each tile shows the value, the Workout name and date, and opens that Workout's overview. Temperature, wind and precipitation follow your unit preference. A tile only appears when at least one run qualifies (for example, Snowiest needs a run recorded in snow), and the whole section needs weather on enough of your runs.
+
+### Personal Records
+
+Your fastest time for each standard distance, the same list as the dashboard's Best Efforts card. Each time opens the Workout it was set in. To recalculate, use the button on the dashboard card.
+
+### Data Coverage
+
+Total Workouts, the number of days between your first and latest Workout, and for each kind of data (weather, heart rate, elevation, calories, cadence, power) how many runs have it and what percentage of all runs that is.
+
 ## Time-Series Data
 
 Heart rate, pace, elevation, cadence, and power charts live on **Workout overview**. They share **Highlight** with the map and splits: hover or click a chart point, split, or the route and the others follow.

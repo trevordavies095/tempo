@@ -920,14 +920,31 @@ export interface BestEffortItem {
   timeS: number;
   workoutId: string;
   workoutDate: string;
+  /** Best this effort beat; null without `since` and on a first effort at the distance. */
+  previousTimeS?: number | null;
+  previousWorkoutId?: string | null;
+  previousWorkoutDate?: string | null;
 }
 
 export interface BestEffortsResponse {
   distances: BestEffortItem[];
 }
 
-export async function getBestEfforts(): Promise<BestEffortsResponse> {
-  const url = `${API_BASE_URL}/stats/best-efforts`;
+/** Optional range for best efforts; all dates are inclusive `yyyy-MM-dd`. */
+export interface BestEffortsParams {
+  from?: string;
+  to?: string;
+  since?: string;
+}
+
+export async function getBestEfforts(params: BestEffortsParams = {}): Promise<BestEffortsResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.from) searchParams.set('from', params.from);
+  if (params.to) searchParams.set('to', params.to);
+  if (params.since) searchParams.set('since', params.since);
+
+  const queryString = searchParams.toString();
+  const url = `${API_BASE_URL}/stats/best-efforts${queryString ? `?${queryString}` : ''}`;
 
   const response = await fetchWithAuth(url, {
     method: 'GET',
@@ -1948,3 +1965,88 @@ export async function getSimilarRoutes(workoutId: string, maxResults?: number): 
   return response.json();
 }
 
+interface InsightsExtremeBase {
+  date: string;
+  workoutId: string;
+  workoutName?: string | null;
+}
+
+export interface InsightsTemperatureExtreme extends InsightsExtremeBase {
+  temperature: number;
+  temperatureUnit: string;
+}
+
+export interface InsightsWindExtreme extends InsightsExtremeBase {
+  windSpeed: number;
+  windSpeedUnit: string;
+  windDirection?: number | null;
+  windDirectionCardinal?: string | null;
+}
+
+export interface InsightsHumidityExtreme extends InsightsExtremeBase {
+  humidity: number;
+}
+
+export interface InsightsPrecipitationExtreme extends InsightsExtremeBase {
+  precipitation: number;
+  precipitationUnit: string;
+}
+
+export interface InsightsConditionExtreme extends InsightsExtremeBase {
+  weatherCode: number;
+  condition: string;
+  /** Snowiest only; millimetres when present. */
+  precipitation?: number | null;
+}
+
+/** Temperatures and wind arrive in the user's units; precipitation is always millimetres. */
+export interface InsightsWeather {
+  coldest?: InsightsTemperatureExtreme | null;
+  hottest?: InsightsTemperatureExtreme | null;
+  windiest?: InsightsWindExtreme | null;
+  mostHumid?: InsightsHumidityExtreme | null;
+  wettest?: InsightsPrecipitationExtreme | null;
+  mostEpic?: InsightsConditionExtreme | null;
+  foggiest?: InsightsConditionExtreme | null;
+  snowiest?: InsightsConditionExtreme | null;
+}
+
+export interface InsightsDataAvailability {
+  count: number;
+  percentage: number;
+  available: boolean;
+}
+
+export interface InsightsMetadata {
+  totalWorkouts: number;
+  firstWorkoutDate?: string | null;
+  latestWorkoutDate?: string | null;
+  daysBetweenFirstAndLatestWorkout?: number | null;
+  /** Keyed by category: weather, heartRate, elevation, calories, cadence, power. Empty when data is insufficient. */
+  dataAvailability: Record<string, InsightsDataAvailability>;
+  minimumWorkoutsRequired: number;
+}
+
+export interface InsightsResponse {
+  sufficientData: boolean;
+  message?: string | null;
+  currentWorkouts?: number | null;
+  requiredWorkouts?: number | null;
+  metadata: InsightsMetadata;
+  /** Null or absent when data is insufficient or weather coverage is too thin. */
+  weather?: InsightsWeather | null;
+}
+
+export async function getInsights(): Promise<InsightsResponse> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/stats/insights`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch insights: ${response.status}`);
+  }
+
+  return response.json();
+}

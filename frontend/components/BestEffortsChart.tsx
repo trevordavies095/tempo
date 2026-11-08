@@ -3,25 +3,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { getBestEfforts, recalculateBestEfforts } from '@/lib/api';
-import Link from 'next/link';
 import { IconRefresh } from '@tabler/icons-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
-
-/// <summary>
-/// Format seconds as MM:SS or HH:MM:SS
-/// </summary>
-function formatTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${secs.toString().padStart(2, '0')}`;
-}
+import { BestEffortsTable } from '@/components/BestEffortsTable';
 
 function RecalculateConfirm({
   onCancel,
@@ -151,9 +137,6 @@ export default function BestEffortsChart() {
     );
   }
 
-  // Sort by distance in meters (ascending)
-  const sortedData = [...data.distances].sort((a, b) => a.distanceM - b.distanceM);
-
   return (
     <Card>
       <div className="flex items-center gap-2 mb-4">
@@ -170,27 +153,7 @@ export default function BestEffortsChart() {
         </button>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <tbody className="divide-y divide-border">
-            {sortedData.map((item) => (
-              <tr key={item.distance}>
-                <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-ink">
-                  {item.distance}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-sm">
-                  <Link
-                    href={`/dashboard/${item.workoutId}`}
-                    className="text-ink underline decoration-border hover:decoration-ink"
-                  >
-                    {formatTime(item.timeS)}
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <BestEffortsTable efforts={data.distances} />
 
       {showRecalculateConfirm && (
         <RecalculateConfirm

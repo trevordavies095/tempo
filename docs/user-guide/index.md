@@ -55,6 +55,7 @@ If you're new to Tempo, start with:
 2. Analyze relative effort trends
 3. Review heart rate zones
 4. Compare workouts over time
+5. Open Insights for weather extremes, personal records and data coverage
 
 ## Need Help?
 

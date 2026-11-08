@@ -82,6 +82,9 @@ export function Navbar() {
                 <Link href="/activities" className={navLinkClasses('/activities')}>
                   Activities
                 </Link>
+                <Link href="/insights" className={navLinkClasses('/insights')}>
+                  Insights
+                </Link>
                 <Link href="/import" className={navLinkClasses('/import')}>
                   Import
                 </Link>
@@ -154,6 +157,13 @@ export function Navbar() {
                   onClick={() => setMobileOpen(false)}
                 >
                   Activities
+                </Link>
+                <Link
+                  href="/insights"
+                  className={navLinkClasses('/insights')}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Insights
                 </Link>
                 <Link
                   href="/import"
