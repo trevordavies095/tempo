@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`GET /stats/weekly` optional `referenceDate`** - Same `yyyy-MM-dd` week-selection semantics as `GET /stats/weekly-recap` and `GET /stats/relative-effort`: the Monday–Sunday week containing the date (local calendar under `timezoneOffsetMinutes`) is the current week and the week before it the previous week, so clients can load daily distances for a past week. Omitting the param preserves today's behavior and response. Invalid dates return `400 { error }`. Response shape unchanged.
+
+### Changed
+- **Docs: daily driver scope rule** - CONTEXT.md now says units, default shoe and shoe create/edit/retire live on both the command center and the daily driver, while configuration that recalculates or needs a desk (zones, thresholds editing, crop, ZIP import/export, recalculations, password, API keys, intervals.icu, shoe delete) stays on the command center; adds a **Similar runs** glossary entry.
+
 ## [2.11.0] - 2026-11-01
 
 ### Added

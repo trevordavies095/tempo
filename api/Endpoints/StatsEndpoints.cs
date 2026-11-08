@@ -107,6 +107,30 @@ public static class StatsEndpoints
             currentWeekIsPartial);
     }
 
+    private const string InvalidReferenceDateError = "Invalid referenceDate; use yyyy-MM-dd.";
+
+    /// <summary>
+    /// Parses the optional <c>referenceDate</c> query value shared by the week-scoped stats endpoints.
+    /// Null or blank yields a null date (meaning today in the offset frame); otherwise the value is read as a local calendar date.
+    /// Returns false when a non-blank value does not parse.
+    /// </summary>
+    private static bool TryParseReferenceDate(string? referenceDate, out DateTime? referenceLocalDate)
+    {
+        referenceLocalDate = null;
+        if (string.IsNullOrWhiteSpace(referenceDate))
+        {
+            return true;
+        }
+
+        if (!DateTime.TryParse(referenceDate, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
+        {
+            return false;
+        }
+
+        referenceLocalDate = parsed.Date;
+        return true;
+    }
+
     private static DateTime LocalDateRangeStartToUtc(DateTime localDateMidnight, int? timezoneOffsetMinutes)
     {
         var d = localDateMidnight.Date;
@@ -385,66 +409,50 @@ public static class StatsEndpoints
     /// <param name="db">Database context</param>
     /// <param name="logger">Logger instance</param>
     /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC)</param>
-    /// <returns>Daily miles for the current week (Monday-Sunday)</returns>
+    /// <param name="referenceDate">Optional local calendar date (yyyy-MM-dd) that selects which Monday–Sunday week is treated as &quot;current&quot;; defaults to today in the offset frame.</param>
+    /// <returns>Daily miles for the selected week (Monday-Sunday) and the week before it</returns>
     /// <remarks>
-    /// Returns daily miles for the current week (Monday-Sunday), grouped by day of week.
-    /// Distances are converted from meters to miles. Week boundaries are calculated in the specified timezone.
+    /// Returns daily miles for the selected week (Monday-Sunday) and the previous week, grouped by day of week.
+    /// Distances are converted from meters to miles. Week boundaries are calculated in the specified timezone and match <c>/stats/weekly-recap</c>;
+    /// both weeks use the full Mon–Sun window (not week-to-date).
     /// </remarks>
     private static async Task<IResult> GetWeeklyStats(
         TempoDbContext db,
         ILogger<Program> logger,
-        [FromQuery] int? timezoneOffsetMinutes = null)
+        [FromQuery] int? timezoneOffsetMinutes = null,
+        [FromQuery] string? referenceDate = null)
     {
-        // Get current week boundaries (Monday-Sunday) in the specified timezone
-        // Frontend sends timezoneOffsetMinutes as -getTimezoneOffset() (negative for timezones behind UTC)
-        // To convert UTC to local: UTC + offset (since offset is already negative)
-        var now = DateTime.UtcNow;
-        if (timezoneOffsetMinutes.HasValue)
+        if (!TryParseReferenceDate(referenceDate, out var referenceLocalDate))
         {
-            now = now.AddMinutes(timezoneOffsetMinutes.Value);
+            return Results.BadRequest(new ErrorResponse { Error = InvalidReferenceDateError });
         }
 
-        // Calculate start of current week (Monday)
-        var daysSinceMonday = ((int)now.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        var weekStart = now.Date.AddDays(-daysSinceMonday);
-        var weekEnd = weekStart.AddDays(7).AddTicks(-1);
+        // Frontend sends timezoneOffsetMinutes as -getTimezoneOffset() (negative for timezones behind UTC)
+        var ctx = BuildWeeklyRecapUtcContext(DateTime.UtcNow, timezoneOffsetMinutes, referenceLocalDate);
 
-        // Convert back to UTC for database query
-        var weekStartUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(weekStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(weekStart, DateTimeKind.Utc);
-        var weekEndUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(weekEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(weekEnd, DateTimeKind.Utc);
+        // Full Mon–Sun window for the selected week
+        var weekStart = ctx.WeekStartLocal;
+        var weekEnd = ctx.WeekEndLocal;
+        var weekStartUtc = LocalDateRangeStartToUtc(weekStart, timezoneOffsetMinutes);
+        var weekEndUtc = LocalDateRangeEndToUtc(weekEnd, timezoneOffsetMinutes);
 
-        // Query workouts for the current week
         var workouts = await db.Workouts
             .Where(w => w.StartedAt >= weekStartUtc && w.StartedAt <= weekEndUtc)
             .AsNoTracking()
             .ToListAsync();
 
-        // Calculate daily totals from workouts
         var dailyTotals = CalculateDailyTotals(workouts, timezoneOffsetMinutes);
 
-        // Calculate previous week boundaries (complete week immediately preceding current week)
+        // Previous week: the complete week immediately preceding the selected week
         var previousWeekStart = weekStart.AddDays(-7);
         var previousWeekEnd = previousWeekStart.AddDays(7).AddTicks(-1);
+        var previousRange = ctx.PreviousWeekRange;
 
-        // Convert previous week to UTC for database query
-        var previousWeekStartUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(previousWeekStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(previousWeekStart, DateTimeKind.Utc);
-        var previousWeekEndUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(previousWeekEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(previousWeekEnd, DateTimeKind.Utc);
-
-        // Query workouts for the previous week
         var previousWeekWorkouts = await db.Workouts
-            .Where(w => w.StartedAt >= previousWeekStartUtc && w.StartedAt <= previousWeekEndUtc)
+            .Where(w => w.StartedAt >= previousRange.StartUtc && w.StartedAt <= previousRange.EndUtc)
             .AsNoTracking()
             .ToListAsync();
 
-        // Calculate previous week daily totals
         var previousWeekDailyTotals = CalculateDailyTotals(previousWeekWorkouts, timezoneOffsetMinutes);
 
         // Format week labels using invariant culture for consistency
@@ -489,15 +497,9 @@ public static class StatsEndpoints
         [FromQuery] int? timezoneOffsetMinutes = null,
         [FromQuery] string? referenceDate = null)
     {
-        DateTime? referenceLocalDate = null;
-        if (!string.IsNullOrWhiteSpace(referenceDate))
+        if (!TryParseReferenceDate(referenceDate, out var referenceLocalDate))
         {
-            if (!DateTime.TryParse(referenceDate, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
-            {
-                return Results.BadRequest(new ErrorResponse { Error = "Invalid referenceDate; use yyyy-MM-dd." });
-            }
-
-            referenceLocalDate = parsed.Date;
+            return Results.BadRequest(new ErrorResponse { Error = InvalidReferenceDateError });
         }
 
         var utcNow = DateTime.UtcNow;
@@ -601,15 +603,9 @@ public static class StatsEndpoints
         [FromQuery] int? timezoneOffsetMinutes = null,
         [FromQuery] string? referenceDate = null)
     {
-        DateTime? referenceLocalDate = null;
-        if (!string.IsNullOrWhiteSpace(referenceDate))
+        if (!TryParseReferenceDate(referenceDate, out var referenceLocalDate))
         {
-            if (!DateTime.TryParse(referenceDate, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
-            {
-                return Results.BadRequest(new ErrorResponse { Error = "Invalid referenceDate; use yyyy-MM-dd." });
-            }
-
-            referenceLocalDate = parsed.Date;
+            return Results.BadRequest(new ErrorResponse { Error = InvalidReferenceDateError });
         }
 
         var utcNow = DateTime.UtcNow;
@@ -1179,8 +1175,11 @@ public static class StatsEndpoints
         group.MapGet("/weekly", GetWeeklyStats)
             .WithName("GetWeeklyStats")
             .Produces(200)
+            .Produces<ErrorResponse>(400)
             .WithSummary("Get weekly stats")
-            .WithDescription("Returns daily miles for the current week (Monday-Sunday), grouped by day of week");
+            .WithDescription(
+                "Returns daily miles for the current week (Monday-Sunday) and the previous full week, grouped by day of week. " +
+                "Optional referenceDate (yyyy-MM-dd) selects the calendar week in the timezoneOffsetMinutes frame.");
 
         group.MapGet("/relative-effort", GetRelativeEffortStats)
             .WithName("GetRelativeEffortStats")

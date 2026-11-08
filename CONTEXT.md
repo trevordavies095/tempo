@@ -5,12 +5,12 @@ Self-hosted running tracker. The WebUI is the **command center**; the iOS app is
 ## Language
 
 **Command center**:
-The WebUI. Full product surface: import, settings, shoes, analytics, and Workout overview. Not a phone clone and not a thin admin utility.
+The WebUI. Full product surface: import, settings, shoes, analytics, and Workout overview. Units, default shoe and shoe management are also on the daily driver; everything that recalculates or is one-time setup is here only. Not a phone clone and not a thin admin utility.
 _Avoid_: companion site, admin console, desk companion
 
 **Daily driver**:
-The iOS app, used for day-to-day logging and glancing once Tempo is set up. Functionality that exists only on the command center stays on the command center.
-_Avoid_: mobile client as the source of truth for settings
+The iOS app, used for day-to-day logging and glancing once Tempo is set up. Daily preferences (units, default shoe) and gear (adding, editing, retiring shoes) live on both surfaces. Configuration that triggers recalculation or needs a desk stays on the command center: heart-rate zones, thresholds editing, crop, ZIP import and export, recalculations, password, API keys, intervals.icu connection, shoe delete.
+_Avoid_: mobile client as the source of truth for settings that recalculate
 
 **Control plane**:
 Command-center screens for operating Tempo: settings, import, activities list, shoes. Dense, scannable.
@@ -19,6 +19,10 @@ _Avoid_: admin pages, back office
 **Workout overview**:
 The command-center screen for one Workout: map, splits, time series, weather, media, comparison. Expansive, not dense.
 _Avoid_: workout detail, activity page (when meaning this screen)
+
+**Similar runs**:
+The daily-driver name for the similar-routes matches shown on the Workout overview as Route Comparison.
+_Avoid_: similar routes (on the daily driver), route matches
 
 **Workout**:
 A recorded run with stats, optional route, splits, time series, media, shoe, and weather.

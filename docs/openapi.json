@@ -1008,7 +1008,7 @@
           "Stats"
         ],
         "summary": "Get weekly stats",
-        "description": "Returns daily miles for the current week (Monday-Sunday), grouped by day of week.\nDistances are converted from meters to miles. Week boundaries are calculated in the specified timezone.",
+        "description": "Returns daily miles for the selected week (Monday-Sunday) and the previous week, grouped by day of week.\nDistances are converted from meters to miles. Week boundaries are calculated in the specified timezone and match `/stats/weekly-recap`;\nboth weeks use the full Mon–Sun window (not week-to-date).",
         "operationId": "GetWeeklyStats",
         "parameters": [
           {
@@ -1019,11 +1019,29 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "referenceDate",
+            "in": "query",
+            "description": "Optional local calendar date (yyyy-MM-dd) that selects which Monday–Sunday week is treated as \"current\"; defaults to today in the offset frame.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [

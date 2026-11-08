@@ -765,6 +765,138 @@ public class StatsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
     #region Weekly Stats Tests
 
     [Fact]
+    public async Task GetWeeklyStats_ReferenceDate_SelectsPinnedWeekAndPreviousWeek()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await SeedWeeklyRecapFixtureAsync(db);
+            // Outside both weeks: the Monday after the pinned week and the Sunday before the previous week.
+            await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 15, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 9000,
+                durationS: 3000,
+                name: "Outside next Mon");
+            await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 5, 31, 12, 0, 0, DateTimeKind.Utc),
+                distanceM: 7000,
+                durationS: 2400,
+                name: "Outside earlier Sun");
+        }
+
+        var response = await client.GetAsync("/stats/weekly?referenceDate=2020-06-10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyStatsResponse>();
+        result.Should().NotBeNull();
+        result!.WeekStart.Should().Be("2020-06-08");
+        result.WeekEnd.Should().Be("2020-06-14");
+        result.PreviousWeekStart.Should().Be("2020-06-01");
+        result.PreviousWeekEnd.Should().Be("2020-06-07");
+        result.CurrentWeekLabel.Should().Be("Jun 8 - Jun 14");
+        result.PreviousWeekLabel.Should().Be("Jun 1 - Jun 7");
+
+        result.DailyMiles.Should().HaveCount(7);
+        result.DailyMiles[0].Should().BeApproximately(1000 / 1609.344, 0.0001); // Mon
+        result.DailyMiles[1].Should().BeApproximately(2000 / 1609.344, 0.0001); // Tue
+        result.DailyMiles.Skip(2).Should().AllBeEquivalentTo(0.0);
+
+        result.PreviousWeekDailyMiles.Should().NotBeNull().And.HaveCount(7);
+        result.PreviousWeekDailyMiles![4].Should().BeApproximately(5000 / 1609.344, 0.0001); // Fri
+        result.PreviousWeekDailyMiles.Where((_, i) => i != 4).Should().AllBeEquivalentTo(0.0);
+    }
+
+    [Fact]
+    public async Task GetWeeklyStats_ReferenceDateWithTimezone_MatchesWeeklyRecapWeek()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        // EST is UTC-5, so -300 minutes
+        const int estOffsetMinutes = -300;
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            // 2020-06-08 03:00 UTC is Sunday 2020-06-07 22:00 local: previous week, Sunday slot.
+            await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 8, 3, 0, 0, DateTimeKind.Utc),
+                distanceM: 1609.344,
+                durationS: 600,
+                name: "Local Sunday night");
+            // 2020-06-15 02:00 UTC is Sunday 2020-06-14 21:00 local: selected week, Sunday slot.
+            await TestDataSeeder.SeedWorkoutAsync(
+                db,
+                startedAt: new DateTime(2020, 6, 15, 2, 0, 0, DateTimeKind.Utc),
+                distanceM: 3218.688,
+                durationS: 1200,
+                name: "Local end of week");
+        }
+
+        var response = await client.GetAsync($"/stats/weekly?referenceDate=2020-06-14&timezoneOffsetMinutes={estOffsetMinutes}");
+        var recap = await client.GetFromJsonAsync<WeeklyRecapResponse>($"/stats/weekly-recap?referenceDate=2020-06-14&timezoneOffsetMinutes={estOffsetMinutes}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<WeeklyStatsResponse>();
+        result.Should().NotBeNull();
+        recap.Should().NotBeNull();
+        result!.WeekStart.Should().Be(recap!.WeekStart).And.Be("2020-06-08");
+        result.WeekEnd.Should().Be(recap.WeekEnd).And.Be("2020-06-14");
+
+        result.DailyMiles[6].Should().BeApproximately(2.0, 0.0001);
+        result.DailyMiles.Take(6).Should().AllBeEquivalentTo(0.0);
+        result.PreviousWeekDailyMiles![6].Should().BeApproximately(1.0, 0.0001);
+        result.PreviousWeekDailyMiles.Take(6).Should().AllBeEquivalentTo(0.0);
+    }
+
+    [Fact]
+    public async Task GetWeeklyStats_Returns400_WhenReferenceDateInvalid()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        var response = await client.GetAsync("/stats/weekly?referenceDate=not-a-date");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("error").GetString().Should().Be("Invalid referenceDate; use yyyy-MM-dd.");
+    }
+
+    [Fact]
+    public async Task GetWeeklyStats_WithoutReferenceDate_ReturnsTodaysWeek()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await SeedCurrentWeekWorkoutsAsync(db);
+            await SeedPreviousWeekWorkoutsAsync(db);
+        }
+
+        var today = DateTime.UtcNow.Date;
+        var expectedWeekStart = today.AddDays(-(((int)today.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7));
+
+        var omitted = await client.GetAsync("/stats/weekly");
+        var explicitToday = await client.GetAsync($"/stats/weekly?referenceDate={today:yyyy-MM-dd}");
+
+        omitted.StatusCode.Should().Be(HttpStatusCode.OK);
+        explicitToday.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await omitted.Content.ReadFromJsonAsync<WeeklyStatsResponse>();
+        result!.WeekStart.Should().Be(expectedWeekStart.ToString("yyyy-MM-dd"));
+        result.WeekEnd.Should().Be(expectedWeekStart.AddDays(6).ToString("yyyy-MM-dd"));
+        result.PreviousWeekStart.Should().Be(expectedWeekStart.AddDays(-7).ToString("yyyy-MM-dd"));
+        (await omitted.Content.ReadAsStringAsync()).Should().Be(await explicitToday.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task GetWeeklyStats_ReturnsCorrectDailyMiles_ForCurrentWeek()
     {
         // Arrange
