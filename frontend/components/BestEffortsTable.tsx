@@ -27,8 +27,8 @@ function formatShortDate(value: string): string {
 /**
  * Distance → time table of best efforts, shortest distance first. Each time links to its Workout.
  * Shared by the dashboard Best Efforts card and the Insights Personal Records card. When rows carry a
- * previous best (ranged requests with `since`), each shows "Was m:ss on <date>" linking to that
- * Workout and the improvement; `isNew` marks rows with a New pill.
+ * previous best (Insights joins it in from the `since` request), each shows "Was m:ss on <date>" linking
+ * to that Workout and the improvement; `isNew` marks rows with a New pill.
  */
 export function BestEffortsTable({
   efforts,

@@ -5,8 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getBestEfforts } from '@/lib/api';
 import {
   BEST_EFFORTS_RANGES,
-  bestEffortsRangeParams,
-  isNewRecord,
+  bestEffortsRangeRequests,
+  joinPersonalRecords,
   type BestEffortsRange,
 } from '@/lib/bestEffortsRange';
 import { Card } from '@/components/ui/Card';
@@ -18,12 +18,32 @@ import { BestEffortsTable } from '@/components/BestEffortsTable';
 export function PersonalRecordsCard() {
   // Local to the card: not persisted, not in the URL.
   const [range, setRange] = useState<BestEffortsRange>('allTime');
-  const params = useMemo(() => bestEffortsRangeParams(range), [range]);
+  const requests = useMemo(() => bestEffortsRangeRequests(range), [range]);
 
+  // Request (1): the list. A failure here is the card's error state.
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['bestEfforts', range, params],
-    queryFn: () => getBestEfforts(params),
+    queryKey: ['bestEfforts', 'list', requests.list],
+    queryFn: () => getBestEfforts(requests.list),
   });
+
+  // Request (2), ranged choices only, in parallel with (1): PRs set since the start, for New and "Was".
+  // A failure here is silent; the list shows without badges.
+  const prsParams = requests.prs;
+  const prs = useQuery({
+    queryKey: ['bestEfforts', 'prs', prsParams],
+    queryFn: () => getBestEfforts(prsParams ?? {}),
+    enabled: prsParams != null,
+  });
+  const prRows = prsParams != null && prs.isSuccess ? prs.data.distances : null;
+
+  const rows = useMemo(
+    () => (data ? joinPersonalRecords(data.distances, prRows) : []),
+    [data, prRows]
+  );
+  const newDistances = useMemo(
+    () => new Set(rows.filter((row) => row.isNew).map((row) => row.distance)),
+    [rows]
+  );
 
   return (
     <Card>
@@ -40,12 +60,15 @@ export function PersonalRecordsCard() {
             title="Could not load personal records"
             description={error instanceof Error ? error.message : 'Please try again.'}
             action={
-              <Button variant="secondary" size="sm" onClick={() => refetch()}>
+              <Button variant="secondary" size="sm" onClick={() => {
+                  refetch();
+                  if (prsParams != null) prs.refetch();
+                }}>
                 Retry
               </Button>
             }
           />
-        ) : !data || data.distances.length === 0 ? (
+        ) : rows.length === 0 ? (
           range === 'allTime' ? (
             <EmptyState
               title="No personal records yet"
@@ -56,8 +79,8 @@ export function PersonalRecordsCard() {
           )
         ) : (
           <BestEffortsTable
-            efforts={data.distances}
-            isNew={(item) => isNewRecord(item, range, params)}
+            efforts={rows}
+            isNew={(item) => newDistances.has(item.distance)}
           />
         )}
       </Tabs>

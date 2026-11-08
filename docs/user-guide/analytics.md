@@ -154,7 +154,7 @@ Pick a range above the table:
 - **This year**: your best per distance since January 1 (season bests).
 - **Last 90 days**: your best per distance from the last 90 days.
 
-In a ranged view, a record that beat an earlier best from inside the same range shows **Was m:ss on <date>** under the time (linking to the earlier Workout) and how much faster it was, and gets a **New** marker. Distances with no effort in the range are left out; if none have one, the card says "No records in this range". The range resets to All time when you leave the page.
+In a ranged view, a time that is also an all-time personal record set inside the range gets a **New** marker. When it beat an earlier record, it also shows **Was m:ss on <date>** under the time (linking to the Workout that held the record before) and how much faster it was. Distances with no effort in the range are left out; if none have one, the card says "No records in this range". The range resets to All time when you leave the page.
 
 ### Data Coverage
 
