@@ -136,6 +136,31 @@ Track workout intensity over time:
 - **Distribution** - How effort is distributed across workouts
 - **Comparisons** - Week-over-week or month-over-month changes
 
+
+## Insights
+
+Open **Insights** in the navigation bar (after Activities) for an all-time look across your runs. The page needs at least 5 Workouts; until then it shows an **Unlock Insights** card with your progress toward that number.
+
+### Weather Extremes
+
+Up to eight tiles: Coldest, Hottest, Windiest, Most Humid, Wettest, Wildest Weather (thunderstorms), Foggiest and Snowiest. Each tile shows the value, the Workout name and date, and opens that Workout's overview. Temperature, wind and precipitation follow your unit preference. A tile only appears when at least one run qualifies (for example, Snowiest needs a run recorded in snow), and the whole section needs weather on enough of your runs.
+
+### Personal Records
+
+Your fastest time for each standard distance. Each time opens the Workout it was set in. To recalculate, use the button on the dashboard's Best Efforts card.
+
+Pick a range above the table:
+
+- **All time** (default): the same list as the dashboard's Best Efforts card.
+- **This year**: your best per distance since January 1 (season bests).
+- **Last 90 days**: your best per distance from the last 90 days.
+
+In a ranged view, a time that is also an all-time personal record set inside the range gets a **New** marker. When it beat an earlier record, it also shows **Was m:ss on <date>** under the time (linking to the Workout that held the record before) and how much faster it was. Distances with no effort in the range are left out; if none have one, the card says "No records in this range". The range resets to All time when you leave the page.
+
+### Data Coverage
+
+Total Workouts, the number of days between your first and latest Workout, and for each kind of data (weather, heart rate, elevation, calories, cadence, power) how many runs have it and what percentage of all runs that is.
+
 ## Time-Series Data
 
 Heart rate, pace, elevation, cadence, and power charts live on **Workout overview**. They share **Highlight** with the map and splits: hover or click a chart point, split, or the route and the others follow.
