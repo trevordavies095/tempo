@@ -27,6 +27,16 @@ function ActivitiesPageContent() {
     handleKeyPress,
     handleSort,
     handleRunTypeChange,
+    datePreset,
+    setDatePreset,
+    customStart,
+    setCustomStart,
+    customEnd,
+    setCustomEnd,
+    startDate,
+    endDate,
+    hasActiveFilters,
+    clearFilters,
     getSortParam,
   } = useActivitiesFilters();
 
@@ -35,6 +45,8 @@ function ActivitiesPageContent() {
     pageSize: 20,
     keyword: keyword || undefined,
     runType: runType || undefined,
+    startDate,
+    endDate,
     sortBy: getSortParam(sortBy),
     sortOrder,
   };
@@ -54,6 +66,14 @@ function ActivitiesPageContent() {
         onKeyPress={handleKeyPress}
         runType={runType}
         onRunTypeChange={handleRunTypeChange}
+        datePreset={datePreset}
+        onDatePresetChange={setDatePreset}
+        customStart={customStart}
+        onCustomStartChange={setCustomStart}
+        customEnd={customEnd}
+        onCustomEndChange={setCustomEnd}
+        hasActiveFilters={hasActiveFilters}
+        onClear={clearFilters}
       />
 
       <Card padding={false} className="overflow-hidden">
@@ -70,7 +90,9 @@ function ActivitiesPageContent() {
           </div>
         ) : !data || data.items.length === 0 ? (
           <div className="p-6">
-            <EmptyState title="No activities found" />
+            <EmptyState
+              title={hasActiveFilters ? 'No activities match these filters.' : 'No activities found'}
+            />
           </div>
         ) : (
           <>
