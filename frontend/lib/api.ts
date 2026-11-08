@@ -808,7 +808,7 @@ export interface WeeklyRecapNumericMetric {
   current: number;
   previous: number;
   trailingAvg: number;
-  deltaVsPrevious: number;
+  deltaVsPrevious: number | null;
 }
 
 export interface WeeklyRecapMetricNullableDouble {
@@ -832,6 +832,17 @@ export interface WeeklyRecapResponse {
     elevationGainM: WeeklyRecapNumericMetric;
     relativeEffortSum: WeeklyRecapNumericMetric;
     easyRunAvgHeartRateBpm: WeeklyRecapMetricNullableDouble;
+    movingTimeS: WeeklyRecapNumericMetric;
+    longestRunDistanceM: WeeklyRecapNumericMetric;
+    longestRunDurationS: WeeklyRecapNumericMetric;
+    /** Current week only: run type to count, zero counts omitted, `Unspecified` = untagged. Key order is the server's. */
+    runsByType: Record<string, number>;
+    /** Null for a week with no heart-rate series. */
+    zoneSecondsZ1: WeeklyRecapMetricNullableDouble;
+    zoneSecondsZ2: WeeklyRecapMetricNullableDouble;
+    zoneSecondsZ3: WeeklyRecapMetricNullableDouble;
+    zoneSecondsZ4: WeeklyRecapMetricNullableDouble;
+    zoneSecondsZ5: WeeklyRecapMetricNullableDouble;
   };
 }
 
