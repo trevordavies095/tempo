@@ -109,14 +109,15 @@ For more information on viewing Best Efforts, see the [Viewing Workouts](viewing
 
 ## Statistics Dashboards
 
-### Weekly Statistics
+### Weekly Recap
 
-View your performance for the current week:
-- **Total Distance** - Sum of all workouts
-- **Total Time** - Combined duration
-- **Number of Workouts** - Count of activities
-- **Average Pace** - Weighted average across all workouts
-- **Total Relative Effort** - Cumulative intensity
+The dashboard's **This Week** card is the weekly recap for the current Monday to Sunday week:
+- **Header** - The week's dates (with "through" and today's weekday while the week is in progress) and the year-to-date distance
+- **Distance, Runs, Time, Elevation** - Week-to-date totals in your units. Time is elapsed time.
+- **Trend arrows** - Each tile compares the week to the average of the previous three weeks: an up arrow when it is more than 5% above that average, a down arrow when more than 5% below, and a dash within 5% either way. No arrow is shown when the previous three weeks have nothing to compare against.
+- **Daily bars** - Distance per day, Monday to Sunday, with a marker under today
+- **Runs by type** - One line such as "3 Easy Run · 1 Long Run · 1 Workout", in run-type order with untagged runs (shown as "Untagged") last. After three types the rest collapse into "+n more"; hover the line to see them all. Hidden when the week has no runs.
+- **Time in Zone** - The Z1–Z5 heart-rate zone bar for the week, the same as on Workout overview. Hidden when no Workout this week has a heart-rate series.
 
 ### Yearly Statistics
 

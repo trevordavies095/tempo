@@ -8,8 +8,7 @@ Learn how to navigate and explore your workouts in Tempo.
 
 The dashboard provides an overview of your running activity:
 
-- **Weekly Statistics** - Distance, time, and relative effort for the current week
-- **Yearly Statistics** - Annual totals and trends
+- **This Week** - The weekly recap: distance, runs, time and elevation with trend arrows against the previous three weeks, daily bars, runs by type, time in each heart-rate zone, and the year-to-date distance (see [Weekly Recap](analytics.md#weekly-recap))
 - **Recent Workouts** - Quick access to your latest activities
 - **Relative Effort Graph** - Visual representation of workout intensity over time
 - **Best Efforts Chart** - Your fastest times for standard distances (displayed below the Relative Effort graph)

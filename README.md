@@ -15,7 +15,7 @@
 ## Screenshots
 
 ![Dashboard](./docs/assets/screenshots/dashboard.png)
-*Dashboard — weekly stats, relative effort, and recent workouts*
+*Dashboard — weekly recap, relative effort, and recent workouts*
 
 ![My Activities](./docs/assets/screenshots/activities.png)
 *Activities list — search, filters, and sortable columns*
