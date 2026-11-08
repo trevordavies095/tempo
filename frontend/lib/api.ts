@@ -220,6 +220,8 @@ export interface WorkoutDetail {
     startElapsedS: number;
     endElapsedS: number;
     startDistanceM: number | null;
+    /** Device laps only (2.11.0+); null on distance splits. */
+    intensity?: string | null;
   }>;
 }
 
