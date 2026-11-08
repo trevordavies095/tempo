@@ -2,7 +2,7 @@ import { formatDistance, formatDuration, formatPace } from '@/lib/format';
 import type { WorkoutDetail } from '@/lib/api';
 import type { UnitPreference } from '@/lib/settings';
 import { Card } from '@/components/ui/Card';
-import { intensityTag, splitsColumnHeader, splitsTitle } from '@/lib/splits';
+import { intensityTags, splitsColumnHeader, splitsTitle } from '@/lib/splits';
 
 interface WorkoutDetailSplitsProps {
   splits: WorkoutDetail['splits'];
@@ -11,8 +11,7 @@ interface WorkoutDetailSplitsProps {
   onSplitHover: (idx: number | null) => void;
 }
 
-function IntensityTag({ intensity }: { intensity: string | null | undefined }) {
-  const label = intensityTag(intensity);
+function IntensityTag({ label }: { label: string | null }) {
   if (!label) return null;
   return (
     <span className="ml-2 inline-block px-2 py-px text-[11px] leading-3 font-medium rounded-full border bg-canvas text-ink border-border whitespace-nowrap">
@@ -33,6 +32,7 @@ export default function WorkoutDetailSplits({
 
   const showHr = splits.some((s) => s.avgHeartRateBpm != null);
   const title = splitsTitle(splits);
+  const tags = intensityTags(splits);
 
   return (
     <Card>
@@ -63,7 +63,7 @@ export default function WorkoutDetailSplits({
             </tr>
           </thead>
           <tbody>
-            {splits.map((split) => (
+            {splits.map((split, i) => (
               <tr
                 key={`split-${split.idx}`}
                 className={`border-b border-border cursor-pointer hover:bg-canvas transition-colors ${
@@ -75,7 +75,7 @@ export default function WorkoutDetailSplits({
               >
                 <td className="py-1.5 px-2.5 text-xs text-ink">
                   {split.idx + 1}
-                  <IntensityTag intensity={split.intensity} />
+                  <IntensityTag label={tags[i]} />
                 </td>
                 <td className="py-1.5 px-2.5 text-xs text-ink">
                   {formatDistance(split.distanceM, unitPreference)}

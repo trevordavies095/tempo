@@ -28,6 +28,29 @@ export function splitsColumnHeader(title: 'Laps' | 'Splits'): 'Lap' | 'Split' {
   return title === 'Laps' ? 'Lap' : 'Split';
 }
 
+/**
+ * Whether a Workout's laps are structured enough to show intensity tags: two or more distinct
+ * non-null intensity values (e.g. warmup + interval + cooldown). Laps that all share one
+ * intensity (intervals.icu marks every auto-lap `interval`) or carry none get no tags.
+ */
+export function showsIntensityTags(
+  splits: ReadonlyArray<{ intensity?: string | null }>,
+): boolean {
+  const distinct = new Set<string>();
+  for (const s of splits) {
+    if (s.intensity) distinct.add(s.intensity);
+  }
+  return distinct.size >= 2;
+}
+
+/** Tag label for each split, in order: null on every row unless `showsIntensityTags`. */
+export function intensityTags(
+  splits: ReadonlyArray<{ intensity?: string | null }>,
+): Array<string | null> {
+  const show = showsIntensityTags(splits);
+  return splits.map((s) => (show ? intensityTag(s.intensity) : null));
+}
+
 /** Tag label for a device lap's intensity; null for `active`, null, or unknown values. */
 export function intensityTag(intensity: string | null | undefined): string | null {
   if (!intensity || intensity === 'active') return null;
