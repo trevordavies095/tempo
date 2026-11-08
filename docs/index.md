@@ -15,7 +15,7 @@ Tempo is a self-hostable running tracker that gives you complete control over yo
 ## Screenshots
 
 ![Dashboard](./assets/screenshots/dashboard.png)
-*Dashboard — weekly stats, relative effort, and recent workouts*
+*Dashboard — weekly recap, relative effort, and recent workouts*
 
 ![My Activities](./assets/screenshots/activities.png)
 *Activities list — search, filters, and sortable columns*
