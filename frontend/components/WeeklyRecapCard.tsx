@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getWeeklyRecap, getWeeklyStats, getYearlyStats, type WeeklyRecapResponse } from '@/lib/api';
 import { formatDistance, formatDuration, formatElevation } from '@/lib/format';
 import { runsByTypeFullLine, runsByTypeLine } from '@/lib/runTypes';
-import { recapTrend, type RecapTrend } from '@/lib/weeklyRecap';
+import { recapThroughWeekday, recapTrend, type RecapTrend } from '@/lib/weeklyRecap';
 import { useSettings, type UnitPreference } from '@/lib/settings';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -32,7 +32,7 @@ function formatWeekRange(weekStart: string, weekEnd: string): string | null {
 const TREND_STYLE: Record<RecapTrend, { glyph: string; className: string; label: string }> = {
   up: { glyph: '↑', className: 'text-hr-zone-1', label: 'Above the three-week average' },
   down: { glyph: '↓', className: 'text-danger', label: 'Below the three-week average' },
-  flat: { glyph: '–', className: 'text-muted', label: 'Within 5% of the three-week average' },
+  flat: { glyph: '–', className: 'text-muted', label: 'Level with the three-week average' },
 };
 
 function TrendArrow({ trend }: { trend: RecapTrend | null }) {
@@ -203,9 +203,7 @@ export default function WeeklyRecapCard() {
   const weekStart = recap?.weekStart ?? weeklyQuery.data?.weekStart;
   const weekEnd = recap?.weekEnd ?? weeklyQuery.data?.weekEnd;
   const weekRange = weekStart && weekEnd ? formatWeekRange(weekStart, weekEnd) : null;
-  const weekday = recap?.currentWeekIsPartial
-    ? new Date().toLocaleDateString(undefined, { weekday: 'long' })
-    : null;
+  const weekday = recapThroughWeekday(recap?.currentWeekIsPartial);
   const subtitle = [weekRange, weekday ? `through ${weekday}` : null].filter(Boolean).join(' · ');
 
   const typeLine = recap ? runsByTypeLine(recap.metrics.runsByType) : null;
