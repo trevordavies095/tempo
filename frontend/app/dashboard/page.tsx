@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
-import WeeklyStatsWidget from '@/components/WeeklyStatsWidget';
+import WeeklyRecapCard from '@/components/WeeklyRecapCard';
 import RelativeEffortGraph from '@/components/RelativeEffortGraph';
 import BestEffortsChart from '@/components/BestEffortsChart';
 import WorkoutCard from '@/components/WorkoutCard';
@@ -132,7 +132,7 @@ function DashboardPageContent() {
 
       <div className="w-full flex flex-col md:flex-row gap-6 mb-8">
         <div className="flex flex-col gap-6 md:w-80 flex-shrink-0">
-          <WeeklyStatsWidget />
+          <WeeklyRecapCard />
           <RelativeEffortGraph />
           <BestEffortsChart />
         </div>
