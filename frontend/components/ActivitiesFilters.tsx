@@ -112,8 +112,8 @@ export default function ActivitiesFilters({
         </div>
 
         {datePreset === 'custom' && (
-          <div className="flex gap-4">
-            <div className="flex-1 sm:flex-none">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4 min-w-0">
+            <div className="min-w-0 sm:flex-none">
               <label htmlFor="dateFrom" className={labelClass}>
                 From
               </label>
@@ -122,10 +122,10 @@ export default function ActivitiesFilters({
                 type="date"
                 value={customStart}
                 onChange={(e) => onCustomStartChange(e.target.value)}
-                className={selectClass}
+                className={`${selectClass} min-w-0`}
               />
             </div>
-            <div className="flex-1 sm:flex-none">
+            <div className="min-w-0 sm:flex-none">
               <label htmlFor="dateTo" className={labelClass}>
                 To
               </label>
@@ -134,7 +134,7 @@ export default function ActivitiesFilters({
                 type="date"
                 value={customEnd}
                 onChange={(e) => onCustomEndChange(e.target.value)}
-                className={selectClass}
+                className={`${selectClass} min-w-0`}
               />
             </div>
           </div>
