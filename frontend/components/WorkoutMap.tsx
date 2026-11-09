@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -13,9 +13,13 @@ import {
   type WorkoutSplit,
 } from '@/lib/workoutHighlight';
 
+/** Private fields Leaflet stamps on its prototypes and container elements. */
+type LeafletIconPrototype = L.Icon.Default & { _getIconUrl?: unknown };
+type LeafletContainer = HTMLDivElement & { _leaflet_id?: number; _leaflet?: unknown };
+
 // Fix for default marker icons in Next.js
 if (typeof window !== 'undefined') {
-  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  delete (L.Icon.Default.prototype as LeafletIconPrototype)._getIconUrl;
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
     iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
@@ -296,10 +300,13 @@ export default function WorkoutMap({
 
   const leafletCoordinatesRef = useRef(leafletCoordinates);
 
-  onHighlightFromMapRef.current = onHighlightFromMap;
-  splitsRef.current = splits;
-  totalsRef.current = { workoutDistanceM, workoutDurationS };
-  leafletCoordinatesRef.current = leafletCoordinates;
+  // Keep the latest props for the map's event handlers without rebuilding the map.
+  useLayoutEffect(() => {
+    onHighlightFromMapRef.current = onHighlightFromMap;
+    splitsRef.current = splits;
+    totalsRef.current = { workoutDistanceM, workoutDurationS };
+    leafletCoordinatesRef.current = leafletCoordinates;
+  });
 
   // Calculate bounds from coordinates
   const bounds = useMemo(() => {
@@ -346,7 +353,7 @@ export default function WorkoutMap({
       return;
     }
 
-    const container = containerRef.current;
+    const container: LeafletContainer = containerRef.current;
 
     // Clean up existing map if it exists
     if (mapRef.current) {
@@ -355,11 +362,11 @@ export default function WorkoutMap({
     }
 
     // Ensure container is clean (remove any lingering Leaflet references)
-    if ((container as any)._leaflet_id) {
-      delete (container as any)._leaflet_id;
+    if (container._leaflet_id) {
+      delete container._leaflet_id;
     }
-    if ((container as any)._leaflet) {
-      delete (container as any)._leaflet;
+    if (container._leaflet) {
+      delete container._leaflet;
     }
 
     // Create new map instance
@@ -457,7 +464,7 @@ export default function WorkoutMap({
       if (highlightedPolylineRef.current) {
         try {
           mapToCleanup.removeLayer(highlightedPolylineRef.current);
-        } catch (e) {
+        } catch {
           // Ignore errors if layer was already removed
         }
         highlightedPolylineRef.current = null;
@@ -465,7 +472,7 @@ export default function WorkoutMap({
       if (highlightMarkerRef.current) {
         try {
           mapToCleanup.removeLayer(highlightMarkerRef.current);
-        } catch (e) {
+        } catch {
           // Ignore errors if layer was already removed
         }
         highlightMarkerRef.current = null;
@@ -473,7 +480,7 @@ export default function WorkoutMap({
       if (polylineRef.current) {
         try {
           mapToCleanup.removeLayer(polylineRef.current);
-        } catch (e) {
+        } catch {
           // Ignore errors if layer was already removed
         }
         polylineRef.current = null;
@@ -483,17 +490,17 @@ export default function WorkoutMap({
       // Remove the map
       try {
         mapToCleanup.remove();
-      } catch (e) {
+      } catch {
         // Ignore errors if map was already removed
       }
       mapRef.current = null;
 
       // Clean up container references
-      if (container && (container as any)._leaflet_id) {
-        delete (container as any)._leaflet_id;
+      if (container && container._leaflet_id) {
+        delete container._leaflet_id;
       }
-      if (container && (container as any)._leaflet) {
-        delete (container as any)._leaflet;
+      if (container && container._leaflet) {
+        delete container._leaflet;
       }
     };
   }, [workoutId, center, bounds, leafletCoordinates, route, interactive, cartoBasemapsPending, cartoApiKey]);
