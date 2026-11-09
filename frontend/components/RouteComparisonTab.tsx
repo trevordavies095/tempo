@@ -10,6 +10,7 @@ import { formatDistance, formatDuration, formatPace, formatDate, formatElevation
 import { useSettings } from '@/lib/settings';
 import { routePaceDelta, routeTimeDelta, thisRunTimeDifferenceS } from '@/lib/routeDelta';
 import { RouteDeltaText } from '@/components/RouteDeltaText';
+import { routeTrend, routeTrendDisplay, routeTrendRunCount } from '@/lib/routeTrend';
 
 interface RouteComparisonTabProps {
   workoutId: string;
@@ -260,42 +261,17 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
     // Average Pace: Mean of all avgPaceS values
     const avgPace = data.reduce((sum, route) => sum + route.avgPaceS, 0) / data.length;
 
-    // Improvement Trend: Compare current pace to average of last 5 runs
-    // Filter to only include past workouts (before current workout date) to ensure
-    // the trend compares current performance to past performance, not future workouts
-    const currentWorkoutDate = new Date(currentWorkout.startedAt).getTime();
-    const pastRoutes = data.filter(route => 
-      new Date(route.startedAt).getTime() < currentWorkoutDate
-    );
-    const sortedByDate = [...pastRoutes].sort((a, b) => 
-      new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-    );
-    const last5Runs = sortedByDate.slice(0, 5);
-    const avgLast5Pace = last5Runs.length > 0
-      ? last5Runs.reduce((sum, route) => sum + route.avgPaceS, 0) / last5Runs.length
-      : currentWorkout.avgPaceS;
-    
-    const currentPace = currentWorkout.avgPaceS;
-    const percentDiff = Math.abs((currentPace - avgLast5Pace) / avgLast5Pace) * 100;
-    let trend: 'improving' | 'declining' | 'stable';
-    if (currentPace < avgLast5Pace) {
-      trend = 'improving';
-    } else if (currentPace > avgLast5Pace) {
-      trend = 'declining';
-    } else {
-      trend = 'stable';
-    }
-    // Override to stable if within 2%
-    if (percentDiff <= 2) {
-      trend = 'stable';
-    }
+    // Trend: the iOS rule over every run on the route, this run included (see lib/routeTrend).
+    const trend = routeTrend(chartData.map((point) => ({ startedAt: point.date, avgPaceS: point.paceS })));
+    const trendRunCount = routeTrendRunCount(chartData.length);
 
     return {
       bestTime,
       avgPace,
       trend,
+      trendRunCount,
     };
-  }, [data, currentWorkout.avgPaceS, currentWorkout.startedAt]);
+  }, [data, chartData]);
 
   // Sort routes for list display
   const sortedRoutes = useMemo(() => {
@@ -377,7 +353,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
         </h2>
         <div style={{ height: '300px' }}>
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 20 }}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 16, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
               <XAxis 
                 dataKey="date" 
@@ -394,11 +370,19 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                   return formatDate(date.toISOString());
                 }}
               />
-              <YAxis 
+              <YAxis
                 tick={{ fill: 'var(--muted)', fontSize: 12 }}
                 tickFormatter={(value) => formatPace(value, unitPreference)}
                 domain={['auto', 'auto']}
+                reversed
                 width={80}
+                label={{
+                  value: 'Pace (faster at top)',
+                  angle: -90,
+                  position: 'insideLeft',
+                  offset: 0,
+                  style: { fill: 'var(--muted)', fontSize: 12, textAnchor: 'middle' },
+                }}
               />
               <Tooltip
                 shared={false}
@@ -522,19 +506,17 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
               </div>
             </div>
 
-            {/* Improvement Trend */}
+            {/* Trend */}
             <div className="p-4 bg-canvas rounded-lg border border-border">
               <div className="text-xs font-medium text-muted mb-1">Trend</div>
-              <div className={`text-sm font-semibold flex items-center gap-1 ${
-                quickStats.trend === 'improving'
-                  ? 'text-ink'
-                  : quickStats.trend === 'declining'
-                  ? 'text-danger'
-                  : 'text-muted'
-              }`}>
-                {quickStats.trend === 'improving' && '↑ Improving'}
-                {quickStats.trend === 'declining' && '↓ Declining'}
-                {quickStats.trend === 'stable' && '→ Stable'}
+              <div
+                className={`text-sm font-semibold flex items-center gap-1 ${routeTrendDisplay(quickStats.trend).className}`}
+              >
+                <span aria-hidden="true">{routeTrendDisplay(quickStats.trend).symbol}</span>
+                {routeTrendDisplay(quickStats.trend).title}
+              </div>
+              <div className="text-xs text-muted mt-1">
+                Last {quickStats.trendRunCount} {quickStats.trendRunCount === 1 ? 'run' : 'runs'}
               </div>
             </div>
           </div>
