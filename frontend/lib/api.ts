@@ -1,3 +1,5 @@
+import type { WeatherData } from './weather';
+
 const API_BASE_URL = '/api';
 
 // Global 401 error handling
@@ -194,11 +196,12 @@ export interface WorkoutDetail {
   device: string | null;
   healthKitUuid: string | null;
   name: string | null;
-  weather: any | null;
-  rawGpxData: any | null;
-  rawFitData: any | null;
-  rawStravaData: any | null;
-  rawHealthKitData: any | null;
+  weather: WeatherData | null;
+  // Raw source payloads are untyped in the OpenAPI schema; nothing in the UI reads them.
+  rawGpxData: unknown;
+  rawFitData: unknown;
+  rawStravaData: unknown;
+  rawHealthKitData: unknown;
   createdAt: string;
   shoeId: string | null;
   shoe: {

@@ -166,7 +166,7 @@ export function WorkoutOverviewMetrics({
             </div>
           )}
 
-          {hasWeather && (
+          {workout.weather && (
             <WeatherDisplay
               weather={workout.weather}
               workoutStartTime={workout.startedAt}
