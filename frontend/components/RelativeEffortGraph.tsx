@@ -7,6 +7,82 @@ import { calculateYAxisTicks, calculateYAxisMax } from '@/utils/chartUtils';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 
+interface EffortPoint {
+  day: string;
+  dayIndex: number;
+  cumulativeEffort: number;
+  rangeMin: number;
+  rangeMax: number;
+  hasData: boolean;
+}
+
+/** Recharts passes these to custom dot renderers; only the fields read here are typed. */
+interface EffortDotProps {
+  cx?: number;
+  cy?: number;
+  payload?: EffortPoint;
+}
+
+function EffortTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload?: EffortPoint }>;
+}) {
+  const point = payload?.[0]?.payload;
+  if (active && point) {
+    return (
+      <div className="bg-raised border border-border rounded-tempo shadow-lg p-2">
+        <p className="text-sm font-medium text-ink">
+          {point.day}: {point.cumulativeEffort}
+        </p>
+        <p className="text-xs text-muted">
+          Range: {point.rangeMin} - {point.rangeMax}
+        </p>
+      </div>
+    );
+  }
+  return null;
+}
+
+/** XAxis tick with an indicator under the current day. */
+function DayTick({
+  x,
+  y,
+  payload,
+  index,
+  currentDayOfWeek,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: string };
+  index?: number;
+  currentDayOfWeek: number;
+}) {
+  const isCurrentDay = index === currentDayOfWeek;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text
+        x={0}
+        y={0}
+        dy={16}
+        textAnchor="middle"
+        fill="var(--ink)"
+        className="text-sm font-medium"
+      >
+        {payload?.value}
+      </text>
+      {isCurrentDay && (
+        <polygon
+          points="0,24 -6,32 6,32"
+          fill="var(--volt)"
+        />
+      )}
+    </g>
+  );
+}
+
 export default function RelativeEffortGraph() {
   // Get timezone offset in minutes (negative for timezones ahead of UTC)
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
@@ -68,7 +144,7 @@ export default function RelativeEffortGraph() {
   const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   
   // Prepare chart data - mark which days have data (where effort changed from previous day)
-  const chartData = (data.currentWeek || []).map((value, index) => {
+  const chartData: EffortPoint[] = (data.currentWeek || []).map((value, index) => {
     const prevValue = index > 0 ? (data.currentWeek?.[index - 1] || 0) : 0;
     const hasData = value !== prevValue; // Day has data if cumulative effort changed
     return {
@@ -100,49 +176,6 @@ export default function RelativeEffortGraph() {
     ? ((currentTotal - lastWeekTotal) / lastWeekTotal) * 100 
     : 0;
   const weekOverWeekDirection = weekOverWeekChange > 0 ? '↑' : weekOverWeekChange < 0 ? '↓' : '';
-
-  // Custom tooltip
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-raised border border-border rounded-tempo shadow-lg p-2">
-          <p className="text-sm font-medium text-ink">
-            {data.day}: {data.cumulativeEffort}
-          </p>
-          <p className="text-xs text-muted">
-            Range: {data.rangeMin} - {data.rangeMax}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  // Custom XAxis tick with current day indicator
-  const CustomTick = ({ x, y, payload, index }: any) => {
-    const isCurrentDay = index === currentDayOfWeek;
-    return (
-      <g transform={`translate(${x},${y})`}>
-        <text
-          x={0}
-          y={0}
-          dy={16}
-          textAnchor="middle"
-          fill="var(--ink)"
-          className="text-sm font-medium"
-        >
-          {payload.value}
-        </text>
-        {isCurrentDay && (
-          <polygon
-            points="0,24 -6,32 6,32"
-            fill="var(--volt)"
-          />
-        )}
-      </g>
-    );
-  };
 
   return (
     <Card>
@@ -197,14 +230,14 @@ export default function RelativeEffortGraph() {
               dataKey="cumulativeEffort"
               stroke="none"
               connectNulls={false}
-              dot={(props: any) => {
+              dot={(props: EffortDotProps) => {
                 // Only show dot if this day has data
                 if (props.payload?.hasData) {
                   return <circle cx={props.cx} cy={props.cy} r={4} fill="var(--volt)" />;
                 }
                 return null;
               }}
-              activeDot={(props: any) => {
+              activeDot={(props: EffortDotProps) => {
                 if (props.payload?.hasData) {
                   return <circle cx={props.cx} cy={props.cy} r={6} fill="var(--volt)" />;
                 }
@@ -216,7 +249,7 @@ export default function RelativeEffortGraph() {
               type="category"
               axisLine={false}
               tickLine={false}
-              tick={<CustomTick />}
+              tick={<DayTick currentDayOfWeek={currentDayOfWeek} />}
               padding={{ left: 12, right: 12 }}
             />
             <YAxis
@@ -229,7 +262,7 @@ export default function RelativeEffortGraph() {
               ticks={yAxisTicks}
               allowDecimals={false}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<EffortTooltip />} />
           </ComposedChart>
         </ResponsiveContainer>
         </div>
