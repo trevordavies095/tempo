@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getWeeklyRecap, getWeeklyStats, getYearlyStats, type WeeklyRecapResponse } from '@/lib/api';
 import { formatDistance, formatDuration, formatElevation } from '@/lib/format';
 import { runsByTypeFullLine, runsByTypeLine } from '@/lib/runTypes';
-import { recapThroughWeekday, recapTrend, type RecapTrend } from '@/lib/weeklyRecap';
+import { recapThroughWeekday, recapWeekTrend, type RecapTrend, type RecapWeek } from '@/lib/weeklyRecap';
 import { useSettings, type UnitPreference } from '@/lib/settings';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -73,27 +73,28 @@ function currentZoneTimes(metrics: WeeklyRecapResponse['metrics']): ZoneTime[] |
 
 function RecapTiles({ recap, unitPreference }: { recap: WeeklyRecapResponse; unitPreference: UnitPreference }) {
   const { metrics } = recap;
+  const week: RecapWeek = { inProgress: recap.currentWeekIsPartial, runs: metrics.runs.current };
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-2 gap-x-4 gap-y-3">
       <RecapTile
         label="Distance"
         value={formatDistance(metrics.distanceM.current, unitPreference)}
-        trend={recapTrend(metrics.distanceM.current, metrics.distanceM.trailingAvg)}
+        trend={recapWeekTrend(week, metrics.distanceM.current, metrics.distanceM.trailingAvg)}
       />
       <RecapTile
         label="Runs"
         value={String(Math.round(metrics.runs.current))}
-        trend={recapTrend(metrics.runs.current, metrics.runs.trailingAvg)}
+        trend={recapWeekTrend(week, metrics.runs.current, metrics.runs.trailingAvg)}
       />
       <RecapTile
         label="Time"
         value={formatDuration(Math.round(metrics.durationS.current))}
-        trend={recapTrend(metrics.durationS.current, metrics.durationS.trailingAvg)}
+        trend={recapWeekTrend(week, metrics.durationS.current, metrics.durationS.trailingAvg)}
       />
       <RecapTile
         label="Elevation"
         value={formatElevation(metrics.elevationGainM.current, unitPreference)}
-        trend={recapTrend(metrics.elevationGainM.current, metrics.elevationGainM.trailingAvg)}
+        trend={recapWeekTrend(week, metrics.elevationGainM.current, metrics.elevationGainM.trailingAvg)}
       />
     </div>
   );
