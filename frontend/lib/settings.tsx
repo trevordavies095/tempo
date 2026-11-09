@@ -32,7 +32,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             // Also save to localStorage for backward compatibility
             try {
               localStorage.setItem(STORAGE_KEY, response.unitPreference);
-            } catch (e) {
+            } catch {
               // Ignore localStorage errors
             }
             return;

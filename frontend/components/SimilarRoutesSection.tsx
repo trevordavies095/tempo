@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
+import { getSimilarRoutes, type WorkoutDetail } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDate, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import { IconArrowUp, IconArrowDown } from '@tabler/icons-react';
@@ -21,59 +21,10 @@ interface SimilarRoutesSectionProps {
   currentWorkout: WorkoutDetail;
 }
 
-/**
- * Format relative effort difference to a readable string
- * @param previousEffort Previous workout's relative effort
- * @param currentEffort Current workout's relative effort
- * @returns Formatted string like "85 (-5)" if current is 90 and previous is 85
- */
-function formatRelativeEffortDifference(previousEffort: number, currentEffort: number): string {
-  const difference = previousEffort - currentEffort;
-  const sign = difference < 0 ? '-' : '+';
-  const absDiff = Math.abs(difference);
-  return `${previousEffort} (${sign}${absDiff})`;
-}
-
-/**
- * Format elevation difference to a readable string
- * @param previousElev Previous workout's elevation gain in meters
- * @param currentElev Current workout's elevation gain in meters
- * @param unitPreference Unit preference for formatting
- * @returns Formatted string like "+150m (+50m more)" or "+150m (-20m less)"
- */
-function formatElevationDifference(
-  previousElev: number,
-  currentElev: number,
-  unitPreference: 'metric' | 'imperial'
-): string {
-  const difference = previousElev - currentElev;
-  const absDiff = Math.abs(difference);
-  const previousFormatted = formatElevation(previousElev, unitPreference);
-  
-  if (unitPreference === 'imperial') {
-    const diffFeet = Math.round(absDiff * 3.28084);
-    if (difference > 0) {
-      return `${previousFormatted} (+${diffFeet}ft more)`;
-    } else if (difference < 0) {
-      return `${previousFormatted} (-${diffFeet}ft less)`;
-    } else {
-      return previousFormatted;
-    }
-  } else {
-    if (difference > 0) {
-      return `${previousFormatted} (+${Math.round(absDiff)}m more)`;
-    } else if (difference < 0) {
-      return `${previousFormatted} (-${Math.round(absDiff)}m less)`;
-    } else {
-      return previousFormatted;
-    }
-  }
-}
-
 export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoutesSectionProps) {
   const { unitPreference } = useSettings();
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['similar-routes', workoutId],
     queryFn: () => getSimilarRoutes(workoutId),
     staleTime: 5 * 60 * 1000, // 5 minutes
