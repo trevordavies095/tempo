@@ -6,7 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import {
@@ -26,14 +26,38 @@ const AppearanceContext = createContext<AppearanceContextType | undefined>(
   undefined
 );
 
+// The preference lives in localStorage, so it is read through an external store: the server
+// render and hydration use the default, then the client reads storage once and caches it.
+let preferenceSnapshot: AppearancePreference | null = null;
+const preferenceListeners = new Set<() => void>();
+
+function subscribePreference(listener: () => void) {
+  preferenceListeners.add(listener);
+  return () => {
+    preferenceListeners.delete(listener);
+  };
+}
+
+function getPreferenceSnapshot(): AppearancePreference {
+  if (preferenceSnapshot === null) {
+    preferenceSnapshot = readStoredAppearance();
+  }
+  return preferenceSnapshot;
+}
+
+function getServerPreferenceSnapshot(): AppearancePreference {
+  return DEFAULT_APPEARANCE;
+}
+
 export function AppearanceProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreferenceState] =
-    useState<AppearancePreference>(DEFAULT_APPEARANCE);
+  const preference = useSyncExternalStore(
+    subscribePreference,
+    getPreferenceSnapshot,
+    getServerPreferenceSnapshot
+  );
 
   useEffect(() => {
-    const stored = readStoredAppearance();
-    setPreferenceState(stored);
-    applyAppearance(stored);
+    applyAppearance(readStoredAppearance());
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const onSystemChange = () => {
@@ -47,7 +71,8 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
 
   const setPreference = useCallback((next: AppearancePreference) => {
     persistAppearance(next);
-    setPreferenceState(next);
+    preferenceSnapshot = next;
+    preferenceListeners.forEach((listener) => listener());
   }, []);
 
   const value = useMemo(

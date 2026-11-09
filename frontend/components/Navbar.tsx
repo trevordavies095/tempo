@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
 export function Navbar() {
@@ -38,9 +38,12 @@ export function Navbar() {
     return `${base} ${isActive(path) ? active : inactive}`;
   };
 
-  useEffect(() => {
+  // Close the mobile menu on navigation (adjusting state during render, not in an effect).
+  const [menuPathname, setMenuPathname] = useState(pathname);
+  if (pathname !== menuPathname) {
+    setMenuPathname(pathname);
     setMobileOpen(false);
-  }, [pathname]);
+  }
 
   return (
     <nav className="w-full border-b border-border bg-raised">

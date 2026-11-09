@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
 import WeeklyRecapCard from '@/components/WeeklyRecapCard';
 import RelativeEffortGraph from '@/components/RelativeEffortGraph';
@@ -10,7 +10,7 @@ import BestEffortsChart from '@/components/BestEffortsChart';
 import WorkoutCard from '@/components/WorkoutCard';
 import YearlyWeeklyChart from '@/components/YearlyWeeklyChart';
 import Pagination from '@/components/Pagination';
-import { calculateWeekFromInterval, generateIntervalFromWeek } from '@/utils/weekUtils';
+import { generateIntervalFromWeek } from '@/utils/weekUtils';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
@@ -23,35 +23,28 @@ function DashboardPageContent() {
   const [selectedPeriodEndDate, setSelectedPeriodEndDate] = useState<string | null>(null);
   const [selectedWeek, setSelectedWeek] = useState<{ weekStart: string; weekEnd: string } | null>(null);
 
-  // Parse URL hash on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash;
-      if (hash.startsWith('#interval')) {
-        const params = new URLSearchParams(hash.substring(10)); // Remove '#interval?'
-        const interval = params.get('interval');
-        const yearOffset = parseInt(params.get('year_offset') || '0', 10);
-
-        if (interval) {
-          const weekRange = calculateWeekFromInterval(interval, yearOffset);
-          if (weekRange) {
-            setSelectedWeek(weekRange);
-          }
-        }
+  // Changing the period resets the page and clears the week selection.
+  const handlePeriodChange = useCallback(
+    (periodEndDate: string | null) => {
+      setSelectedPeriodEndDate(periodEndDate);
+      if (periodEndDate !== selectedPeriodEndDate) {
+        setPage(1);
+        setSelectedWeek(null);
       }
-    }
-  }, []);
+    },
+    [selectedPeriodEndDate]
+  );
 
-  // Reset page and clear week selection when period changes
-  useEffect(() => {
-    setPage(1);
-    setSelectedWeek(null);
-  }, [selectedPeriodEndDate]);
-
-  // Reset page when week selection changes
-  useEffect(() => {
-    setPage(1);
-  }, [selectedWeek]);
+  // Changing the week selection resets the page.
+  const handleWeekSelect = useCallback(
+    (week: { weekStart: string; weekEnd: string } | null) => {
+      setSelectedWeek(week);
+      if (week !== selectedWeek) {
+        setPage(1);
+      }
+    },
+    [selectedWeek]
+  );
 
   // Update URL hash when week is selected
   useEffect(() => {
@@ -124,9 +117,9 @@ function DashboardPageContent() {
       <div className="w-full mb-8">
         <YearlyWeeklyChart
           selectedPeriodEndDate={selectedPeriodEndDate}
-          onPeriodChange={setSelectedPeriodEndDate}
+          onPeriodChange={handlePeriodChange}
           selectedWeek={selectedWeek}
-          onWeekSelect={setSelectedWeek}
+          onWeekSelect={handleWeekSelect}
         />
       </div>
 
