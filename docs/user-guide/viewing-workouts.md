@@ -105,7 +105,7 @@ Automatic weather data for the workout:
 Tempo can automatically find workouts that follow similar routes:
 - **Route Matching** - Automatically finds workouts with similar paths based on route geometry
 - **Similarity Score** - Shows how closely routes match (0-100%)
-- **Comparison View** - Compare distance, time, and pace differences between similar routes
+- **Comparison View** - Compare distance, time, and pace differences between similar routes. Differences read from the run you are viewing: "This run −1:12 faster" (green) means it took 1:12 less than the match, "This run +0:40 slower" (red) means it took 0:40 more, and "Same time" means they were equal. Pace differences read the same way, for example "This run +0:08 /km slower". The iOS app uses the same words.
 - **Route Comparison Tab** - Visual side-by-side comparison of route overlays
 - **Time Comparison** - See how your performance has changed on the same route over time
 

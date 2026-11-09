@@ -8,55 +8,12 @@ import { ComposedChart, Scatter, Line, XAxis, YAxis, ResponsiveContainer, Toolti
 import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDate, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
+import { routePaceDelta, routeTimeDelta, thisRunTimeDifferenceS } from '@/lib/routeDelta';
+import { RouteDeltaText } from '@/components/RouteDeltaText';
 
 interface RouteComparisonTabProps {
   workoutId: string;
   currentWorkout: WorkoutDetail;
-}
-
-/**
- * Format time difference in seconds to a readable string
- * @param differenceS Time difference in seconds (negative = faster, positive = slower)
- * @returns Formatted string like "+2:15 slower" or "-2:15 faster"
- */
-function formatTimeDifference(differenceS: number): string {
-  if (differenceS === 0) {
-    return 'same time';
-  }
-  const absSeconds = Math.abs(differenceS);
-  const minutes = Math.floor(absSeconds / 60);
-  const seconds = absSeconds % 60;
-  const sign = differenceS < 0 ? '-' : '+';
-  const fasterSlower = differenceS < 0 ? 'faster' : 'slower';
-  return `${sign}${minutes}:${seconds.toString().padStart(2, '0')} ${fasterSlower}`;
-}
-
-/**
- * Format pace difference in seconds per km to a readable string
- * @param differenceS Pace difference in seconds per km (negative = faster pace, positive = slower pace)
- * @param unitPreference Unit preference for formatting
- * @returns Formatted string like "+5s/km slower" or "-16s/mi faster"
- */
-function formatPaceDifference(differenceS: number, unitPreference: 'metric' | 'imperial'): string {
-  if (differenceS === 0) {
-    return 'same pace';
-  }
-  let convertedDifference: number;
-  let unitLabel: string;
-  
-  if (unitPreference === 'imperial') {
-    // Convert from seconds/km to seconds/mile (same conversion as formatPace)
-    convertedDifference = differenceS * 1.609344;
-    unitLabel = 's/mi';
-  } else {
-    convertedDifference = differenceS;
-    unitLabel = 's/km';
-  }
-  
-  const absSeconds = Math.abs(convertedDifference);
-  const sign = convertedDifference < 0 ? '-' : '+';
-  const fasterSlower = convertedDifference < 0 ? 'faster' : 'slower';
-  return `${sign}${Math.round(absSeconds)}${unitLabel} ${fasterSlower}`;
 }
 
 interface ChartDataPoint {
@@ -194,19 +151,7 @@ function PaceComparisonTooltip({
         <p className="text-xs text-muted">
           Duration: {formatDuration(dataFromLabel.durationS)}
         </p>
-        {dataFromLabel.timeDifferenceS !== undefined && dataFromLabel.timeDifferenceS !== null && (
-          <p
-            className={`text-xs ${
-              dataFromLabel.timeDifferenceS < 0
-                ? 'text-ink'
-                : dataFromLabel.timeDifferenceS > 0
-                  ? 'text-danger'
-                  : 'text-muted'
-            }`}
-          >
-            {formatTimeDifference(dataFromLabel.timeDifferenceS)}
-          </p>
-        )}
+        <RouteDeltaText delta={routeTimeDelta(dataFromLabel.timeDifferenceS)} className="block text-xs" />
       </div>
     );
   }
@@ -369,9 +314,8 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
           comparison = a.avgPaceS - b.avgPaceS;
           break;
         case 'timeDiff':
-          const aDiff = a.timeDifferenceS ?? 0;
-          const bDiff = b.timeDifferenceS ?? 0;
-          comparison = aDiff - bDiff;
+          // The displayed value: this run − the match
+          comparison = thisRunTimeDifferenceS(a.timeDifferenceS) - thisRunTimeDifferenceS(b.timeDifferenceS);
           break;
       }
 
@@ -566,15 +510,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                 <div className="text-sm font-semibold text-ink mb-1">
                   {formatDate(quickStats.bestTime.startedAt)}
                 </div>
-                <div className={`text-xs ${
-                  quickStats.bestTime.timeDifferenceS < 0
-                    ? 'text-ink'
-                    : quickStats.bestTime.timeDifferenceS > 0
-                    ? 'text-danger'
-                    : 'text-muted'
-                }`}>
-                  {formatTimeDifference(quickStats.bestTime.timeDifferenceS)}
-                </div>
+                <RouteDeltaText delta={routeTimeDelta(quickStats.bestTime.timeDifferenceS)} className="block text-xs" />
               </div>
             )}
 
@@ -653,19 +589,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                     <span className="text-sm font-semibold text-ink">
                       {formatDuration(route.durationS)}
                     </span>
-                    {route.timeDifferenceS !== undefined && route.timeDifferenceS !== null && (
-                      <span
-                        className={`text-xs ${
-                          route.timeDifferenceS < 0
-                            ? 'text-ink'
-                            : route.timeDifferenceS > 0
-                            ? 'text-danger'
-                            : 'text-muted'
-                        }`}
-                      >
-                        {formatTimeDifference(route.timeDifferenceS)}
-                      </span>
-                    )}
+                    <RouteDeltaText delta={routeTimeDelta(route.timeDifferenceS)} className="text-xs" />
                   </div>
                 </div>
 
@@ -676,19 +600,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                     <span className="text-sm font-semibold text-ink">
                       {formatPace(route.avgPaceS, unitPreference)}
                     </span>
-                    {route.paceDifferenceS !== undefined && route.paceDifferenceS !== null && (
-                      <span
-                        className={`text-xs ${
-                          route.paceDifferenceS < 0
-                            ? 'text-ink'
-                            : route.paceDifferenceS > 0
-                            ? 'text-danger'
-                            : 'text-muted'
-                        }`}
-                      >
-                        {formatPaceDifference(route.paceDifferenceS, unitPreference)}
-                      </span>
-                    )}
+                    <RouteDeltaText delta={routePaceDelta(route.paceDifferenceS, unitPreference)} className="text-xs" />
                   </div>
                 </div>
 

@@ -5,35 +5,21 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter, usePathname } from 'next/navigation';
 import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
 import { formatDate } from '@/lib/format';
+import { routeTimeDelta, type RouteDelta } from '@/lib/routeDelta';
 import { IconChevronRight } from '@tabler/icons-react';
+import { RouteDeltaText } from '@/components/RouteDeltaText';
 
 interface RouteMatchesSummaryProps {
   workoutId: string;
   currentWorkout: WorkoutDetail;
 }
 
-/**
- * Format time difference in seconds to a readable string
- * @param differenceS Time difference in seconds (negative = faster, positive = slower)
- * @returns Formatted string like "+2:15 slower" or "-2:15 faster"
- */
-function formatTimeDifference(differenceS: number): string {
-  if (differenceS === 0) {
-    return 'same time';
-  }
-  const absSeconds = Math.abs(differenceS);
-  const minutes = Math.floor(absSeconds / 60);
-  const seconds = absSeconds % 60;
-  const sign = differenceS < 0 ? '-' : '+';
-  const fasterSlower = differenceS < 0 ? 'faster' : 'slower';
-  return `${sign}${minutes}:${seconds.toString().padStart(2, '0')} ${fasterSlower}`;
-}
-
 interface Highlight {
   type: 'best' | 'latest' | 'fastest';
   route: SimilarRoute;
   label: string;
-  value: string;
+  /** This run − the highlighted match; null when the server sent no difference. */
+  delta: RouteDelta | null;
 }
 
 /**
@@ -48,7 +34,7 @@ function calculateHighlights(routes: SimilarRoute[]): Highlight[] {
 
   const highlights: Highlight[] = [];
 
-  // Best Time: Route with most negative timeDifferenceS (fastest compared to current)
+  // Best Time: the match with the most negative timeDifferenceS (match − current), i.e. the fastest match
   const bestTime = routes.reduce((best, route) => {
     if (route.timeDifferenceS === undefined || route.timeDifferenceS === null) {
       return best;
@@ -67,7 +53,7 @@ function calculateHighlights(routes: SimilarRoute[]): Highlight[] {
       type: 'best',
       route: bestTime,
       label: 'Best',
-      value: formatTimeDifference(bestTime.timeDifferenceS),
+      delta: routeTimeDelta(bestTime.timeDifferenceS),
     });
   }
 
@@ -78,12 +64,11 @@ function calculateHighlights(routes: SimilarRoute[]): Highlight[] {
 
   // Only add if different from best time
   if (!bestTime || mostRecent.workoutId !== bestTime.workoutId) {
-    const timeDiff = mostRecent.timeDifferenceS;
     highlights.push({
       type: 'latest',
       route: mostRecent,
       label: 'Latest',
-      value: timeDiff !== undefined && timeDiff !== null ? formatTimeDifference(timeDiff) : '',
+      delta: routeTimeDelta(mostRecent.timeDifferenceS),
     });
   }
 
@@ -97,12 +82,11 @@ function calculateHighlights(routes: SimilarRoute[]): Highlight[] {
     (!bestTime || fastestPace.workoutId !== bestTime.workoutId) &&
     fastestPace.workoutId !== mostRecent.workoutId
   ) {
-    const timeDiff = fastestPace.timeDifferenceS;
     highlights.push({
       type: 'fastest',
       route: fastestPace,
       label: 'Fastest Pace',
-      value: timeDiff !== undefined && timeDiff !== null ? formatTimeDifference(timeDiff) : '',
+      delta: routeTimeDelta(fastestPace.timeDifferenceS),
     });
   }
 
@@ -169,22 +153,7 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
                 <div className="text-xs font-medium text-ink break-words">
                   {highlight.label}: {formatDate(highlight.route.startedAt)}
                 </div>
-                {highlight.value && (
-                  <div
-                    className={`text-xs break-words ${
-                      highlight.route.timeDifferenceS !== undefined &&
-                      highlight.route.timeDifferenceS !== null
-                        ? highlight.route.timeDifferenceS < 0
-                          ? 'text-ink'
-                          : highlight.route.timeDifferenceS > 0
-                          ? 'text-danger'
-                          : 'text-muted'
-                        : 'text-muted'
-                    }`}
-                  >
-                    {highlight.value}
-                  </div>
-                )}
+                <RouteDeltaText delta={highlight.delta} className="block text-xs break-words" />
               </div>
             ))}
           </div>
