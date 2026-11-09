@@ -38,15 +38,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userInfo = await api.getCurrentUser();
       setUser(userInfo);
-    } catch (error) {
+    } catch {
       setUser(null);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Same flow as checkAuth, written as a promise chain so every state update happens in a callback.
   useEffect(() => {
-    checkAuth();
+    api
+      .getCurrentUser()
+      .then(setUser, () => setUser(null))
+      .finally(() => setIsLoading(false));
   }, []);
 
   // Register global 401 error handler
@@ -81,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await api.logout();
       setUser(null);
       router.push('/login');
-    } catch (error) {
+    } catch {
       // Even if logout fails, clear local state
       setUser(null);
       router.push('/login');
