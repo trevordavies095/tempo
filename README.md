@@ -10,7 +10,7 @@
 
 **[View Full Documentation](https://trevordavies095.github.io/tempo/)** - Complete guides for installation, configuration, usage, deployment, and more.
 
-**[Tempo on the App Store](https://apps.apple.com/us/app/tempo-self-hosted-running/id6763753229)** - Daily-driver iOS app for your self-hosted server. The WebUI is the command center (import, settings, shoes, Workout overview).
+**[Tempo on the App Store](https://apps.apple.com/us/app/tempo-self-hosted-running/id6763753229)** - Daily-driver iOS app for your self-hosted server, including units, shoes and a read-only thresholds view. The WebUI is the command center (bulk import, threshold editing, shoe deletion, the full Workout overview).
 
 ## Screenshots
 
