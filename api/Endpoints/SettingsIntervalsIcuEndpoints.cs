@@ -60,7 +60,7 @@ public static class SettingsIntervalsIcuEndpoints
 
     private static async Task<IResult> GetIntervalsIcuConnection(TempoDbContext db)
     {
-        var row = await db.IntervalsIcuConnections.AsNoTracking().FirstOrDefaultAsync();
+        var row = await db.IntervalsIcuConnections.AsNoTracking().SingleRowAsync();
         return Results.Ok(ToDocument(row));
     }
 
@@ -90,32 +90,36 @@ public static class SettingsIntervalsIcuEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        var now = DateTime.UtcNow;
-        var existing = await db.IntervalsIcuConnections.FirstOrDefaultAsync();
-        if (existing != null)
+        // Retried once if a concurrent connect inserted the row first; the retry replaces its key
+        return await db.RetryOnSingletonConflictAsync<IResult>(async () =>
         {
-            existing.ApiKeyCiphertext = protector.Encrypt(apiKey);
-            existing.Enabled = true;
-            existing.LastError = null;
-            existing.UpdatedAt = now;
+            var now = DateTime.UtcNow;
+            var existing = await db.IntervalsIcuConnections.SingleRowAsync();
+            if (existing != null)
+            {
+                existing.ApiKeyCiphertext = protector.Encrypt(apiKey);
+                existing.Enabled = true;
+                existing.LastError = null;
+                existing.UpdatedAt = now;
+                await db.SaveChangesAsync();
+                logger.LogInformation("Intervals.icu API key replaced");
+                return Results.Ok(ToDocument(existing));
+            }
+
+            var row = new IntervalsIcuConnection
+            {
+                ApiKeyCiphertext = protector.Encrypt(apiKey),
+                Enabled = true,
+                ConnectedAt = now,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            db.IntervalsIcuConnections.Add(row);
             await db.SaveChangesAsync();
-            logger.LogInformation("Intervals.icu API key replaced");
-            return Results.Ok(ToDocument(existing));
-        }
 
-        var row = new IntervalsIcuConnection
-        {
-            ApiKeyCiphertext = protector.Encrypt(apiKey),
-            Enabled = true,
-            ConnectedAt = now,
-            CreatedAt = now,
-            UpdatedAt = now
-        };
-        db.IntervalsIcuConnections.Add(row);
-        await db.SaveChangesAsync();
-
-        logger.LogInformation("Intervals.icu connection saved");
-        return Results.Ok(ToDocument(row));
+            logger.LogInformation("Intervals.icu connection saved");
+            return Results.Ok(ToDocument(row));
+        });
     }
 
     private static async Task<IResult> PostIntervalsIcuEnable(
@@ -123,7 +127,7 @@ public static class SettingsIntervalsIcuEndpoints
         IIntervalsIcuClient intervalsIcu,
         IntervalsIcuSecretProtector protector)
     {
-        var row = await db.IntervalsIcuConnections.FirstOrDefaultAsync();
+        var row = await db.IntervalsIcuConnections.SingleRowAsync();
         if (row == null)
         {
             return Results.NotFound(new { error = "Not connected" });
@@ -175,7 +179,7 @@ public static class SettingsIntervalsIcuEndpoints
         TempoDbContext db,
         IntervalsIcuSyncQueue queue)
     {
-        var row = await db.IntervalsIcuConnections.AsNoTracking().FirstOrDefaultAsync();
+        var row = await db.IntervalsIcuConnections.AsNoTracking().SingleRowAsync();
         if (row == null || !row.Enabled)
         {
             return Results.NoContent();

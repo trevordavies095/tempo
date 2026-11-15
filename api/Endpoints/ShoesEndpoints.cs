@@ -47,7 +47,7 @@ public static class ShoesEndpoints
                 .ToListAsync();
 
             // Get unit preference from settings
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             var unitPreference = settings?.UnitPreference ?? "metric";
 
             var shoesWithMileage = new List<ShoeListItemDocument>();
@@ -290,7 +290,7 @@ public static class ShoesEndpoints
                 var newRetired = isRetiredElement.GetBoolean();
                 if (newRetired && !shoe.IsRetired)
                 {
-                    var settingsForRetire = await db.UserSettings.FirstOrDefaultAsync();
+                    var settingsForRetire = await db.UserSettings.SingleRowAsync();
                     if (settingsForRetire != null && settingsForRetire.DefaultShoeId == id)
                     {
                         settingsForRetire.DefaultShoeId = null;
@@ -350,7 +350,7 @@ public static class ShoesEndpoints
             }
 
             // Clear default shoe if this shoe is set as default
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             if (settings != null && settings.DefaultShoeId == id)
             {
                 settings.DefaultShoeId = null;
@@ -395,7 +395,7 @@ public static class ShoesEndpoints
             }
 
             var totalMileage = await mileageService.GetTotalMileageWithUserPreferenceAsync(db, id);
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             var unitPreference = settings?.UnitPreference ?? "metric";
 
             return Results.Ok(new

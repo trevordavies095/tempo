@@ -797,7 +797,7 @@ public static class WorkoutsEndpoints
 
         try
         {
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             if (settings == null)
             {
                 return Results.BadRequest(new { error = "Heart rate zones not configured. Please configure heart rate zones in settings first." });
@@ -856,7 +856,7 @@ public static class WorkoutsEndpoints
 
         try
         {
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             var unitPreference = settings?.UnitPreference ?? "metric";
 
             var success = await splitRecalculationService.RecalculateSplitsForWorkoutAsync(workout, unitPreference);
@@ -978,7 +978,7 @@ public static class WorkoutsEndpoints
             await cropService.CropWorkoutAsync(workout, startTrimSeconds, endTrimSeconds);
 
             // Recalculate splits
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             var unitPreference = settings?.UnitPreference ?? "metric";
             await splitRecalculationService.RecalculateSplitsForWorkoutAsync(workout, unitPreference);
 
@@ -1762,7 +1762,7 @@ public static class WorkoutsEndpoints
         try
         {
             // Check if heart rate zones are configured
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             if (settings == null)
             {
                 return Results.BadRequest(new { error = "Heart rate zones not configured. Please configure heart rate zones in settings first." });
@@ -1885,7 +1885,7 @@ public static class WorkoutsEndpoints
         try
         {
             // Get unit preference from settings
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             var unitPreference = settings?.UnitPreference ?? "metric";
 
             var result = await splitRecalculationService.RecalculateSplitsForAllWorkoutsAsync(unitPreference);
@@ -2500,21 +2500,24 @@ public static class WorkoutsEndpoints
                 return;
             }
 
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            if (settings == null)
+            await db.RetryOnSingletonConflictAsync(async () =>
             {
-                settings = new UserSettings();
-                db.UserSettings.Add(settings);
-            }
+                var settings = await db.UserSettings.SingleRowAsync();
+                if (settings == null)
+                {
+                    settings = new UserSettings();
+                    db.UserSettings.Add(settings);
+                }
 
-            // Only update if different to avoid unnecessary database writes
-            if (settings.UnitPreference != unitPreference)
-            {
-                settings.UnitPreference = unitPreference;
-                settings.UpdatedAt = DateTime.UtcNow;
-                await db.SaveChangesAsync();
-                logger.LogInformation("Updated unit preference to {UnitPreference}", Utils.LogSanitizer.Sanitize(unitPreference));
-            }
+                // Only update if different to avoid unnecessary database writes
+                if (settings.UnitPreference != unitPreference)
+                {
+                    settings.UnitPreference = unitPreference;
+                    settings.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    logger.LogInformation("Updated unit preference to {UnitPreference}", Utils.LogSanitizer.Sanitize(unitPreference));
+                }
+            });
         }
         catch (Exception ex)
         {

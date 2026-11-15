@@ -58,7 +58,7 @@ public class ShoeMileageService
         TempoDbContext db,
         Guid shoeId)
     {
-        var settings = await db.UserSettings.FirstOrDefaultAsync();
+        var settings = await db.UserSettings.SingleRowAsync();
         var unitPreference = settings?.UnitPreference ?? "metric";
         return await GetTotalMileageAsync(db, shoeId, unitPreference);
     }
