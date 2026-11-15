@@ -1,5 +1,16 @@
-/** Thin horizontal bar for a 0–100 value. Purely visual; callers render the number as text. */
-export function ProgressBar({ percent, label }: { percent: number; label: string }) {
+/**
+ * Thin horizontal bar for a 0–100 value. Purely visual; callers render the number as text.
+ * `tone="muted"` is for background information that should not compete with the page's accent.
+ */
+export function ProgressBar({
+  percent,
+  label,
+  tone = 'accent',
+}: {
+  percent: number;
+  label: string;
+  tone?: 'accent' | 'muted';
+}) {
   const clamped = Math.max(0, Math.min(100, percent));
   return (
     <div
@@ -10,7 +21,10 @@ export function ProgressBar({ percent, label }: { percent: number; label: string
       aria-valuemax={100}
       aria-valuenow={clamped}
     >
-      <div className="h-full rounded-full bg-ink dark:bg-volt" style={{ width: `${clamped}%` }} />
+      <div
+        className={`h-full rounded-full ${tone === 'muted' ? 'bg-muted' : 'bg-ink dark:bg-volt'}`}
+        style={{ width: `${clamped}%` }}
+      />
     </div>
   );
 }

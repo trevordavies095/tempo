@@ -17,43 +17,33 @@ function labelFor(key: string): string {
   return CATEGORY_LABELS[key] ?? key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
 }
 
+/** Background information about the data behind the page: a compact strip of small, muted meters. */
 export function DataCoverageCard({ metadata }: { metadata: InsightsMetadata }) {
   const keys = Object.keys(metadata.dataAvailability).sort((a, b) => {
     const ia = CATEGORY_ORDER.indexOf(a);
     const ib = CATEGORY_ORDER.indexOf(b);
     return (ia === -1 ? CATEGORY_ORDER.length : ia) - (ib === -1 ? CATEGORY_ORDER.length : ib);
   });
-  const days = metadata.daysBetweenFirstAndLatestWorkout;
+
+  if (keys.length === 0) return null;
 
   return (
     <Card>
-      <h2 className="text-lg font-semibold text-ink mb-4">Data Coverage</h2>
-      <dl className="grid grid-cols-2 gap-4 mb-6">
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted">Total Workouts</dt>
-          <dd className="text-2xl font-semibold text-ink tabular-nums">
-            {metadata.totalWorkouts.toLocaleString()}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted">Days Tracked</dt>
-          <dd className="text-2xl font-semibold text-ink tabular-nums">
-            {days != null ? days.toLocaleString() : '—'}
-          </dd>
-        </div>
-      </dl>
-      <ul className="space-y-3">
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="text-sm font-semibold text-ink">Data Coverage</h2>
+        <p className="text-xs text-muted">Share of your runs that recorded each kind of data</p>
+      </div>
+      <ul className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-6">
         {keys.map((key) => {
           const category = metadata.dataAvailability[key];
+          const label = labelFor(key);
           return (
-            <li key={key}>
-              <div className="flex items-baseline justify-between gap-3 text-sm mb-1">
-                <span className="font-medium text-ink">{labelFor(key)}</span>
-                <span className="text-muted tabular-nums">
-                  {category.count.toLocaleString()} runs · {category.percentage}%
-                </span>
+            <li key={key} title={`${category.count.toLocaleString()} runs`}>
+              <div className="mb-1.5 flex items-baseline justify-between gap-2 text-xs">
+                <span className="font-medium text-ink">{label}</span>
+                <span className="text-muted tabular-nums">{Math.round(category.percentage)}%</span>
               </div>
-              <ProgressBar percent={category.percentage} label={`${labelFor(key)} coverage`} />
+              <ProgressBar percent={category.percentage} label={`${label} coverage`} tone="muted" />
             </li>
           );
         })}

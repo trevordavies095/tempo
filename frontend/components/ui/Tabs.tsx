@@ -58,7 +58,7 @@ export function Tabs<T extends string>({
                 tabIndex={selected ? 0 : -1}
                 onClick={() => onChange(item.id)}
                 onKeyDown={(event) => handleKeyDown(event, item.id)}
-                className={`px-4 py-2 text-sm font-medium rounded-t-tempo border-b-2 transition-colors focus:outline-none focus:ring-2 focus:ring-volt focus:ring-offset-2 focus:ring-offset-canvas ${
+                className={`px-3 sm:px-4 py-2 text-sm font-medium whitespace-nowrap rounded-t-tempo border-b-2 transition-colors focus:outline-none focus:ring-2 focus:ring-volt focus:ring-offset-2 focus:ring-offset-canvas ${
                   selected
                     ? 'border-ink text-ink bg-canvas dark:border-volt dark:text-volt dark:bg-transparent'
                     : 'border-transparent text-muted hover:text-ink hover:bg-canvas'
