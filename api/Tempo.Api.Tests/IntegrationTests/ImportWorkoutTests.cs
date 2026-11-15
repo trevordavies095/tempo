@@ -216,7 +216,7 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             var workout = await db.Workouts
                 .Include(w => w.Splits)
-                .FirstOrDefaultAsync();
+                .SingleOrDefaultAsync();
             
             workout.Should().NotBeNull();
             var kmSplit = workout!.Splits.OrderBy(s => s.Idx).FirstOrDefault();
@@ -256,7 +256,7 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             var workout = await db.Workouts
                 .Include(w => w.Splits)
-                .FirstOrDefaultAsync();
+                .SingleOrDefaultAsync();
             
             workout.Should().NotBeNull();
             var mileSplit = workout!.Splits.OrderBy(s => s.Idx).FirstOrDefault();
@@ -340,7 +340,7 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             var workout = await db.Workouts
                 .Include(w => w.Route)
-                .FirstOrDefaultAsync();
+                .SingleOrDefaultAsync();
             
             workout.Should().NotBeNull();
             workout!.Route.Should().NotBeNull();
@@ -377,7 +377,7 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
             var workout = await db.Workouts
                 .Include(w => w.Splits.OrderBy(s => s.Idx))
-                .FirstOrDefaultAsync();
+                .SingleOrDefaultAsync();
             
             workout.Should().NotBeNull();
             workout!.Splits.Should().NotBeEmpty();
@@ -561,7 +561,7 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         using (var scope = factoryWithMockWeather.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var workout = await db.Workouts.FirstOrDefaultAsync();
+            var workout = await db.Workouts.SingleOrDefaultAsync();
             
             workout.Should().NotBeNull();
             // Weather field may be null or have a default value
@@ -605,7 +605,7 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         using (var scope = factoryWithMockWeather.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var workout = await db.Workouts.FirstOrDefaultAsync();
+            var workout = await db.Workouts.SingleOrDefaultAsync();
             
             workout.Should().NotBeNull();
         }
@@ -648,7 +648,7 @@ public class ImportWorkoutTests : IClassFixture<TempoWebApplicationFactory>
         using (var scope = factoryWithMockWeather.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var workout = await db.Workouts.FirstOrDefaultAsync();
+            var workout = await db.Workouts.SingleOrDefaultAsync();
             
             workout.Should().NotBeNull();
         }

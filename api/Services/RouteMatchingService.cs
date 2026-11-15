@@ -68,7 +68,8 @@ public class RouteMatchingService
                       FROM ""WorkoutRoutes"" 
                       WHERE ""WorkoutId"" = {0}",
                     workoutId)
-                .FirstOrDefaultAsync();
+                // One route per workout; EF can't see the raw-SQL WHERE, so First would warn
+                .SingleOrDefaultAsync();
         }
         catch (Exception ex)
         {

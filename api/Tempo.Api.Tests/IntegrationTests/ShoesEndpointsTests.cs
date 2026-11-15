@@ -438,7 +438,7 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             settings.Should().NotBeNull();
             settings!.DefaultShoeId.Should().BeNull();
         }
@@ -572,7 +572,7 @@ public class ShoesEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             settings.Should().NotBeNull();
             settings!.DefaultShoeId.Should().BeNull();
         }

@@ -441,7 +441,7 @@ public class SettingsEndpointsTests : IClassFixture<TempoWebApplicationFactory>
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             settings.Should().NotBeNull();
             settings!.CalculationMethod.Should().Be(HeartRateCalculationMethod.AgeBased);
             settings.Age.Should().Be(30);
