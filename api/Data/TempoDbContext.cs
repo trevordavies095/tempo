@@ -100,8 +100,8 @@ public class TempoDbContext : DbContext
 
         modelBuilder.Entity<UserSettings>(entity =>
         {
-            // Single-row table pattern - ensure only one settings record exists
-            // We'll enforce this in application logic, but add a unique constraint on Id
+            // One-row table: IX_UserSettings_Singleton (unique on a constant, raw SQL in migration
+            // EnforceSingletonRows) rejects a second row. Read with SingletonRows.SingleRowAsync.
             entity.HasIndex(e => e.Id).IsUnique();
             entity.HasIndex(e => e.DefaultShoeId);
             

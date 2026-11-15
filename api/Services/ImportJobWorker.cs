@@ -365,20 +365,23 @@ public class ImportJobWorker : BackgroundService
                 return;
             }
 
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            if (settings == null)
+            await db.RetryOnSingletonConflictAsync(async () =>
             {
-                settings = new UserSettings();
-                db.UserSettings.Add(settings);
-            }
+                var settings = await db.UserSettings.SingleRowAsync();
+                if (settings == null)
+                {
+                    settings = new UserSettings();
+                    db.UserSettings.Add(settings);
+                }
 
-            if (settings.UnitPreference != unitPreference)
-            {
-                settings.UnitPreference = unitPreference;
-                settings.UpdatedAt = DateTime.UtcNow;
-                await db.SaveChangesAsync();
-                logger.LogInformation("Updated unit preference to {UnitPreference}", Utils.LogSanitizer.Sanitize(unitPreference));
-            }
+                if (settings.UnitPreference != unitPreference)
+                {
+                    settings.UnitPreference = unitPreference;
+                    settings.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    logger.LogInformation("Updated unit preference to {UnitPreference}", Utils.LogSanitizer.Sanitize(unitPreference));
+                }
+            });
         }
         catch (Exception ex)
         {

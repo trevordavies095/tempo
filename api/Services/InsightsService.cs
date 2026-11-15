@@ -59,7 +59,7 @@ public class InsightsService
             WeatherInsights? weatherInsights = null;
             if (metadata.DataAvailability["weather"].Available)
             {
-                var userSettings = await db.UserSettings.FirstOrDefaultAsync();
+                var userSettings = await db.UserSettings.SingleRowAsync();
                 var unitPreference = userSettings?.UnitPreference ?? "metric";
                 weatherInsights = await CalculateWeatherExtremesAsync(db, unitPreference);
             }

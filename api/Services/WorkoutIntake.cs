@@ -1100,7 +1100,7 @@ public class WorkoutIntake
 
     private async Task AssignDefaultShoeAsync(Workout workout)
     {
-        var settings = await _db.UserSettings.FirstOrDefaultAsync();
+        var settings = await _db.UserSettings.SingleRowAsync();
         if (settings == null || !settings.DefaultShoeId.HasValue)
         {
             return;
@@ -1118,7 +1118,7 @@ public class WorkoutIntake
     {
         try
         {
-            var settings = await _db.UserSettings.FirstOrDefaultAsync();
+            var settings = await _db.UserSettings.SingleRowAsync();
             if (settings == null)
             {
                 return;
@@ -1223,7 +1223,7 @@ public class WorkoutIntake
 
     private async Task<double> GetSplitDistanceMetersAsync()
     {
-        var settings = await _db.UserSettings.FirstOrDefaultAsync();
+        var settings = await _db.UserSettings.SingleRowAsync();
         var unitPreference = settings?.UnitPreference;
         return unitPreference != null && unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
             ? 1609.344

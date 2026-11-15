@@ -116,6 +116,15 @@ public static class TestDataSeeder
             UpdatedAt = DateTime.UtcNow
         };
 
+        // One-row table (IX_UserSettings_Singleton): seeding replaces any row a fixture or an
+        // earlier test in the same class left behind
+        foreach (var tracked in db.ChangeTracker.Entries<UserSettings>().ToList())
+        {
+            tracked.State = EntityState.Detached;
+        }
+
+        await db.UserSettings.ExecuteDeleteAsync();
+
         db.UserSettings.Add(settings);
         await db.SaveChangesAsync();
         return settings;
