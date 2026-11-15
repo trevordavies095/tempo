@@ -391,7 +391,7 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             var mediaConfig = scope.ServiceProvider.GetRequiredService<MediaStorageConfig>();
 
             // Clear any existing settings first to avoid conflicts
-            var existingSettings = await db.UserSettings.FirstOrDefaultAsync();
+            var existingSettings = await db.UserSettings.SingleRowAsync();
             if (existingSettings != null)
             {
                 db.UserSettings.Remove(existingSettings);

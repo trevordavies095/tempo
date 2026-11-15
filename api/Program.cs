@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using System.IdentityModel.Tokens.Jwt;
@@ -171,6 +172,12 @@ if (string.IsNullOrWhiteSpace(connectionString) ||
 builder.Services.AddDbContext<TempoDbContext>(options =>
 {
     options.UseNpgsql(connectionString);
+
+    // Tests fail on an unordered, unfiltered First (#236) instead of it surfacing as a production warning
+    if (builder.Environment.IsEnvironment("Testing"))
+    {
+        options.ConfigureWarnings(w => w.Throw(CoreEventId.FirstWithoutOrderByAndFilterWarning));
+    }
 });
 
 // Register services

@@ -190,7 +190,8 @@ public static class StatsEndpoints
                 ZoneSecondsZ4 = g.Sum(w => (long)(w.ZoneSecondsZ4 ?? 0)),
                 ZoneSecondsZ5 = g.Sum(w => (long)(w.ZoneSecondsZ5 ?? 0))
             })
-            .FirstOrDefaultAsync(cancellationToken);
+            // One group (constant key) or none; Single states that and avoids EF's First-without-OrderBy warning
+            .SingleOrDefaultAsync(cancellationToken);
 
         if (row == null)
         {
