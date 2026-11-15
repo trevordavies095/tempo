@@ -3,27 +3,34 @@ namespace Tempo.Api.Services;
 /// <summary>
 /// Hosted service that fills per-workout best efforts after migrations have applied, then again
 /// whenever <see cref="BestEffortBackfillSignal"/> is raised (after a Tempo ZIP restore).
+/// With <c>Tempo:Backfills:OnStartup=skip</c> only the startup pass is skipped; restores still fill.
 /// Does not block browsing; until a workout is filled it is missing from best-effort results.
 /// </summary>
 public class BestEffortBackfillWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly BestEffortBackfillSignal _signal;
+    private readonly StartupBackfillMode _startupMode;
     private readonly ILogger<BestEffortBackfillWorker> _logger;
 
     public BestEffortBackfillWorker(
         IServiceScopeFactory scopeFactory,
         BestEffortBackfillSignal signal,
+        StartupBackfillMode startupMode,
         ILogger<BestEffortBackfillWorker> logger)
     {
         _scopeFactory = scopeFactory;
         _signal = signal;
+        _startupMode = startupMode;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await RunBackfillAsync(stoppingToken);
+        if (_startupMode == StartupBackfillMode.Run)
+        {
+            await RunBackfillAsync(stoppingToken);
+        }
 
         try
         {

@@ -198,6 +198,24 @@ Or in `api/appsettings.Development.json`:
 
 Unset still means `standard` even when `ASPNETCORE_ENVIRONMENT=Development`.
 
+## Startup backfills
+
+Some upgrades add data that older workouts don't have yet (route previews, timer time, device laps, zone seconds, best efforts, ...). Background workers fill it in after the API starts, without blocking browsing or `/ready`. Each logs `<name> backfill: N of N`; `0 of 0` means there was nothing to do. See the [upgrade steps](../deployment/docker.md#updating).
+
+| Value | Behavior |
+|-------|----------|
+| `run` (default) | All seven backfills run on every API start. On a current library each logs `0 of 0` and stops. |
+| `skip` | None run on start. For a library that is already current, or for debugging a hang. The best-effort backfill still runs after a Tempo ZIP restore, so restored workouts get best efforts. |
+
+Startup logs one line naming the set (`Startup backfills: run (...)`) or `Startup backfills: skip (...)`. Empty or unset → `run`. Unknown values refuse to start (allowed: `run`, `skip`; case-insensitive). Host config only; restart to change.
+
+Don't leave `skip` on across an upgrade. A release that adds a backfill needs one `run` boot to fill older workouts.
+
+```bash
+# Compose .env
+TEMPO_BACKFILLS_ON_STARTUP=skip
+```
+
 ## Environment Variables Reference
 
 All configuration can be set via environment variables using the double underscore (`__`) notation for nested keys:
@@ -211,6 +229,7 @@ All configuration can be set via environment variables using the double undersco
 | `ElevationCalculation:MinDistanceMeters` | `ElevationCalculation__MinDistanceMeters` | `10.0` |
 | `CartoBasemaps:ApiKey` | `CartoBasemaps__ApiKey` or `CARTO_BASEMAPS_API_KEY` (via compose `.env`) | empty (watermarked tiles) |
 | `Tempo:Logging:Profile` | `Tempo__Logging__Profile` or `TEMPO_LOGGING_PROFILE` (via compose `.env`) | `standard` |
+| `Tempo:Backfills:OnStartup` | `Tempo__Backfills__OnStartup` or `TEMPO_BACKFILLS_ON_STARTUP` (via compose `.env`) | `run` |
 | `CORS:AllowedOrigins` | `CORS__AllowedOrigins` | `http://localhost:3000` |
 | `Cookie:Secure` | `Cookie__Secure` or `TEMPO_COOKIE_SECURE` (via compose `.env`) | unset (always `Secure` in Production) — see [Reverse Proxy](../deployment/reverse-proxy.md) |
 | `Cookie:Domain` | `Cookie__Domain` | unset (host-only cookie) |
