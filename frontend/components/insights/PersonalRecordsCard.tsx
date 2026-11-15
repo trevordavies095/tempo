@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getBestEfforts } from '@/lib/api';
+import { useSettings } from '@/lib/settings';
 import {
   BEST_EFFORTS_RANGES,
   bestEffortsRangeRequests,
@@ -15,7 +16,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Tabs } from '@/components/ui/Tabs';
 import { BestEffortsTable } from '@/components/BestEffortsTable';
 
-export function PersonalRecordsCard() {
+export function PersonalRecordsCard({ className }: { className?: string }) {
+  const { unitPreference } = useSettings();
   // Local to the card: not persisted, not in the URL.
   const [range, setRange] = useState<BestEffortsRange>('allTime');
   const requests = useMemo(() => bestEffortsRangeRequests(range), [range]);
@@ -46,7 +48,7 @@ export function PersonalRecordsCard() {
   );
 
   return (
-    <Card>
+    <Card className={className}>
       <h2 className="text-lg font-semibold text-ink mb-4">Personal Records</h2>
       <Tabs items={BEST_EFFORTS_RANGES} value={range} onChange={setRange} aria-label="Personal records range">
         {isLoading ? (
@@ -80,6 +82,8 @@ export function PersonalRecordsCard() {
         ) : (
           <BestEffortsTable
             efforts={rows}
+            detailed
+            unitPreference={unitPreference}
             isNew={(item) => newDistances.has(item.distance)}
           />
         )}

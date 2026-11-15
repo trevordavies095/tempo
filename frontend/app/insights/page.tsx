@@ -12,10 +12,11 @@ import { ProgressBar } from '@/components/insights/ProgressBar';
 import { WeatherExtremesCard } from '@/components/insights/WeatherExtremesCard';
 import { PersonalRecordsCard } from '@/components/insights/PersonalRecordsCard';
 import { DataCoverageCard } from '@/components/insights/DataCoverageCard';
+import { SummaryStats } from '@/components/insights/SummaryStats';
 
-function SkeletonCard({ rows }: { rows: number }) {
+function SkeletonCard({ rows, className }: { rows: number; className?: string }) {
   return (
-    <Card>
+    <Card className={className}>
       <div aria-hidden="true">
         <div className="h-6 w-40 rounded bg-canvas animate-pulse mb-4" />
         <div className="space-y-2">
@@ -61,12 +62,15 @@ function InsightsPageContent() {
   });
 
   return (
-    <PageShell density="control" title="Insights">
+    <PageShell density="overview" title="Insights">
       {isLoading ? (
         <div className="space-y-6" aria-busy="true" aria-label="Loading insights">
-          <SkeletonCard rows={2} />
-          <SkeletonCard rows={5} />
-          <SkeletonCard rows={4} />
+          <SkeletonCard rows={1} />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+            <SkeletonCard rows={8} className="lg:col-span-3" />
+            <SkeletonCard rows={5} className="lg:col-span-2" />
+          </div>
+          <SkeletonCard rows={1} />
         </div>
       ) : isError || !data ? (
         <Card>
@@ -88,8 +92,15 @@ function InsightsPageContent() {
         />
       ) : (
         <div className="space-y-6">
-          <WeatherExtremesCard weather={data.weather} unitPreference={unitPreference} />
-          <PersonalRecordsCard />
+          <SummaryStats metadata={data.metadata} />
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
+            <PersonalRecordsCard className="lg:col-span-3" />
+            <WeatherExtremesCard
+              weather={data.weather}
+              unitPreference={unitPreference}
+              className="lg:col-span-2"
+            />
+          </div>
           <DataCoverageCard metadata={data.metadata} />
         </div>
       )}
