@@ -188,17 +188,16 @@ Detailed solutions for common Tempo problems.
 
 Forgot the passphrase is a different failure from a cookie that will not stick. If you cannot complete login because the password is gone, use the host-only reset command — see [How do I reset my password?](faq.md#how-do-i-reset-my-password). Do not `docker compose down -v` or hand-hash BCrypt.
 
-If login succeeds and the session expires immediately (or the cookie never appears):
+If login returns 200 but the session expires immediately (or the cookie never appears), it's a cookie/proxy problem. Start with [Reverse Proxy and Login Cookies](../deployment/reverse-proxy.md#troubleshooting-login).
 
 **Solutions:**
-1. Verify JWT secret key is configured (production)
-2. Check cookie settings (requires HTTPS in production; `ASPNETCORE_ENVIRONMENT=Production`)
-3. Clear browser cookies
-4. Verify CORS allowed origins match the URL you use in the browser
-5. Verify database has user table
-6. Check API logs for authentication errors
-7. If you are on first-run setup: complete [onboarding](../getting-started/onboarding.md) (or **Skip for now** after a failed Strava import). Existing upgraded accounts should already be marked complete and not see the wizard
-8. Late Strava or Tempo ZIP migrates live under Settings → Migrate / restore, not the Import page
+1. Check the API logs for `Auth cookie is Secure but this request arrived over plain HTTP`. If it's there, serve Tempo over HTTPS, or set `TEMPO_COOKIE_SECURE=false` on a trusted LAN
+2. Unset `Cookie__Domain` unless you deliberately share the session across subdomains
+3. Clear browser cookies for the site
+4. Verify the JWT secret key is configured (production)
+5. Check API logs for authentication errors
+6. If you are on first-run setup: complete [onboarding](../getting-started/onboarding.md) (or **Skip for now** after a failed Strava import). Existing upgraded accounts should already be marked complete and not see the wizard
+7. Late Strava or Tempo ZIP migrates live under Settings → Migrate / restore, not the Import page
 
 ### CORS Errors
 
@@ -207,8 +206,10 @@ If login succeeds and the session expires immediately (or the cookie never appea
 - API requests fail
 - "Origin not allowed" errors
 
+The default path (command center via same-origin `/api`, daily driver native) never needs CORS. These errors mean a browser on another origin is calling the API directly.
+
 **Solutions:**
-1. Verify `CORS__AllowedOrigins` includes your frontend URL
+1. Verify `CORS__AllowedOrigins` includes that exact origin (e.g. `https://tempo.example.com`)
 2. In Docker, use double underscores: `CORS__AllowedOrigins`
 3. Restart API container after changing CORS
 4. Check for typos in origin URLs

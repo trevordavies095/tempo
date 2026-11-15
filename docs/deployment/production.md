@@ -92,83 +92,10 @@ Issuer, audience, and expiration defaults are in the API image. Override with `J
 
 ## Reverse Proxy Setup
 
-Point **one** upstream at the command center on loopback. `/api` is rewritten inside the frontend container to the API on the Compose network — do not split `/api` to a host `:5001` unless you uncomment the opt-in loopback API publish.
+Point **one** upstream at the command center on `127.0.0.1:3004`; `/api` is rewritten inside the frontend container to the API on the Compose network. Caddy, nginx, and Traefik examples, the session cookie contract, and the plain-HTTP LAN exception live in **[Reverse Proxy and Login Cookies](reverse-proxy.md)**.
 
-### Nginx Example
-
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com;
-    
-    # Redirect to HTTPS
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name yourdomain.com;
-    
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-    
-    # Command center (Next rewrites /api to the API on the Compose network)
-    location / {
-        proxy_pass http://127.0.0.1:3004;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Optional: whole-ZIP adapters through this host (command center uses 512 KiB chunks)
-        client_max_body_size 500M;
-        proxy_read_timeout 600s;
-        proxy_connect_timeout 600s;
-        proxy_send_timeout 600s;
-    }
-}
-```
-
-### Caddy Example
-
-```caddy
-tempo.yourdomain.com {
-    tls {
-        protocols tls1.2 tls1.3
-    }
-
-    # One upstream: command center. /api is rewritten to the API inside Docker.
-    reverse_proxy 127.0.0.1:3004 {
-        header_up Host {host}
-        header_up X-Real-IP {remote}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-        transport http {
-            read_timeout 30m
-            write_timeout 30m
-        }
-    }
-}
-```
-
-**Note**:
-- Use the same public HTTPS origin for the command center and the daily driver
 - If you still need Bruno/curl on the host API port, uncomment `127.0.0.1:5001:5001` in `docker-compose.prod.yml` (loopback only)
-- Upgrading from a split `/` + `/api`→`:5001` proxy: merge to this one-upstream shape or temporarily keep the loopback API publish
-
-### Traefik Example
-
-```yaml
-labels:
-  - "traefik.enable=true"
-  - "traefik.http.routers.tempo.rule=Host(`yourdomain.com`)"
-  - "traefik.http.routers.tempo.entrypoints=websecure"
-  - "traefik.http.routers.tempo.tls.certresolver=letsencrypt"
-  # Large file upload support
-  - "traefik.http.middlewares.tempo-buffering.buffering.maxRequestBodyBytes=524288000"  # 500MB
-  - "traefik.http.middlewares.tempo-timeout.buffering.retryExpression=IsNetworkError() && Attempts() < 2"
-  - "traefik.http.routers.tempo.middlewares=tempo-buffering,tempo-timeout"
-```
+- Upgrading from a split `/` + `/api`→`:5001` proxy: merge to the one-upstream shape or temporarily keep the loopback API publish
 
 ## Large File Upload Requirements
 
@@ -300,5 +227,5 @@ docker stats
 
 - [Review security best practices](security.md)
 - [Set up backup and restore procedures](backup-restore.md)
-- [Configure reverse proxy](production.md#reverse-proxy-setup)
+- [Configure reverse proxy](reverse-proxy.md)
 

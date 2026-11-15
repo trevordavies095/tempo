@@ -89,6 +89,7 @@ nav:
     - deployment/index.md
     - deployment/docker.md
     - deployment/production.md
+    - deployment/reverse-proxy.md
     - deployment/security.md
     - deployment/backup-restore.md
   - Troubleshooting:
