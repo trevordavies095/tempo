@@ -141,9 +141,9 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
             (await db.WorkoutMedia.CountAsync()).Should().Be(2);
             (await db.UserSettings.CountAsync()).Should().Be(1);
 
-            // Best efforts are recomputed after restore, not imported
-            (await db.WorkoutBestEfforts.CountAsync()).Should().Be(0);
-            (await db.Workouts.AllAsync(w => w.BestEffortsComputedAt == null)).Should().BeTrue();
+            // Best efforts are not imported; the restore recomputes them from the workouts before
+            // the job completes (#218)
+            (await db.Workouts.AllAsync(w => w.BestEffortsComputedAt != null)).Should().BeTrue();
 
             // Verify GUIDs preserved
             (await db.Shoes.AnyAsync(s => s.Id == shoe1!.Id)).Should().BeTrue();
@@ -373,8 +373,10 @@ public class ImportExportTests : IClassFixture<TempoWebApplicationFactory>
 
         using var scope = _factory.Server.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
-        (await db.WorkoutBestEfforts.AnyAsync()).Should().BeFalse();
-        (await db.Workouts.SingleAsync(w => w.Id == workoutId)).BestEffortsComputedAt.Should().BeNull();
+        // The old file's record (5K in 1800 s) is ignored; the restore recomputes best efforts from
+        // the workout itself before the job completes (#218)
+        (await db.WorkoutBestEfforts.AnyAsync(e => e.WorkoutId == workoutId && e.TimeS == 1800)).Should().BeFalse();
+        (await db.Workouts.SingleAsync(w => w.Id == workoutId)).BestEffortsComputedAt.Should().NotBeNull();
     }
 
     [Fact]

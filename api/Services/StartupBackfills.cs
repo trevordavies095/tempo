@@ -5,8 +5,8 @@ namespace Tempo.Api.Services;
 
 public enum StartupBackfillMode
 {
-    Run,
     Skip,
+    Run,
     Force,
 }
 
@@ -21,14 +21,16 @@ public sealed record BackfillDefinition(
     Func<IServiceProvider, CancellationToken, Task<int>> RunAsync);
 
 /// <summary>
-/// <c>Tempo:Backfills:OnStartup</c> and the backfill set. Host config only (restart to change).
+/// The upgrade backfills and <c>Tempo:Backfills:OnStartup</c> (#217, #218). Default <c>skip</c>:
+/// normal starts run none and only check that all are recorded complete. Backfills run from a Tempo
+/// ZIP restore, the <c>backfill</c> command, or the opt-in <c>run</c> / <c>force</c> startup modes.
 /// </summary>
 public static class StartupBackfills
 {
     public const string ConfigKey = "Tempo:Backfills:OnStartup";
 
-    public const string RunName = "run";
     public const string SkipName = "skip";
+    public const string RunName = "run";
     public const string ForceName = "force";
 
     /// <summary>Run order. Names match each backfill's "&lt;name&gt; backfill: N of N" log line.</summary>
@@ -43,21 +45,23 @@ public static class StartupBackfills
         new("best effort", 1, (sp, ct) => sp.GetRequiredService<BestEffortBackfillService>().RunAsync(ct)),
     ];
 
+    public const string CatchUpCommand = "docker compose exec api dotnet Tempo.Api.dll backfill";
+
     /// <summary>
-    /// Null, empty, or whitespace → <see cref="StartupBackfillMode.Run"/>. Case-insensitive.
+    /// Null, empty, or whitespace → <see cref="StartupBackfillMode.Skip"/>. Case-insensitive.
     /// Unknown values throw before the host listens.
     /// </summary>
     public static StartupBackfillMode Parse(string? value)
     {
         var trimmed = value?.Trim();
-        if (string.IsNullOrEmpty(trimmed) || string.Equals(trimmed, RunName, StringComparison.OrdinalIgnoreCase))
-        {
-            return StartupBackfillMode.Run;
-        }
-
-        if (string.Equals(trimmed, SkipName, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(trimmed) || string.Equals(trimmed, SkipName, StringComparison.OrdinalIgnoreCase))
         {
             return StartupBackfillMode.Skip;
+        }
+
+        if (string.Equals(trimmed, RunName, StringComparison.OrdinalIgnoreCase))
+        {
+            return StartupBackfillMode.Run;
         }
 
         if (string.Equals(trimmed, ForceName, StringComparison.OrdinalIgnoreCase))
@@ -66,26 +70,64 @@ public static class StartupBackfills
         }
 
         throw new InvalidOperationException(
-            $"Unknown {ConfigKey} '{trimmed}'. Allowed values: {RunName}, {SkipName}, {ForceName}.");
+            $"Unknown {ConfigKey} '{trimmed}'. Allowed values: {SkipName}, {RunName}, {ForceName}.");
     }
 
     /// <summary>
-    /// Registers the runner and its rerun signal. The runner owns every backfill: a startup pass per
-    /// <paramref name="mode"/>, then a full pass whenever a Tempo ZIP restore asks for one.
+    /// Registers the backfill set (restore and the <c>backfill</c> command use it) and, only for
+    /// <c>run</c> / <c>force</c>, the one-shot startup runner.
     /// </summary>
     public static IServiceCollection AddStartupBackfills(this IServiceCollection services, StartupBackfillMode mode)
     {
         services.AddSingleton(typeof(StartupBackfillMode), mode);
         services.AddSingleton<IReadOnlyList<BackfillDefinition>>(All);
-        services.AddSingleton<BackfillRerunSignal>();
-        services.AddHostedService<BackfillRunner>();
+        if (mode != StartupBackfillMode.Skip)
+        {
+            services.AddHostedService<BackfillRunner>();
+        }
+
         return services;
     }
 
     /// <summary>
-    /// Forgets completion records so every backfill runs again: on the restore-triggered pass and, if
-    /// the process stops before that pass finishes, on the next start.
+    /// Default-start check after migrations (<c>skip</c> mode): one query, runs nothing. A library with
+    /// no workouts has nothing to fill, so every backfill is recorded complete. A library with workouts
+    /// and pending backfills (a skipped-version upgrade, or a restore cut short) gets a warning naming
+    /// the catch-up command.
+    /// </summary>
+    public static async Task CheckAsync(
+        TempoDbContext db,
+        IReadOnlyList<BackfillDefinition> backfills,
+        ILogger logger,
+        CancellationToken cancellationToken = default)
+    {
+        var pending = BackfillPass.Pending(backfills, await BackfillPass.LoadCompletedAsync(db, cancellationToken));
+        if (pending.Count == 0)
+        {
+            logger.LogInformation("Startup backfills: all {Count} complete; none run", backfills.Count);
+            return;
+        }
+
+        if (!await db.Workouts.AnyAsync(cancellationToken))
+        {
+            await BackfillPass.RecordCompletedAsync(db, pending, cancellationToken);
+            logger.LogInformation(
+                "Startup backfills: no workouts yet, nothing to fill; recorded all {Count} complete", backfills.Count);
+            return;
+        }
+
+        logger.LogWarning(
+            "Startup backfills: {Pending} of {Count} have not completed on this library ({Names}). Older workouts may be missing derived data until you run: {Command} (or set TEMPO_BACKFILLS_ON_STARTUP=run for one start)",
+            pending.Count, backfills.Count, Names(pending), CatchUpCommand);
+    }
+
+    /// <summary>
+    /// Forgets completion records so every backfill counts as pending again. Called by a restore before
+    /// it repairs, so a repair cut short is caught by the startup check.
     /// </summary>
     public static Task ClearCompletedAsync(TempoDbContext db, CancellationToken cancellationToken = default) =>
         db.CompletedBackfills.ExecuteDeleteAsync(cancellationToken);
+
+    public static string Names(IEnumerable<BackfillDefinition> backfills) =>
+        string.Join(", ", backfills.Select(b => b.Name));
 }

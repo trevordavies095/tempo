@@ -36,8 +36,8 @@ services:
       JWT__SecretKey: "${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env (copy .env.example)}"
       # Named logging profile: standard (default) | debug. Restart API after changing.
       Tempo__Logging__Profile: "${TEMPO_LOGGING_PROFILE:-standard}"
-      # Startup backfills: run (default, until recorded complete) | skip | force. See docs/getting-started/configuration.md
-      Tempo__Backfills__OnStartup: "${TEMPO_BACKFILLS_ON_STARTUP:-run}"
+      # Startup backfills: skip (default; check only) | run | force. Catch up with: exec api dotnet Tempo.Api.dll backfill
+      Tempo__Backfills__OnStartup: "${TEMPO_BACKFILLS_ON_STARTUP:-skip}"
       # CARTO basemaps (optional; set CARTO_BASEMAPS_API_KEY in .env)
       CartoBasemaps__ApiKey: "${CARTO_BASEMAPS_API_KEY:-}"
       # Session cookie is always Secure (HTTPS-only). Plain-HTTP trusted LAN only: TEMPO_COOKIE_SECURE=false

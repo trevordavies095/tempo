@@ -200,25 +200,39 @@ Unset still means `standard` even when `ASPNETCORE_ENVIRONMENT=Development`.
 
 ## Startup backfills
 
-Some upgrades add data that older workouts don't have yet (route previews, timer time, device laps, zone seconds, best efforts, ...). After the API starts, a background runner fills it in one backfill at a time, without blocking browsing or `/ready`. Each backfill logs `<name> backfill: N of N`.
+Some upgrades add data that older workouts don't have yet (route previews, timer time, device laps, zone seconds, best efforts, ...). Tempo fills it in with backfills. Each logs `<name> backfill: N of N` and, once a run finds nothing to do (`0 of 0`), is recorded complete in the `CompletedBackfills` table.
 
-A backfill runs on each start until a pass finds nothing to do (`0 of 0`). Tempo then records it complete in the `CompletedBackfills` table, and later starts skip it. After an upgrade that adds or changes a backfill, expect one start that does the work, one that confirms `0 of 0`, and then quiet restarts. See the [upgrade steps](../deployment/docker.md#updating).
+**Normal starts run none.** After migrations, one query checks the records:
+
+| Startup log | Meaning |
+|-------------|---------|
+| `Startup backfills: all 7 complete; none run` | Nothing to do. |
+| `Startup backfills: no workouts yet, nothing to fill; recorded all 7 complete` | New install. |
+| `WRN Startup backfills: N of 7 have not completed on this library (...)` | An install that skipped versions, or a restore cut short. Run the command below once. |
+
+### When backfills run
+
+- **Tempo ZIP restore**: repairs the restored workouts before the job reports **Completed**, so a finished restore is fully usable without a restart.
+- **The `backfill` command**: runs every backfill not yet recorded, records them, and exits. Safe while the API is running.
+  ```bash
+  docker compose -f docker-compose.prod.yml exec api dotnet Tempo.Api.dll backfill
+  # rerun everything, even recorded ones:
+  docker compose -f docker-compose.prod.yml exec api dotnet Tempo.Api.dll backfill --force
+  ```
+  Exit code 0 when all are recorded complete, 1 otherwise (see the log).
+- **Opt-in at startup** (for hosts where you can't run a command in the container), via `Tempo:Backfills:OnStartup`:
 
 | Value | Behavior |
 |-------|----------|
-| `run` (default) | Runs every backfill not yet recorded complete. When none are pending, logs `Startup backfills: all 7 complete; none run`. |
-| `skip` | Runs none on start. For debugging a hang. |
-| `force` | Runs all of them, recorded or not, and records them again. Use it if you suspect a recorded backfill missed something. |
+| `skip` (default) | Run none; check and warn as above. |
+| `run` | Run the pending ones in the background once, without blocking browsing or `/ready`. |
+| `force` | Run all of them in the background once, recorded or not. |
 
-A Tempo ZIP restore that imports workouts clears the records and runs every backfill right away, in every mode, so restored workouts from older exports are repaired without a restart. If the API stops before that finishes, the next start runs them (unless `skip`).
-
-Startup logs which backfills will run, or that none are pending, and a final `Backfills finished: …` line. Empty or unset → `run`. Unknown values refuse to start (allowed: `run`, `skip`, `force`; case-insensitive). Host config only; restart to change.
-
-Don't leave `skip` on across an upgrade. A release that adds a backfill needs a `run` start to fill older workouts.
+Empty or unset → `skip`. Unknown values refuse to start (allowed: `skip`, `run`, `force`; case-insensitive). Host config only; restart to change. Set `run` back to `skip` (or remove it) once the log says `Backfills finished: all 7 recorded complete`.
 
 ```bash
-# Compose .env
-TEMPO_BACKFILLS_ON_STARTUP=force
+# Compose .env, for one start
+TEMPO_BACKFILLS_ON_STARTUP=run
 ```
 
 ## Environment Variables Reference
@@ -234,7 +248,7 @@ All configuration can be set via environment variables using the double undersco
 | `ElevationCalculation:MinDistanceMeters` | `ElevationCalculation__MinDistanceMeters` | `10.0` |
 | `CartoBasemaps:ApiKey` | `CartoBasemaps__ApiKey` or `CARTO_BASEMAPS_API_KEY` (via compose `.env`) | empty (watermarked tiles) |
 | `Tempo:Logging:Profile` | `Tempo__Logging__Profile` or `TEMPO_LOGGING_PROFILE` (via compose `.env`) | `standard` |
-| `Tempo:Backfills:OnStartup` | `Tempo__Backfills__OnStartup` or `TEMPO_BACKFILLS_ON_STARTUP` (via compose `.env`) | `run` |
+| `Tempo:Backfills:OnStartup` | `Tempo__Backfills__OnStartup` or `TEMPO_BACKFILLS_ON_STARTUP` (via compose `.env`) | `skip` |
 | `CORS:AllowedOrigins` | `CORS__AllowedOrigins` | `http://localhost:3000` |
 | `Cookie:Secure` | `Cookie__Secure` or `TEMPO_COOKIE_SECURE` (via compose `.env`) | unset (always `Secure` in Production) — see [Reverse Proxy](../deployment/reverse-proxy.md) |
 | `Cookie:Domain` | `Cookie__Domain` | unset (host-only cookie) |

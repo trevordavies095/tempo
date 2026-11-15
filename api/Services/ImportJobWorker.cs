@@ -152,12 +152,18 @@ public class ImportJobWorker : BackgroundService
                 ApplyTempoProgressFromResult(completed, result, completed.Total);
 
                 // Restored workouts can lack derived fields (best efforts, and older exports: timer time,
-                // cadence unit, device laps, ...). Forget completion records first so a crash before the
-                // pass finishes still repairs on next start, then run every backfill now.
+                // cadence unit, device laps, ...). Repair them before the job reports done. Runs even if
+                // the restore was cancelled (imported workouts stay). Records are cleared first, so a repair
+                // cut short by shutdown leaves them pending and the startup check warns.
                 if (result.Statistics.Workouts.Imported > 0)
                 {
                     await StartupBackfills.ClearCompletedAsync(db, CancellationToken.None);
-                    scope.ServiceProvider.GetRequiredService<BackfillRerunSignal>().Request();
+                    logger.LogInformation("Tempo restore: repairing restored workouts (all backfills)");
+                    await BackfillPass.RunAsync(
+                        _scopeFactory,
+                        scope.ServiceProvider.GetRequiredService<IReadOnlyList<BackfillDefinition>>(),
+                        logger,
+                        stoppingToken);
                 }
 
                 if (await IsCancelRequestedAsync(db, jobId))

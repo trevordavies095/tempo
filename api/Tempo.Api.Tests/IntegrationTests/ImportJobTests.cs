@@ -565,10 +565,18 @@ public class ImportJobTests : IClassFixture<TempoWebApplicationFactory>
         var started = await response.Content.ReadFromJsonAsync<ImportJobDocument>(JsonOptions);
         started!.Kind.Should().Be(ImportJobKinds.TempoExport);
 
+        var restoreStartedAt = DateTime.UtcNow;
         var job = await PollUntilTerminalAsync(client, started.Id);
         job.Status.Should().Be(ImportJobStatuses.Completed);
         job.Statistics.Should().NotBeNull();
         job.Statistics!.Workouts.Imported.Should().BeGreaterThan(0);
+
+        // #218: the restore repairs before reporting done; no restart needed
+        using var verifyScope = _factory.Server.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TempoDbContext>();
+        var completed = await verifyDb.CompletedBackfills.AsNoTracking().ToListAsync();
+        completed.Select(c => c.Name).Should().BeEquivalentTo(StartupBackfills.All.Select(b => b.Name));
+        completed.Should().OnlyContain(c => c.CompletedAt >= restoreStartedAt.AddSeconds(-5));
     }
 
     [Fact]
