@@ -123,14 +123,18 @@ An upgrade is not a no-op reboot. Migrations run on API start, and some releases
    docker compose -f docker-compose.prod.yml pull
    docker compose -f docker-compose.prod.yml up -d
    ```
-5. **Wait for backfills to finish.** The API logs which backfills will run (`Startup backfills: run N of 7: ...`) or `Startup backfills: all 7 complete; none run`. Each one that runs logs progress, then a final `Backfills finished: ...` line appears:
+5. **Check the backfill line.** Starts don't run backfills. The API logs `Startup backfills: all 7 complete; none run` when there's nothing to do:
    ```bash
-   docker compose -f docker-compose.prod.yml logs -f api | grep -i backfill
+   docker compose -f docker-compose.prod.yml logs api | grep -i "startup backfills"
    ```
-   A backfill is recorded complete once a pass finds nothing to do (`0 of 0`), so after an upgrade that adds one, the next restart confirms it and later restarts skip it. On a large library, the first boot after such an upgrade can mean extra CPU, disk, and Postgres WAL for a while. Browsing works throughout, but some values (e.g. best efforts for a date range) fill in as the backfills progress.
+   If it warns that some `have not completed on this library` (an install that skipped versions, or a release that adds a backfill), run the catch-up command once and wait for `Backfills finished: all 7 recorded complete`:
+   ```bash
+   docker compose -f docker-compose.prod.yml exec api dotnet Tempo.Api.dll backfill
+   ```
+   On a large library this can take a while and means extra CPU, disk, and Postgres WAL. Browsing works throughout. Tempo 2.11.0 and earlier ran every backfill on every start instead.
 6. **Smoke test.** `curl -f https://tempo.example.com/api/ready` returns 200 once the API can reach the database. It does **not** wait for backfills.
 
-To skip backfills on a restart (for example, while debugging a hang) or to force a full re-run, see [Startup backfills](../getting-started/configuration.md#startup-backfills).
+To run backfills at startup instead (hosts without `exec`), or to force a full re-run, see [Startup backfills](../getting-started/configuration.md#startup-backfills).
 
 ### Leaving the experimental `:feat-ai-coach` image
 

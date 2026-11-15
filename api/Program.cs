@@ -50,7 +50,29 @@ if (ResetPasswordCommand.IsVerb(args))
     }
 }
 
-var builder = WebApplication.CreateBuilder(resetCommand is not null ? [] : args);
+BackfillArgs? backfillCommand = null;
+if (BackfillCommand.IsVerb(args))
+{
+    if (!BackfillCommand.TryParse(args, out var parsedBackfill, out var backfillError))
+    {
+        Console.Error.WriteLine(backfillError);
+        Console.Error.WriteLine();
+        Console.Error.WriteLine(BackfillCommand.Usage);
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    if (parsedBackfill.Help)
+    {
+        Console.Out.WriteLine(BackfillCommand.Usage);
+        return;
+    }
+
+    backfillCommand = parsedBackfill;
+}
+
+var isCommand = resetCommand is not null || backfillCommand is not null;
+var builder = WebApplication.CreateBuilder(isCommand ? [] : args);
 
 // Named logging profile owns Serilog levels (not MEL Logging:LogLevel / Serilog__* overrides)
 var loggingProfile = LoggingProfile.Parse(builder.Configuration[LoggingProfile.ConfigKey]);
@@ -207,8 +229,8 @@ builder.Services.AddScoped<TimerTimeBackfillService>();
 builder.Services.AddScoped<DeviceLapBackfillService>();
 builder.Services.AddScoped<ZoneSecondsBackfillService>();
 builder.Services.AddScoped<BestEffortBackfillService>();
-// Upgrade backfills: Tempo:Backfills:OnStartup = run (default) | skip | force. Never gate /ready on these.
-// The runner logs which backfills run (or that none are pending) once the database is reachable.
+// Upgrade backfills: Tempo:Backfills:OnStartup = skip (default) | run | force. Never gate /ready on these.
+// skip (default): checked after migrations, none run. run / force: one-shot background runner.
 var startupBackfillMode = StartupBackfills.Parse(builder.Configuration[StartupBackfills.ConfigKey]);
 builder.Services.AddStartupBackfills(startupBackfillMode);
 builder.Services.AddScoped<SplitRecalculationService>();
@@ -300,6 +322,23 @@ if (resetCommand is not null)
     return;
 }
 
+if (backfillCommand is not null)
+{
+    // Same schema the API would run against; a no-op when the API already migrated
+    using (var migrateScope = app.Services.CreateScope())
+    {
+        DatabaseMigrationHelper.ApplyMigrations(migrateScope.ServiceProvider.GetRequiredService<TempoDbContext>());
+    }
+
+    var backfillLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(BackfillCommand));
+    Environment.ExitCode = await BackfillCommand.ExecuteAsync(
+        app.Services.GetRequiredService<IServiceScopeFactory>(),
+        app.Services.GetRequiredService<IReadOnlyList<BackfillDefinition>>(),
+        backfillCommand.Force,
+        backfillLogger);
+    return;
+}
+
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
@@ -362,6 +401,23 @@ try
             DatabaseMigrationHelper.ApplyMigrations(db);
         }
         Log.Information("Database migrations completed successfully");
+
+        // Default start runs no backfills; one query confirms they're recorded complete (#218)
+        if (startupBackfillMode == StartupBackfillMode.Skip)
+        {
+            try
+            {
+                using var scope = app.Services.CreateScope();
+                await StartupBackfills.CheckAsync(
+                    scope.ServiceProvider.GetRequiredService<TempoDbContext>(),
+                    StartupBackfills.All,
+                    scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(StartupBackfills)));
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not check startup backfill status");
+            }
+        }
     }
 }
 catch (Exception ex)

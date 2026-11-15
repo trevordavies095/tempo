@@ -71,16 +71,13 @@ public class RoutePreviewBackfillTests : IClassFixture<TempoWebApplicationFactor
         using (var scope = _factory.Server.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            // The restore runs the route preview backfill before the job completes (#218)
             var restored = await db.WorkoutRoutes.SingleAsync(r => r.WorkoutId == workoutId);
-            restored.PreviewGeoJson.Should().BeNull();
             CountLineStringPoints(restored.RouteGeoJson).Should().Be(180);
+            restored.PreviewGeoJson.Should().NotBeNullOrEmpty();
 
             var backfill = scope.ServiceProvider.GetRequiredService<RoutePreviewBackfillService>();
-            var processed = await backfill.RunAsync();
-            processed.Should().Be(1);
-
-            restored = await db.WorkoutRoutes.SingleAsync(r => r.WorkoutId == workoutId);
-            restored.PreviewGeoJson.Should().NotBeNullOrEmpty();
+            (await backfill.RunAsync()).Should().Be(0, "nothing left for a later pass");
             CountLineStringPoints(restored.PreviewGeoJson!).Should().BeLessThanOrEqualTo(TrackGeometry.RoutePreviewMaxPoints);
             CountLineStringPoints(restored.PreviewGeoJson!).Should().BeLessThan(180);
         }
