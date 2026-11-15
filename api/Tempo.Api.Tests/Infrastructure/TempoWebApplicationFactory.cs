@@ -79,14 +79,10 @@ public class TempoWebApplicationFactory : WebApplicationFactory<Program>
         {
             // Do not remove or replace DbContext / Npgsql. Program.cs UseNpgsql uses the clone string.
 
-            // Zone seconds backfill would race tests that assert un-computed zone seconds; it is
-            // covered by ZoneSecondsBackfillServiceTests.
-            var zoneBackfill = services.Single(d => d.ImplementationType == typeof(ZoneSecondsBackfillWorker));
-            services.Remove(zoneBackfill);
-
-            // Same for per-workout best efforts; covered by BestEffortBackfillServiceTests.
-            var bestEffortBackfill = services.Single(d => d.ImplementationType == typeof(BestEffortBackfillWorker));
-            services.Remove(bestEffortBackfill);
+            // Backfills would race tests that assert un-computed fields (zone seconds, best efforts).
+            // Each backfill service has its own tests; BackfillRunnerTests covers the runner.
+            var backfillRunner = services.Single(d => d.ImplementationType == typeof(BackfillRunner));
+            services.Remove(backfillRunner);
 
             // Remove existing JWT configuration
             services.RemoveAll(typeof(IConfigureOptions<JwtBearerOptions>));

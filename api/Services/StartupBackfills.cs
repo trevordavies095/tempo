@@ -1,15 +1,27 @@
+using Microsoft.EntityFrameworkCore;
+using Tempo.Api.Data;
+
 namespace Tempo.Api.Services;
 
 public enum StartupBackfillMode
 {
     Run,
     Skip,
+    Force,
 }
 
 /// <summary>
-/// <c>Tempo:Backfills:OnStartup</c>: whether the upgrade backfill workers run when the API starts.
-/// Host config only (restart to change). <c>skip</c> is for a library that is already current or
-/// for debugging a hang; it is not the deprecation plan (#218).
+/// One upgrade backfill. <paramref name="Version"/> is bumped when the backfill's logic changes so
+/// installs that recorded it complete run it once more. <paramref name="RunAsync"/> returns rows
+/// processed; a completed pass that processed none means the backfill is done.
+/// </summary>
+public sealed record BackfillDefinition(
+    string Name,
+    int Version,
+    Func<IServiceProvider, CancellationToken, Task<int>> RunAsync);
+
+/// <summary>
+/// <c>Tempo:Backfills:OnStartup</c> and the backfill set. Host config only (restart to change).
 /// </summary>
 public static class StartupBackfills
 {
@@ -17,17 +29,18 @@ public static class StartupBackfills
 
     public const string RunName = "run";
     public const string SkipName = "skip";
+    public const string ForceName = "force";
 
-    /// <summary>Log names, in registration order. Each worker logs "{Name} backfill: N of N".</summary>
-    public static readonly IReadOnlyList<string> Names =
+    /// <summary>Run order. Names match each backfill's "&lt;name&gt; backfill: N of N" log line.</summary>
+    public static readonly IReadOnlyList<BackfillDefinition> All =
     [
-        "workout route preview",
-        "split heart rate",
-        "FIT cadence",
-        "timer time",
-        "device lap",
-        "zone seconds",
-        "best effort",
+        new("workout route preview", 1, (sp, ct) => sp.GetRequiredService<RoutePreviewBackfillService>().RunAsync(ct)),
+        new("split heart rate", 1, (sp, ct) => sp.GetRequiredService<SplitHeartRateBackfillService>().RunAsync(ct)),
+        new("FIT cadence", 1, (sp, ct) => sp.GetRequiredService<CadenceBackfillService>().RunAsync(ct)),
+        new("timer time", 1, (sp, ct) => sp.GetRequiredService<TimerTimeBackfillService>().RunAsync(ct)),
+        new("device lap", 1, (sp, ct) => sp.GetRequiredService<DeviceLapBackfillService>().RunAsync(ct)),
+        new("zone seconds", 1, (sp, ct) => sp.GetRequiredService<ZoneSecondsBackfillService>().RunAsync(ct)),
+        new("best effort", 1, (sp, ct) => sp.GetRequiredService<BestEffortBackfillService>().RunAsync(ct)),
     ];
 
     /// <summary>
@@ -36,47 +49,43 @@ public static class StartupBackfills
     /// </summary>
     public static StartupBackfillMode Parse(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value) ||
-            string.Equals(value.Trim(), RunName, StringComparison.OrdinalIgnoreCase))
+        var trimmed = value?.Trim();
+        if (string.IsNullOrEmpty(trimmed) || string.Equals(trimmed, RunName, StringComparison.OrdinalIgnoreCase))
         {
             return StartupBackfillMode.Run;
         }
 
-        if (string.Equals(value.Trim(), SkipName, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(trimmed, SkipName, StringComparison.OrdinalIgnoreCase))
         {
             return StartupBackfillMode.Skip;
         }
 
+        if (string.Equals(trimmed, ForceName, StringComparison.OrdinalIgnoreCase))
+        {
+            return StartupBackfillMode.Force;
+        }
+
         throw new InvalidOperationException(
-            $"Unknown {ConfigKey} '{value.Trim()}'. Allowed values: {RunName}, {SkipName}.");
+            $"Unknown {ConfigKey} '{trimmed}'. Allowed values: {RunName}, {SkipName}, {ForceName}.");
     }
 
-    /// <summary>The one startup line that names the backfill set (or says it is skipped).</summary>
-    public static string DescribeStartup(StartupBackfillMode mode) =>
-        mode == StartupBackfillMode.Run
-            ? $"Startup backfills: run ({string.Join(", ", Names)}). Each logs \"<name> backfill: N of N\"; \"0 of 0\" means already current."
-            : $"Startup backfills: skip ({ConfigKey}=skip). Best effort backfill still runs after a Tempo ZIP restore.";
-
     /// <summary>
-    /// Registers the startup backfill workers. <c>skip</c> registers none of the startup-only
-    /// workers; the best-effort worker stays so restores still fill best efforts, but skips its
-    /// startup pass.
+    /// Registers the runner and its rerun signal. The runner owns every backfill: a startup pass per
+    /// <paramref name="mode"/>, then a full pass whenever a Tempo ZIP restore asks for one.
     /// </summary>
     public static IServiceCollection AddStartupBackfills(this IServiceCollection services, StartupBackfillMode mode)
     {
         services.AddSingleton(typeof(StartupBackfillMode), mode);
-
-        if (mode == StartupBackfillMode.Run)
-        {
-            services.AddHostedService<RoutePreviewBackfillWorker>();
-            services.AddHostedService<SplitHeartRateBackfillWorker>();
-            services.AddHostedService<CadenceBackfillWorker>();
-            services.AddHostedService<TimerTimeBackfillWorker>();
-            services.AddHostedService<DeviceLapBackfillWorker>();
-            services.AddHostedService<ZoneSecondsBackfillWorker>();
-        }
-
-        services.AddHostedService<BestEffortBackfillWorker>();
+        services.AddSingleton<IReadOnlyList<BackfillDefinition>>(All);
+        services.AddSingleton<BackfillRerunSignal>();
+        services.AddHostedService<BackfillRunner>();
         return services;
     }
+
+    /// <summary>
+    /// Forgets completion records so every backfill runs again: on the restore-triggered pass and, if
+    /// the process stops before that pass finishes, on the next start.
+    /// </summary>
+    public static Task ClearCompletedAsync(TempoDbContext db, CancellationToken cancellationToken = default) =>
+        db.CompletedBackfills.ExecuteDeleteAsync(cancellationToken);
 }

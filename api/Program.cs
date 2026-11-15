@@ -206,11 +206,10 @@ builder.Services.AddScoped<CadenceBackfillService>();
 builder.Services.AddScoped<TimerTimeBackfillService>();
 builder.Services.AddScoped<DeviceLapBackfillService>();
 builder.Services.AddScoped<ZoneSecondsBackfillService>();
-builder.Services.AddSingleton<BestEffortBackfillSignal>();
 builder.Services.AddScoped<BestEffortBackfillService>();
-// Upgrade backfills: Tempo:Backfills:OnStartup = run (default) | skip. Never gate /ready on these.
+// Upgrade backfills: Tempo:Backfills:OnStartup = run (default) | skip | force. Never gate /ready on these.
+// The runner logs which backfills run (or that none are pending) once the database is reachable.
 var startupBackfillMode = StartupBackfills.Parse(builder.Configuration[StartupBackfills.ConfigKey]);
-Log.Information("{StartupBackfills:l}", StartupBackfills.DescribeStartup(startupBackfillMode));
 builder.Services.AddStartupBackfills(startupBackfillMode);
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
