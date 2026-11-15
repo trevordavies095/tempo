@@ -28,7 +28,7 @@ function formatShortDate(value: string): string {
 
 function NewPill() {
   return (
-    <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-semibold text-inverse dark:bg-volt dark:text-on-volt">
+    <span className="rounded-full border border-ink/25 px-1.5 py-px text-[10px] font-semibold uppercase leading-tight tracking-wide text-ink dark:border-volt/40 dark:text-volt">
       New
     </span>
   );
@@ -38,7 +38,7 @@ function PreviousBest({ item }: { item: BestEffortItem }) {
   const previous = item.previousTimeS;
   if (previous == null) return null;
   const text = `Was ${formatEffortTime(previous)}${
-    item.previousWorkoutDate ? ` on ${formatShortDate(item.previousWorkoutDate)}` : ''
+    item.previousWorkoutDate ? ` · ${formatShortDate(item.previousWorkoutDate)}` : ''
   }`;
   return item.previousWorkoutId ? (
     <Link
@@ -108,21 +108,20 @@ export function BestEffortsTable({
                   </span>
                 </th>
                 <td className="px-3 py-2 text-sm align-top">
-                  <Link
-                    href={`/dashboard/${item.workoutId}`}
-                    className="font-semibold text-ink tabular-nums underline decoration-border hover:decoration-ink"
-                  >
-                    {formatEffortTime(item.timeS)}
-                  </Link>
+                  <span className="inline-flex flex-wrap items-baseline gap-x-2">
+                    <Link
+                      href={`/dashboard/${item.workoutId}`}
+                      className="font-semibold text-ink tabular-nums underline decoration-border hover:decoration-ink"
+                    >
+                      {formatEffortTime(item.timeS)}
+                    </Link>
+                    <span className="text-xs font-medium tabular-nums text-hr-zone-1">
+                      <Improvement item={item} />
+                    </span>
+                  </span>
                   {item.previousTimeS != null ? (
-                    <div className="mt-0.5 text-xs text-muted tabular-nums">
+                    <div className="mt-0.5 whitespace-nowrap text-xs text-muted tabular-nums">
                       <PreviousBest item={item} />
-                      {item.previousTimeS > item.timeS ? (
-                        <>
-                          {' · '}
-                          <Improvement item={item} />
-                        </>
-                      ) : null}
                     </div>
                   ) : null}
                 </td>
