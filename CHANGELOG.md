@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Startup backfill contract (#217)** - New `Tempo:Backfills:OnStartup` = `run` (default) | `skip` (`TEMPO_BACKFILLS_ON_STARTUP` in production Compose `.env`). Startup logs one line naming the seven backfills, or that they are skipped. `skip` registers none of the startup-only workers; the best-effort worker skips its startup pass but still runs after a Tempo ZIP restore. Unknown values fail startup. `/ready` still never waits on backfills. Docs: an upgrade runbook replaces the four-step "Updating" section (back up, matching api/frontend tags, no restart during an import job, since restart marks it `interrupted` and deletes its archive, then wait for each backfill to log `0 of 0` / `N of N`).
 - **`GET /stats/weekly` optional `referenceDate`** - Same `yyyy-MM-dd` week-selection semantics as `GET /stats/weekly-recap` and `GET /stats/relative-effort`: the Monday–Sunday week containing the date (local calendar under `timezoneOffsetMinutes`) is the current week and the week before it the previous week, so clients can load daily distances for a past week. Omitting the param preserves today's behavior and response. Invalid dates return `400 { error }`. Response shape unchanged.
 
 ### Changed

@@ -113,13 +113,24 @@ Media files are stored in the `./media` directory, mounted as a volume. Ensure t
 
 ## Updating
 
-To update to a new version:
+An upgrade is not a no-op reboot. Migrations run on API start, and some releases then rewrite older workouts in the background (startup backfills). Follow these steps:
 
-1. Update image tags in `docker-compose.prod.yml`
-2. Pull new images: `docker compose -f docker-compose.prod.yml pull`
-3. Restart services: `docker compose -f docker-compose.prod.yml up -d`
+1. **Back up.** Back up the database with `pg_dump` and copy `./media`, or download a Settings → Export ZIP. See [Backup and Restore](backup-restore.md).
+2. **Pin matching tags.** Set the api **and** frontend images in `docker-compose.prod.yml` to the same release tag (e.g. `v2.11.0`). Don't use `latest`, and don't mix versions.
+3. **Don't restart during an import.** Check that no Strava ZIP import or Tempo restore is in progress. When the API starts, it marks any unfinished import job `failed` (`interrupted`) and deletes its uploaded archive. The job does not resume; start it again after the upgrade.
+4. **Pull and start.**
+   ```bash
+   docker compose -f docker-compose.prod.yml pull
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+5. **Wait for backfills to go idle.** The API logs one `Startup backfills: run (...)` line, then each backfill logs progress and a final line:
+   ```bash
+   docker compose -f docker-compose.prod.yml logs -f api | grep -i backfill
+   ```
+   `<name> backfill: 0 of 0` means that backfill had nothing to do. `N of N` means it finished. On a large library, the first boot after an upgrade that adds a backfill can mean extra CPU, disk, and Postgres WAL for a while. Browsing works throughout, but some values (e.g. best efforts for a date range) fill in as the backfills progress.
+6. **Smoke test.** `curl -f https://tempo.example.com/api/ready` returns 200 once the API can reach the database. It does **not** wait for backfills.
 
-Database migrations run automatically on API startup.
+To skip backfills on a restart (for example, the library is already current, or you're debugging a hang), see [Startup backfills](../getting-started/configuration.md#startup-backfills).
 
 ### Leaving the experimental `:feat-ai-coach` image
 
