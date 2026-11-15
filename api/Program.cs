@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
@@ -80,6 +81,14 @@ builder.Services.AddCors(options =>
               .SetPreflightMaxAge(TimeSpan.FromSeconds(86400));
     });
 });
+
+// Session cookie and reverse proxy (see docs/deployment/reverse-proxy.md).
+// Both parse at startup; bad values fail before the host listens.
+var authCookieSettings = AuthCookie.ReadSettings(builder.Configuration);
+builder.Services.AddSingleton(authCookieSettings);
+var trustedProxyNetworks = TrustedProxies.Parse(builder.Configuration[TrustedProxies.ConfigKey]);
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    TrustedProxies.Configure(options, trustedProxyNetworks));
 
 // Configure JWT Authentication
 var jwtSecretKey = builder.Configuration["JWT:SecretKey"] 
@@ -294,6 +303,16 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+if (authCookieSettings.SecureOverride == false)
+{
+    Log.Warning(
+        "Cookie:Secure=false: session cookies are sent without the Secure flag. " +
+        "Only use this on a trusted LAN over plain HTTP; never on an internet-facing install.");
+}
+
+// First, so Request.IsHttps and RemoteIpAddress reflect the edge proxy (trusted peers only)
+app.UseForwardedHeaders();
 
 // CORS must be placed as early as possible, before any other middleware
 // Minimal APIs handle routing implicitly, so explicit UseRouting() is not needed

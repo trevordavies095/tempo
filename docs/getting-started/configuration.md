@@ -114,7 +114,7 @@ environment:
 ### Security Requirements
 
 - The JWT secret key should be at least 32 characters and cryptographically random
-- Use HTTPS in production (required for secure cookie transmission)
+- Use HTTPS in production (session cookies are `Secure`; see [Reverse Proxy and Login Cookies](../deployment/reverse-proxy.md))
 - Change the default database password in production
 - Store the JWT secret key securely (environment variables, secrets manager, etc.)
 
@@ -211,7 +211,10 @@ All configuration can be set via environment variables using the double undersco
 | `ElevationCalculation:MinDistanceMeters` | `ElevationCalculation__MinDistanceMeters` | `10.0` |
 | `CartoBasemaps:ApiKey` | `CartoBasemaps__ApiKey` or `CARTO_BASEMAPS_API_KEY` (via compose `.env`) | empty (watermarked tiles) |
 | `Tempo:Logging:Profile` | `Tempo__Logging__Profile` or `TEMPO_LOGGING_PROFILE` (via compose `.env`) | `standard` |
-| `CORS:AllowedOrigins` | `CORS__AllowedOrigins` | - |
+| `CORS:AllowedOrigins` | `CORS__AllowedOrigins` | `http://localhost:3000` |
+| `Cookie:Secure` | `Cookie__Secure` or `TEMPO_COOKIE_SECURE` (via compose `.env`) | unset (always `Secure` in Production) — see [Reverse Proxy](../deployment/reverse-proxy.md) |
+| `Cookie:Domain` | `Cookie__Domain` | unset (host-only cookie) |
+| `Tempo:Proxy:TrustedNetworks` | `Tempo__Proxy__TrustedNetworks` | loopback + private ranges |
 | `JWT:SecretKey` | `JWT__SecretKey` | - (REQUIRED in production) |
 | `JWT:Issuer` | `JWT__Issuer` | `Tempo` |
 | `JWT:Audience` | `JWT__Audience` | `Tempo` |

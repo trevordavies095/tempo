@@ -20,7 +20,9 @@ This guide covers security best practices for deploying Tempo in production.
 
 ### HTTPS
 
-**REQUIRED** for production deployments. JWT tokens are stored in httpOnly cookies, which require HTTPS for secure transmission.
+**REQUIRED** for production deployments. The session cookie is `HttpOnly` and, in Production, always `Secure`, so browsers only send it over HTTPS. See [Reverse Proxy and Login Cookies](reverse-proxy.md).
+
+`TEMPO_COOKIE_SECURE=false` exists only for plain HTTP on a trusted LAN. Never set it on an internet-facing install.
 
 - Use valid SSL/TLS certificates
 - Configure reverse proxy (Nginx, Traefik, etc.)
@@ -93,7 +95,8 @@ Use a reverse proxy (Nginx, Traefik) to:
 - Hide internal service ports
 - Add security headers
 - Implement rate limiting
-- Use **one** upstream to `127.0.0.1:3004` (see [production.md](production.md#reverse-proxy-setup))
+- Use **one** upstream to `127.0.0.1:3004` (see [Reverse Proxy and Login Cookies](reverse-proxy.md))
+- Forwarded headers are honored only from loopback and private ranges (`Tempo__Proxy__TrustedNetworks`); narrow the list if untrusted hosts can reach the API port
 
 ## Application Security
 
