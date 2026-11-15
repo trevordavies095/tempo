@@ -67,6 +67,23 @@ namespace Tempo.Api.Migrations
                     b.ToTable("ApiKeys");
                 });
 
+            modelBuilder.Entity("Tempo.Api.Models.CompletedBackfill", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Name");
+
+                    b.ToTable("CompletedBackfills");
+                });
+
             modelBuilder.Entity("Tempo.Api.Models.ImportJob", b =>
                 {
                     b.Property<Guid>("Id")

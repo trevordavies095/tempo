@@ -123,14 +123,14 @@ An upgrade is not a no-op reboot. Migrations run on API start, and some releases
    docker compose -f docker-compose.prod.yml pull
    docker compose -f docker-compose.prod.yml up -d
    ```
-5. **Wait for backfills to go idle.** The API logs one `Startup backfills: run (...)` line, then each backfill logs progress and a final line:
+5. **Wait for backfills to finish.** The API logs which backfills will run (`Startup backfills: run N of 7: ...`) or `Startup backfills: all 7 complete; none run`. Each one that runs logs progress, then a final `Backfills finished: ...` line appears:
    ```bash
    docker compose -f docker-compose.prod.yml logs -f api | grep -i backfill
    ```
-   `<name> backfill: 0 of 0` means that backfill had nothing to do. `N of N` means it finished. On a large library, the first boot after an upgrade that adds a backfill can mean extra CPU, disk, and Postgres WAL for a while. Browsing works throughout, but some values (e.g. best efforts for a date range) fill in as the backfills progress.
+   A backfill is recorded complete once a pass finds nothing to do (`0 of 0`), so after an upgrade that adds one, the next restart confirms it and later restarts skip it. On a large library, the first boot after such an upgrade can mean extra CPU, disk, and Postgres WAL for a while. Browsing works throughout, but some values (e.g. best efforts for a date range) fill in as the backfills progress.
 6. **Smoke test.** `curl -f https://tempo.example.com/api/ready` returns 200 once the API can reach the database. It does **not** wait for backfills.
 
-To skip backfills on a restart (for example, the library is already current, or you're debugging a hang), see [Startup backfills](../getting-started/configuration.md#startup-backfills).
+To skip backfills on a restart (for example, while debugging a hang) or to force a full re-run, see [Startup backfills](../getting-started/configuration.md#startup-backfills).
 
 ### Leaving the experimental `:feat-ai-coach` image
 

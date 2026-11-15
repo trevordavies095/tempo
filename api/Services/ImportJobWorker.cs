@@ -151,10 +151,13 @@ public class ImportJobWorker : BackgroundService
 
                 ApplyTempoProgressFromResult(completed, result, completed.Total);
 
-                // Restored workouts arrive without per-workout best efforts; fill them in the background.
+                // Restored workouts can lack derived fields (best efforts, and older exports: timer time,
+                // cadence unit, device laps, ...). Forget completion records first so a crash before the
+                // pass finishes still repairs on next start, then run every backfill now.
                 if (result.Statistics.Workouts.Imported > 0)
                 {
-                    scope.ServiceProvider.GetRequiredService<BestEffortBackfillSignal>().Request();
+                    await StartupBackfills.ClearCompletedAsync(db, CancellationToken.None);
+                    scope.ServiceProvider.GetRequiredService<BackfillRerunSignal>().Request();
                 }
 
                 if (await IsCancelRequestedAsync(db, jobId))

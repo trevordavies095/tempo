@@ -3,10 +3,10 @@ using System.Threading.Channels;
 namespace Tempo.Api.Services;
 
 /// <summary>
-/// Asks <see cref="BestEffortBackfillWorker"/> for another backfill pass after startup (e.g. once a
-/// Tempo ZIP restore has added unmarked workouts). Requests made while a pass is pending coalesce.
+/// Asks <see cref="BackfillRunner"/> for a full backfill pass after startup (once a Tempo ZIP restore
+/// has added workouts that may lack derived fields). Requests made while a pass is pending coalesce.
 /// </summary>
-public class BestEffortBackfillSignal
+public class BackfillRerunSignal
 {
     private readonly Channel<bool> _channel = Channel.CreateBounded<bool>(
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });

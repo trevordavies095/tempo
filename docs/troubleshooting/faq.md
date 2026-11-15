@@ -115,7 +115,7 @@ No, Tempo is designed for PostgreSQL and uses PostgreSQL-specific features (JSON
 
 ### How do I update Tempo?
 
-Follow the [upgrade steps](../deployment/docker.md#updating): back up, pin the **same** release tag for api and frontend, don't restart during a Strava import or Tempo restore (it is cancelled and won't resume), `pull` + `up -d`, then wait for the backfill log lines to reach `0 of 0` or `N of N`. Migrations run automatically.
+Follow the [upgrade steps](../deployment/docker.md#updating): back up, pin the **same** release tag for api and frontend, don't restart during a Strava import or Tempo restore (it is cancelled and won't resume), `pull` + `up -d`, then wait for `Backfills finished` (or `all 7 complete; none run`) in the API log. Migrations run automatically.
 
 ### Can I customize Tempo?
 

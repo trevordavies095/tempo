@@ -22,6 +22,7 @@ public class TempoDbContext : DbContext
     public DbSet<ImportJob> ImportJobs { get; set; }
     public DbSet<WorkoutExternalIdentity> WorkoutExternalIdentities { get; set; }
     public DbSet<IntervalsIcuConnection> IntervalsIcuConnections { get; set; }
+    public DbSet<CompletedBackfill> CompletedBackfills { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

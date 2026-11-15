@@ -200,20 +200,25 @@ Unset still means `standard` even when `ASPNETCORE_ENVIRONMENT=Development`.
 
 ## Startup backfills
 
-Some upgrades add data that older workouts don't have yet (route previews, timer time, device laps, zone seconds, best efforts, ...). Background workers fill it in after the API starts, without blocking browsing or `/ready`. Each logs `<name> backfill: N of N`; `0 of 0` means there was nothing to do. See the [upgrade steps](../deployment/docker.md#updating).
+Some upgrades add data that older workouts don't have yet (route previews, timer time, device laps, zone seconds, best efforts, ...). After the API starts, a background runner fills it in one backfill at a time, without blocking browsing or `/ready`. Each backfill logs `<name> backfill: N of N`.
+
+A backfill runs on each start until a pass finds nothing to do (`0 of 0`). Tempo then records it complete in the `CompletedBackfills` table, and later starts skip it. After an upgrade that adds or changes a backfill, expect one start that does the work, one that confirms `0 of 0`, and then quiet restarts. See the [upgrade steps](../deployment/docker.md#updating).
 
 | Value | Behavior |
 |-------|----------|
-| `run` (default) | All seven backfills run on every API start. On a current library each logs `0 of 0` and stops. |
-| `skip` | None run on start. For a library that is already current, or for debugging a hang. The best-effort backfill still runs after a Tempo ZIP restore, so restored workouts get best efforts. |
+| `run` (default) | Runs every backfill not yet recorded complete. When none are pending, logs `Startup backfills: all 7 complete; none run`. |
+| `skip` | Runs none on start. For debugging a hang. |
+| `force` | Runs all of them, recorded or not, and records them again. Use it if you suspect a recorded backfill missed something. |
 
-Startup logs one line naming the set (`Startup backfills: run (...)`) or `Startup backfills: skip (...)`. Empty or unset → `run`. Unknown values refuse to start (allowed: `run`, `skip`; case-insensitive). Host config only; restart to change.
+A Tempo ZIP restore that imports workouts clears the records and runs every backfill right away, in every mode, so restored workouts from older exports are repaired without a restart. If the API stops before that finishes, the next start runs them (unless `skip`).
 
-Don't leave `skip` on across an upgrade. A release that adds a backfill needs one `run` boot to fill older workouts.
+Startup logs which backfills will run, or that none are pending, and a final `Backfills finished: …` line. Empty or unset → `run`. Unknown values refuse to start (allowed: `run`, `skip`, `force`; case-insensitive). Host config only; restart to change.
+
+Don't leave `skip` on across an upgrade. A release that adds a backfill needs a `run` start to fill older workouts.
 
 ```bash
 # Compose .env
-TEMPO_BACKFILLS_ON_STARTUP=skip
+TEMPO_BACKFILLS_ON_STARTUP=force
 ```
 
 ## Environment Variables Reference
