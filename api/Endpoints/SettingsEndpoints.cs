@@ -206,7 +206,7 @@ public static class SettingsEndpoints
     /// <remarks>
     /// Saves heart rate zones, then optionally recalculates relative effort for all qualifying workouts.
     /// If RecalculateExisting is true, all workouts with heart rate data are recalculated with the new
-    /// zones and saved together in one SaveChanges; a workout that fails is left unchanged and counted.
+    /// zones and saved together; a workout that fails is left unchanged and counted as an error.
     /// </remarks>
     private static async Task<IResult> UpdateHeartRateZonesWithRecalc(
         [FromBody] UpdateHeartRateZonesWithRecalcRequest request,
