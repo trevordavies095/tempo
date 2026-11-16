@@ -52,6 +52,10 @@ _Avoid_: GpxParser splits, GPS smoothing (as the module name)
 The persist pipeline behind `POST /workouts/import`, `POST /workouts/import/healthkit`, and Strava bulk per-file processing: decode adapter (GPX/FIT/HealthKit) then `PersistAsync` (geometry, duplicate policy, weather, relative effort, best efforts). Persist is the single pipeline; new formats enter via decoded input, not a second pipeline. Not the HTTP module and not Settings ZIP restore.
 _Avoid_: import endpoint (when meaning this module), bulk persist
 
+**Workout derivations**:
+The in-process recompute of a Workout's derived data after its inputs change: time in zones, Relative Effort, and (when samples changed) Best efforts. Callers say what changed (`Samples` or `HeartRateZones`), not which steps to run. Workout intake, duplicate upgrade, crop, and the Relative Effort recalculations all go through it. Track geometry and splits stay with the caller that holds the track points. Relative Effort is kept when no UserSettings row exists and replaced otherwise, so it clears when the Workout has no heart-rate data.
+_Avoid_: recalc (as the module name), post-processing
+
 **Best effort**:
 The fastest time for a standard distance (400m through Marathon) over any segment of a Workout. Each Workout stores its own per distance (`WorkoutBestEffort`); all-time and date-windowed bests are the fastest of those, ties to the earliest Workout. Derived: not exported, recomputed after restore.
 _Avoid_: PR, personal record (as the stored row), BestEffort table (removed)

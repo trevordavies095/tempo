@@ -200,6 +200,7 @@ public static class SettingsEndpoints
     /// <param name="db">Database context</param>
     /// <param name="zoneService">Heart rate zone service</param>
     /// <param name="relativeEffortService">Relative effort service</param>
+    /// <param name="derivations">Workout derivations</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>Updated heart rate zones and optional recalculation results</returns>
     /// <remarks>
@@ -212,6 +213,7 @@ public static class SettingsEndpoints
         TempoDbContext db,
         HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
+        WorkoutDerivations derivations,
         ILogger<Program> logger)
     {
         try
@@ -279,10 +281,9 @@ public static class SettingsEndpoints
                         {
                             try
                             {
-                                var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
-                                if (relativeEffort.HasValue)
+                                var result = await derivations.RecomputeAsync(workout, WorkoutChange.HeartRateZones);
+                                if (result.RelativeEffort.HasValue)
                                 {
-                                    workout.RelativeEffort = relativeEffort.Value;
                                     updatedCount++;
                                 }
                             }
@@ -293,7 +294,6 @@ public static class SettingsEndpoints
                             }
                         }
 
-                        await db.SaveChangesAsync();
                         recalculatedCount = updatedCount;
                         recalculatedErrorCount = errorCount;
                     }

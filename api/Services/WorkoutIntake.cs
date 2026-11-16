@@ -73,9 +73,7 @@ public class WorkoutIntake
     private readonly FitParserService _fitParser;
     private readonly TrackGeometry _trackGeometry;
     private readonly IWeatherService _weatherService;
-    private readonly HeartRateZoneService _zoneService;
-    private readonly IRelativeEffortService _relativeEffortService;
-    private readonly IBestEffortService _bestEffortService;
+    private readonly WorkoutDerivations _derivations;
     private readonly SplitHeartRateService _splitHeartRate;
     private readonly ILogger<WorkoutIntake> _logger;
 
@@ -85,9 +83,7 @@ public class WorkoutIntake
         FitParserService fitParser,
         TrackGeometry trackGeometry,
         IWeatherService weatherService,
-        HeartRateZoneService zoneService,
-        IRelativeEffortService relativeEffortService,
-        IBestEffortService bestEffortService,
+        WorkoutDerivations derivations,
         SplitHeartRateService splitHeartRate,
         ILogger<WorkoutIntake> logger)
     {
@@ -96,9 +92,7 @@ public class WorkoutIntake
         _fitParser = fitParser;
         _trackGeometry = trackGeometry;
         _weatherService = weatherService;
-        _zoneService = zoneService;
-        _relativeEffortService = relativeEffortService;
-        _bestEffortService = bestEffortService;
+        _derivations = derivations;
         _splitHeartRate = splitHeartRate;
         _logger = logger;
     }
@@ -350,16 +344,7 @@ public class WorkoutIntake
                 throw;
             }
 
-            await CalculateAndSaveRelativeEffortAsync(workout);
-
-            try
-            {
-                await _bestEffortService.UpdateBestEffortsForNewWorkoutAsync(_db, workout);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to update best efforts for workout {WorkoutId}", workout.Id);
-            }
+            await RecomputeDerivationsAsync(workout);
 
             _logger.LogInformation("Imported workout {WorkoutId} with {Distance} meters", workout.Id, workout.DistanceM);
 
@@ -649,12 +634,18 @@ public class WorkoutIntake
             }
 
             var hasSeries = await _db.WorkoutTimeSeries.AnyAsync(ts => ts.WorkoutId == existingWorkout.Id);
-            if (!hasSeries && geometry.TimeSeries.Count > 0)
+            var seriesAdded = !hasSeries && geometry.TimeSeries.Count > 0;
+            if (seriesAdded)
             {
                 _db.WorkoutTimeSeries.AddRange(geometry.TimeSeries);
             }
 
             await _db.SaveChangesAsync();
+
+            if (seriesAdded)
+            {
+                await RecomputeDerivationsAsync(existingWorkout);
+            }
 
             _logger.LogInformation(
                 "Updated duplicate workout {WorkoutId} with raw data and recalculated splits: {Filename} at {StartTime}",
@@ -1114,29 +1105,15 @@ public class WorkoutIntake
         }
     }
 
-    private async Task CalculateAndSaveRelativeEffortAsync(Workout workout)
+    private async Task RecomputeDerivationsAsync(Workout workout)
     {
         try
         {
-            var settings = await _db.UserSettings.SingleRowAsync();
-            if (settings == null)
-            {
-                return;
-            }
-
-            var zones = _zoneService.GetZonesFromUserSettings(settings);
-            var relativeEffort = _relativeEffortService.RecalculateHeartRateMetrics(workout, zones, _db);
-            if (relativeEffort.HasValue)
-            {
-                workout.RelativeEffort = relativeEffort.Value;
-            }
-
-            // Zone seconds and their marker are written even when Relative Effort is null.
-            await _db.SaveChangesAsync();
+            await _derivations.RecomputeAsync(workout, WorkoutChange.Samples);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
+            _logger.LogWarning(ex, "Failed to recompute derived data for workout {WorkoutId}", workout.Id);
         }
     }
 

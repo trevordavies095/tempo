@@ -876,6 +876,112 @@ public class WorkoutDetailsUpdateDeleteTests : IClassFixture<TempoWebApplication
         }
     }
 
+    [Fact]
+    public async Task CropWorkout_KeepsCroppedRouteAndSplits_WhenRawGpxDataIsStored()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30);
+            var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(
+                db,
+                durationS: 1800,
+                distanceM: 5000,
+                includeTimeSeries: true);
+
+            // Straight line north, one point per 10s, ~27.8 m apart (5 km over 30 min)
+            var trackPoints = Enumerable.Range(0, 181).Select(i => new
+            {
+                lat = i * 0.00025,
+                lon = 0.0,
+                ele = 100.0,
+                time = workout.StartedAt.AddSeconds(i * 10).ToString("O")
+            }).ToArray();
+            workout.RawGpxData = JsonSerializer.Serialize(new { trackPoints });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var cropBody = new StringContent(
+            JsonSerializer.Serialize(new { startTrimSeconds = 0, endTrimSeconds = 900 }),
+            Encoding.UTF8,
+            "application/json");
+        var response = await client.PostAsync($"/workouts/{workoutId}/crop", cropBody);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var cropped = await db.Workouts.AsNoTracking()
+                .Include(w => w.Route)
+                .SingleAsync(w => w.Id == workoutId);
+            cropped.DistanceM.Should().BeLessThan(3000);
+
+            using var route = JsonDocument.Parse(cropped.Route!.RouteGeoJson);
+            route.RootElement.GetProperty("coordinates").GetArrayLength().Should().BeLessThan(100);
+
+            var splitTotal = await db.WorkoutSplits.AsNoTracking()
+                .Where(s => s.WorkoutId == workoutId && s.Kind == WorkoutSplitKinds.Distance)
+                .SumAsync(s => s.DistanceM);
+            splitTotal.Should().BeApproximately(cropped.DistanceM, 1.0);
+        }
+    }
+
+    [Fact]
+    public async Task CropWorkout_ZeroTrim_RepairsRouteRestoredByEarlierCrop()
+    {
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        Guid workoutId;
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedUserSettingsAsync(db, age: 30);
+            var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(db, durationS: 1800, distanceM: 5000);
+            var trackPoints = Enumerable.Range(0, 181).Select(i => new
+            {
+                lat = i * 0.00025,
+                lon = 0.0,
+                ele = 100.0,
+                time = workout.StartedAt.AddSeconds(i * 10).ToString("O")
+            }).ToArray();
+            workout.RawGpxData = JsonSerializer.Serialize(new { trackPoints });
+            // State left by the old crop: clock trimmed to 900s, route and splits from the full track
+            workout.DurationS = 900;
+            workout.Route!.RouteGeoJson = JsonSerializer.Serialize(new
+            {
+                type = "LineString",
+                coordinates = trackPoints.Select(p => new[] { p.lon, p.lat }).ToArray()
+            });
+            await db.SaveChangesAsync();
+            workoutId = workout.Id;
+        }
+
+        var cropBody = new StringContent(
+            JsonSerializer.Serialize(new { startTrimSeconds = 0, endTrimSeconds = 0 }),
+            Encoding.UTF8,
+            "application/json");
+        var response = await client.PostAsync($"/workouts/{workoutId}/crop", cropBody);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            var repaired = await db.Workouts.AsNoTracking()
+                .Include(w => w.Route)
+                .SingleAsync(w => w.Id == workoutId);
+            repaired.DurationS.Should().Be(900);
+            repaired.DistanceM.Should().BeLessThan(3000);
+            using var route = JsonDocument.Parse(repaired.Route!.RouteGeoJson);
+            route.RootElement.GetProperty("coordinates").GetArrayLength().Should().BeLessThan(100);
+        }
+    }
+
     #endregion
 
     #region UpdateWorkout Tests
