@@ -772,8 +772,7 @@ public static class WorkoutsEndpoints
     /// </summary>
     /// <param name="id">Workout ID</param>
     /// <param name="db">Database context</param>
-    /// <param name="zoneService">Heart rate zone service</param>
-    /// <param name="relativeEffortService">Relative effort service</param>
+    /// <param name="derivations">Workout derivations</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>Updated workout with new relative effort value</returns>
     /// <remarks>
@@ -783,8 +782,7 @@ public static class WorkoutsEndpoints
     private static async Task<IResult> RecalculateWorkoutEffort(
         Guid id,
         TempoDbContext db,
-        HeartRateZoneService zoneService,
-        RelativeEffortService relativeEffortService,
+        WorkoutDerivations derivations,
         ILogger<Program> logger)
     {
         var workout = await db.Workouts
@@ -797,17 +795,11 @@ public static class WorkoutsEndpoints
 
         try
         {
-            var settings = await db.UserSettings.SingleRowAsync();
-            if (settings == null)
+            var result = await derivations.RecomputeAsync(workout, WorkoutChange.HeartRateZones);
+            if (!result.ZonesConfigured)
             {
                 return Results.BadRequest(new { error = "Heart rate zones not configured. Please configure heart rate zones in settings first." });
             }
-
-            var zones = zoneService.GetZonesFromUserSettings(settings);
-            var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
-            
-            workout.RelativeEffort = relativeEffort;
-            await db.SaveChangesAsync();
 
             return Results.Ok(new
             {
@@ -890,10 +882,7 @@ public static class WorkoutsEndpoints
     /// <param name="request">HTTP request containing JSON body with startTrimSeconds and endTrimSeconds</param>
     /// <param name="db">Database context</param>
     /// <param name="cropService">Workout crop service</param>
-    /// <param name="splitRecalculationService">Split recalculation service</param>
-    /// <param name="zoneService">Heart rate zone service</param>
-    /// <param name="relativeEffortService">Relative effort service</param>
-    /// <param name="bestEffortService">Best effort service</param>
+    /// <param name="derivations">Workout derivations</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>Updated workout with all derived data recalculated</returns>
     /// <remarks>
@@ -905,10 +894,7 @@ public static class WorkoutsEndpoints
         HttpRequest request,
         TempoDbContext db,
         WorkoutCropService cropService,
-        SplitRecalculationService splitRecalculationService,
-        HeartRateZoneService zoneService,
-        RelativeEffortService relativeEffortService,
-        BestEffortService bestEffortService,
+        WorkoutDerivations derivations,
         ILogger<Program> logger)
     {
         // Parse request body
@@ -974,32 +960,16 @@ public static class WorkoutsEndpoints
 
             try
         {
-            // Perform crop
+            // Crop derives route, splits and time series from the sliced track; derivations follow from those
             await cropService.CropWorkoutAsync(workout, startTrimSeconds, endTrimSeconds);
-
-            // Recalculate splits
-            var settings = await db.UserSettings.SingleRowAsync();
-            var unitPreference = settings?.UnitPreference ?? "metric";
-            await splitRecalculationService.RecalculateSplitsForWorkoutAsync(workout, unitPreference);
-
-            // Recalculate relative effort if heart rate zones are configured
-            if (settings != null)
-            {
-                var zones = zoneService.GetZonesFromUserSettings(settings);
-                var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
-                workout.RelativeEffort = relativeEffort;
-                await db.SaveChangesAsync();
-            }
-
-            // Recompute the workout's best efforts since distance/duration changed
             try
             {
-                await bestEffortService.UpdateBestEffortsForNewWorkoutAsync(db, workout);
+                await derivations.RecomputeAsync(workout, WorkoutChange.Samples);
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to update best efforts after cropping workout {WorkoutId}", workout.Id);
-                // Don't fail crop if best effort update fails
+                // The crop is already saved; answering with an error would invite a second crop on retry.
+                logger.LogWarning(ex, "Failed to recompute heart-rate metrics after cropping workout {WorkoutId}", workout.Id);
             }
 
             // Reload workout with updated data
@@ -1745,8 +1715,8 @@ public static class WorkoutsEndpoints
     /// Recalculate relative effort for all qualifying workouts
     /// </summary>
     /// <param name="db">Database context</param>
-    /// <param name="zoneService">Heart rate zone service</param>
     /// <param name="relativeEffortService">Relative effort service</param>
+    /// <param name="derivations">Workout derivations</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>Recalculation results with updated count and any errors</returns>
     /// <remarks>
@@ -1755,20 +1725,18 @@ public static class WorkoutsEndpoints
     /// </remarks>
     private static async Task<IResult> RecalculateRelativeEffort(
         TempoDbContext db,
-        HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
+        WorkoutDerivations derivations,
         ILogger<Program> logger)
     {
         try
         {
             // Check if heart rate zones are configured
             var settings = await db.UserSettings.SingleRowAsync();
-            if (settings == null)
+            if (!HeartRateZoneService.HasConfiguredZones(settings))
             {
                 return Results.BadRequest(new { error = "Heart rate zones not configured. Please configure heart rate zones in settings first." });
             }
-
-            var zones = zoneService.GetZonesFromUserSettings(settings);
 
             // Get workouts that can have relative effort calculated
             var allQualifyingIds = await relativeEffortService.GetQualifyingWorkoutIdsAsync(db);
@@ -1797,38 +1765,20 @@ public static class WorkoutsEndpoints
                 });
             }
 
-            int updatedCount = 0;
-            int errorCount = 0;
-            var errors = new List<string>();
-
-            // Recalculate relative effort for each qualifying workout
-            foreach (var workout in qualifyingWorkouts)
+            // Recalculate in memory, then save once; a failing workout is reverted and reported
+            var batch = await derivations.RecomputeHeartRateZonesAsync(qualifyingWorkouts, settings!);
+            foreach (var (workoutId, error) in batch.Failures)
             {
-                try
-                {
-                    var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
-                    if (relativeEffort.HasValue)
-                    {
-                        workout.RelativeEffort = relativeEffort.Value;
-                        updatedCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errorCount++;
-                    logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
-                    errors.Add($"Workout {workout.Id}: {ex.Message}");
-                }
+                logger.LogWarning(error, "Failed to calculate Relative Effort for workout {WorkoutId}", workoutId);
             }
 
-            // Save all changes
-            await db.SaveChangesAsync();
+            var errors = batch.Failures.Select(f => $"Workout {f.WorkoutId}: {f.Error.Message}").ToList();
 
             return Results.Ok(new
             {
-                updatedCount = updatedCount,
+                updatedCount = batch.UpdatedCount,
                 totalQualifyingWorkouts = qualifyingWorkouts.Count,
-                errorCount = errorCount,
+                errorCount = batch.Failures.Count,
                 errors = errors.Count > 0 ? errors : null
             });
         }

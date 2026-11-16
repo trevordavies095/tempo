@@ -421,7 +421,7 @@
           "Settings"
         ],
         "summary": "Update heart rate zones and optionally recalculate relative effort",
-        "description": "Updates heart rate zones and optionally recalculates relative effort for all qualifying workouts\nin one atomic operation. If RecalculateExisting is true, all workouts with heart rate data will\nhave their relative effort recalculated using the new zones.",
+        "description": "Saves heart rate zones, then optionally recalculates relative effort for all qualifying workouts.\nIf RecalculateExisting is true, all workouts with heart rate data are recalculated with the new\nzones and saved together; a workout that fails is left unchanged and counted as an error.",
         "operationId": "UpdateHeartRateZonesWithRecalc",
         "requestBody": {
           "description": "Heart rate zones update request with optional recalculation flag",

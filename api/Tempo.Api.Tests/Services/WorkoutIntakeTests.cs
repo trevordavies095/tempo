@@ -48,9 +48,12 @@ public class WorkoutIntakeTests : IAsyncLifetime
             _fitParser,
             trackGeometry,
             _weather,
-            new HeartRateZoneService(),
-            _relativeEffort,
-            _bestEfforts,
+            new WorkoutDerivations(
+                _db,
+                new HeartRateZoneService(),
+                _relativeEffort,
+                _bestEfforts,
+                NullLogger<WorkoutDerivations>.Instance),
             new SplitHeartRateService(),
             NullLogger<WorkoutIntake>.Instance);
     }
@@ -126,8 +129,37 @@ public class WorkoutIntakeTests : IAsyncLifetime
         updated.DurationS.Should().Be(originalDuration);
         updated.ElevGainM.Should().Be(originalElev);
         _weather.CallCount.Should().Be(0);
-        _relativeEffort.CallCount.Should().Be(0);
-        _bestEfforts.CallCount.Should().Be(0);
+        // The upgrade can change inputs to heart-rate metrics and best efforts, so they are recomputed
+        _relativeEffort.CallCount.Should().Be(1);
+        _bestEfforts.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Updated_RecomputesDerivations_WhenTimeSeriesAdded()
+    {
+        await TestDataSeeder.SeedUserSettingsAsync(_db);
+        using var first = CreateGpxStream(heartRateBpm: 150);
+        var created = await _intake.ProcessAsync(first, "morning.gpx");
+        created.Action.Should().Be("created");
+
+        // Summary-only row: no raw bytes, no time series, stale Relative Effort
+        var workout = await _db.Workouts.SingleAsync();
+        workout.RawFileData = null;
+        workout.RelativeEffort = null;
+        _db.WorkoutTimeSeries.RemoveRange(_db.WorkoutTimeSeries.Where(ts => ts.WorkoutId == workout.Id));
+        await _db.SaveChangesAsync();
+
+        _relativeEffort.Reset();
+        _bestEfforts.Reset();
+
+        using var second = CreateGpxStream(heartRateBpm: 150);
+        var result = await _intake.ProcessAsync(second, "morning.gpx");
+
+        result.Action.Should().Be("updated");
+        (await _db.WorkoutTimeSeries.AnyAsync(ts => ts.WorkoutId == workout.Id)).Should().BeTrue();
+        _relativeEffort.CallCount.Should().Be(1);
+        _bestEfforts.CallCount.Should().Be(1);
+        (await _db.Workouts.AsNoTracking().SingleAsync()).RelativeEffort.Should().Be(7);
     }
 
     [Fact]
@@ -1469,9 +1501,12 @@ public class WorkoutIntakeTests : IAsyncLifetime
             _fitParser,
             new TrackGeometry(elevationConfig),
             _weather,
-            new HeartRateZoneService(),
-            new RelativeEffortService(),
-            _bestEfforts,
+            new WorkoutDerivations(
+                _db,
+                new HeartRateZoneService(),
+                new RelativeEffortService(),
+                _bestEfforts,
+                NullLogger<WorkoutDerivations>.Instance),
             new SplitHeartRateService(),
             NullLogger<WorkoutIntake>.Instance);
     }
@@ -1854,9 +1889,12 @@ public class WorkoutIntakeTests : IAsyncLifetime
             new FitParserService(),
             new TrackGeometry(elevationConfig),
             new FakeWeatherService(),
-            new HeartRateZoneService(),
-            new FakeRelativeEffortService(),
-            new FakeBestEffortService(),
+            new WorkoutDerivations(
+                db,
+                new HeartRateZoneService(),
+                new FakeRelativeEffortService(),
+                new FakeBestEffortService(),
+                NullLogger<WorkoutDerivations>.Instance),
             new SplitHeartRateService(),
             NullLogger<WorkoutIntake>.Instance);
     }
@@ -2020,24 +2058,27 @@ public class WorkoutIntakeTests : IAsyncLifetime
         count.Should().BeLessThanOrEqualTo(TrackGeometry.RoutePreviewMaxPoints);
     }
 
-    private static MemoryStream CreateGpxStream()
+    private static MemoryStream CreateGpxStream(int? heartRateBpm = null)
     {
-        var xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<gpx version=""1.1"" xmlns=""http://www.topografix.com/GPX/1/1"">
+        var hr = heartRateBpm.HasValue
+            ? $"<extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>{heartRateBpm}</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>"
+            : "";
+        var xml = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<gpx version=""1.1"" xmlns=""http://www.topografix.com/GPX/1/1"" xmlns:gpxtpx=""http://www.garmin.com/xmlschemas/TrackPointExtension/v1"">
   <trk>
     <name>Morning Run</name>
     <trkseg>
       <trkpt lat=""37.7749"" lon=""-122.4194"">
         <ele>10</ele>
-        <time>2024-01-15T10:00:00Z</time>
+        <time>2024-01-15T10:00:00Z</time>{hr}
       </trkpt>
       <trkpt lat=""37.7849"" lon=""-122.4094"">
         <ele>20</ele>
-        <time>2024-01-15T10:10:00Z</time>
+        <time>2024-01-15T10:10:00Z</time>{hr}
       </trkpt>
       <trkpt lat=""37.7949"" lon=""-122.3994"">
         <ele>30</ele>
-        <time>2024-01-15T10:20:00Z</time>
+        <time>2024-01-15T10:20:00Z</time>{hr}
       </trkpt>
     </trkseg>
   </trk>

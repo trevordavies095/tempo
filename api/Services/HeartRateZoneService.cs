@@ -164,6 +164,18 @@ public class HeartRateZoneService
     }
 
     /// <summary>
+    /// True when heart-rate zones have been saved. A settings row can exist without zones (created by
+    /// unit preference, default shoe or import unit preference), in which case every zone bound is 0.
+    /// </summary>
+    public static bool HasConfiguredZones(UserSettings? settings) =>
+        settings != null &&
+        settings.Zone1MaxBpm > 0 &&
+        settings.Zone2MaxBpm > 0 &&
+        settings.Zone3MaxBpm > 0 &&
+        settings.Zone4MaxBpm > 0 &&
+        settings.Zone5MaxBpm > 0;
+
+    /// <summary>
     /// Get zones from UserSettings model
     /// </summary>
     public List<HeartRateZone> GetZonesFromUserSettings(UserSettings settings)
