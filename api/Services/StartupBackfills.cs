@@ -43,6 +43,7 @@ public static class StartupBackfills
         new("device lap", 1, (sp, ct) => sp.GetRequiredService<DeviceLapBackfillService>().RunAsync(ct)),
         new("zone seconds", 1, (sp, ct) => sp.GetRequiredService<ZoneSecondsBackfillService>().RunAsync(ct)),
         new("best effort", 1, (sp, ct) => sp.GetRequiredService<BestEffortBackfillService>().RunAsync(ct)),
+        new("device name", 1, (sp, ct) => sp.GetRequiredService<DeviceNameBackfillService>().RunAsync(ct)),
     ];
 
     public const string CatchUpCommand = "docker compose exec api dotnet Tempo.Api.dll backfill";

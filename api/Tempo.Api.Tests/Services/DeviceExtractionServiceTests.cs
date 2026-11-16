@@ -124,7 +124,7 @@ public class DeviceExtractionServiceTests
     }
 
     [Fact]
-    public void ExtractDeviceName_WithManufacturerAndProductCode_ReturnsCombinedName()
+    public void ExtractDeviceName_WithUnknownGarminProductCode_ShowsProductId()
     {
         // Arrange
         var json = JsonSerializer.Serialize(new
@@ -138,7 +138,7 @@ public class DeviceExtractionServiceTests
         var result = DeviceExtractionService.ExtractDeviceName(element, _loggerMock.Object);
 
         // Assert
-        result.Should().Be("Garmin");
+        result.Should().Be("Garmin (product 9999)");
     }
 
     [Fact]
@@ -157,6 +157,44 @@ public class DeviceExtractionServiceTests
 
         // Assert
         result.Should().Be("Garmin Forerunner 965");
+    }
+
+    [Theory]
+    [InlineData(1, 4536, "Garmin Fenix 8")]
+    [InlineData(1, 3441, "Garmin Forerunner 945")] // Asia variant
+    [InlineData(1, 4257, "Garmin Forerunner 265")]
+    [InlineData(15, 4315, "Garmin Forerunner 965")] // Dynastream uses Garmin product IDs
+    [InlineData(89, 4267, "Tacx Neo 2T Smart")] // Tacx uses Garmin product IDs
+    [InlineData(294, 5, "Coros")] // extended code, no longer guessed as Garmin
+    [InlineData(265, 3, "Strava")]
+    [InlineData(95, 7, "Stryd")]
+    [InlineData(32, 31, "Wahoo Fitness")]
+    [InlineData(255, 1234, "Product 1234")] // development: no manufacturer name
+    [InlineData(9999, 1234, "Product 1234")] // unassigned manufacturer
+    public void ExtractDeviceName_WithManufacturerAndProductCodes_UsesSdkTables(int manufacturer, int product, string expected)
+    {
+        var element = JsonSerializer.Deserialize<JsonElement>(
+            JsonSerializer.Serialize(new { manufacturer, product }));
+
+        DeviceExtractionService.ExtractDeviceName(element, _loggerMock.Object).Should().Be(expected);
+    }
+
+    [Fact]
+    public void ExtractDeviceName_WithManufacturerOnly_ReturnsManufacturer()
+    {
+        var element = JsonSerializer.Deserialize<JsonElement>(
+            JsonSerializer.Serialize(new { manufacturer = 23 }));
+
+        DeviceExtractionService.ExtractDeviceName(element, _loggerMock.Object).Should().Be("Suunto");
+    }
+
+    [Fact]
+    public void ExtractDeviceName_WithStringProduct_CombinesWithManufacturer()
+    {
+        var element = JsonSerializer.Deserialize<JsonElement>(
+            JsonSerializer.Serialize(new { manufacturer = 23, product = "Race S" }));
+
+        DeviceExtractionService.ExtractDeviceName(element, _loggerMock.Object).Should().Be("Suunto Race S");
     }
 
     [Fact]

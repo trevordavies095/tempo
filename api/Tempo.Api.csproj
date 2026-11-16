@@ -22,7 +22,7 @@
     <PackageReference Include="CsvHelper" Version="33.0.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
-    <PackageReference Include="Garmin.FIT.Sdk" Version="21.214.0" />
+    <PackageReference Include="Garmin.FIT.Sdk" Version="21.221.0" />
   </ItemGroup>
 
   <ItemGroup>

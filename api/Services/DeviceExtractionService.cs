@@ -7,19 +7,6 @@ namespace Tempo.Api.Services;
 /// </summary>
 public static class DeviceExtractionService
 {
-    private static readonly IReadOnlyDictionary<ushort, string> GarminProductMap = new Dictionary<ushort, string>
-    {
-        // Source: FIT SDK GarminProduct constants
-        // Keep this list focused and expand over time as we encounter new devices.
-        { 3113, "Garmin Forerunner 945" },      // Fr945
-        { 3652, "Garmin Forerunner 945 LTE" },  // Fr945Lte
-        { 4024, "Garmin Forerunner 955" },      // Fr955
-        { 4315, "Garmin Forerunner 965" },      // Fr965
-        { 3905, "Garmin Fenix 7S" },            // Fenix7s
-        { 3906, "Garmin Fenix 7" },             // Fenix7
-        { 3907, "Garmin Fenix 7X" }             // Fenix7x
-    };
-
     /// <summary>
     /// Maps Apple Watch identifiers to friendly device names.
     /// Based on AppleDB device information: https://appledb.dev/device-selection/Apple-Watch.html
@@ -73,29 +60,70 @@ public static class DeviceExtractionService
 
     /// <summary>
     /// Extracts device name from FIT device JSON element.
-    /// According to FIT spec: ProductName is most reliable, then manufacturer+product codes.
+    /// A product name string wins; otherwise manufacturer and product IDs are looked up in the FIT
+    /// SDK (<see cref="FitProductNames"/>).
     /// </summary>
     public static string? ExtractDeviceName(JsonElement deviceElement, ILogger? logger = null)
     {
-        // 1. Check ProductName first (most reliable - actual device name string)
         var productName = ExtractProductName(deviceElement, logger);
         if (productName != null)
         {
             return productName;
         }
 
-        // 2. Extract manufacturer and product code
-        var manufacturer = ExtractManufacturerCode(deviceElement, logger);
-        var productCode = ExtractProductCode(deviceElement, manufacturer, out var productString);
-
-        // 3. If product is a string, combine with manufacturer
-        if (productString != null)
+        ushort? manufacturerCode = null;
+        string? manufacturer = null;
+        if (deviceElement.TryGetProperty("manufacturer", out var manufacturerElement))
         {
-            return CombineDeviceInfo(manufacturer, productString);
+            if (manufacturerElement.ValueKind == JsonValueKind.String)
+            {
+                manufacturer = NullIfBlank(manufacturerElement.GetString());
+            }
+            else if (TryGetUShort(manufacturerElement, out var code))
+            {
+                manufacturerCode = code;
+                manufacturer = FitProductNames.ManufacturerName(code);
+                if (manufacturer == null)
+                {
+                    logger?.LogDebug("Unknown manufacturer code: {Code}", code);
+                }
+            }
         }
 
-        // 4. Combine manufacturer and product code
-        return CombineDeviceInfo(manufacturer, productCode, logger);
+        ushort? productCode = null;
+        if (deviceElement.TryGetProperty("product", out var productElement))
+        {
+            if (productElement.ValueKind == JsonValueKind.String)
+            {
+                var productString = NullIfBlank(productElement.GetString());
+                if (productString != null)
+                {
+                    return manufacturer != null ? $"{manufacturer} {productString}" : productString;
+                }
+            }
+            else if (TryGetUShort(productElement, out var code))
+            {
+                productCode = code;
+            }
+        }
+
+        if (productCode is { } product)
+        {
+            if (manufacturerCode is { } mfr && FitProductNames.UsesGarminProductIds(mfr))
+            {
+                return FitProductNames.GarminProductName(product)
+                       ?? $"{manufacturer ?? "Garmin"} (product {product})";
+            }
+
+            return manufacturer ?? $"Product {product}";
+        }
+
+        if (manufacturer == null)
+        {
+            logger?.LogDebug("No device information extracted from FIT file");
+        }
+
+        return manufacturer;
     }
 
     /// <summary>
@@ -127,174 +155,12 @@ public static class DeviceExtractionService
         return productName;
     }
 
-    /// <summary>
-    /// Extracts manufacturer name from device element.
-    /// </summary>
-    private static string? ExtractManufacturerCode(JsonElement deviceElement, ILogger? logger)
+    private static bool TryGetUShort(JsonElement element, out ushort value)
     {
-        if (!deviceElement.TryGetProperty("manufacturer", out var manufacturerElement))
-        {
-            return null;
-        }
-
-        if (manufacturerElement.ValueKind == JsonValueKind.String)
-        {
-            return manufacturerElement.GetString();
-        }
-
-        if (manufacturerElement.ValueKind != JsonValueKind.Number)
-        {
-            return null;
-        }
-
-        var manufacturerCode = manufacturerElement.GetInt32();
-        
-        // Handle extended manufacturer codes (>255 are manufacturer-specific)
-        if (manufacturerCode > 255)
-        {
-            return HandleExtendedManufacturerCode(deviceElement, manufacturerCode, logger);
-        }
-
-        // Standard manufacturer codes (0-255)
-        var manufacturer = manufacturerCode switch
-        {
-            1 => "Garmin",
-            2 => "Garmin", // GarminFr405Antfs
-            23 => "Suunto",
-            32 => "Wahoo Fitness",
-            71 => "TomTom",
-            73 => "Wattbike",
-            94 => "Stryd",
-            123 => "Polar",
-            129 => "Coros",
-            142 => "Tag Heuer",
-            144 => "Zwift",
-            182 => "Strava",
-            265 => "Strava",
-            294 => "Coros",
-            // 255 is "Development" in FIT spec but not helpful for end users
-            255 => null,
-            _ => null
-        };
-        
-        if (manufacturer == null)
-        {
-            logger?.LogDebug("Unknown manufacturer code: {Code}", manufacturerCode);
-        }
-
-        return manufacturer;
+        value = 0;
+        return element.ValueKind == JsonValueKind.Number && element.TryGetUInt16(out value);
     }
 
-    /// <summary>
-    /// Handles extended manufacturer codes (>255).
-    /// </summary>
-    private static string? HandleExtendedManufacturerCode(JsonElement deviceElement, int manufacturerCode, ILogger? logger)
-    {
-        // Extended manufacturer codes: check if it might be Garmin
-        // Many Garmin devices use extended codes, but we can't definitively identify them
-        // For now, if we have a product code that looks like a Garmin product, assume Garmin
-        if (!deviceElement.TryGetProperty("product", out var prodCheck) || 
-            prodCheck.ValueKind != JsonValueKind.Number)
-        {
-            logger?.LogDebug("Extended manufacturer code: {Code} (unknown manufacturer)", manufacturerCode);
-            return null;
-        }
-
-        var prod = prodCheck.GetInt32();
-        // Garmin products typically have specific ranges
-        // If product code is reasonable (< 10000), might be Garmin
-        if (prod < 10000)
-        {
-            logger?.LogDebug("Extended manufacturer code {Code} with product {Product} - assuming Garmin", 
-                manufacturerCode, prod);
-            return "Garmin";
-        }
-
-        logger?.LogDebug("Extended manufacturer code: {Code} (unknown manufacturer)", manufacturerCode);
-        return null;
-    }
-
-    /// <summary>
-    /// Extracts product code from device element.
-    /// </summary>
-    /// <param name="deviceElement">JSON device element from FIT raw data</param>
-    /// <param name="manufacturer">Manufacturer name if known</param>
-    /// <param name="productString">Output parameter for product string if found</param>
-    /// <returns>Product code as ushort, or null if not found or is a string</returns>
-    private static ushort? ExtractProductCode(JsonElement deviceElement, string? manufacturer, out string? productString)
-    {
-        productString = null;
-
-        if (!deviceElement.TryGetProperty("product", out var productElement))
-        {
-            return null;
-        }
-
-        if (productElement.ValueKind == JsonValueKind.Number)
-        {
-            return (ushort)productElement.GetInt32();
-        }
-
-        if (productElement.ValueKind == JsonValueKind.String)
-        {
-            // Product as string - use directly
-            productString = productElement.GetString();
-            return null;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Combines manufacturer and product information into a device name.
-    /// </summary>
-    private static string? CombineDeviceInfo(string? manufacturer, string? productString)
-    {
-        if (!string.IsNullOrWhiteSpace(productString))
-        {
-            if (!string.IsNullOrWhiteSpace(manufacturer))
-            {
-                return $"{manufacturer} {productString}".Trim();
-            }
-            return productString;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Combines manufacturer and product code into a device name.
-    /// </summary>
-    private static string? CombineDeviceInfo(string? manufacturer, ushort? productCode, ILogger? logger)
-    {
-        // Combine manufacturer and product code
-        if (!string.IsNullOrWhiteSpace(manufacturer) && productCode.HasValue)
-        {
-            if (manufacturer.Equals("Garmin", StringComparison.OrdinalIgnoreCase) &&
-                GarminProductMap.TryGetValue(productCode.Value, out var garminModel))
-            {
-                return garminModel;
-            }
-
-            // For known manufacturers, show manufacturer name
-            // For Garmin unknown product IDs, fall back to manufacturer name.
-            return manufacturer;
-        }
-
-        // Fallback: show product code if available
-        if (productCode.HasValue)
-        {
-            return $"Product {productCode.Value}";
-        }
-
-        // Fallback: show manufacturer if available
-        if (!string.IsNullOrWhiteSpace(manufacturer))
-        {
-            return manufacturer;
-        }
-
-        logger?.LogDebug("No device information extracted from FIT file");
-        return null;
-    }
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
-

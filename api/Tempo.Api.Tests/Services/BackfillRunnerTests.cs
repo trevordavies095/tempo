@@ -269,9 +269,9 @@ public class BackfillRunnerTests : IAsyncLifetime
     }
 
     [Fact]
-    public void All_HasSevenUniquelyNamedBackfills()
+    public void All_HasEightUniquelyNamedBackfills()
     {
-        StartupBackfills.All.Should().HaveCount(7);
+        StartupBackfills.All.Should().HaveCount(8);
         StartupBackfills.All.Select(b => b.Name).Should().OnlyHaveUniqueItems();
     }
 
