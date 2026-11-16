@@ -962,7 +962,15 @@ public static class WorkoutsEndpoints
         {
             // Crop derives route, splits and time series from the sliced track; derivations follow from those
             await cropService.CropWorkoutAsync(workout, startTrimSeconds, endTrimSeconds);
-            await derivations.RecomputeAsync(workout, WorkoutChange.Samples);
+            try
+            {
+                await derivations.RecomputeAsync(workout, WorkoutChange.Samples);
+            }
+            catch (Exception ex)
+            {
+                // The crop is already saved; answering with an error would invite a second crop on retry.
+                logger.LogWarning(ex, "Failed to recompute heart-rate metrics after cropping workout {WorkoutId}", workout.Id);
+            }
 
             // Reload workout with updated data
             await db.Entry(workout).ReloadAsync();
@@ -1725,7 +1733,7 @@ public static class WorkoutsEndpoints
         {
             // Check if heart rate zones are configured
             var settings = await db.UserSettings.SingleRowAsync();
-            if (settings == null)
+            if (!HeartRateZoneService.HasConfiguredZones(settings))
             {
                 return Results.BadRequest(new { error = "Heart rate zones not configured. Please configure heart rate zones in settings first." });
             }
@@ -1757,34 +1765,20 @@ public static class WorkoutsEndpoints
                 });
             }
 
-            int updatedCount = 0;
-            int errorCount = 0;
-            var errors = new List<string>();
-
-            // Recalculate relative effort for each qualifying workout
-            foreach (var workout in qualifyingWorkouts)
+            // Recalculate in memory, then save once; a failing workout is reverted and reported
+            var batch = await derivations.RecomputeHeartRateZonesAsync(qualifyingWorkouts, settings!);
+            foreach (var (workoutId, error) in batch.Failures)
             {
-                try
-                {
-                    var result = await derivations.RecomputeAsync(workout, WorkoutChange.HeartRateZones);
-                    if (result.RelativeEffort.HasValue)
-                    {
-                        updatedCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errorCount++;
-                    logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
-                    errors.Add($"Workout {workout.Id}: {ex.Message}");
-                }
+                logger.LogWarning(error, "Failed to calculate Relative Effort for workout {WorkoutId}", workoutId);
             }
+
+            var errors = batch.Failures.Select(f => $"Workout {f.WorkoutId}: {f.Error.Message}").ToList();
 
             return Results.Ok(new
             {
-                updatedCount = updatedCount,
+                updatedCount = batch.UpdatedCount,
                 totalQualifyingWorkouts = qualifyingWorkouts.Count,
-                errorCount = errorCount,
+                errorCount = batch.Failures.Count,
                 errors = errors.Count > 0 ? errors : null
             });
         }

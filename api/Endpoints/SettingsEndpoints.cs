@@ -204,9 +204,9 @@ public static class SettingsEndpoints
     /// <param name="logger">Logger instance</param>
     /// <returns>Updated heart rate zones and optional recalculation results</returns>
     /// <remarks>
-    /// Updates heart rate zones and optionally recalculates relative effort for all qualifying workouts
-    /// in one atomic operation. If RecalculateExisting is true, all workouts with heart rate data will
-    /// have their relative effort recalculated using the new zones.
+    /// Saves heart rate zones, then optionally recalculates relative effort for all qualifying workouts.
+    /// If RecalculateExisting is true, all workouts with heart rate data are recalculated with the new
+    /// zones and saved together in one SaveChanges; a workout that fails is left unchanged and counted.
     /// </remarks>
     private static async Task<IResult> UpdateHeartRateZonesWithRecalc(
         [FromBody] UpdateHeartRateZonesWithRecalcRequest request,
@@ -274,28 +274,15 @@ public static class SettingsEndpoints
                             .Where(w => allQualifyingIds.Contains(w.Id))
                             .ToListAsync();
 
-                        int updatedCount = 0;
-                        int errorCount = 0;
-
-                        foreach (var workout in qualifyingWorkouts)
+                        // Recalculate in memory, then save once; a failing workout is reverted and counted
+                        var batch = await derivations.RecomputeHeartRateZonesAsync(qualifyingWorkouts, settings);
+                        foreach (var (workoutId, error) in batch.Failures)
                         {
-                            try
-                            {
-                                var result = await derivations.RecomputeAsync(workout, WorkoutChange.HeartRateZones);
-                                if (result.RelativeEffort.HasValue)
-                                {
-                                    updatedCount++;
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                errorCount++;
-                                logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
-                            }
+                            logger.LogWarning(error, "Failed to calculate Relative Effort for workout {WorkoutId}", workoutId);
                         }
 
-                        recalculatedCount = updatedCount;
-                        recalculatedErrorCount = errorCount;
+                        recalculatedCount = batch.UpdatedCount;
+                        recalculatedErrorCount = batch.Failures.Count;
                     }
                 }
                 catch (Exception ex)

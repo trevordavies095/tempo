@@ -53,7 +53,7 @@ The persist pipeline behind `POST /workouts/import`, `POST /workouts/import/heal
 _Avoid_: import endpoint (when meaning this module), bulk persist
 
 **Workout derivations**:
-The in-process recompute of a Workout's derived data after its inputs change: time in zones, Relative Effort, and (when samples changed) Best efforts. Callers say what changed (`Samples` or `HeartRateZones`), not which steps to run. Workout intake, duplicate upgrade, crop, and the Relative Effort recalculations all go through it. Track geometry and splits stay with the caller that holds the track points. Relative Effort is kept when no UserSettings row exists and replaced otherwise, so it clears when the Workout has no heart-rate data.
+The in-process recompute of a Workout's derived data after its inputs change: time in zones, Relative Effort, and (when samples changed) Best efforts. Callers say what changed (`Samples` or `HeartRateZones`), not which steps to run. Workout intake, duplicate upgrade, crop, and the Relative Effort recalculations all go through it. Track geometry and splits stay with the caller that holds the track points. Relative Effort is kept when no heart-rate zones are saved and replaced otherwise, so it clears when the Workout has no heart-rate data. Zone changes recompute many Workouts in memory and save once.
 _Avoid_: recalc (as the module name), post-processing
 
 **Best effort**:

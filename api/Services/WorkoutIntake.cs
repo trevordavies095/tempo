@@ -634,18 +634,15 @@ public class WorkoutIntake
             }
 
             var hasSeries = await _db.WorkoutTimeSeries.AnyAsync(ts => ts.WorkoutId == existingWorkout.Id);
-            var seriesAdded = !hasSeries && geometry.TimeSeries.Count > 0;
-            if (seriesAdded)
+            if (!hasSeries && geometry.TimeSeries.Count > 0)
             {
                 _db.WorkoutTimeSeries.AddRange(geometry.TimeSeries);
             }
 
             await _db.SaveChangesAsync();
 
-            if (seriesAdded)
-            {
-                await RecomputeDerivationsAsync(existingWorkout);
-            }
+            // The upgrade can change samples, route, duration and average heart rate, so recompute either way
+            await RecomputeDerivationsAsync(existingWorkout);
 
             _logger.LogInformation(
                 "Updated duplicate workout {WorkoutId} with raw data and recalculated splits: {Filename} at {StartTime}",

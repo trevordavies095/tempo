@@ -129,8 +129,9 @@ public class WorkoutIntakeTests : IAsyncLifetime
         updated.DurationS.Should().Be(originalDuration);
         updated.ElevGainM.Should().Be(originalElev);
         _weather.CallCount.Should().Be(0);
-        _relativeEffort.CallCount.Should().Be(0);
-        _bestEfforts.CallCount.Should().Be(0);
+        // The upgrade can change inputs to heart-rate metrics and best efforts, so they are recomputed
+        _relativeEffort.CallCount.Should().Be(1);
+        _bestEfforts.CallCount.Should().Be(1);
     }
 
     [Fact]
