@@ -230,6 +230,7 @@ builder.Services.AddScoped<TimerTimeBackfillService>();
 builder.Services.AddScoped<DeviceLapBackfillService>();
 builder.Services.AddScoped<ZoneSecondsBackfillService>();
 builder.Services.AddScoped<BestEffortBackfillService>();
+builder.Services.AddScoped<DeviceNameBackfillService>();
 // Upgrade backfills: Tempo:Backfills:OnStartup = skip (default) | run | force. Never gate /ready on these.
 // skip (default): checked after migrations, none run. run / force: one-shot background runner.
 var startupBackfillMode = StartupBackfills.Parse(builder.Configuration[StartupBackfills.ConfigKey]);

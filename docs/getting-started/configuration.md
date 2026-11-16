@@ -206,9 +206,9 @@ Some upgrades add data that older workouts don't have yet (route previews, timer
 
 | Startup log | Meaning |
 |-------------|---------|
-| `Startup backfills: all 7 complete; none run` | Nothing to do. |
-| `Startup backfills: no workouts yet, nothing to fill; recorded all 7 complete` | New install. |
-| `WRN Startup backfills: N of 7 have not completed on this library (...)` | An install that skipped versions, or a restore cut short. Run the command below once. |
+| `Startup backfills: all 8 complete; none run` | Nothing to do. |
+| `Startup backfills: no workouts yet, nothing to fill; recorded all 8 complete` | New install. |
+| `WRN Startup backfills: N of 8 have not completed on this library (...)` | An install that skipped versions, or a restore cut short. Run the command below once. |
 
 ### When backfills run
 
@@ -228,7 +228,7 @@ Some upgrades add data that older workouts don't have yet (route previews, timer
 | `run` | Run the pending ones in the background once, without blocking browsing or `/ready`. |
 | `force` | Run all of them in the background once, recorded or not. |
 
-Empty or unset → `skip`. Unknown values refuse to start (allowed: `skip`, `run`, `force`; case-insensitive). Host config only; restart to change. Set `run` back to `skip` (or remove it) once the log says `Backfills finished: all 7 recorded complete`.
+Empty or unset → `skip`. Unknown values refuse to start (allowed: `skip`, `run`, `force`; case-insensitive). Host config only; restart to change. Set `run` back to `skip` (or remove it) once the log says `Backfills finished: all 8 recorded complete`.
 
 ```bash
 # Compose .env, for one start

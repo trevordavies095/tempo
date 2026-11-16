@@ -123,11 +123,11 @@ An upgrade is not a no-op reboot. Migrations run on API start, and some releases
    docker compose -f docker-compose.prod.yml pull
    docker compose -f docker-compose.prod.yml up -d
    ```
-5. **Check the backfill line.** Starts don't run backfills. The API logs `Startup backfills: all 7 complete; none run` when there's nothing to do:
+5. **Check the backfill line.** Starts don't run backfills. The API logs `Startup backfills: all 8 complete; none run` when there's nothing to do:
    ```bash
    docker compose -f docker-compose.prod.yml logs api | grep -i "startup backfills"
    ```
-   If it warns that some `have not completed on this library` (an install that skipped versions, or a release that adds a backfill), run the catch-up command once and wait for `Backfills finished: all 7 recorded complete`:
+   If it warns that some `have not completed on this library` (an install that skipped versions, or a release that adds a backfill), run the catch-up command once and wait for `Backfills finished: all 8 recorded complete`:
    ```bash
    docker compose -f docker-compose.prod.yml exec api dotnet Tempo.Api.dll backfill
    ```
