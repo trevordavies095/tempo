@@ -239,7 +239,7 @@ public class ExportService
         return await _db.UserSettings
             .Include(s => s.DefaultShoe)
             .AsNoTracking()
-            .FirstOrDefaultAsync();
+            .SingleRowAsync();
     }
 
     private async Task<List<Shoe>> GetShoesAsync()

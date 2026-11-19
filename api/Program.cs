@@ -3,7 +3,9 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using System.IdentityModel.Tokens.Jwt;
@@ -48,7 +50,29 @@ if (ResetPasswordCommand.IsVerb(args))
     }
 }
 
-var builder = WebApplication.CreateBuilder(resetCommand is not null ? [] : args);
+BackfillArgs? backfillCommand = null;
+if (BackfillCommand.IsVerb(args))
+{
+    if (!BackfillCommand.TryParse(args, out var parsedBackfill, out var backfillError))
+    {
+        Console.Error.WriteLine(backfillError);
+        Console.Error.WriteLine();
+        Console.Error.WriteLine(BackfillCommand.Usage);
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    if (parsedBackfill.Help)
+    {
+        Console.Out.WriteLine(BackfillCommand.Usage);
+        return;
+    }
+
+    backfillCommand = parsedBackfill;
+}
+
+var isCommand = resetCommand is not null || backfillCommand is not null;
+var builder = WebApplication.CreateBuilder(isCommand ? [] : args);
 
 // Named logging profile owns Serilog levels (not MEL Logging:LogLevel / Serilog__* overrides)
 var loggingProfile = LoggingProfile.Parse(builder.Configuration[LoggingProfile.ConfigKey]);
@@ -80,6 +104,14 @@ builder.Services.AddCors(options =>
               .SetPreflightMaxAge(TimeSpan.FromSeconds(86400));
     });
 });
+
+// Session cookie and reverse proxy (see docs/deployment/reverse-proxy.md).
+// Both parse at startup; bad values fail before the host listens.
+var authCookieSettings = AuthCookie.ReadSettings(builder.Configuration);
+builder.Services.AddSingleton(authCookieSettings);
+var trustedProxyNetworks = TrustedProxies.Parse(builder.Configuration[TrustedProxies.ConfigKey]);
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    TrustedProxies.Configure(options, trustedProxyNetworks));
 
 // Configure JWT Authentication
 var jwtSecretKey = builder.Configuration["JWT:SecretKey"] 
@@ -162,6 +194,12 @@ if (string.IsNullOrWhiteSpace(connectionString) ||
 builder.Services.AddDbContext<TempoDbContext>(options =>
 {
     options.UseNpgsql(connectionString);
+
+    // Tests fail on an unordered, unfiltered First (#236) instead of it surfacing as a production warning
+    if (builder.Environment.IsEnvironment("Testing"))
+    {
+        options.ConfigureWarnings(w => w.Throw(CoreEventId.FirstWithoutOrderByAndFilterWarning));
+    }
 });
 
 // Register services
@@ -178,6 +216,7 @@ builder.Services.AddScoped<RelativeEffortService>();
 builder.Services.AddScoped<IRelativeEffortService>(sp => sp.GetRequiredService<RelativeEffortService>());
 builder.Services.AddScoped<BestEffortService>();
 builder.Services.AddScoped<IBestEffortService>(sp => sp.GetRequiredService<BestEffortService>());
+builder.Services.AddScoped<WorkoutDerivations>();
 builder.Services.AddScoped<ThresholdSuggestionService>();
 builder.Services.AddScoped<BulkImportService>();
 builder.Services.AddScoped<StravaBulkImportOrchestrator>();
@@ -185,20 +224,17 @@ builder.Services.AddSingleton<ImportJobQueue>();
 builder.Services.AddScoped<ImportJobService>();
 builder.Services.AddHostedService<ImportJobWorker>();
 builder.Services.AddScoped<RoutePreviewBackfillService>();
-builder.Services.AddHostedService<RoutePreviewBackfillWorker>();
 builder.Services.AddScoped<SplitHeartRateBackfillService>();
-builder.Services.AddHostedService<SplitHeartRateBackfillWorker>();
 builder.Services.AddScoped<CadenceBackfillService>();
-builder.Services.AddHostedService<CadenceBackfillWorker>();
 builder.Services.AddScoped<TimerTimeBackfillService>();
-builder.Services.AddHostedService<TimerTimeBackfillWorker>();
 builder.Services.AddScoped<DeviceLapBackfillService>();
-builder.Services.AddHostedService<DeviceLapBackfillWorker>();
 builder.Services.AddScoped<ZoneSecondsBackfillService>();
-builder.Services.AddHostedService<ZoneSecondsBackfillWorker>();
-builder.Services.AddSingleton<BestEffortBackfillSignal>();
 builder.Services.AddScoped<BestEffortBackfillService>();
-builder.Services.AddHostedService<BestEffortBackfillWorker>();
+builder.Services.AddScoped<DeviceNameBackfillService>();
+// Upgrade backfills: Tempo:Backfills:OnStartup = skip (default) | run | force. Never gate /ready on these.
+// skip (default): checked after migrations, none run. run / force: one-shot background runner.
+var startupBackfillMode = StartupBackfills.Parse(builder.Configuration[StartupBackfills.ConfigKey]);
+builder.Services.AddStartupBackfills(startupBackfillMode);
 builder.Services.AddScoped<SplitRecalculationService>();
 builder.Services.AddScoped<WorkoutCropService>();
 builder.Services.AddScoped<PasswordService>();
@@ -288,12 +324,39 @@ if (resetCommand is not null)
     return;
 }
 
+if (backfillCommand is not null)
+{
+    // Same schema the API would run against; a no-op when the API already migrated
+    using (var migrateScope = app.Services.CreateScope())
+    {
+        DatabaseMigrationHelper.ApplyMigrations(migrateScope.ServiceProvider.GetRequiredService<TempoDbContext>());
+    }
+
+    var backfillLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(BackfillCommand));
+    Environment.ExitCode = await BackfillCommand.ExecuteAsync(
+        app.Services.GetRequiredService<IServiceScopeFactory>(),
+        app.Services.GetRequiredService<IReadOnlyList<BackfillDefinition>>(),
+        backfillCommand.Force,
+        backfillLogger);
+    return;
+}
+
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+if (authCookieSettings.SecureOverride == false)
+{
+    Log.Warning(
+        "Cookie:Secure=false: session cookies are sent without the Secure flag. " +
+        "Only use this on a trusted LAN over plain HTTP; never on an internet-facing install.");
+}
+
+// First, so Request.IsHttps and RemoteIpAddress reflect the edge proxy (trusted peers only)
+app.UseForwardedHeaders();
 
 // CORS must be placed as early as possible, before any other middleware
 // Minimal APIs handle routing implicitly, so explicit UseRouting() is not needed
@@ -340,6 +403,23 @@ try
             DatabaseMigrationHelper.ApplyMigrations(db);
         }
         Log.Information("Database migrations completed successfully");
+
+        // Default start runs no backfills; one query confirms they're recorded complete (#218)
+        if (startupBackfillMode == StartupBackfillMode.Skip)
+        {
+            try
+            {
+                using var scope = app.Services.CreateScope();
+                await StartupBackfills.CheckAsync(
+                    scope.ServiceProvider.GetRequiredService<TempoDbContext>(),
+                    StartupBackfills.All,
+                    scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(StartupBackfills)));
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not check startup backfill status");
+            }
+        }
     }
 }
 catch (Exception ex)

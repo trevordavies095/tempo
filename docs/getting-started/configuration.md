@@ -114,7 +114,7 @@ environment:
 ### Security Requirements
 
 - The JWT secret key should be at least 32 characters and cryptographically random
-- Use HTTPS in production (required for secure cookie transmission)
+- Use HTTPS in production (session cookies are `Secure`; see [Reverse Proxy and Login Cookies](../deployment/reverse-proxy.md))
 - Change the default database password in production
 - Store the JWT secret key securely (environment variables, secrets manager, etc.)
 
@@ -198,6 +198,43 @@ Or in `api/appsettings.Development.json`:
 
 Unset still means `standard` even when `ASPNETCORE_ENVIRONMENT=Development`.
 
+## Startup backfills
+
+Some upgrades add data that older workouts don't have yet (route previews, timer time, device laps, zone seconds, best efforts, ...). Tempo fills it in with backfills. Each logs `<name> backfill: N of N` and, once a run finds nothing to do (`0 of 0`), is recorded complete in the `CompletedBackfills` table.
+
+**Normal starts run none.** After migrations, one query checks the records:
+
+| Startup log | Meaning |
+|-------------|---------|
+| `Startup backfills: all 8 complete; none run` | Nothing to do. |
+| `Startup backfills: no workouts yet, nothing to fill; recorded all 8 complete` | New install. |
+| `WRN Startup backfills: N of 8 have not completed on this library (...)` | An install that skipped versions, or a restore cut short. Run the command below once. |
+
+### When backfills run
+
+- **Tempo ZIP restore**: repairs the restored workouts before the job reports **Completed**, so a finished restore is fully usable without a restart.
+- **The `backfill` command**: runs every backfill not yet recorded, records them, and exits. Safe while the API is running.
+  ```bash
+  docker compose -f docker-compose.prod.yml exec api dotnet Tempo.Api.dll backfill
+  # rerun everything, even recorded ones:
+  docker compose -f docker-compose.prod.yml exec api dotnet Tempo.Api.dll backfill --force
+  ```
+  Exit code 0 when all are recorded complete, 1 otherwise (see the log).
+- **Opt-in at startup** (for hosts where you can't run a command in the container), via `Tempo:Backfills:OnStartup`:
+
+| Value | Behavior |
+|-------|----------|
+| `skip` (default) | Run none; check and warn as above. |
+| `run` | Run the pending ones in the background once, without blocking browsing or `/ready`. |
+| `force` | Run all of them in the background once, recorded or not. |
+
+Empty or unset → `skip`. Unknown values refuse to start (allowed: `skip`, `run`, `force`; case-insensitive). Host config only; restart to change. Set `run` back to `skip` (or remove it) once the log says `Backfills finished: all 8 recorded complete`.
+
+```bash
+# Compose .env, for one start
+TEMPO_BACKFILLS_ON_STARTUP=run
+```
+
 ## Environment Variables Reference
 
 All configuration can be set via environment variables using the double underscore (`__`) notation for nested keys:
@@ -211,7 +248,11 @@ All configuration can be set via environment variables using the double undersco
 | `ElevationCalculation:MinDistanceMeters` | `ElevationCalculation__MinDistanceMeters` | `10.0` |
 | `CartoBasemaps:ApiKey` | `CartoBasemaps__ApiKey` or `CARTO_BASEMAPS_API_KEY` (via compose `.env`) | empty (watermarked tiles) |
 | `Tempo:Logging:Profile` | `Tempo__Logging__Profile` or `TEMPO_LOGGING_PROFILE` (via compose `.env`) | `standard` |
-| `CORS:AllowedOrigins` | `CORS__AllowedOrigins` | - |
+| `Tempo:Backfills:OnStartup` | `Tempo__Backfills__OnStartup` or `TEMPO_BACKFILLS_ON_STARTUP` (via compose `.env`) | `skip` |
+| `CORS:AllowedOrigins` | `CORS__AllowedOrigins` | `http://localhost:3000` |
+| `Cookie:Secure` | `Cookie__Secure` or `TEMPO_COOKIE_SECURE` (via compose `.env`) | unset (always `Secure` in Production) — see [Reverse Proxy](../deployment/reverse-proxy.md) |
+| `Cookie:Domain` | `Cookie__Domain` | unset (host-only cookie) |
+| `Tempo:Proxy:TrustedNetworks` | `Tempo__Proxy__TrustedNetworks` | loopback + private ranges |
 | `JWT:SecretKey` | `JWT__SecretKey` | - (REQUIRED in production) |
 | `JWT:Issuer` | `JWT__Issuer` | `Tempo` |
 | `JWT:Audience` | `JWT__Audience` | `Tempo` |

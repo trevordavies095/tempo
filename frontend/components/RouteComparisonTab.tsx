@@ -8,55 +8,13 @@ import { ComposedChart, Scatter, Line, XAxis, YAxis, ResponsiveContainer, Toolti
 import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDate, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
+import { routePaceDelta, routeTimeDelta, thisRunTimeDifferenceS } from '@/lib/routeDelta';
+import { RouteDeltaText } from '@/components/RouteDeltaText';
+import { routeTrend, routeTrendDisplay, routeTrendRunCount } from '@/lib/routeTrend';
 
 interface RouteComparisonTabProps {
   workoutId: string;
   currentWorkout: WorkoutDetail;
-}
-
-/**
- * Format time difference in seconds to a readable string
- * @param differenceS Time difference in seconds (negative = faster, positive = slower)
- * @returns Formatted string like "+2:15 slower" or "-2:15 faster"
- */
-function formatTimeDifference(differenceS: number): string {
-  if (differenceS === 0) {
-    return 'same time';
-  }
-  const absSeconds = Math.abs(differenceS);
-  const minutes = Math.floor(absSeconds / 60);
-  const seconds = absSeconds % 60;
-  const sign = differenceS < 0 ? '-' : '+';
-  const fasterSlower = differenceS < 0 ? 'faster' : 'slower';
-  return `${sign}${minutes}:${seconds.toString().padStart(2, '0')} ${fasterSlower}`;
-}
-
-/**
- * Format pace difference in seconds per km to a readable string
- * @param differenceS Pace difference in seconds per km (negative = faster pace, positive = slower pace)
- * @param unitPreference Unit preference for formatting
- * @returns Formatted string like "+5s/km slower" or "-16s/mi faster"
- */
-function formatPaceDifference(differenceS: number, unitPreference: 'metric' | 'imperial'): string {
-  if (differenceS === 0) {
-    return 'same pace';
-  }
-  let convertedDifference: number;
-  let unitLabel: string;
-  
-  if (unitPreference === 'imperial') {
-    // Convert from seconds/km to seconds/mile (same conversion as formatPace)
-    convertedDifference = differenceS * 1.609344;
-    unitLabel = 's/mi';
-  } else {
-    convertedDifference = differenceS;
-    unitLabel = 's/km';
-  }
-  
-  const absSeconds = Math.abs(convertedDifference);
-  const sign = convertedDifference < 0 ? '-' : '+';
-  const fasterSlower = convertedDifference < 0 ? 'faster' : 'slower';
-  return `${sign}${Math.round(absSeconds)}${unitLabel} ${fasterSlower}`;
 }
 
 interface ChartDataPoint {
@@ -194,19 +152,7 @@ function PaceComparisonTooltip({
         <p className="text-xs text-muted">
           Duration: {formatDuration(dataFromLabel.durationS)}
         </p>
-        {dataFromLabel.timeDifferenceS !== undefined && dataFromLabel.timeDifferenceS !== null && (
-          <p
-            className={`text-xs ${
-              dataFromLabel.timeDifferenceS < 0
-                ? 'text-ink'
-                : dataFromLabel.timeDifferenceS > 0
-                  ? 'text-danger'
-                  : 'text-muted'
-            }`}
-          >
-            {formatTimeDifference(dataFromLabel.timeDifferenceS)}
-          </p>
-        )}
+        <RouteDeltaText delta={routeTimeDelta(dataFromLabel.timeDifferenceS)} className="block text-xs" />
       </div>
     );
   }
@@ -315,42 +261,17 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
     // Average Pace: Mean of all avgPaceS values
     const avgPace = data.reduce((sum, route) => sum + route.avgPaceS, 0) / data.length;
 
-    // Improvement Trend: Compare current pace to average of last 5 runs
-    // Filter to only include past workouts (before current workout date) to ensure
-    // the trend compares current performance to past performance, not future workouts
-    const currentWorkoutDate = new Date(currentWorkout.startedAt).getTime();
-    const pastRoutes = data.filter(route => 
-      new Date(route.startedAt).getTime() < currentWorkoutDate
-    );
-    const sortedByDate = [...pastRoutes].sort((a, b) => 
-      new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-    );
-    const last5Runs = sortedByDate.slice(0, 5);
-    const avgLast5Pace = last5Runs.length > 0
-      ? last5Runs.reduce((sum, route) => sum + route.avgPaceS, 0) / last5Runs.length
-      : currentWorkout.avgPaceS;
-    
-    const currentPace = currentWorkout.avgPaceS;
-    const percentDiff = Math.abs((currentPace - avgLast5Pace) / avgLast5Pace) * 100;
-    let trend: 'improving' | 'declining' | 'stable';
-    if (currentPace < avgLast5Pace) {
-      trend = 'improving';
-    } else if (currentPace > avgLast5Pace) {
-      trend = 'declining';
-    } else {
-      trend = 'stable';
-    }
-    // Override to stable if within 2%
-    if (percentDiff <= 2) {
-      trend = 'stable';
-    }
+    // Trend: the iOS rule over every run on the route, this run included (see lib/routeTrend).
+    const trend = routeTrend(chartData.map((point) => ({ startedAt: point.date, avgPaceS: point.paceS })));
+    const trendRunCount = routeTrendRunCount(chartData.length);
 
     return {
       bestTime,
       avgPace,
       trend,
+      trendRunCount,
     };
-  }, [data, currentWorkout.avgPaceS, currentWorkout.startedAt]);
+  }, [data, chartData]);
 
   // Sort routes for list display
   const sortedRoutes = useMemo(() => {
@@ -369,9 +290,8 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
           comparison = a.avgPaceS - b.avgPaceS;
           break;
         case 'timeDiff':
-          const aDiff = a.timeDifferenceS ?? 0;
-          const bDiff = b.timeDifferenceS ?? 0;
-          comparison = aDiff - bDiff;
+          // The displayed value: this run − the match
+          comparison = thisRunTimeDifferenceS(a.timeDifferenceS) - thisRunTimeDifferenceS(b.timeDifferenceS);
           break;
       }
 
@@ -433,7 +353,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
         </h2>
         <div style={{ height: '300px' }}>
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 20 }}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 16, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
               <XAxis 
                 dataKey="date" 
@@ -450,11 +370,19 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                   return formatDate(date.toISOString());
                 }}
               />
-              <YAxis 
+              <YAxis
                 tick={{ fill: 'var(--muted)', fontSize: 12 }}
                 tickFormatter={(value) => formatPace(value, unitPreference)}
                 domain={['auto', 'auto']}
+                reversed
                 width={80}
+                label={{
+                  value: 'Pace (faster at top)',
+                  angle: -90,
+                  position: 'insideLeft',
+                  offset: 0,
+                  style: { fill: 'var(--muted)', fontSize: 12, textAnchor: 'middle' },
+                }}
               />
               <Tooltip
                 shared={false}
@@ -566,15 +494,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                 <div className="text-sm font-semibold text-ink mb-1">
                   {formatDate(quickStats.bestTime.startedAt)}
                 </div>
-                <div className={`text-xs ${
-                  quickStats.bestTime.timeDifferenceS < 0
-                    ? 'text-ink'
-                    : quickStats.bestTime.timeDifferenceS > 0
-                    ? 'text-danger'
-                    : 'text-muted'
-                }`}>
-                  {formatTimeDifference(quickStats.bestTime.timeDifferenceS)}
-                </div>
+                <RouteDeltaText delta={routeTimeDelta(quickStats.bestTime.timeDifferenceS)} className="block text-xs" />
               </div>
             )}
 
@@ -586,19 +506,17 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
               </div>
             </div>
 
-            {/* Improvement Trend */}
+            {/* Trend */}
             <div className="p-4 bg-canvas rounded-lg border border-border">
               <div className="text-xs font-medium text-muted mb-1">Trend</div>
-              <div className={`text-sm font-semibold flex items-center gap-1 ${
-                quickStats.trend === 'improving'
-                  ? 'text-ink'
-                  : quickStats.trend === 'declining'
-                  ? 'text-danger'
-                  : 'text-muted'
-              }`}>
-                {quickStats.trend === 'improving' && '↑ Improving'}
-                {quickStats.trend === 'declining' && '↓ Declining'}
-                {quickStats.trend === 'stable' && '→ Stable'}
+              <div
+                className={`text-sm font-semibold flex items-center gap-1 ${routeTrendDisplay(quickStats.trend).className}`}
+              >
+                <span aria-hidden="true">{routeTrendDisplay(quickStats.trend).symbol}</span>
+                {routeTrendDisplay(quickStats.trend).title}
+              </div>
+              <div className="text-xs text-muted mt-1">
+                Last {quickStats.trendRunCount} {quickStats.trendRunCount === 1 ? 'run' : 'runs'}
               </div>
             </div>
           </div>
@@ -653,19 +571,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                     <span className="text-sm font-semibold text-ink">
                       {formatDuration(route.durationS)}
                     </span>
-                    {route.timeDifferenceS !== undefined && route.timeDifferenceS !== null && (
-                      <span
-                        className={`text-xs ${
-                          route.timeDifferenceS < 0
-                            ? 'text-ink'
-                            : route.timeDifferenceS > 0
-                            ? 'text-danger'
-                            : 'text-muted'
-                        }`}
-                      >
-                        {formatTimeDifference(route.timeDifferenceS)}
-                      </span>
-                    )}
+                    <RouteDeltaText delta={routeTimeDelta(route.timeDifferenceS)} className="text-xs" />
                   </div>
                 </div>
 
@@ -676,19 +582,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
                     <span className="text-sm font-semibold text-ink">
                       {formatPace(route.avgPaceS, unitPreference)}
                     </span>
-                    {route.paceDifferenceS !== undefined && route.paceDifferenceS !== null && (
-                      <span
-                        className={`text-xs ${
-                          route.paceDifferenceS < 0
-                            ? 'text-ink'
-                            : route.paceDifferenceS > 0
-                            ? 'text-danger'
-                            : 'text-muted'
-                        }`}
-                      >
-                        {formatPaceDifference(route.paceDifferenceS, unitPreference)}
-                      </span>
-                    )}
+                    <RouteDeltaText delta={routePaceDelta(route.paceDifferenceS, unitPreference)} className="text-xs" />
                   </div>
                 </div>
 

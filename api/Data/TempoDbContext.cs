@@ -22,6 +22,7 @@ public class TempoDbContext : DbContext
     public DbSet<ImportJob> ImportJobs { get; set; }
     public DbSet<WorkoutExternalIdentity> WorkoutExternalIdentities { get; set; }
     public DbSet<IntervalsIcuConnection> IntervalsIcuConnections { get; set; }
+    public DbSet<CompletedBackfill> CompletedBackfills { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -100,8 +101,8 @@ public class TempoDbContext : DbContext
 
         modelBuilder.Entity<UserSettings>(entity =>
         {
-            // Single-row table pattern - ensure only one settings record exists
-            // We'll enforce this in application logic, but add a unique constraint on Id
+            // One-row table: IX_UserSettings_Singleton (unique on a constant, raw SQL in migration
+            // EnforceSingletonRows) rejects a second row. Read with SingletonRows.SingleRowAsync.
             entity.HasIndex(e => e.Id).IsUnique();
             entity.HasIndex(e => e.DefaultShoeId);
             

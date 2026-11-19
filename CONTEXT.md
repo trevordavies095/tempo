@@ -5,12 +5,12 @@ Self-hosted running tracker. The WebUI is the **command center**; the iOS app is
 ## Language
 
 **Command center**:
-The WebUI. Full product surface: import, settings, shoes, analytics, and Workout overview. Not a phone clone and not a thin admin utility.
+The WebUI. Full product surface: import, settings, shoes, analytics, and Workout overview. Units, default shoe and shoe management are also on the daily driver; everything that recalculates or is one-time setup is here only. Not a phone clone and not a thin admin utility.
 _Avoid_: companion site, admin console, desk companion
 
 **Daily driver**:
-The iOS app, used for day-to-day logging and glancing once Tempo is set up. Functionality that exists only on the command center stays on the command center.
-_Avoid_: mobile client as the source of truth for settings
+The iOS app, used for day-to-day logging and glancing once Tempo is set up. Daily preferences (units, default shoe) and gear (adding, editing, retiring shoes) live on both surfaces. Configuration that triggers recalculation or needs a desk stays on the command center: heart-rate zones, thresholds editing, crop, ZIP import and export, recalculations, password, API keys, intervals.icu connection, shoe delete.
+_Avoid_: mobile client as the source of truth for settings that recalculate
 
 **Control plane**:
 Command-center screens for operating Tempo: settings, import, activities list, shoes. Dense, scannable.
@@ -19,6 +19,10 @@ _Avoid_: admin pages, back office
 **Workout overview**:
 The command-center screen for one Workout: map, splits, time series, weather, media, comparison. Expansive, not dense.
 _Avoid_: workout detail, activity page (when meaning this screen)
+
+**Similar runs**:
+The daily-driver name for the similar-routes matches shown on the Workout overview as Route Comparison.
+_Avoid_: similar routes (on the daily driver), route matches
 
 **Workout**:
 A recorded run with stats, optional route, splits, time series, media, shoe, and weather.
@@ -47,6 +51,10 @@ _Avoid_: GpxParser splits, GPS smoothing (as the module name)
 **Workout intake**:
 The persist pipeline behind `POST /workouts/import`, `POST /workouts/import/healthkit`, and Strava bulk per-file processing: decode adapter (GPX/FIT/HealthKit) then `PersistAsync` (geometry, duplicate policy, weather, relative effort, best efforts). Persist is the single pipeline; new formats enter via decoded input, not a second pipeline. Not the HTTP module and not Settings ZIP restore.
 _Avoid_: import endpoint (when meaning this module), bulk persist
+
+**Workout derivations**:
+The in-process recompute of a Workout's derived data after its inputs change: time in zones, Relative Effort, and (when samples changed) Best efforts. Callers say what changed (`Samples` or `HeartRateZones`), not which steps to run. Workout intake, duplicate upgrade, crop, and the Relative Effort recalculations all go through it. Track geometry and splits stay with the caller that holds the track points. Relative Effort is kept when no heart-rate zones are saved and replaced otherwise, so it clears when the Workout has no heart-rate data. Zone changes recompute many Workouts in memory and save once.
+_Avoid_: recalc (as the module name), post-processing
 
 **Best effort**:
 The fastest time for a standard distance (400m through Marathon) over any segment of a Workout. Each Workout stores its own per distance (`WorkoutBestEffort`); all-time and date-windowed bests are the fastest of those, ties to the earliest Workout. Derived: not exported, recomputed after restore.

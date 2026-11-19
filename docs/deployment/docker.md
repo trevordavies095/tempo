@@ -113,13 +113,28 @@ Media files are stored in the `./media` directory, mounted as a volume. Ensure t
 
 ## Updating
 
-To update to a new version:
+An upgrade is not a no-op reboot. Migrations run on API start, and some releases then rewrite older workouts in the background (startup backfills). Follow these steps:
 
-1. Update image tags in `docker-compose.prod.yml`
-2. Pull new images: `docker compose -f docker-compose.prod.yml pull`
-3. Restart services: `docker compose -f docker-compose.prod.yml up -d`
+1. **Back up.** Back up the database with `pg_dump` and copy `./media`, or download a Settings → Export ZIP. See [Backup and Restore](backup-restore.md).
+2. **Pin matching tags.** Set the api **and** frontend images in `docker-compose.prod.yml` to the same release tag (e.g. `v2.11.0`). Don't use `latest`, and don't mix versions.
+3. **Don't restart during an import.** Check that no Strava ZIP import or Tempo restore is in progress. When the API starts, it marks any unfinished import job `failed` (`interrupted`) and deletes its uploaded archive. The job does not resume; start it again after the upgrade.
+4. **Pull and start.**
+   ```bash
+   docker compose -f docker-compose.prod.yml pull
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+5. **Check the backfill line.** Starts don't run backfills. The API logs `Startup backfills: all 8 complete; none run` when there's nothing to do:
+   ```bash
+   docker compose -f docker-compose.prod.yml logs api | grep -i "startup backfills"
+   ```
+   If it warns that some `have not completed on this library` (an install that skipped versions, or a release that adds a backfill), run the catch-up command once and wait for `Backfills finished: all 8 recorded complete`:
+   ```bash
+   docker compose -f docker-compose.prod.yml exec api dotnet Tempo.Api.dll backfill
+   ```
+   On a large library this can take a while and means extra CPU, disk, and Postgres WAL. Browsing works throughout. Tempo 2.11.0 and earlier ran every backfill on every start instead.
+6. **Smoke test.** `curl -f https://tempo.example.com/api/ready` returns 200 once the API can reach the database. It does **not** wait for backfills.
 
-Database migrations run automatically on API startup.
+To run backfills at startup instead (hosts without `exec`), or to force a full re-run, see [Startup backfills](../getting-started/configuration.md#startup-backfills).
 
 ### Leaving the experimental `:feat-ai-coach` image
 

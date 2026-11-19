@@ -3,6 +3,7 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   type MouseEvent,
   type ReactNode,
@@ -36,7 +37,10 @@ export function Dialog({
   const onCloseRef = useRef(onClose);
   const titleId = useId();
 
-  onCloseRef.current = onClose;
+  // Keep the latest onClose for the keydown listener without re-running the open effect.
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return;

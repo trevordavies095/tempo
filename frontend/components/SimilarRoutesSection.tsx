@@ -2,114 +2,29 @@
 
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
+import { getSimilarRoutes, type WorkoutDetail } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDate, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import { IconArrowUp, IconArrowDown } from '@tabler/icons-react';
+import { routePaceDelta, routeTimeDelta, type RouteDelta } from '@/lib/routeDelta';
+import { RouteDeltaText } from '@/components/RouteDeltaText';
+
+/** Up when this run was faster than the match, down when slower. */
+function DeltaArrow({ delta }: { delta: RouteDelta | null }) {
+  if (delta?.tone === 'faster') return <IconArrowUp className="inline-block w-3 h-3 ml-0.5" />;
+  if (delta?.tone === 'slower') return <IconArrowDown className="inline-block w-3 h-3 ml-0.5" />;
+  return null;
+}
 
 interface SimilarRoutesSectionProps {
   workoutId: string;
   currentWorkout: WorkoutDetail;
 }
 
-/**
- * Format time difference in seconds to a readable string
- * @param differenceS Time difference in seconds (negative = faster, positive = slower)
- * @returns Formatted string like "+2:15 slower" or "-2:15 faster"
- */
-function formatTimeDifference(differenceS: number): string {
-  if (differenceS === 0) {
-    return 'same time';
-  }
-  const absSeconds = Math.abs(differenceS);
-  const minutes = Math.floor(absSeconds / 60);
-  const seconds = absSeconds % 60;
-  const sign = differenceS < 0 ? '-' : '+';
-  const fasterSlower = differenceS < 0 ? 'faster' : 'slower';
-  return `${sign}${minutes}:${seconds.toString().padStart(2, '0')} ${fasterSlower}`;
-}
-
-/**
- * Format pace difference in seconds per km to a readable string
- * @param differenceS Pace difference in seconds per km (negative = faster pace, positive = slower pace)
- * @param unitPreference Unit preference for formatting
- * @returns Formatted string like "+5s/km slower" or "-16s/mi faster"
- */
-function formatPaceDifference(differenceS: number, unitPreference: 'metric' | 'imperial'): string {
-  if (differenceS === 0) {
-    return 'same pace';
-  }
-  let convertedDifference: number;
-  let unitLabel: string;
-  
-  if (unitPreference === 'imperial') {
-    // Convert from seconds/km to seconds/mile (same conversion as formatPace)
-    convertedDifference = differenceS * 1.609344;
-    unitLabel = 's/mi';
-  } else {
-    convertedDifference = differenceS;
-    unitLabel = 's/km';
-  }
-  
-  const absSeconds = Math.abs(convertedDifference);
-  const sign = convertedDifference < 0 ? '-' : '+';
-  const fasterSlower = convertedDifference < 0 ? 'faster' : 'slower';
-  return `${sign}${Math.round(absSeconds)}${unitLabel} ${fasterSlower}`;
-}
-
-/**
- * Format relative effort difference to a readable string
- * @param previousEffort Previous workout's relative effort
- * @param currentEffort Current workout's relative effort
- * @returns Formatted string like "85 (-5)" if current is 90 and previous is 85
- */
-function formatRelativeEffortDifference(previousEffort: number, currentEffort: number): string {
-  const difference = previousEffort - currentEffort;
-  const sign = difference < 0 ? '-' : '+';
-  const absDiff = Math.abs(difference);
-  return `${previousEffort} (${sign}${absDiff})`;
-}
-
-/**
- * Format elevation difference to a readable string
- * @param previousElev Previous workout's elevation gain in meters
- * @param currentElev Current workout's elevation gain in meters
- * @param unitPreference Unit preference for formatting
- * @returns Formatted string like "+150m (+50m more)" or "+150m (-20m less)"
- */
-function formatElevationDifference(
-  previousElev: number,
-  currentElev: number,
-  unitPreference: 'metric' | 'imperial'
-): string {
-  const difference = previousElev - currentElev;
-  const absDiff = Math.abs(difference);
-  const previousFormatted = formatElevation(previousElev, unitPreference);
-  
-  if (unitPreference === 'imperial') {
-    const diffFeet = Math.round(absDiff * 3.28084);
-    if (difference > 0) {
-      return `${previousFormatted} (+${diffFeet}ft more)`;
-    } else if (difference < 0) {
-      return `${previousFormatted} (-${diffFeet}ft less)`;
-    } else {
-      return previousFormatted;
-    }
-  } else {
-    if (difference > 0) {
-      return `${previousFormatted} (+${Math.round(absDiff)}m more)`;
-    } else if (difference < 0) {
-      return `${previousFormatted} (-${Math.round(absDiff)}m less)`;
-    } else {
-      return previousFormatted;
-    }
-  }
-}
-
 export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoutesSectionProps) {
   const { unitPreference } = useSettings();
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['similar-routes', workoutId],
     queryFn: () => getSimilarRoutes(workoutId),
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -192,24 +107,9 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                   <span className="text-sm font-semibold text-ink">
                     {formatDuration(route.durationS)}
                   </span>
-                  {route.timeDifferenceS !== undefined && route.timeDifferenceS !== null && (
-                    <span
-                      className={`text-xs ${
-                        route.timeDifferenceS < 0
-                          ? 'text-ink'
-                          : route.timeDifferenceS > 0
-                          ? 'text-danger'
-                          : 'text-muted'
-                      }`}
-                    >
-                      {formatTimeDifference(route.timeDifferenceS)}
-                      {route.timeDifferenceS < 0 ? (
-                        <IconArrowUp className="inline-block w-3 h-3 ml-0.5" />
-                      ) : route.timeDifferenceS > 0 ? (
-                        <IconArrowDown className="inline-block w-3 h-3 ml-0.5" />
-                      ) : null}
-                    </span>
-                  )}
+                  <RouteDeltaText delta={routeTimeDelta(route.timeDifferenceS)} className="text-xs">
+                    <DeltaArrow delta={routeTimeDelta(route.timeDifferenceS)} />
+                  </RouteDeltaText>
                 </div>
               </div>
 
@@ -220,24 +120,9 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
                   <span className="text-sm font-semibold text-ink">
                     {formatPace(route.avgPaceS, unitPreference)}
                   </span>
-                  {route.paceDifferenceS !== undefined && route.paceDifferenceS !== null && (
-                    <span
-                      className={`text-xs ${
-                        route.paceDifferenceS < 0
-                          ? 'text-ink'
-                          : route.paceDifferenceS > 0
-                          ? 'text-danger'
-                          : 'text-muted'
-                      }`}
-                    >
-                      {formatPaceDifference(route.paceDifferenceS, unitPreference)}
-                      {route.paceDifferenceS < 0 ? (
-                        <IconArrowUp className="inline-block w-3 h-3 ml-0.5" />
-                      ) : route.paceDifferenceS > 0 ? (
-                        <IconArrowDown className="inline-block w-3 h-3 ml-0.5" />
-                      ) : null}
-                    </span>
-                  )}
+                  <RouteDeltaText delta={routePaceDelta(route.paceDifferenceS, unitPreference)} className="text-xs">
+                    <DeltaArrow delta={routePaceDelta(route.paceDifferenceS, unitPreference)} />
+                  </RouteDeltaText>
                 </div>
               </div>
 

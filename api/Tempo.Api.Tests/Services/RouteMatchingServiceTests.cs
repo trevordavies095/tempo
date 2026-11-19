@@ -401,6 +401,35 @@ public class RouteMatchingServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task FindSimilarRoutesAsync_DistanceBoundary_IncludesExactTenPercentExcludesBeyond()
+    {
+        // Arrange
+        var baseDate = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc);
+        var routeGeoJson = CreateRouteGeoJson(new[] {
+            (-122.4194, 37.7749),
+            (-122.4094, 37.7849),
+        });
+
+        var currentWorkout = await CreateWorkoutWithRouteAsync(
+            _db, baseDate, 5000.0, 1800, routeGeoJson);
+
+        // Exactly 10% longer (500m difference) is within the threshold
+        var atThresholdWorkout = await CreateWorkoutWithRouteAsync(
+            _db, baseDate.AddDays(-10), 5500.0, 1900, routeGeoJson);
+
+        // Just over 10% longer is outside it
+        var beyondThresholdWorkout = await CreateWorkoutWithRouteAsync(
+            _db, baseDate.AddDays(-20), 5505.0, 1900, routeGeoJson);
+
+        // Act
+        var result = await _service.FindSimilarRoutesAsync(currentWorkout.Id);
+
+        // Assert
+        result.Should().Contain(m => m.WorkoutId == atThresholdWorkout.Id);
+        result.Should().NotContain(m => m.WorkoutId == beyondThresholdWorkout.Id);
+    }
+
+    [Fact]
     public async Task FindSimilarRoutesAsync_MatchesRacesAcrossAllYears_WhenCurrentWorkoutIsRace()
     {
         // Arrange

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { formatDuration, formatDistance } from '@/lib/format';
 import type { WorkoutDetail } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
@@ -66,14 +66,18 @@ export function CropWorkoutDialog({
     endTrimSeconds >= 0 &&
     startTrimSeconds + endTrimSeconds < originalDurationS;
 
-  // Update input strings when slider values change
-  useEffect(() => {
+  // Reformat the input strings whenever the trim values change (adjusting state during render).
+  const [formattedStartTrim, setFormattedStartTrim] = useState(startTrimSeconds);
+  if (startTrimSeconds !== formattedStartTrim) {
+    setFormattedStartTrim(startTrimSeconds);
     setStartTrimInput(formatTimeString(startTrimSeconds));
-  }, [startTrimSeconds]);
+  }
 
-  useEffect(() => {
+  const [formattedEndTrim, setFormattedEndTrim] = useState(endTrimSeconds);
+  if (endTrimSeconds !== formattedEndTrim) {
+    setFormattedEndTrim(endTrimSeconds);
     setEndTrimInput(formatTimeString(endTrimSeconds));
-  }, [endTrimSeconds]);
+  }
 
   const handleStartTrimInputChange = (value: string) => {
     setStartTrimInput(value);

@@ -129,7 +129,7 @@ public class WorkoutCropService
 
     private async Task<double> GetSplitDistanceMetersAsync()
     {
-        var settings = await _db.UserSettings.FirstOrDefaultAsync();
+        var settings = await _db.UserSettings.SingleRowAsync();
         var unitPreference = settings?.UnitPreference;
         return unitPreference != null && unitPreference.Equals("imperial", StringComparison.OrdinalIgnoreCase)
             ? 1609.344

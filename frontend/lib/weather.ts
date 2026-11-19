@@ -17,7 +17,8 @@ export interface WeatherData {
   precipitation?: number;
   windGust?: number;
   precipitationProbability?: number;
-  [key: string]: any; // Allow other fields from different sources
+  relativeHumidity?: number | string | null; // Older records use this name for humidity
+  [key: string]: unknown; // Allow other fields from different sources
 }
 
 /**
@@ -168,7 +169,7 @@ export function getFeelsLikeTemperature(weather: WeatherData): number | undefine
  */
 export function getHumidity(weather: WeatherData): number | undefined {
   // Check both field names for backward compatibility
-  let humidity = weather.humidity ?? (weather as any).relativeHumidity;
+  const humidity = weather.humidity ?? weather.relativeHumidity;
   
   if (humidity === undefined || humidity === null) {
     return undefined;

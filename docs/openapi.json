@@ -3,7 +3,7 @@
   "info": {
     "title": "Tempo API",
     "description": "HTTP API for Tempo, a self-hosted running tracker. Protected routes accept `Authorization: Bearer` with either a JWT (interactive web session) or an API key generated in Settings (prefix `tmp_`). Machine clients (CLI, automation) typically use API keys; JWTs are usually issued via cookie after login.",
-    "version": "2.11.0"
+    "version": "2.12.0"
   },
   "paths": {
     "/auth/register": {
@@ -421,7 +421,7 @@
           "Settings"
         ],
         "summary": "Update heart rate zones and optionally recalculate relative effort",
-        "description": "Updates heart rate zones and optionally recalculates relative effort for all qualifying workouts\nin one atomic operation. If RecalculateExisting is true, all workouts with heart rate data will\nhave their relative effort recalculated using the new zones.",
+        "description": "Saves heart rate zones, then optionally recalculates relative effort for all qualifying workouts.\nIf RecalculateExisting is true, all workouts with heart rate data are recalculated with the new\nzones and saved together; a workout that fails is left unchanged and counted as an error.",
         "operationId": "UpdateHeartRateZonesWithRecalc",
         "requestBody": {
           "description": "Heart rate zones update request with optional recalculation flag",
@@ -1008,7 +1008,7 @@
           "Stats"
         ],
         "summary": "Get weekly stats",
-        "description": "Returns daily miles for the current week (Monday-Sunday), grouped by day of week.\nDistances are converted from meters to miles. Week boundaries are calculated in the specified timezone.",
+        "description": "Returns daily miles for the selected week (Monday-Sunday) and the previous week, grouped by day of week.\nDistances are converted from meters to miles. Week boundaries are calculated in the specified timezone and match `/stats/weekly-recap`;\nboth weeks use the full Mon–Sun window (not week-to-date).",
         "operationId": "GetWeeklyStats",
         "parameters": [
           {
@@ -1019,11 +1019,29 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "referenceDate",
+            "in": "query",
+            "description": "Optional local calendar date (yyyy-MM-dd) that selects which Monday–Sunday week is treated as \"current\"; defaults to today in the offset frame.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [

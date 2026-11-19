@@ -359,7 +359,7 @@ public class ImportService
             settings.DefaultShoe = null;
 
             // Check if settings already exist
-            var existing = await _db.UserSettings.FirstOrDefaultAsync();
+            var existing = await _db.UserSettings.SingleRowAsync();
             if (existing != null)
             {
                 // Update existing settings

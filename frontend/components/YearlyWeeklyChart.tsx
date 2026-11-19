@@ -25,7 +25,7 @@ export default function YearlyWeeklyChart({
   onWeekSelect,
 }: YearlyWeeklyChartProps) {
   const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
-  const { unitPreference } = useSettings();
+  const { unitPreference, isHydrated } = useSettings();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const { data: availablePeriods, isLoading: isLoadingPeriods, isError: isErrorPeriods } = useQuery({
@@ -92,7 +92,9 @@ export default function YearlyWeeklyChart({
   };
 
 
-  if (isLoading) {
+  // Hold the chart until the unit preference has loaded, so it never draws
+  // in the default unit first and then redraws when the preference arrives.
+  if (isLoading || !isHydrated) {
     return (
       <Card>
         <div className="flex items-center justify-between mb-4">

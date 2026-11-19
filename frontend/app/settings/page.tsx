@@ -25,7 +25,7 @@ import { ApiKeySection } from '@/components/ApiKeySection';
 import ThresholdsSection from '@/components/ThresholdsSection';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useHeartRateZones, type ZoneRange } from '@/hooks/useHeartRateZones';
+import { useHeartRateZones } from '@/hooks/useHeartRateZones';
 import { invalidateWorkoutQueries } from '@/lib/queryUtils';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
@@ -161,7 +161,7 @@ function SettingsPageContent() {
         try {
           const countResponse = await getQualifyingWorkoutCount();
           setRecalcWorkoutCount(countResponse.count);
-        } catch (error) {
+        } catch {
           // If we can't get the count, still show dialog with null count
           setRecalcWorkoutCount(null);
         }
@@ -171,7 +171,7 @@ function SettingsPageContent() {
         try {
           const countResponse = await getQualifyingWorkoutCount();
           setZoneUpdateWorkoutCount(countResponse.count);
-        } catch (error) {
+        } catch {
           // If we can't get the count, still show dialog with null count
           setZoneUpdateWorkoutCount(null);
         }
@@ -190,7 +190,7 @@ function SettingsPageContent() {
       const countResponse = await getQualifyingWorkoutCount();
       setRecalcWorkoutCount(countResponse.count);
       setShowRecalcDialog(true);
-    } catch (error) {
+    } catch {
       setRecalcError('Failed to get workout count');
       // Still show dialog with null count
       setRecalcWorkoutCount(null);
@@ -260,7 +260,7 @@ function SettingsPageContent() {
       const countResponse = await getQualifyingWorkoutCountForSplits();
       setRecalcSplitsWorkoutCount(countResponse.count);
       setShowRecalcSplitsDialog(true);
-    } catch (error) {
+    } catch {
       setRecalcSplitsError('Failed to get workout count');
       // Still show dialog with null count
       setRecalcSplitsWorkoutCount(null);

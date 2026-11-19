@@ -42,9 +42,12 @@ public class BulkImportServiceTests : IAsyncLifetime
             new FitParserService(),
             new TrackGeometry(elevationConfig),
             new FakeWeatherService(),
-            new HeartRateZoneService(),
-            new FakeRelativeEffortService(),
-            new FakeBestEffortService(),
+            new WorkoutDerivations(
+                _db,
+                new HeartRateZoneService(),
+                new FakeRelativeEffortService(),
+                new FakeBestEffortService(),
+                NullLogger<WorkoutDerivations>.Instance),
             new SplitHeartRateService(),
             NullLogger<WorkoutIntake>.Instance);
 

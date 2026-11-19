@@ -35,7 +35,7 @@ public sealed class IntervalsIcuSyncService
         _queue.BeginTick();
         try
         {
-            var row = await _db.IntervalsIcuConnections.FirstOrDefaultAsync(cancellationToken);
+            var row = await _db.IntervalsIcuConnections.SingleRowAsync(cancellationToken);
             if (row == null || !row.Enabled)
             {
                 return;

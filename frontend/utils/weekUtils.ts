@@ -24,7 +24,7 @@ function getWeek52Boundaries(): { week52Start: Date; week52End: Date } {
   const mostRecentMonday = new Date(today);
   mostRecentMonday.setDate(today.getDate() - daysSinceMonday);
   
-  let week52End = new Date(mostRecentMonday);
+  const week52End = new Date(mostRecentMonday);
   week52End.setDate(mostRecentMonday.getDate() + 6);
   if (daysSinceMonday === 0) {
     // If today is Monday, week 52 ended yesterday (last Sunday)
@@ -35,40 +35,6 @@ function getWeek52Boundaries(): { week52Start: Date; week52End: Date } {
   week52Start.setDate(week52End.getDate() - 6);
   
   return { week52Start, week52End };
-}
-
-/**
- * Calculates week boundaries from an interval string (format: YYYYWW).
- * Used for parsing URL hash parameters.
- * 
- * @param interval - Interval string in format YYYYWW (e.g., "202516")
- * @param yearOffset - Year offset to adjust the year
- * @returns Week range or null if interval is invalid
- */
-export function calculateWeekFromInterval(
-  interval: string,
-  yearOffset: number = 0
-): WeekRange | null {
-  if (!interval || interval.length !== 6) {
-    return null;
-  }
-
-  const year = parseInt(interval.substring(0, 4), 10) - yearOffset;
-  const weekNum = parseInt(interval.substring(4, 6), 10);
-
-  // Calculate week boundaries from the last 52 weeks
-  const { week52Start } = getWeek52Boundaries();
-
-  // Calculate the week start for the given week number
-  const weekStart = new Date(week52Start);
-  weekStart.setDate(week52Start.getDate() - (52 - weekNum) * 7);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-
-  return {
-    weekStart: weekStart.toISOString().split('T')[0],
-    weekEnd: weekEnd.toISOString().split('T')[0],
-  };
 }
 
 /**

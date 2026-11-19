@@ -109,14 +109,15 @@ For more information on viewing Best Efforts, see the [Viewing Workouts](viewing
 
 ## Statistics Dashboards
 
-### Weekly Statistics
+### Weekly Recap
 
-View your performance for the current week:
-- **Total Distance** - Sum of all workouts
-- **Total Time** - Combined duration
-- **Number of Workouts** - Count of activities
-- **Average Pace** - Weighted average across all workouts
-- **Total Relative Effort** - Cumulative intensity
+The dashboard's **This Week** card is the weekly recap for the current Monday to Sunday week:
+- **Header** - The week's dates (with "through" and today's weekday while the week is in progress, Monday to Saturday) and the year-to-date distance
+- **Distance, Runs, Time, Elevation** - Week-to-date totals in your units. Time is elapsed time.
+- **Trend arrows** - Each tile compares the week to the average of the previous three weeks: an up arrow when it is above that average, a down arrow when below, and a dash only when exactly level, the same as the iOS app. No arrow is shown when the previous three weeks have nothing to compare against. While the current week is in progress and has no runs yet, no arrows are shown; they appear with the week's first run.
+- **Daily bars** - Distance per day, Monday to Sunday, with a marker under today
+- **Runs by type** - One line such as "3 Easy Run · 1 Long Run · 1 Workout", in run-type order with untagged runs (shown as "Untagged") last. After three types the rest collapse into "+n more"; hover the line to see them all. Hidden when the week has no runs.
+- **Time in Zone** - The Z1–Z5 heart-rate zone bar for the week, the same as on Workout overview. Hidden when no Workout this week has a heart-rate series.
 
 ### Yearly Statistics
 
@@ -134,6 +135,31 @@ Track workout intensity over time:
 - **Trends** - Intensity patterns over time
 - **Distribution** - How effort is distributed across workouts
 - **Comparisons** - Week-over-week or month-over-month changes
+
+
+## Insights
+
+Open **Insights** in the navigation bar (after Activities) for an all-time look across your runs. The page needs at least 5 Workouts; until then it shows an **Unlock Insights** card with your progress toward that number.
+
+### Weather Extremes
+
+Up to eight tiles: Coldest, Hottest, Windiest, Most Humid, Wettest, Wildest Weather (thunderstorms), Foggiest and Snowiest. Each tile shows the value, the Workout name and date, and opens that Workout's overview. Temperature, wind and precipitation follow your unit preference. A tile only appears when at least one run qualifies (for example, Snowiest needs a run recorded in snow), and the whole section needs weather on enough of your runs.
+
+### Personal Records
+
+Your fastest time for each standard distance. Each time opens the Workout it was set in. To recalculate, use the button on the dashboard's Best Efforts card.
+
+Pick a range above the table:
+
+- **All time** (default): the same list as the dashboard's Best Efforts card.
+- **This year**: your best per distance since January 1 (season bests).
+- **Last 90 days**: your best per distance from the last 90 days.
+
+In a ranged view, a time that is also an all-time personal record set inside the range gets a **New** marker. When it beat an earlier record, it also shows **Was m:ss on <date>** under the time (linking to the Workout that held the record before) and how much faster it was. Distances with no effort in the range are left out; if none have one, the card says "No records in this range". The range resets to All time when you leave the page.
+
+### Data Coverage
+
+Total Workouts, the number of days between your first and latest Workout, and for each kind of data (weather, heart rate, elevation, calories, cadence, power) how many runs have it and what percentage of all runs that is.
 
 ## Time-Series Data
 

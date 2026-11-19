@@ -27,10 +27,12 @@ export function MediaModal({
   const [isLoading, setIsLoading] = useState(true);
   const [mediaList, setMediaList] = useState(media);
 
-  // Update media list when prop changes
-  useEffect(() => {
+  // Reset the media list when the prop changes (adjusting state during render).
+  const [prevMedia, setPrevMedia] = useState(media);
+  if (media !== prevMedia) {
+    setPrevMedia(media);
     setMediaList(media);
-  }, [media]);
+  }
 
   const deleteMutation = useMutation({
     mutationFn: (mediaId: string) => deleteWorkoutMedia(workoutId, mediaId),
@@ -60,10 +62,15 @@ export function MediaModal({
     }
   }, [mediaList, currentIndex, deleteMutation]);
 
-  useEffect(() => {
+  // Jump back to the requested item whenever it changes or the modal opens or closes.
+  const [prevInitialIndex, setPrevInitialIndex] = useState(initialIndex);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (initialIndex !== prevInitialIndex || isOpen !== prevIsOpen) {
+    setPrevInitialIndex(initialIndex);
+    setPrevIsOpen(isOpen);
     setCurrentIndex(initialIndex);
     setIsLoading(true);
-  }, [initialIndex, isOpen]);
+  }
 
   useEffect(() => {
     if (!isOpen) return;

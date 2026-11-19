@@ -3,19 +3,19 @@
 > A privacy-first, self-hosted Strava alternative. Import GPX, FIT, and CSV files from Garmin, Apple Watch, Strava, and more. Keep all your data local—no subscriptions, no cloud required.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-2.11.0-green.svg)
+![Version](https://img.shields.io/badge/version-2.12.0-green.svg)
 ![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord)](https://discord.gg/9Svd99npyj)
 
 **[View Full Documentation](https://trevordavies095.github.io/tempo/)** - Complete guides for installation, configuration, usage, deployment, and more.
 
-**[Tempo on the App Store](https://apps.apple.com/us/app/tempo-self-hosted-running/id6763753229)** - Daily-driver iOS app for your self-hosted server. The WebUI is the command center (import, settings, shoes, Workout overview).
+**[Tempo on the App Store](https://apps.apple.com/us/app/tempo-self-hosted-running/id6763753229)** - Daily-driver iOS app for your self-hosted server, including units, shoes and a read-only thresholds view. The WebUI is the command center (bulk import, threshold editing, shoe deletion, the full Workout overview).
 
 ## Screenshots
 
 ![Dashboard](./docs/assets/screenshots/dashboard.png)
-*Dashboard — weekly stats, relative effort, and recent workouts*
+*Dashboard — weekly recap, relative effort, and recent workouts*
 
 ![My Activities](./docs/assets/screenshots/activities.png)
 *Activities list — search, filters, and sortable columns*

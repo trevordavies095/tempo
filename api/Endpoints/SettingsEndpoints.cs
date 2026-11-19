@@ -86,7 +86,7 @@ public static class SettingsEndpoints
         try
         {
             // Get the single settings record, or the age-based defaults when none exists
-            var settings = await db.UserSettings.FirstOrDefaultAsync() ?? zoneService.CreateDefaultSettings();
+            var settings = await db.UserSettings.SingleRowAsync() ?? zoneService.CreateDefaultSettings();
             var zones = zoneService.GetZonesFromUserSettings(settings);
 
             return Results.Ok(new HeartRateZonesDocument
@@ -142,25 +142,27 @@ public static class SettingsEndpoints
 
             var method = Enum.Parse<HeartRateCalculationMethod>(request.CalculationMethod, true);
 
-            // Get or create settings record
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            var isFirstTimeSetup = settings == null;
-
-            if (settings == null)
+            // Get or create the settings row; retried once if a concurrent request created it first
+            var (settings, isFirstTimeSetup) = await db.RetryOnSingletonConflictAsync(async () =>
             {
-                settings = new UserSettings();
-                db.UserSettings.Add(settings);
-            }
+                var row = await db.UserSettings.SingleRowAsync();
+                var created = row == null;
+                if (row == null)
+                {
+                    row = new UserSettings();
+                    db.UserSettings.Add(row);
+                }
 
-            // Update settings
-            settings.CalculationMethod = method;
-            settings.Age = request.Age;
-            settings.RestingHeartRateBpm = request.RestingHeartRateBpm;
-            settings.MaxHeartRateBpm = request.MaxHeartRateBpm;
-            zoneService.ApplyZonesToUserSettings(settings, zones);
-            settings.UpdatedAt = DateTime.UtcNow;
+                row.CalculationMethod = method;
+                row.Age = request.Age;
+                row.RestingHeartRateBpm = request.RestingHeartRateBpm;
+                row.MaxHeartRateBpm = request.MaxHeartRateBpm;
+                zoneService.ApplyZonesToUserSettings(row, zones);
+                row.UpdatedAt = DateTime.UtcNow;
 
-            await db.SaveChangesAsync();
+                await db.SaveChangesAsync();
+                return (row, created);
+            });
 
             return Results.Ok(new
             {
@@ -198,18 +200,20 @@ public static class SettingsEndpoints
     /// <param name="db">Database context</param>
     /// <param name="zoneService">Heart rate zone service</param>
     /// <param name="relativeEffortService">Relative effort service</param>
+    /// <param name="derivations">Workout derivations</param>
     /// <param name="logger">Logger instance</param>
     /// <returns>Updated heart rate zones and optional recalculation results</returns>
     /// <remarks>
-    /// Updates heart rate zones and optionally recalculates relative effort for all qualifying workouts
-    /// in one atomic operation. If RecalculateExisting is true, all workouts with heart rate data will
-    /// have their relative effort recalculated using the new zones.
+    /// Saves heart rate zones, then optionally recalculates relative effort for all qualifying workouts.
+    /// If RecalculateExisting is true, all workouts with heart rate data are recalculated with the new
+    /// zones and saved together; a workout that fails is left unchanged and counted as an error.
     /// </remarks>
     private static async Task<IResult> UpdateHeartRateZonesWithRecalc(
         [FromBody] UpdateHeartRateZonesWithRecalcRequest request,
         TempoDbContext db,
         HeartRateZoneService zoneService,
         RelativeEffortService relativeEffortService,
+        WorkoutDerivations derivations,
         ILogger<Program> logger)
     {
         try
@@ -232,25 +236,27 @@ public static class SettingsEndpoints
 
             var method = Enum.Parse<HeartRateCalculationMethod>(request.CalculationMethod, true);
 
-            // Get or create settings record
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            var isFirstTimeSetup = settings == null;
-
-            if (settings == null)
+            // Get or create the settings row; retried once if a concurrent request created it first
+            var (settings, isFirstTimeSetup) = await db.RetryOnSingletonConflictAsync(async () =>
             {
-                settings = new UserSettings();
-                db.UserSettings.Add(settings);
-            }
+                var row = await db.UserSettings.SingleRowAsync();
+                var created = row == null;
+                if (row == null)
+                {
+                    row = new UserSettings();
+                    db.UserSettings.Add(row);
+                }
 
-            // Update settings
-            settings.CalculationMethod = method;
-            settings.Age = request.Age;
-            settings.RestingHeartRateBpm = request.RestingHeartRateBpm;
-            settings.MaxHeartRateBpm = request.MaxHeartRateBpm;
-            zoneService.ApplyZonesToUserSettings(settings, zones);
-            settings.UpdatedAt = DateTime.UtcNow;
+                row.CalculationMethod = method;
+                row.Age = request.Age;
+                row.RestingHeartRateBpm = request.RestingHeartRateBpm;
+                row.MaxHeartRateBpm = request.MaxHeartRateBpm;
+                zoneService.ApplyZonesToUserSettings(row, zones);
+                row.UpdatedAt = DateTime.UtcNow;
 
-            await db.SaveChangesAsync();
+                await db.SaveChangesAsync();
+                return (row, created);
+            });
 
             // If recalculateExisting is true, recalculate all workouts
             int? recalculatedCount = null;
@@ -268,30 +274,15 @@ public static class SettingsEndpoints
                             .Where(w => allQualifyingIds.Contains(w.Id))
                             .ToListAsync();
 
-                        int updatedCount = 0;
-                        int errorCount = 0;
-
-                        foreach (var workout in qualifyingWorkouts)
+                        // Recalculate in memory, then save once; a failing workout is reverted and counted
+                        var batch = await derivations.RecomputeHeartRateZonesAsync(qualifyingWorkouts, settings);
+                        foreach (var (workoutId, error) in batch.Failures)
                         {
-                            try
-                            {
-                                var relativeEffort = relativeEffortService.RecalculateHeartRateMetrics(workout, zones, db);
-                                if (relativeEffort.HasValue)
-                                {
-                                    workout.RelativeEffort = relativeEffort.Value;
-                                    updatedCount++;
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                errorCount++;
-                                logger.LogWarning(ex, "Failed to calculate Relative Effort for workout {WorkoutId}", workout.Id);
-                            }
+                            logger.LogWarning(error, "Failed to calculate Relative Effort for workout {WorkoutId}", workoutId);
                         }
 
-                        await db.SaveChangesAsync();
-                        recalculatedCount = updatedCount;
-                        recalculatedErrorCount = errorCount;
+                        recalculatedCount = batch.UpdatedCount;
+                        recalculatedErrorCount = batch.Failures.Count;
                     }
                 }
                 catch (Exception ex)
@@ -364,7 +355,7 @@ public static class SettingsEndpoints
     {
         try
         {
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
+            var settings = await db.UserSettings.SingleRowAsync();
             var unitPreference = settings?.UnitPreference ?? "metric";
             
             return Results.Ok(new UnitPreferenceDocument { UnitPreference = unitPreference });
@@ -400,16 +391,20 @@ public static class SettingsEndpoints
                 return Results.BadRequest(new { error = "Unit preference must be 'metric' or 'imperial'" });
             }
 
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            if (settings == null)
+            var settings = await db.RetryOnSingletonConflictAsync(async () =>
             {
-                settings = new UserSettings();
-                db.UserSettings.Add(settings);
-            }
+                var row = await db.UserSettings.SingleRowAsync();
+                if (row == null)
+                {
+                    row = new UserSettings();
+                    db.UserSettings.Add(row);
+                }
 
-            settings.UnitPreference = request.UnitPreference;
-            settings.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync();
+                row.UnitPreference = request.UnitPreference;
+                row.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                return row;
+            });
 
             return Results.Ok(new { unitPreference = settings.UnitPreference });
         }
@@ -469,7 +464,7 @@ public static class SettingsEndpoints
     {
         try
         {
-            var settings = await db.UserSettings.AsNoTracking().FirstOrDefaultAsync();
+            var settings = await db.UserSettings.AsNoTracking().SingleRowAsync();
 
             return Results.Ok(await BuildThresholdsDocumentAsync(settings, db, suggestionService));
         }
@@ -514,17 +509,21 @@ public static class SettingsEndpoints
                 return Results.BadRequest(new { error = $"Threshold heart rate must be between {MinThresholdHeartRateBpm} and {MaxThresholdHeartRateBpm} BPM" });
             }
 
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            if (settings == null)
+            var settings = await db.RetryOnSingletonConflictAsync(async () =>
             {
-                settings = zoneService.CreateDefaultSettings();
-                db.UserSettings.Add(settings);
-            }
+                var row = await db.UserSettings.SingleRowAsync();
+                if (row == null)
+                {
+                    row = zoneService.CreateDefaultSettings();
+                    db.UserSettings.Add(row);
+                }
 
-            settings.ThresholdPaceS = request.ThresholdPaceS;
-            settings.ThresholdHeartRateBpm = request.ThresholdHeartRateBpm;
-            settings.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync();
+                row.ThresholdPaceS = request.ThresholdPaceS;
+                row.ThresholdHeartRateBpm = request.ThresholdHeartRateBpm;
+                row.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                return row;
+            });
 
             return Results.Ok(await BuildThresholdsDocumentAsync(settings, db, suggestionService));
         }
@@ -723,7 +722,7 @@ public static class SettingsEndpoints
         {
             var settings = await db.UserSettings
                 .Include(s => s.DefaultShoe)
-                .FirstOrDefaultAsync();
+                .SingleRowAsync();
 
             if (settings == null || settings.DefaultShoeId == null)
             {
@@ -758,13 +757,6 @@ public static class SettingsEndpoints
     {
         try
         {
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            if (settings == null)
-            {
-                settings = new UserSettings();
-                db.UserSettings.Add(settings);
-            }
-
             if (request.DefaultShoeId.HasValue)
             {
                 // Validate that the shoe exists
@@ -778,17 +770,23 @@ public static class SettingsEndpoints
                 {
                     return Results.BadRequest(new { error = "Cannot set a retired shoe as the default shoe" });
                 }
-
-                settings.DefaultShoeId = request.DefaultShoeId.Value;
             }
-            else
+
+            // null clears the default shoe
+            var settings = await db.RetryOnSingletonConflictAsync(async () =>
             {
-                // Clear default shoe
-                settings.DefaultShoeId = null;
-            }
+                var row = await db.UserSettings.SingleRowAsync();
+                if (row == null)
+                {
+                    row = new UserSettings();
+                    db.UserSettings.Add(row);
+                }
 
-            settings.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync();
+                row.DefaultShoeId = request.DefaultShoeId;
+                row.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                return row;
+            });
 
             // Reload with navigation property
             await db.Entry(settings).Reference(s => s.DefaultShoe).LoadAsync();

@@ -8,8 +8,7 @@ Learn how to navigate and explore your workouts in Tempo.
 
 The dashboard provides an overview of your running activity:
 
-- **Weekly Statistics** - Distance, time, and relative effort for the current week
-- **Yearly Statistics** - Annual totals and trends
+- **This Week** - The weekly recap: distance, runs, time and elevation with trend arrows against the previous three weeks, daily bars, runs by type, time in each heart-rate zone, and the year-to-date distance (see [Weekly Recap](analytics.md#weekly-recap))
 - **Recent Workouts** - Quick access to your latest activities
 - **Relative Effort Graph** - Visual representation of workout intensity over time
 - **Best Efforts Chart** - Your fastest times for standard distances (displayed below the Relative Effort graph)
@@ -69,17 +68,17 @@ Detailed metrics including:
 
 You can also edit notes, RPE, run type, and shoe assignment on this screen.
 
-### Splits
+### Splits and Laps
 
 The Splits table on Workout overview shows:
 
-- Split number
+- Split (or Lap) number
 - Distance
 - Time
 - Pace
 - Average heart rate (when available)
 
-When the Workout has device laps (from a FIT file with 2+ kept lap messages), overview shows those laps — including a leftover fraction of a mile or kilometre — and lap times are timer time (pauses excluded). The heading stays **Splits**. Unit-preference still rebuilds distance-based km/mile rows only; device laps are preserved until crop or a fuller re-import.
+When the Workout has device laps (from a FIT file with 2+ kept lap messages), overview shows those laps — including a leftover fraction of a mile or kilometre — and lap times are timer time (pauses excluded). The table is titled **Laps** (first column **Lap**) when it shows device laps and **Splits** otherwise; tags appear on structured workouts only — when the laps carry two or more different intensities, such as a warm-up, intervals and a cool-down — with a tag after the lap number (Warm-up, Interval, Recovery, Rest, Cool-down or Other) and none on plain active laps. Workouts whose laps all share one intensity, or carry none, show no tags. Unit-preference still rebuilds distance-based km/mile rows only; device laps are preserved until crop or a fuller re-import.
 
 Without device laps, splits are calculated from your unit preference (1 km metric, 1 mile imperial). Hover or click a split to set Highlight on the map and charts.
 
@@ -106,7 +105,7 @@ Automatic weather data for the workout:
 Tempo can automatically find workouts that follow similar routes:
 - **Route Matching** - Automatically finds workouts with similar paths based on route geometry
 - **Similarity Score** - Shows how closely routes match (0-100%)
-- **Comparison View** - Compare distance, time, and pace differences between similar routes
+- **Comparison View** - Compare distance, time, and pace differences between similar routes. Differences read from the run you are viewing: "This run −1:12 faster" (green) means it took 1:12 less than the match, "This run +0:40 slower" (red) means it took 0:40 more, and "Same time" means they were equal. Pace differences read the same way, for example "This run +0:08 /km slower". The iOS app uses the same words.
 - **Route Comparison Tab** - Visual side-by-side comparison of route overlays
 - **Time Comparison** - See how your performance has changed on the same route over time
 

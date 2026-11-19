@@ -105,7 +105,7 @@ public static class AuthEndpoints
         JwtService jwtService,
         HttpContext httpContext,
         IWebHostEnvironment environment,
-        IConfiguration configuration,
+        AuthCookieSettings cookieSettings,
         ILogger<Program> logger)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
@@ -139,7 +139,7 @@ public static class AuthEndpoints
 
         var token = jwtService.GenerateToken(user, expirationDays, request.RememberMe);
         var expirationDate = DateTime.UtcNow.AddDays(expirationDays);
-        AppendAuthTokenCookie(httpContext, environment, configuration, token, expirationDate);
+        AppendAuthTokenCookie(httpContext, environment, cookieSettings, logger, token, expirationDate);
 
         logger.LogInformation("User logged in: {Username}", LogSanitizer.Sanitize(user.Username));
 
@@ -162,7 +162,7 @@ public static class AuthEndpoints
         PasswordService passwordService,
         JwtService jwtService,
         IWebHostEnvironment environment,
-        IConfiguration configuration,
+        AuthCookieSettings cookieSettings,
         ILogger<Program> logger)
     {
         var userId = GetUserIdFromClaims(claimsPrincipal);
@@ -208,7 +208,7 @@ public static class AuthEndpoints
         var expirationDays = rememberMe ? jwtService.RememberMeExpirationDays : jwtService.ExpirationDays;
         var token = jwtService.GenerateToken(user, expirationDays, rememberMe);
         var expirationDate = DateTime.UtcNow.AddDays(expirationDays);
-        AppendAuthTokenCookie(httpContext, environment, configuration, token, expirationDate);
+        AppendAuthTokenCookie(httpContext, environment, cookieSettings, logger, token, expirationDate);
 
         logger.LogInformation("Password changed: {Username}", LogSanitizer.Sanitize(user.Username));
 
@@ -218,26 +218,22 @@ public static class AuthEndpoints
     private static void AppendAuthTokenCookie(
         HttpContext httpContext,
         IWebHostEnvironment environment,
-        IConfiguration configuration,
+        AuthCookieSettings cookieSettings,
+        ILogger logger,
         string token,
         DateTime expirationUtc)
     {
-        var cookieOptions = new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = environment.IsProduction() ? true : httpContext.Request.IsHttps,
-            SameSite = SameSiteMode.Lax,
-            Path = "/",
-            Expires = expirationUtc
-        };
+        var cookieOptions = AuthCookie.BuildOptions(httpContext, cookieSettings, environment, expirationUtc);
 
-        var cookieDomain = configuration["Cookie:Domain"];
-        if (!string.IsNullOrWhiteSpace(cookieDomain))
+        if (AuthCookie.WillBrowserDropSecureCookie(httpContext, cookieOptions.Secure))
         {
-            cookieOptions.Domain = cookieDomain;
+            logger.LogWarning(
+                "Auth cookie is Secure but this request arrived over plain HTTP; the browser will drop it and the session will not stick. " +
+                "Serve Tempo over HTTPS behind a reverse proxy that sends X-Forwarded-Proto, or set Cookie__Secure=false for a trusted LAN. " +
+                "See docs/deployment/reverse-proxy.md.");
         }
 
-        httpContext.Response.Cookies.Append("authToken", token, cookieOptions);
+        httpContext.Response.Cookies.Append(AuthCookie.Name, token, cookieOptions);
     }
 
     /// <summary>
@@ -305,26 +301,12 @@ public static class AuthEndpoints
     private static IResult Logout(
         HttpContext httpContext,
         IWebHostEnvironment environment,
-        IConfiguration configuration)
+        AuthCookieSettings cookieSettings)
     {
-        // Must use the same cookie options as Login to properly delete the cookie
-        // especially when Cookie:Domain is configured
-        var cookieOptions = new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = environment.IsProduction() ? true : httpContext.Request.IsHttps,
-            SameSite = SameSiteMode.Lax,
-            Path = "/"
-        };
-
-        // Set the same domain as used during login
-        var cookieDomain = configuration["Cookie:Domain"];
-        if (!string.IsNullOrWhiteSpace(cookieDomain))
-        {
-            cookieOptions.Domain = cookieDomain;
-        }
-
-        httpContext.Response.Cookies.Delete("authToken", cookieOptions);
+        // Same options as login (Secure, Domain, Path) or the browser keeps the cookie
+        httpContext.Response.Cookies.Delete(
+            AuthCookie.Name,
+            AuthCookie.BuildOptions(httpContext, cookieSettings, environment));
         return Results.Ok(new { message = "Logged out successfully" });
     }
 

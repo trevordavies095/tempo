@@ -24,7 +24,7 @@ export function FileUpload() {
       setImportResult(data);
       setSelectedFiles([]);
     },
-    onError: (error: Error) => {
+    onError: () => {
       // Error is handled inline via mutation.isError
     },
   });

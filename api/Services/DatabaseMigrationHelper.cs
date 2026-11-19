@@ -116,6 +116,48 @@ public static class DatabaseMigrationHelper
 
     private const string ProductVersion = "10.0.0";
 
+    private const string EnforceSingletonRowsMigration = "20261115181648_EnforceSingletonRows";
+
+    /// <summary>
+    /// EnforceSingletonRows keeps only the most recently updated row in each one-row table. Say so
+    /// before it runs if that will delete anything; the migration itself can't log.
+    /// </summary>
+    private static void WarnBeforeSingletonDedupe(TempoDbContext db)
+    {
+        try
+        {
+            if (!db.Database.GetPendingMigrations().Contains(EnforceSingletonRowsMigration))
+            {
+                return;
+            }
+
+            var existingTables = GetExistingTables(db);
+            foreach (var table in new[] { "UserSettings", "IntervalsIcuConnections" })
+            {
+                if (!existingTables.Contains(table))
+                {
+                    continue;
+                }
+
+                // Table names are from the fixed list above, not user input
+                var rows = db.Database
+                    .SqlQueryRaw<int>($"SELECT COUNT(*)::int AS \"Value\" FROM \"{table}\"")
+                    .AsEnumerable()
+                    .Single();
+                if (rows > 1)
+                {
+                    Log.Warning(
+                        "{Table} has {Rows} rows but is a one-row table; keeping the most recently updated row and deleting {Removed}",
+                        table, rows, rows - 1);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not count rows before enforcing one-row tables - will migrate anyway");
+        }
+    }
+
     /// <summary>
     /// Applies database migrations, handling edge cases where the database was created with EnsureCreated()
     /// or has tables that exist but aren't recorded in migration history.
@@ -154,6 +196,8 @@ public static class DatabaseMigrationHelper
             Log.Warning(ex, "Error checking migration state - will attempt to migrate anyway");
         }
         
+        WarnBeforeSingletonDedupe(db);
+
         // Now apply any pending migrations
         try
         {

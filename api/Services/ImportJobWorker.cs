@@ -151,10 +151,19 @@ public class ImportJobWorker : BackgroundService
 
                 ApplyTempoProgressFromResult(completed, result, completed.Total);
 
-                // Restored workouts arrive without per-workout best efforts; fill them in the background.
+                // Restored workouts can lack derived fields (best efforts, and older exports: timer time,
+                // cadence unit, device laps, ...). Repair them before the job reports done. Runs even if
+                // the restore was cancelled (imported workouts stay). Records are cleared first, so a repair
+                // cut short by shutdown leaves them pending and the startup check warns.
                 if (result.Statistics.Workouts.Imported > 0)
                 {
-                    scope.ServiceProvider.GetRequiredService<BestEffortBackfillSignal>().Request();
+                    await StartupBackfills.ClearCompletedAsync(db, CancellationToken.None);
+                    logger.LogInformation("Tempo restore: repairing restored workouts (all backfills)");
+                    await BackfillPass.RunAsync(
+                        _scopeFactory,
+                        scope.ServiceProvider.GetRequiredService<IReadOnlyList<BackfillDefinition>>(),
+                        logger,
+                        stoppingToken);
                 }
 
                 if (await IsCancelRequestedAsync(db, jobId))
@@ -365,20 +374,23 @@ public class ImportJobWorker : BackgroundService
                 return;
             }
 
-            var settings = await db.UserSettings.FirstOrDefaultAsync();
-            if (settings == null)
+            await db.RetryOnSingletonConflictAsync(async () =>
             {
-                settings = new UserSettings();
-                db.UserSettings.Add(settings);
-            }
+                var settings = await db.UserSettings.SingleRowAsync();
+                if (settings == null)
+                {
+                    settings = new UserSettings();
+                    db.UserSettings.Add(settings);
+                }
 
-            if (settings.UnitPreference != unitPreference)
-            {
-                settings.UnitPreference = unitPreference;
-                settings.UpdatedAt = DateTime.UtcNow;
-                await db.SaveChangesAsync();
-                logger.LogInformation("Updated unit preference to {UnitPreference}", Utils.LogSanitizer.Sanitize(unitPreference));
-            }
+                if (settings.UnitPreference != unitPreference)
+                {
+                    settings.UnitPreference = unitPreference;
+                    settings.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    logger.LogInformation("Updated unit preference to {UnitPreference}", Utils.LogSanitizer.Sanitize(unitPreference));
+                }
+            });
         }
         catch (Exception ex)
         {

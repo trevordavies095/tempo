@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { HeartRateZoneSettings, HeartRateCalculationMethod } from '@/lib/api';
 
 const ZONE_PERCENTAGES = [
@@ -62,8 +62,10 @@ export function useHeartRateZones(initialSettings: HeartRateZoneSettings | null)
     { min: 171, max: 190 },
   ]);
 
-  // Initialize from settings
-  useEffect(() => {
+  // Initialize from settings whenever a new settings object arrives (adjusting state during render).
+  const [appliedSettings, setAppliedSettings] = useState<HeartRateZoneSettings | null>(null);
+  if (initialSettings !== appliedSettings) {
+    setAppliedSettings(initialSettings);
     if (initialSettings) {
       setCalculationMethod(initialSettings.calculationMethod);
       if (initialSettings.age !== null) setAge(initialSettings.age);
@@ -73,7 +75,7 @@ export function useHeartRateZones(initialSettings: HeartRateZoneSettings | null)
         setCustomZones(initialSettings.zones.map((z) => ({ min: z.minBpm, max: z.maxBpm })));
       }
     }
-  }, [initialSettings]);
+  }
 
   // Recalculate zones when method or inputs change (for preview only)
   const calculatedZones = calculateHeartRateZones(calculationMethod, age, restingHr, maxHr);

@@ -50,7 +50,7 @@ public class ZoneSecondsBackfillService
             return 0;
         }
 
-        var settings = await _db.UserSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        var settings = await _db.UserSettings.AsNoTracking().SingleRowAsync(cancellationToken);
         if (settings == null)
         {
             _logger.LogInformation(
