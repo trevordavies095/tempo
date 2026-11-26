@@ -25,7 +25,7 @@ Tempo is a self-hostable running tracker that gives you complete control over yo
 
 ## Key Features
 
-- **Multi-Format Support** - Import GPX, FIT (.fit, .fit.gz), and Strava CSV files from Garmin, Apple Watch, and other devices
+- **Multi-Format Support** - Import GPX and FIT (.fit, .fit.gz) files from Garmin, Apple Watch, and other devices, or a whole Strava export ZIP (activities.csv + activity files)
 - **Workout Analytics** - Track distance, pace, elevation, splits, and time series data
 - **Workout Overview** - Map, splits, and HR/pace/elevation/cadence/power charts sharing one Highlight
 - **Appearance** - System, Dark, or Light on the command center (this browser only)
@@ -55,7 +55,7 @@ git clone https://github.com/trevordavies095/tempo.git
 cd tempo
 
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # Access the application
 # Frontend: http://localhost:3000
@@ -80,6 +80,18 @@ Production deployment guides, security best practices, backup and restore proced
 
 ### [Troubleshooting](troubleshooting/index.md)
 Common issues, solutions, and frequently asked questions to help you resolve problems quickly.
+
+## For Developers and Agents
+
+Start with these sources of truth, which the rest of the docs link to:
+
+| Question | Source of truth |
+|----------|-----------------|
+| What does a term mean (Workout intake, Import job, Device lap, timer vs elapsed time)? | [`CONTEXT.md`](https://github.com/trevordavies095/tempo/blob/develop/CONTEXT.md) |
+| How is the code organized, and where do I change X? | [Architecture](developers/architecture.md) |
+| What routes exist, and what do they accept and return? | [`docs/openapi.json`](https://github.com/trevordavies095/tempo/blob/develop/docs/openapi.json), guided by the [API Reference](developers/api-reference.md) |
+| What does the schema look like? | [Database Schema](developers/database.md) → `api/Data/TempoDbContext.cs` |
+| Which config keys and env vars exist? | [Configuration](getting-started/configuration.md) |
 
 ## Tech Stack
 

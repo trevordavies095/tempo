@@ -1,527 +1,221 @@
 # Settings and Preferences
 
-Configure Tempo to match your preferences and needs.
-
-## Overview
-
 ![Settings](./screenshots/settings.png)
 
-Tempo settings allow you to customize:
-- Appearance (System, Dark, or Light) on this browser
-- Unit preferences (metric/imperial)
-- Heart rate zones
-- Relative effort calculation
-- Shoe tracking and management
-- **Export** (prominent under Data Management) and collapsed **Migrate / restore** (Strava archive + Tempo export restore)
-- Optional **intervals.icu** connection under Integrations (Garmin and other devices via intervals.icu)
+The Settings page, top to bottom:
 
-On a fresh install, units, heart rate zones, and an optional default shoe are usually set during [first-run onboarding](../getting-started/onboarding.md). You can change them anytime here.
+| Section | Cards |
+|---|---|
+| Display Preferences | [Appearance](#appearance), [Unit Preference](#unit-preference) |
+| Equipment Management | [Shoe Management](#shoe-management) |
+| Training Configuration | [Heart Rate Zones](#heart-rate-zones), [Thresholds](#thresholds) |
+| Integrations | [intervals.icu](#intervalsicu) |
+| Data Management | [Export](#export-import), [Migrate / restore](#migrate--restore) |
+| Data Recalculation | [Recalculate Splits, Recalculate Relative Effort](#data-recalculation) |
+| Account | [Change password](#change-password), [API key](#api-key) |
+| System Information | [Support snapshot](#system-information) |
+
+Units, heart-rate zones, and an optional default shoe are usually set during [first-run onboarding](../getting-started/onboarding.md). The iOS app (daily driver) also edits units, default shoe, and shoes; everything that recalculates or is one-time setup lives here only.
+
+**Implementation:** `frontend/app/settings/page.tsx` and the `*Section.tsx` components it imports; `api/Endpoints/SettingsEndpoints.cs`, `SettingsIntervalsIcuEndpoints.cs`, `ShoesEndpoints.cs`, `AuthEndpoints.cs`.
 
 ## Appearance
 
-The command center is dark-first (black canvas, volt yellow accent). Light theme still exists. Appearance is a **browser preference**, not UserSettings: it is not stored on the server and does not sync to the iOS app.
+**System** (default, follows the OS), **Dark**, or **Light**. Applies immediately; no Save.
 
-### Options
+Appearance is a browser preference stored in `localStorage` as `tempo-appearance`. It is not UserSettings: not on the server, not synced to the iOS app. Maps switch tiles with it (CARTO Dark Matter / Voyager).
 
-- **System** (default) — Follows the operating system light/dark preference
-- **Dark** — Forces the dark theme
-- **Light** — Forces the light theme
+## Unit Preference
 
-The choice is stored in this browser as `tempo-appearance` and survives reload. Volt yellow is used for primary actions, active navigation, and highlights — never as body text.
+**Metric** (km, min/km, m, 1 km splits) or **Imperial** (mi, min/mi, ft, 1 mile splits). Click to apply; the card previews distance, pace, and elevation. The choice is saved to UserSettings and the browser.
 
-### Changing Appearance
-
-1. Navigate to Settings
-2. In **Display Preferences**, choose System, Dark, or Light
-
-No Save button is required; the selection applies immediately.
-
-## Unit Preferences
-
-Choose between metric and imperial units for all measurements.
-
-### Metric Units
-
-- Distance: Kilometers (km)
-- Elevation: Meters (m)
-- Pace: Minutes per kilometer (min/km)
-- Splits: 1 kilometer intervals
-
-### Imperial Units
-
-- Distance: Miles (mi)
-- Elevation: Feet (ft)
-- Pace: Minutes per mile (min/mi)
-- Splits: 1 mile intervals
-
-### Changing Unit Preference
-
-1. Navigate to Settings
-2. Select your preferred unit system
-3. Save changes
-
-**Note**: Changing unit preferences will trigger recalculation of splits for all workouts. This may take a few moments.
-
-## Heart Rate Zones
-
-Heart rate zones determine how your workouts are analyzed and how relative effort is calculated.
-
-### Zone Calculation Methods
-
-Tempo supports three methods for calculating heart rate zones:
-
-#### Age-Based Method
-
-Uses your age to estimate maximum heart rate:
-- Formula: `220 - age`
-- Zones calculated as percentages of max HR
-- Simple and requires only your age
-
-#### Karvonen Method
-
-Uses your age and resting heart rate:
-- Formula: `((220 - age) - resting HR) × zone% + resting HR`
-- More accurate than age-based
-- Requires knowing your resting heart rate
-
-#### Custom Method
-
-Manually set zone boundaries:
-- Define exact heart rate ranges for each zone
-- Most flexible option
-- Requires understanding of your personal zones
-
-### Zone Definitions
-
-Standard five-zone system:
-
-- **Zone 1 (Recovery)**: 50-60% of max HR - Very light effort
-- **Zone 2 (Aerobic)**: 60-70% of max HR - Easy, conversational pace
-- **Zone 3 (Tempo)**: 70-80% of max HR - Moderate, sustainable effort
-- **Zone 4 (Threshold)**: 80-90% of max HR - Hard, challenging effort
-- **Zone 5 (Maximum)**: 90-100% of max HR - Maximum effort, unsustainable
-
-### Configuring Heart Rate Zones
-
-1. Navigate to Settings
-2. Select your zone calculation method
-3. Enter required information (age, resting HR, or custom zones)
-4. Choose whether to recalculate relative effort for existing workouts
-5. Save changes
-
-### Recalculating Relative Effort
-
-When you change heart rate zones, you can:
-- **Recalculate All Workouts** - Updates relative effort for all existing workouts (may take time)
-- **Apply to New Workouts Only** - New workouts use new zones, existing workouts keep old scores
-
-## Relative Effort
-
-Relative effort is automatically calculated based on:
-- Heart rate data from your workouts
-- Your configured heart rate zones
-- Time spent in each zone
-
-### Understanding Relative Effort
-
-- **Low (0-50)**: Easy/recovery runs
-- **Moderate (50-100)**: Tempo or steady-state runs
-- **High (100-150)**: Hard intervals or tempo runs
-- **Very High (150+)**: Maximum effort, races, or intense intervals
-
-### Recalculating Relative Effort
-
-You can manually recalculate relative effort:
-1. Go to Settings
-2. Find the "Recalculate Relative Effort" section
-3. See how many workouts are eligible for recalculation
-4. Click "Recalculate All" to update all workouts
-
-**Note**: This operation may take several minutes for large workout collections.
+Changing units does **not** rebuild existing splits. New imports use the current unit; run [Recalculate Splits](#data-recalculation) for older Workouts. Every import also sends the current unit and saves it.
 
 ## Shoe Management
 
-Track the mileage on your running shoes to know when it's time to replace them. Tempo automatically calculates total mileage for each shoe based on assigned workouts.
+Track mileage per pair. A shoe's **Total** is its initial mileage plus the distance of every Workout assigned to it, shown in your units.
 
-### Adding a Shoe
+- **+ Add New Shoe** — Brand and Model required (100 characters each), Initial Mileage optional (in your units; cannot be negative).
+- **Edit** — change brand, model, or initial mileage.
+- **Default Shoe** — dropdown at the top (None or any active shoe). New Workouts from any import path are assigned to it.
+- **Retire** — hides the shoe from lists and the Workout shoe picker. Past Workouts keep it. Retiring the default shoe clears the default. **View retired shoes and mileage** (`/settings/shoes/retired`) lists retired pairs with **Un-retire**.
+- **Delete** — removes the shoe; assigned Workouts become "None". Workouts are not deleted. Delete is command-center only.
 
-To add a new shoe to your collection:
+Assign shoes per Workout on the [Workout overview](viewing-workouts.md#details-and-editors).
 
-1. Navigate to Settings
-2. Find the "Shoe Management" section
-3. Click "Add Shoe"
-4. Enter the shoe details:
-   - **Brand** - Shoe manufacturer (e.g., "Nike", "Adidas")
-   - **Model** - Shoe model name (e.g., "Pegasus 40", "Ultraboost 22")
-   - **Initial Mileage** (optional) - If the shoe already has miles on it when you add it
-5. Click "Save"
+**Implementation:** `frontend/components/ShoeManagementSection.tsx`, `frontend/app/settings/shoes/retired/page.tsx`, `api/Endpoints/ShoesEndpoints.cs`, `api/Services/ShoeMileageService.cs`.
 
-**Note**: Initial mileage is optional. If you're adding a brand new shoe, you can leave this blank. If you're adding a shoe that already has some miles, enter the current mileage so Tempo can track it accurately.
+## Heart Rate Zones
 
-### Viewing Your Shoes
+Five zones drive time in zones and [Relative Effort](analytics.md#relative-effort). The card header shows the max HR in use and its source, plus the highest HR recorded in the last 12 months (readings above 230 bpm ignored) for comparison.
 
-The Shoe Management section displays all your shoes with:
-- Brand and model name
-- Current total mileage (calculated automatically)
-- Number of workouts assigned to each shoe
+### Calculation Methods
 
-Mileage is displayed in your preferred units (kilometers for metric, miles for imperial).
+All built-in methods use the same bands: Z1 50–60%, Z2 60–70%, Z3 70–80%, Z4 80–90%, Z5 90–100%.
 
-### Mileage Calculation
+| Method | Inputs | Zone boundary |
+|---|---|---|
+| **220 - Age** (default) | Age (1–120) | `round((220 − age) × %)` |
+| **Karvonen (Heart Rate Reserve)** | Resting HR (30–120), Max HR (60–250, above resting) | `round((max − resting) × % + resting)` |
+| **Custom Zones** | Min/max BPM for each of 5 zones | As entered |
 
-Total mileage for each shoe is calculated as:
-- Sum of all workout distances assigned to that shoe
-- Plus any initial mileage you entered when adding the shoe
+Custom zones must be 30–250 BPM, each min below its max, ascending, and contiguous (each zone's max equals the next zone's min). Errors read like `Zone 2 and Zone 3 have a gap between them`.
 
-Mileage updates automatically whenever you:
-- Assign a shoe to a workout
-- Change a workout's shoe assignment
-- Remove a shoe assignment from a workout
+**Zone Preview** shows the resulting BPM ranges before you save. A fresh install starts at 220 − 30.
 
-### Editing a Shoe
+### Saving and Recalculating
 
-You can update shoe details at any time:
+Click **Save Heart Rate Zones**. Then:
 
-1. Find the shoe in the Shoe Management section
-2. Click "Edit"
-3. Update the brand, model, or initial mileage
-4. Click "Save"
+- **First save:** a dialog offers to recalculate Relative Effort for all qualifying Workouts.
+- **Later saves:** **Heart Rate Zones Updated** offers **Recalculate All Workouts** (rewrites historical zone times and Relative Effort) or **Keep Existing Unchanged** (only new Workouts use the new zones).
 
-**Note**: Changing initial mileage will recalculate the total mileage for that shoe.
+Qualifying Workouts are those with heart-rate data (time series, FIT session average, or stored average).
 
-### Setting a Default Shoe
+**Implementation:** `api/Services/HeartRateZoneService.cs`, `api/Services/RelativeEffortService.cs`, `api/Services/WorkoutDerivations.cs`; `PUT /settings/heart-rate-zones`, `POST /settings/heart-rate-zones/update-with-recalc`.
 
-You can set one shoe as your default shoe:
+## Thresholds
 
-1. Find the shoe in the Shoe Management section
-2. Click "Set as Default"
+Lactate threshold **pace** (M:SS per km or mile, between 2:00 and 15:00 per km) and **heart rate** (60–230 BPM). Both optional. Click **Save Thresholds**.
 
-When a default shoe is set:
-- New workouts imported into Tempo will automatically be assigned to your default shoe
-- You can still change the shoe assignment on any workout after import
-- You can change or remove the default shoe at any time
+Tempo stores and serves these (`GET/PUT /settings/thresholds`) for clients such as coaching tools; pace lets them classify short reps where heart rate lags. The iOS app shows them read-only. They are included in exports.
 
-### Deleting a Shoe
+**Suggested pace:** when you have a 5K or 10K Best effort from the last 90 days, the card shows "Suggested m:ss from your 5K on <date>" with **Use this**. It is Daniels' T-pace (88% of VDOT) from that effort; when both distances qualify, the faster T-pace wins. The suggestion is never saved on its own.
 
-To remove a shoe from your collection:
-
-1. Find the shoe in the Shoe Management section
-2. Click "Delete"
-3. Confirm the deletion
-
-**Note**: When you delete a shoe, all workouts that were assigned to that shoe will have their shoe assignment removed (set to "No Shoe"). The workouts themselves are not deleted.
-
-### Best Practices
-
-- **Add shoes when you get them** - Add new shoes to your collection as soon as you start using them
-- **Set a default shoe** - If you primarily use one pair of shoes, set it as default for automatic assignment
-- **Update initial mileage** - If you're adding a shoe that already has miles, enter the current mileage for accurate tracking
-- **Regular review** - Check shoe mileage regularly to know when it's time to replace them (most running shoes last 300-500 miles)
+**Implementation:** `frontend/components/ThresholdsSection.tsx`, `api/Services/ThresholdSuggestionService.cs`, `api/Services/DanielsVdot.cs`.
 
 ## Integrations
 
 ### intervals.icu
 
-Optional. Tempo can store your personal intervals.icu API key and import new running activities automatically. This is not part of onboarding. Privacy-minded setups can skip it and keep uploading FIT/GPX files.
+Optional. Tempo stores your personal intervals.icu API key and imports new running activities automatically. Not part of onboarding; privacy-minded setups can skip it and keep uploading files.
 
 **Setup**
 
-1. Create a free [intervals.icu](https://intervals.icu) account if you need one
-2. Connect Garmin (or another device) under intervals.icu settings
-3. Copy your personal API key from intervals.icu **Settings → Developer**
-4. In Tempo **Settings → Integrations**, paste the key and click Connect
+1. Create a free [intervals.icu](https://intervals.icu) account if you need one.
+2. Connect Garmin (or another device) in intervals.icu.
+3. Copy your API key from intervals.icu **Settings → Developer**.
+4. In Tempo **Settings → Integrations**, paste it and click **Connect**.
 
-Tempo probes intervals.icu before saving. The key is stored encrypted and is never shown again. Disconnect wipes the key; your Workouts stay. If intervals.icu rejects the key later, Tempo disables live sync and keeps the stored key — use **Re-enable** after you fix it, or **Replace key** to paste a new one without losing sync history.
+Tempo probes intervals.icu before saving (`intervals.icu rejected the API key` or `Could not reach intervals.icu. Try again.` on failure). The key is stored encrypted and never shown again.
 
-After you connect, Tempo looks for new running activities about every 15 minutes. **Sync now** on the Integrations card asks Tempo to check immediately; it does not wait on this page. New runs appear in the library as first-class Workouts. Already-imported runs, non-running activities, and files that are not FIT or GPX are skipped. Deleting a run from Tempo also drops its intervals.icu identity, so the next successful sync can import it again. History older than a couple of days is still a manual FIT/GPX or Strava ZIP import. Changing the server `JWT__SecretKey` means you must replace the intervals.icu key in Settings.
+**Card:** Status, Last successful sync, Last attempt, Last error, and buttons **Sync now**, **Replace key**, **Re-enable** (when disabled), **Disconnect**.
 
-**Privacy:** activity files transit intervals.icu (a donation-supported third party). Tempo does not talk to Garmin unofficially.
+**Sync behavior**
 
-The connection is **not** included in a Tempo export ZIP. After restore, connect again in Settings.
+- Polls every 15 minutes (`IntervalsIcu__PollIntervalMinutes`). **Sync now** wakes the poller; it does not wait on the page.
+- Each run lists activities from 2 days before the last successful sync (or the connection date), never more than 14 days back. Older history is a manual file or Strava ZIP import.
+- Imports activities whose type is `Run` or ends in `Run`, with a FIT or GPX original file. Others are skipped.
+- Each import goes through Workout intake with source `intervals_icu` and the activity id as its Workout external identity, so an activity imports once. Duplicate rules still apply against files you uploaded yourself.
+- Deleting a Workout drops its identity, so the next sync can import it again.
+- If intervals.icu rejects the key, sync is disabled and the key kept. Fix it in intervals.icu and click **Re-enable**, or **Replace key** (keeps sync history).
+- **Disconnect** deletes the key; Workouts stay.
+- Changing the server `JWT__SecretKey` makes the stored key unreadable (Last error `Could not decrypt the stored API key.`); replace the key.
 
-## API Key
+**Privacy:** activity files transit intervals.icu, a donation-supported third party. Tempo does not talk to Garmin.
 
-Tools such as [tempo-cli](https://github.com/trevordavies095/tempo-cli) and the Tempo extension for Claude Desktop use an API key to read your Tempo data. You manage it under **Settings → Account → API key**.
+The connection is not in a Tempo export. Reconnect after a restore.
 
-- **Generate key** creates your key. You can have one key at a time.
-- **Show** / **Hide** displays the full key. **Copy** puts it on your clipboard.
-- **Revoke** turns the key off immediately. Anything using it stops working until you give it a new key. After revoking, you can generate a new one.
+**Implementation:** `frontend/components/IntervalsIcuSection.tsx`, `api/Endpoints/SettingsIntervalsIcuEndpoints.cs`, `api/Services/IntervalsIcuSyncService.cs`, `IntervalsIcuSyncWorker.cs`, `IntervalsIcuSyncQueue.cs`, `IntervalsIcuClient.cs`, `SecretProtector.cs`.
 
-**Keep the key private.** It can read and change your Tempo data (it cannot change your password or manage API keys). Do not paste it into shared channels or commit it to a repository.
+## Export {#export-import}
 
-If the card says the key **can't be shown**, it was created before Tempo could display keys, or the server's `JWT__SecretKey` was changed. The key still works. Revoke it and generate a new one if you need to see it.
-
-API keys are **not** included in a Tempo export ZIP. After restore, generate a new key.
-
-## Export / Import
-
-Tempo allows you to export all your data in a portable ZIP format for backup, migration, or data portability. Under **Migrate / restore**, you can restore a previous Tempo export or import a Strava archive after onboarding.
-
-### Exporting Your Data
-
-To export all your Tempo data:
-
-1. Navigate to Settings
-2. Find the **Export** section under Data Management
-3. Click "Export All Data"
-4. Wait for the export to complete (may take a moment for large datasets)
-5. Your browser will download a ZIP file named `tempo-export-{timestamp}.zip`
-
-**Note**: The export process may take several minutes if you have many workouts or large media files. The page will show "Exporting..." while the process is running.
-
-### What's Included in the Export
-
-The export includes everything in your Tempo instance:
-
-- **All Workouts** - Complete workout data including:
-  - All core stats (distance, pace, elevation, heart rate, etc.)
-  - Metadata (name, run type, notes, source, device)
-  - Raw workout files (GPX, FIT, CSV) as binary files
-  - All JSONB fields (RawGpxData, RawFitData, RawStravaData, Weather)
-  - Relative effort calculations
-  - Shoe assignments
-  - Created timestamps
-
-- **Workout Routes** - GeoJSON LineString data for all workouts with routes
-
-- **Workout Splits** - All distance-based splits for each workout
-
-- **Workout Time Series** - All time-series data points (heart rate, pace, elevation over time)
-
-- **Media Files** - All photos and videos attached to workouts
-
-- **Shoes** - All shoe records with brand, model, initial mileage, and timestamps
-
-- **User Settings** - Complete settings including:
-  - Heart rate calculation method and zones
-  - Unit preferences (metric/imperial)
-  - Default shoe reference
-
-The intervals.icu API key is **not** included. Reconnect under Settings → Integrations after restore.
-
-- **Manifest File** - Metadata about the export including:
-  - Export format version
-  - Tempo version
-  - Export date and user
-  - Statistics (counts of all data types)
-  - Data format paths
+**Export All Data** downloads `tempo-export-{timestamp}.zip`. The button reads "Exporting..." while the server builds it; large libraries take minutes.
 
 ### Export Format
 
-The export is a ZIP file with the following structure:
-
 ```
 tempo-export-{timestamp}.zip
-├── manifest.json          # Export metadata and version info
-├── data/                  # JSON files with all database records
-│   ├── settings.json
+├── manifest.json          # format version 1.0.0, Tempo version, date, counts, data paths
+├── data/
+│   ├── settings.json      # zones, units, thresholds, default shoe
 │   ├── shoes.json
-│   ├── workouts.json
+│   ├── workouts.json      # stats, name, run type, notes, RPE, source, device, raw JSON, weather, shoe
 │   ├── routes.json
-│   ├── splits.json
+│   ├── splits.json        # distance splits and device laps
 │   ├── time-series.json
 │   └── media-metadata.json
-├── workouts/              # Binary files organized by workout
-│   ├── {workoutId}/
-│   │   ├── raw/          # Original workout files (GPX/FIT/CSV)
-│   │   └── media/        # Photos and videos
-│   │       └── {mediaId}/
-│   │           └── {filename}
-└── README.txt            # Export format documentation
+├── workouts/{workoutId}/
+│   ├── raw/{original file}
+│   └── media/{mediaId}/{filename}
+└── README.txt
 ```
 
-### Use Cases
+Not included: Best efforts (recomputed after restore), the intervals.icu connection, Tempo API keys, the account password, and appearance.
 
-Export your data for:
+**Implementation:** `frontend/components/ExportImportSection.tsx`, `api/Services/ExportService.cs`, `POST /workouts/export`.
 
-- **Backup** - Create regular backups of your running data
-- **Migration** - Move your data to a new Tempo instance
-- **Data Portability** - Keep a portable copy of all your data
-- **Recovery** - Restore data after accidental deletion or system failure
+## Migrate / restore {#migrate--restore}
 
-### Importing Data {#migrate--restore}
+Collapsed under the Export card (**Show**). Two uploaders:
 
-**Migrate / restore** (collapsed under Data Management) lets you restore data from a previously exported Tempo ZIP file, or import a Strava archive after onboarding. This enables you to:
+- **Restore Tempo export** — a ZIP from **Export All Data**
+- **Import Strava archive** — see [Bulk Import](bulk-import.md)
 
-- Restore all workouts, media, shoes, and settings
-- Import into a new or existing Tempo instance
-- Migrate data between Tempo instances
-- Recover from data loss or accidental deletion
-- Import a late Strava archive (see [Bulk Import](bulk-import.md))
-- Handle duplicate detection automatically
+Both run as background [Import jobs](bulk-import.md#how-it-works): the ZIP (max 500 MB) uploads in 512 KiB chunks, then restores item by item. The button shows `Uploading N%...`, then `Importing processed/total...`. **Cancel import** keeps what was already restored. Refreshing Settings reattaches to an active job. Only one job runs at a time across both kinds; the other card shows `A Strava import is already in progress. Finish or cancel it before restoring a Tempo export.` (or the reverse).
 
-Settings restore runs as a background import job (same rails as [Strava bulk import](bulk-import.md)): the ZIP uploads in chunks, then Tempo restores item by item with live progress.
+### What a restore does
 
-#### How to Import
+- **Settings** — overwrites zones, units, and thresholds. The default shoe is kept only if it exists and is not retired.
+- **Shoes** — imported with their IDs. Skipped when the ID or the same Brand + Model already exists.
+- **Workouts** — imported with their IDs and timestamps, plus routes, splits, time series, raw files, and media. Skipped when the ID already exists or a Workout matches on start time, distance, and elapsed time. Existing Workouts are never updated by a restore. A reference to a missing shoe is cleared with a warning.
+- **Repair** — when any Workout was imported, the job runs every startup backfill (Best efforts, timer time, cadence, device laps, zone seconds, …) before reporting done, so older exports are brought up to date. Runs even after a cancel.
 
-1. Navigate to Settings
-2. Under Data Management, expand **Migrate / restore**
-3. For a Tempo backup: use **Restore Tempo export** and upload your Tempo export ZIP
-4. For Strava: use **Import Strava archive** (see [Bulk Import](bulk-import.md))
-5. Watch upload progress (%), then restore/import progress (`processed` / `total`)
-6. When finished, review the summary showing what was imported, skipped, or had errors
+Exports from older versions that include `best-efforts.json` still restore; the file is ignored.
 
-**Progress and cancel**: Large exports can take several minutes. You can cancel while uploading or restoring; items already restored stay. Re-upload the same ZIP later — duplicates are skipped (and incomplete workouts can be updated) as usual.
+### Summary
 
-**One import at a time**: Tempo allows only one active import job across Tempo restore and Strava bulk import (both under Migrate / restore, or during onboarding). If the other kind is running, the UI shows a message and will not start until that job finishes or is cancelled. Refreshing Settings resumes an in-progress job.
+**Import Complete!** or **Import Completed with Errors**, with imported/skipped counts for Settings, Shoes, Workouts, Routes, Splits, Time Series, and Media, plus expandable Warnings (e.g. `Workout already exists: …`, `Shoe already exists in database: …`) and Errors. Units, zones, default shoe, and thresholds refresh in the UI.
 
-#### What Gets Imported
+### Troubleshooting
 
-The import restores all data from the export file:
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Import failed: manifest.json not found in export ZIP` | Not a Tempo export, or re-zipped with a parent folder | Upload the ZIP from Export as-is. |
+| `Unsupported export version: X. Expected 1.0.0` | Manifest from an incompatible build | Export again from a current Tempo. |
+| `File must be a ZIP file` / `File exceeds the 500MB limit` | Wrong file or over 500,000,000 bytes | Restore the database and media directory directly instead; see [Backup and Restore](../deployment/backup-restore.md). |
+| Everything skipped | Restoring into the same instance | Expected; restore does not overwrite Workouts. |
+| Job failed with `interrupted` | API restarted mid-restore | Re-upload; already restored items skip. |
+| Best efforts missing right after restore | Repair still running on a large library | Wait for the job to report done. |
 
-- **User Settings** - Heart rate zones, unit preferences, default shoe
-- **Shoes** - All shoe records with brand, model, and initial mileage
-- **Workouts** - Complete workout data including:
-  - All core stats (distance, pace, elevation, heart rate, etc.)
-  - Metadata (name, run type, notes, source, device)
-  - Raw workout files (GPX, FIT, CSV) stored in database
-  - All JSONB fields (RawGpxData, RawFitData, RawStravaData, Weather)
-  - Relative effort calculations
-  - Shoe assignments
-  - Created timestamps (preserved from export)
-- **Workout Routes** - GeoJSON LineString data for all workouts
-- **Workout Splits** - All distance-based splits
-- **Workout Time Series** - All time-series data points
-- **Media Files** - All photos and videos attached to workouts
+**Implementation:** `frontend/components/TempoExportImport.tsx`, `frontend/hooks/useImportJobSession.ts`, `api/Services/ImportService.cs`, `api/Services/ImportJobWorker.cs`.
 
-Best efforts are not part of the export. After a restore, Tempo recalculates them from the restored workouts in the background, so they can take a few minutes to reappear on a large library. Exports from older versions that include `best-efforts.json` still restore; that file is ignored.
+## Data Recalculation
 
-#### Duplicate Detection
+- **Recalculate Splits** — rebuilds distance splits for every Workout with a route, using the current unit preference. Device laps, distance, duration, and elevation stay. A dialog shows the Workout count first.
+- **Recalculate Relative Effort** — shown once zones exist. Recomputes zone times and Relative Effort for every Workout with heart-rate data using the current zones.
 
-Tempo automatically detects and skips duplicates during import:
+**Implementation:** `api/Services/SplitRecalculationService.cs`, `POST /workouts/recalculate-splits`, `POST /workouts/recalculate-relative-effort` (and their `/count` endpoints).
 
-- **Workouts**: Detected by start time, distance, and duration (within small tolerance)
-- **Shoes**: Detected by brand and model (exact match)
-- **Settings**: Only one settings record exists (replaces existing)
+## Account
 
-Duplicates are automatically skipped and reported in the import summary. You can view detailed warnings and errors in the import results.
+### Change password
 
-#### Import Statistics
+Expand **Change password**, enter the current password and the new one twice, and click **Update password**. New passwords are 16–64 characters (under 72 UTF-8 bytes); no symbol or digit rules. Other browser sessions are signed out; this one stays.
 
-After import completes, you'll see a detailed summary including:
+Forgot it? See [How do I reset my password?](../troubleshooting/faq.md#how-do-i-reset-my-password)
 
-- **Imported** - Count of successfully imported items for each data type
-- **Skipped** - Count of duplicates or items that couldn't be imported
-- **Errors** - Count of items that failed to import
-- **Warnings** - Expandable list of warnings (duplicates, missing references, etc.)
-- **Errors** - Expandable list of errors with details
+### API key
 
-#### Import Requirements
+Tools such as [tempo-cli](https://github.com/trevordavies095/tempo-cli) and the Tempo extension for Claude Desktop authenticate with `Authorization: Bearer <key>`.
 
-- **File Format**: Must be a Tempo export ZIP file (created using the Export feature)
-- **File Size**: Up to 500MB supported
-- **Version**: Currently supports export format version 1.0.0
-- **Authentication**: Must be logged in to import
+- **Generate key** creates your key. One active key at a time (`An active API key already exists. Revoke it before creating a new one.`).
+- **Show** / **Hide** reveals the full key; **Copy** puts it on your clipboard.
+- **Revoke** disables it immediately. Anything using it stops working. You can then generate a new one.
 
-#### Import Behavior
+Keep it private. It can read and change your Tempo data but cannot change your password or manage API keys (those need a browser session).
 
-- **GUIDs Preserved**: All IDs from the export are preserved (allows true restoration)
-- **Timestamps Preserved**: Created and updated timestamps from export are maintained
-- **Relationships Maintained**: Shoe assignments, media attachments, and other relationships are restored
-- **Settings Refresh**: Unit preferences and other settings are automatically refreshed in the UI after import
+If the card says the key can't be shown (`This key can't be displayed. Revoke it and generate a new one.`), it was created before reveal existed or `JWT__SecretKey` changed. It still authenticates.
 
-#### Troubleshooting
+API keys are not in a Tempo export. Generate a new key after a restore.
 
-**Import Fails Immediately**
-- Verify the file is a valid Tempo export ZIP file
-- Check that the file size is under 500MB
-- Ensure you're logged in
-- Check API logs for specific error messages
+**Implementation:** `frontend/components/ApiKeySection.tsx`, `api/Services/ApiKeyService.cs`, `/auth/api-keys` in `api/Endpoints/AuthEndpoints.cs`.
 
-**Cannot Start Import / Message About Strava**
-- Finish or cancel the Strava bulk import under Settings → Migrate / restore first
-- Only one import job can run at a time (Tempo restore or Strava bulk)
+## System Information
 
-**Progress Seems Stuck**
-- Large restores can take 10+ minutes; watch `processed` / `total` update
-- Refresh the Settings page — an active Tempo restore resumes from the server
-- Check whether you cancelled; partial restore is expected after cancel
-- Verify server resources and API logs
-
-**Partial Restore After Cancel**
-- Already imported shoes, workouts, media, and settings remain
-- Re-import the same ZIP; duplicates skip and incomplete items can update
-- Review the previous summary warnings/errors if present
-
-**Some Items Not Imported**
-- Check the import summary for skipped items
-- Review warnings for duplicate detection
-- Verify the export file is complete and not corrupted
-- Check that referenced entities exist (e.g., shoes referenced by workouts)
-
-**Settings Not Refreshing**
-- Refresh the page if unit preferences don't update immediately
-- Check that settings were successfully imported (check import statistics)
-- Verify the export included settings data
-
-**Media Files Missing**
-- Check that media files exist in the export ZIP file
-- Verify file paths in the export match the expected structure
-- Review import warnings for missing media file references
-
-#### Use Cases
-
-Import your data for:
-
-- **Backup Restoration** - Restore from a previously created backup
-- **Migration** - Move your data to a new Tempo instance
-- **Data Recovery** - Recover from accidental deletion or system failure
-- **Testing** - Import test data into a development instance
-
-## Settings Management
-
-### Viewing Settings
-
-All settings are accessible from the Settings page:
-- Appearance (this browser only)
-- Unit preferences
-- Heart rate zone configuration
-- Relative effort management
-- Shoe tracking and management
-- Data export and import
-
-### Saving Changes
-
-- Changes are saved immediately when you click "Save"
-- Some changes (like unit preferences) may trigger background recalculation
-- You'll see confirmation when changes are applied
-
-## Best Practices
-
-### Heart Rate Zones
-
-- Use the Karvonen method if you know your resting heart rate
-- Custom zones are best if you've had a professional assessment
-- Age-based is fine for general use
-- Recalculate relative effort when changing zones to maintain consistency
-
-### Unit Preferences
-
-- Choose based on your familiarity and local conventions
-- All historical data will be displayed in your chosen units
-- Splits automatically adjust to match your preference
-
-## Troubleshooting
-
-### Settings Not Saving
-
-If settings don't save:
-- Check that you're logged in
-- Verify all required fields are filled
-- Check for error messages
-- Refresh the page and try again
-
-### Recalculation Not Working
-
-If recalculation doesn't complete:
-- Check that you have workouts with heart rate data
-- Verify heart rate zones are configured correctly
-- Wait for the process to complete (may take time)
-- Check API logs for errors
+A copyable block with version, commit, logging profile, and image tags for bug reports (from `GET /version`).
 
 ## Next Steps
 
-- [Import workouts](../user-guide/importing-workouts.md) to see your settings in action
-- [View analytics](../user-guide/analytics.md) to understand how settings affect metrics
-- [Explore the dashboard](../user-guide/viewing-workouts.md) to see your configured preferences
-
+- [Import workouts](importing-workouts.md)
+- [Understand analytics](analytics.md)

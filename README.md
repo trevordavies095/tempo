@@ -30,7 +30,7 @@ git clone https://github.com/trevordavies095/tempo.git
 cd tempo
 
 # Start all services
-docker-compose up -d
+docker compose up -d
 ```
 
 Access the application at:
@@ -42,7 +42,7 @@ That's it! The database migrations run automatically on first startup. For detai
 ## Features
 
 - **First-run onboarding** - Guided setup after registration (optional Tempo restore, essentials, optional Strava)
-- **Multi-Format Support** - Import GPX, FIT (.fit, .fit.gz), and Strava CSV files from Garmin, Apple Watch, and other devices
+- **Multi-Format Support** - Import GPX and FIT (.fit, .fit.gz) files from Garmin, Apple Watch, and other devices, or a whole Strava export ZIP (activities.csv + activity files)
 - **Workout Analytics** - Track distance, pace, elevation, splits, and time series data
 - **Workout Overview** - Map, splits, and HR/pace/elevation/cadence/power charts sharing one Highlight
 - **Appearance** - System, Dark, or Light on the command center (this browser only)
@@ -68,72 +68,12 @@ That's it! The database migrations run automatically on first startup. For detai
 
 ## Documentation
 
-**OpenAPI:** The canonical HTTP API contract for tools and client generation (including the planned read-only CLI) is **[docs/openapi.json](docs/openapi.json)** on the default integration branch (`develop`). After changing routes or Swagger metadata, regenerate it: run `dotnet tool restore` once at the repo root, then:
+**For developers and agents:**
 
-If compose Postgres is already up (`Host=localhost`, database `tempo`):
-
-```bash
-cd api && dotnet build \
-  && ASPNETCORE_ENVIRONMENT=Development \
-     JWT__SecretKey='local-openapi-only-not-for-production-min-32-chars!' \
-     ConnectionStrings__DefaultConnection='Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres' \
-     dotnet swagger tofile --output ../docs/openapi.json bin/Debug/net10.0/Tempo.Api.dll v1
-```
-
-Otherwise use the same one-shot as CI (`postgres:16-alpine`), then tear it down:
-
-```bash
-docker run -d --name tempo-openapi-pg \
-  -e POSTGRES_USER=tempo_openapi \
-  -e POSTGRES_PASSWORD=tempo_openapi \
-  -e POSTGRES_DB=tempo_openapi \
-  -p 5432:5432 \
-  postgres:16-alpine
-until docker exec tempo-openapi-pg pg_isready -U tempo_openapi -d tempo_openapi; do sleep 1; done
-
-cd api && dotnet build \
-  && ASPNETCORE_ENVIRONMENT=Development \
-     JWT__SecretKey='local-openapi-only-not-for-production-min-32-chars!' \
-     ConnectionStrings__DefaultConnection='Host=localhost;Port=5432;Database=tempo_openapi;Username=tempo_openapi;Password=tempo_openapi' \
-     dotnet swagger tofile --output ../docs/openapi.json bin/Debug/net10.0/Tempo.Api.dll v1
-
-docker rm -f tempo-openapi-pg
-```
-
-Use the **Debug** output assembly (`bin/Debug/...`) so the file matches **CI**, which runs `dotnet swagger tofile` against `bin/Debug/net10.0/Tempo.Api.dll` after `dotnet build Tempo.sln`.
-
-Use **Development** (not `Testing`) for `dotnet swagger tofile`: with `Testing`, the generic host looks for a `StartupTesting` class that this app does not ship, and Swashbuckle fails. The host applies migrations against PostgreSQL 16.
-
-With the API running in **Development**, you can also fetch the same document at `http://localhost:5001/swagger/v1/swagger.json`. Production deployments do not expose Swagger by default.
-
-**API keys (CLI and automation):** Protected routes accept `Authorization: Bearer` with either a JWT (browser session) or an API key (prefix `tmp_`). tempo-cli reads the key from `TEMPO_API_KEY` (or its config file); it does not create keys.
-
-1. **Get a key.** In Tempo, open **Settings → Account → API key** and click **Generate key**. Use **Show** or **Copy** any time to see it again. Each user has **one active key**; revoke it to generate a new one.
-
-   Without the UI (requires a logged-in session, not an API key), log in with a cookie jar and create the key:
-
-```bash
-BASE=http://localhost:5001
-curl -sS -c tempo-cookies.txt -X POST "$BASE/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"your-user","password":"your-password","rememberMe":true}'
-curl -sS -b tempo-cookies.txt -X POST "$BASE/auth/api-keys" \
-  -H 'Content-Type: application/json' \
-  -d '{"label":"cli"}'
-```
-
-   The JSON response includes the secret **`key`**. Creating a second key while one is active returns **409**.
-
-2. **Verify** machine access:
-
-```bash
-export TEMPO_API_KEY='tmp_…'   # paste the key from step 1
-curl -sS -H "Authorization: Bearer $TEMPO_API_KEY" http://localhost:5001/auth/me
-```
-
-3. **Security:** An API key can read **and change** your Tempo data (everything except changing the password and managing keys). Do not commit keys, log them in apps, or paste them into shared channels. Tempo stores the key hashed for authentication and encrypted (derived from `JWT:SecretKey`) so Settings can show it; rotating `JWT:SecretKey` keeps the key working but it can no longer be shown. Revoke a compromised key from Settings (or `DELETE /auth/api-keys/{id}` with a session) and generate a new one.
-
-4. **401 on protected routes** often returns: `{"error":"Invalid or expired credentials"}` (invalid, revoked, or missing auth). Full paths and schemas: [docs/openapi.json](docs/openapi.json).
+- **HTTP contract:** [docs/openapi.json](docs/openapi.json) is the canonical, generated contract (CI fails when it drifts). The [API Reference](docs/developers/api-reference.md) covers authentication, the route index, and non-obvious behavior.
+- **API keys (CLI and automation):** Generate a key under **Settings → Account → API key**, then send `Authorization: Bearer tmp_…`. The [API keys walkthrough](docs/developers/api-reference.md#api-keys-cli-and-automation) covers what a key can do, curl examples, and rotation.
+- **Domain vocabulary:** [CONTEXT.md](CONTEXT.md).
+- **Local development, tests, and regenerating openapi.json:** [Development Setup](docs/developers/setup.md) and [Testing](docs/developers/testing.md#openapi-drift-check).
 
 Comprehensive documentation is available at **[https://trevordavies095.github.io/tempo/](https://trevordavies095.github.io/tempo/)**:
 

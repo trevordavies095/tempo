@@ -1,205 +1,158 @@
 # Docker Deployment
 
-Deploy Tempo using Docker Compose for easy production deployment.
+The production install and upgrade procedure: `docker-compose.prod.yml` with pinned images from GitHub Container Registry, behind your HTTPS reverse proxy. Settings are in [Configuration](../getting-started/configuration.md); hardening and operations in [Production Setup](production.md).
 
-## Overview
+## What production Compose gives you
 
-Docker Compose provides the simplest way to deploy Tempo in production. The `docker-compose.prod.yml` file is configured for production use with pre-built images.
+- `postgres` (`postgres:16-alpine`), `api` (`ghcr.io/trevordavies095/tempo/api:<tag>`), `frontend` (`ghcr.io/trevordavies095/tempo/frontend:<tag>`), all `restart: unless-stopped` with health checks.
+- `JWT_SECRET_KEY` and `POSTGRES_PASSWORD` required from `.env`; Compose refuses to start without them.
+- Only the command center is published, on `127.0.0.1:3004`. Postgres (`5432`) and the API (`5001`) stay on the Compose network.
+- Data: Docker volume `postgres_data` and the `./media` directory next to the Compose file (mounted at `/app/media`).
 
 ## Prerequisites
 
-- Docker and Docker Compose installed
-- Sufficient disk space for database and media
-- Network access (if using pre-built images from GitHub Container Registry)
+- Docker with Compose v2 (`docker compose`).
+- A reverse proxy for HTTPS on the same host ([Reverse Proxy](reverse-proxy.md)). The session cookie is `Secure`, so login needs HTTPS (or `http://localhost`).
 
-## Production Docker Compose
+## Install
 
-The production configuration (`docker-compose.prod.yml`) includes:
+### 1. Get the files
 
-- Pre-built, version-pinned images from GitHub Container Registry
-- Required secrets from `.env` (JWT and database password)
-- Command center published only on `127.0.0.1:3004` (Postgres and API stay on the Compose network)
-- Health checks and automatic restarts
+Pick a release from [GitHub Releases](https://github.com/trevordavies095/tempo/releases) and fetch the Compose file and `.env.example` from that tag:
 
-## Deployment Steps
+```bash
+mkdir -p ~/tempo && cd ~/tempo
+TAG=v2.12.0
+curl -fsSLO "https://raw.githubusercontent.com/trevordavies095/tempo/$TAG/docker-compose.prod.yml"
+curl -fsSLO "https://raw.githubusercontent.com/trevordavies095/tempo/$TAG/.env.example"
+```
 
-### 1. Download Configuration
+The file at a release tag pins that release's images.
 
-Ensure you have `docker-compose.prod.yml` and `.env.example` in your deployment directory.
-
-### 2. Configure Environment Variables
-
-Copy the example and fill in the required values. Compose refuses to start if either is missing or empty (do not leave them blank after `cp`).
+### 2. Fill in `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-**Required** (in `.env`):
+Set both required values (empty values fail Compose):
 
-- `JWT_SECRET_KEY` — generate with `openssl rand -base64 32`
-- `POSTGRES_PASSWORD` — same value for Postgres and the API connection string. Do not use `;` (it splits the Npgsql connection string). Prefer a long random value for new installs (`openssl rand -base64 32`).
+```bash
+JWT_SECRET_KEY=<output of: openssl rand -base64 32>
+POSTGRES_PASSWORD=<output of: openssl rand -base64 32>
+```
 
-**Existing Postgres volumes:** `POSTGRES_PASSWORD` is applied only on first database init. If you already have a `postgres_data` volume, set `POSTGRES_PASSWORD` to the password already in that cluster (older installs often used `postgres`). Editing `.env` alone does not rotate the role password.
+- `POSTGRES_PASSWORD` is used for Postgres and the API connection string. Do not use `;`.
+- It is applied only when the `postgres_data` volume is first created. For an existing volume, set the password already in that cluster (older installs often used `postgres`). To change it: `ALTER USER postgres WITH PASSWORD '…';` in Postgres, update `.env`, then `docker compose -f docker-compose.prod.yml up -d` to recreate the API.
+- Keep `JWT_SECRET_KEY` stable and backed up. Changing it signs everyone out and breaks stored integration secrets ([details](../getting-started/configuration.md#rotating-the-jwt-secret)).
 
-**Rotating the database password:** run `ALTER USER postgres WITH PASSWORD '…';` inside Postgres, then update `POSTGRES_PASSWORD` in `.env` and recreate the API container so it picks up the new connection string.
+Optional `.env` values (CARTO map key, logging profile, backfills, cookie): [Compose `.env` reference](../getting-started/configuration.md#production-compose-env).
 
-**Optional:**
-
-- `CARTO_BASEMAPS_API_KEY` — free [CARTO basemaps API key](https://carto.com/basemaps/apikey) (removes map watermark)
-
-### 3. Start Services
+### 3. Start
 
 ```bash
 docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml ps     # wait for all three "healthy"
 ```
 
-### 4. Verify Deployment
+The API applies migrations on start.
 
-Check that all services are running:
+### 4. Put HTTPS in front
+
+Point your reverse proxy at **one** upstream, `127.0.0.1:3004`. The frontend rewrites `/api` to the API on the Compose network. Use that public HTTPS origin for the command center and the daily driver. Examples: [Reverse Proxy](reverse-proxy.md).
+
+### 5. Verify
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
+curl -f https://tempo.example.com/api/ready
+# or, without the proxy:
+docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001/ready
 ```
 
-Check logs:
+| URL (public origin) | Answers |
+|---|---|
+| `/api/ready` | API readiness: `200` when Postgres answers within 2 s, else `503`. Use this. |
+| `/api/health` | API liveness only; `200` even when Postgres is down. |
+| `/health` | Command center (Next.js) process pulse, not the API. |
+| `/api/version` | Version, build, logging profile, environment. |
 
-```bash
-docker compose -f docker-compose.prod.yml logs -f
-```
+Then open the origin, register, and complete [onboarding](../getting-started/onboarding.md).
 
-### 5. Access Application
+**Upgrading from a split proxy** (`/` → `:3004`, `/api` → `:5001`): switch to the single upstream, or uncomment the loopback API publish (`127.0.0.1:5001:5001`) in `docker-compose.prod.yml` until you do.
 
-Put a reverse proxy (Caddy, nginx, Traefik) in front of **one** upstream: `127.0.0.1:3004`. Use that public HTTPS origin for both the command center and the daily driver.
+## Image tags
 
-- Command center: `https://your.domain`
-- Daily driver: the same origin (the app talks to `/api/...`; Next.js rewrites `/api` to the API on the Compose network)
-- Ready (verify a deploy): `https://your.domain/api/ready` (or `docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001/ready`). API liveness is `/api/health` and can be `200` while Postgres is down. Public `https://your.domain/health` is the **command center** process pulse, not the API — do not use it as the API check.
+| Tag | Built from |
+|---|---|
+| `vX.Y.Z` | Release tag. Use this. |
+| `latest` | Most recent release or push to `main`. |
+| `edge` | Every push to `develop`. Unreleased. |
 
-**Upgrading from a split proxy** (`/` → `:3004`, `/api` → `:5001`): merge to a single upstream on `127.0.0.1:3004`, or uncomment the loopback API publish in `docker-compose.prod.yml` (`127.0.0.1:5001:5001`) until you migrate.
-
-Postgres and the API are not published on the host by default.
-
-## Image Versions
-
-Production images are on GitHub Container Registry. The **current tags are whatever `docker-compose.prod.yml` pins** — update those pins when deploying a new release (do not treat `latest` as the production contract).
-
-```bash
-# After editing the tags in docker-compose.prod.yml:
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
-```
-
-## Network Configuration
-
-Services share the default Compose project network and talk by service name:
-
-- `postgres` — database
-- `api` — API
-- `frontend` — command center (Next.js; rewrites `/api` to `api:5001`)
-
-## Data Persistence
-
-### Database
-
-Database data is stored in the `postgres_data` Docker volume. This persists across container restarts.
-
-### Media Files
-
-Media files are stored in the `./media` directory, mounted as a volume. Ensure this directory:
-- Exists and is writable
-- Has sufficient disk space
-- Is included in backups
+Pin `api` and `frontend` to the same `vX.Y.Z`. Do not run `latest` as your production contract.
 
 ## Updating
 
-An upgrade is not a no-op reboot. Migrations run on API start, and some releases then rewrite older workouts in the background (startup backfills). Follow these steps:
+An upgrade is not a no-op restart: migrations run on API start, and some releases add backfills.
 
-1. **Back up.** Back up the database with `pg_dump` and copy `./media`, or download a Settings → Export ZIP. See [Backup and Restore](backup-restore.md).
-2. **Pin matching tags.** Set the api **and** frontend images in `docker-compose.prod.yml` to the same release tag (e.g. `v2.11.0`). Don't use `latest`, and don't mix versions.
-3. **Don't restart during an import.** Check that no Strava ZIP import or Tempo restore is in progress. When the API starts, it marks any unfinished import job `failed` (`interrupted`) and deletes its uploaded archive. The job does not resume; start it again after the upgrade.
+1. **Back up.** `pg_dump` plus `./media`, or a Settings → Export ZIP ([Backup and Restore](backup-restore.md)).
+2. **Check no import is running.** On start the API marks any unfinished import job `failed` (interrupted) and deletes its upload. It does not resume; start it again afterwards.
+3. **Bump the tags.** Set `api` and `frontend` in `docker-compose.prod.yml` to the new `vX.Y.Z` (or re-download the file at the new tag and re-apply your edits). Check the release notes for `.env.example` changes.
 4. **Pull and start.**
    ```bash
    docker compose -f docker-compose.prod.yml pull
    docker compose -f docker-compose.prod.yml up -d
    ```
-5. **Check the backfill line.** Starts don't run backfills. The API logs `Startup backfills: all 8 complete; none run` when there's nothing to do:
+5. **Check backfills.**
    ```bash
    docker compose -f docker-compose.prod.yml logs api | grep -i "startup backfills"
    ```
-   If it warns that some `have not completed on this library` (an install that skipped versions, or a release that adds a backfill), run the catch-up command once and wait for `Backfills finished: all 8 recorded complete`:
+   `all 8 complete; none run` means done. If it warns that some `have not completed on this library`, run once and wait for `Backfills finished: all 8 recorded complete`:
    ```bash
    docker compose -f docker-compose.prod.yml exec api dotnet Tempo.Api.dll backfill
    ```
-   On a large library this can take a while and means extra CPU, disk, and Postgres WAL. Browsing works throughout. Tempo 2.11.0 and earlier ran every backfill on every start instead.
-6. **Smoke test.** `curl -f https://tempo.example.com/api/ready` returns 200 once the API can reach the database. It does **not** wait for backfills.
-
-To run backfills at startup instead (hosts without `exec`), or to force a full re-run, see [Startup backfills](../getting-started/configuration.md#startup-backfills).
+   Large libraries take a while (CPU, disk, Postgres WAL); browsing works throughout. Tempo 2.11.0 and earlier ran every backfill on every start. Other options: [Startup backfills](../getting-started/configuration.md#startup-backfills).
+6. **Smoke test.** `curl -f https://tempo.example.com/api/ready`. It does not wait for backfills.
 
 ### Leaving the experimental `:feat-ai-coach` image
 
-The experimental coach feature image (`ghcr.io/.../api:feat-ai-coach` / `frontend:feat-ai-coach`) is retiring; new publishes of that tag have stopped. Move back to a supported tag (`edge`, a release `v*`, or whatever `docker-compose.prod.yml` pins).
+The `feat-ai-coach` API/frontend tags are retired. Move to a release `vX.Y.Z` (or `edge`). On the next start the API **drops leftover `Coach*` tables** and their `__EFMigrationsHistory` rows, discarding coach data (goals, weeks, check-ins). Workouts, settings, and shoes are untouched. There is no opt-out.
 
-On the next API start, Tempo **drops any leftover `Coach*` tables** and removes matching `__EFMigrationsHistory` rows. **That discards in-Tempo coach data** (goals, weeks, check-ins, etc.). Workouts, settings, shoes, and other core Tempo data stay intact. There is no opt-out.
-
-## Stopping Services
+## Stopping
 
 ```bash
-docker compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml down      # data kept
+docker compose -f docker-compose.prod.yml down -v   # also deletes the database volume
 ```
 
-To remove volumes (clears database):
-
-```bash
-docker compose -f docker-compose.prod.yml down -v
-```
+`down -v` does not delete `./media`.
 
 ## Password recovery
 
-Forgot the only Tempo passphrase: do not delete volumes and do not hand-edit BCrypt in Postgres. From the directory with your Compose file:
+Forgot the only passphrase: do not delete volumes or edit BCrypt hashes in Postgres. From the Compose directory:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -it api dotnet Tempo.Api.dll reset-password
-```
-
-Scripts (no TTY):
-
-```bash
+# scripts (no TTY):
 docker compose -f docker-compose.prod.yml exec -T api dotnet Tempo.Api.dll reset-password --password-stdin
-```
-
-If the API container is not running:
-
-```bash
+# API container not running (the image ENTRYPOINT is already dotnet Tempo.Api.dll):
 docker compose -f docker-compose.prod.yml run --no-deps --rm api reset-password
 ```
 
-The image `ENTRYPOINT` is already `dotnet Tempo.Api.dll`, so `reset-password` is passed as the verb. On a bare API host: `dotnet Tempo.Api.dll reset-password` from the API working directory. After a successful reset, log in again (old sessions are invalid). Full notes: [How do I reset my password?](../troubleshooting/faq.md#how-do-i-reset-my-password).
+Without Docker: `dotnet Tempo.Api.dll reset-password` from the API directory. Existing sessions are invalidated. More: [How do I reset my password?](../troubleshooting/faq.md#how-do-i-reset-my-password).
 
 ## Troubleshooting
 
-### Services Not Starting
-
-- Check logs: `docker compose -f docker-compose.prod.yml logs`
-- Verify `.env` has non-empty `JWT_SECRET_KEY` and `POSTGRES_PASSWORD` (copy from `.env.example`)
-- Ensure port `3004` is not in use on loopback
-- Check disk space
-
-### Database Connection Issues
-
-- Verify PostgreSQL container is healthy
-- Confirm `POSTGRES_PASSWORD` in `.env` matches the password in an existing volume (init only runs once)
-- Ensure network connectivity between services
-
-### Image Pull Failures
-
-- Verify network connectivity
-- Check image tags are correct
-- Ensure authentication if using private registry
+| Symptom | Check |
+|---|---|
+| `up` fails with `Set JWT_SECRET_KEY…` / `Set POSTGRES_PASSWORD…` | `.env` is in the Compose directory and both values are non-empty. |
+| API unhealthy, logs show auth failure to Postgres | `POSTGRES_PASSWORD` must match the existing volume's password (init runs once). |
+| API exits at startup | `docker compose -f docker-compose.prod.yml logs api`. Invalid values for `Tempo__Logging__Profile`, `Tempo__Backfills__OnStartup`, `Cookie__Secure`, or `Tempo__Proxy__TrustedNetworks` stop startup by design. |
+| Port in use | Something else holds `127.0.0.1:3004`; change the left side of `127.0.0.1:3004:3000`. |
+| Login succeeds, then signed out | Plain HTTP; see [Troubleshooting login](reverse-proxy.md#troubleshooting-login). |
+| `pull` fails | Tag exists on GHCR (`vX.Y.Z`, with the `v`); network reaches `ghcr.io`. |
 
 ## Next Steps
 
-- [Configure for production](production.md)
-- [Review security settings](security.md)
-- [Set up backups](backup-restore.md)
-
+- [Reverse Proxy and Login Cookies](reverse-proxy.md)
+- [Production Setup](production.md)
+- [Backup and Restore](backup-restore.md)

@@ -1,63 +1,50 @@
 # User Guide
 
-Welcome to the Tempo User Guide! This section covers everything you need to know to use Tempo effectively.
+How to use the Tempo command center (the WebUI). The iOS app is the daily driver for logging and glancing; everything that recalculates or is one-time setup lives here.
 
-## Overview
+## Topics
 
-Tempo is a self-hosted running tracker that helps you track and analyze your workouts. This guide will walk you through all the features and workflows.
-
-## Topics Covered
-
-- **[Importing Workouts](importing-workouts.md)** - Import single GPX/FIT workout files
-- **[Bulk Import](bulk-import.md)** - Import your entire Strava history (Settings → Migrate / restore, or onboarding)
-- **[Viewing Workouts](viewing-workouts.md)** - Explore the dashboard, activities list, and Workout overview
-- **[Media](media.md)** - Add photos and videos to your workouts
-- **[Analytics](analytics.md)** - Understand metrics, statistics, and performance data
-- **[Settings](settings.md)** - Configure preferences, heart rate zones, unit preferences, shoe tracking, export, and migrate/restore
+- **[Importing Workouts](importing-workouts.md)** — GPX/FIT uploads, what intake does, duplicates
+- **[Bulk Import](bulk-import.md)** — Strava archive ZIP via Import jobs
+- **[Viewing Workouts](viewing-workouts.md)** — Dashboard, Activities, Workout overview, similar runs, crop, delete
+- **[Media](media.md)** — photos and videos on a Workout
+- **[Analytics](analytics.md)** — clocks, time in zones, Relative Effort, Best efforts, weekly recap, Insights
+- **[Settings](settings.md)** — appearance, units, shoes, heart-rate zones, thresholds, intervals.icu, export/restore, recalculation, password, API key
 
 ## Getting Started
 
-If you're new to Tempo, start with:
-
-1. Complete [first-run onboarding](../getting-started/onboarding.md) (restore a Tempo export, or set essentials and optionally import Strava)
-2. [Importing your first workout](importing-workouts.md) (GPX/FIT on the Import page)
-3. [Exploring the dashboard](viewing-workouts.md)
-4. [Configuring your settings](settings.md)
+1. Complete [first-run onboarding](../getting-started/onboarding.md): restore a Tempo export, or set units and heart-rate zones and optionally import a Strava archive.
+2. [Import a workout](importing-workouts.md) on the Import page, or [connect intervals.icu](settings.md#intervalsicu).
+3. Open the [Dashboard](viewing-workouts.md#dashboard).
 
 ## Common Workflows
 
-### Daily Workout Import
+### Adding a run
 
-1. Export a workout file from your device (Garmin, Apple Watch, etc.)
-2. Go to the Import page
-3. Drag and drop your file
-4. View your workout with maps and analytics
+- Upload the FIT/GPX on **Import**, or
+- Let [intervals.icu sync](settings.md#intervalsicu) pull it within 15 minutes (or click **Sync now**), or
+- Let the iOS app send it from Apple Health.
 
-### Bulk Import from Strava
+### Migrating from Strava
 
-1. Request your Strava data export
-2. During [onboarding](../getting-started/onboarding.md), choose Strava import — or later open Settings → Migrate / restore → Import Strava archive
-3. Upload the ZIP file
-4. Wait for processing to complete
-5. Review imported workouts
+1. Request your Strava archive.
+2. Choose Strava import during [onboarding](../getting-started/onboarding.md), or later **Settings → Migrate / restore → Import Strava archive**.
+3. Upload the ZIP and wait for `Importing processed/total...` to finish. See [Bulk Import](bulk-import.md).
 
-### Backup and Restore
+### Backup and restore
 
-1. Navigate to Settings → Export
-2. Click "Export All Data" to create a backup
-3. Store the ZIP file safely
-4. To restore, expand Migrate / restore → Restore Tempo export and upload the export file — watch upload then restore progress (you can cancel; already restored data stays)
-5. Only one import runs at a time (Tempo restore or Strava bulk); then review the import summary
+1. **Settings → Export → Export All Data** downloads a ZIP.
+2. To restore, **Settings → Migrate / restore → Restore Tempo export** and upload it. You can cancel; restored data stays.
+3. Reconnect intervals.icu and generate a new API key afterwards; neither is in the export.
 
-### Analyzing Performance
+See also [Backup and Restore](../deployment/backup-restore.md) for database-level backups.
 
-1. View weekly and yearly statistics
-2. Analyze relative effort trends
-3. Review heart rate zones
-4. Compare workouts over time
-5. Open Insights for weather extremes, personal records and data coverage
+### Reviewing training
+
+- **Dashboard** — this week's recap, Relative Effort against the last three weeks, Best efforts
+- **Workout overview** — splits or device laps, charts, zones, weather, similar runs
+- **Insights** — personal records by range, weather extremes, data coverage
 
 ## Need Help?
 
-If you encounter any issues, check the [Troubleshooting](../troubleshooting/index.md) section for solutions.
-
+See [Troubleshooting](../troubleshooting/index.md).

@@ -4,44 +4,26 @@ This directory contains the source files for the Tempo documentation site, built
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- Python 3 (CI uses 3.12)
 - pip (Python package manager)
 
 ## Installation
 
-1. Install dependencies:
+Run these from the repository root (where `mkdocs.yml` and `requirements.txt` live):
 
 ```bash
-pip install -r ../requirements.txt
-```
-
-Or install directly:
-
-```bash
-pip install mkdocs-material pymdown-extensions
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ## Development
 
-### Serve Locally
-
-Start the development server with live reload:
-
 ```bash
-mkdocs serve
+mkdocs serve            # live reload at http://127.0.0.1:8000
+mkdocs build --strict   # fail on broken links/anchors; run before opening a PR
 ```
 
-The documentation will be available at `http://127.0.0.1:8000`.
-
-### Build Documentation
-
-Build the static site:
-
-```bash
-mkdocs build
-```
-
-The built site will be in the `site/` directory (excluded from git).
+The built site goes to `site/`. CI (`.github/workflows/docs.yml`) runs `mkdocs build` and does not use `--strict`, so broken anchors only show up as `INFO` lines unless you build strictly yourself.
 
 ## Project Structure
 
@@ -74,12 +56,12 @@ Documentation configuration is in `mkdocs.yml` at the repository root. Maintaine
 ### Adding Images
 
 1. Place canonical screenshots in `docs/assets/screenshots/`
-2. For pages under `docs/user-guide/`, also copy into `docs/user-guide/screenshots/` (Cursor Markdown preview does not reliably load `../` or symlinks)
+2. For pages under `docs/user-guide/`, also copy into `docs/user-guide/screenshots/` (editor Markdown previews do not reliably load `../` paths or symlinks). Keep both copies identical.
 3. Reference them with same-folder relative paths (include the `./` prefix):
    - From `docs/index.md`: `![Alt text](./assets/screenshots/image.png)`
    - From `docs/user-guide/*.md`: `![Alt text](./screenshots/image.png)`
    - From the root `README.md`: `![Alt text](./docs/assets/screenshots/image.png)`
-4. Workspace setting `markdown.preview.security: allow` is set in `.vscode/settings.json` so local images are permitted in preview
+4. If your editor's preview blocks local images, allow them in its Markdown preview security setting (`.vscode/` is gitignored, so this is per-machine)
 
 
 ### Code Blocks
@@ -104,15 +86,20 @@ Use Material admonitions for notes, warnings, etc.:
     This is a warning.
 ```
 
+## Writing Conventions
+
+These pages are read by developers and by coding agents. Write them so either can act on a page without opening five others:
+
+- **Open with scope.** Start each page with 1–2 sentences saying what it covers and when to read it.
+- **Point to the source of truth instead of copying it.** Domain terms: `CONTEXT.md`. HTTP contract: `docs/openapi.json`. Schema: `api/Data/TempoDbContext.cs`. Config keys: `getting-started/configuration.md`. Copy a list here only when it adds meaning the source lacks.
+- **Name real paths and identifiers** (`api/Services/WorkoutIntake.cs`, `Workout.TimerTimeS`) so readers can jump straight to the code.
+- **Use `CONTEXT.md` vocabulary** (Workout overview, Import job, Device lap), and avoid the terms it lists under _Avoid_.
+- **Make commands copy-pasteable** and verify that they run.
+- **Update docs in the same PR as the behavior change.** The local `mkdocs build --strict` catches broken links; it does not catch stale content.
+
 ## Deployment
 
-The documentation can be deployed to:
-
-- GitHub Pages
-- Netlify
-- Any static hosting service
-
-See the [MkDocs deployment guide](https://www.mkdocs.org/user-guide/deploying-your-docs/) for details.
+Pushes to `main` that touch `docs/**`, `mkdocs.yml`, or `requirements.txt` trigger `.github/workflows/docs.yml`, which builds and publishes the site to GitHub Pages at <https://trevordavies095.github.io/tempo/>. Changes merged to `develop` do not appear on the site until the next release merge to `main`.
 
 ## Resources
 

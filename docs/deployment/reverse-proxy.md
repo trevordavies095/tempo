@@ -1,6 +1,6 @@
 # Reverse Proxy and Login Cookies
 
-If you copy this page, login works behind TLS. Start here when login "succeeds" but the session doesn't stick.
+Proxy configs for production Compose and the session-cookie contract they must satisfy. Start here when login "succeeds" but the session doesn't stick.
 
 ## How a request reaches the API
 
@@ -64,7 +64,7 @@ server {
 
 ### Traefik
 
-Traefik sets `X-Forwarded-Proto` by default. Route `Host(`tempo.example.com`)` on your TLS entrypoint to the frontend container's port `3000`, and raise the body limit if you use whole-ZIP adapters:
+Traefik sets `X-Forwarded-Proto` by default. These labels go on the `frontend` service and route to its container port `3000`; Traefik must share a Docker network with it (production Compose does not define one for you). Raise the body limit only if you use whole-ZIP adapters:
 
 ```yaml
 labels:
@@ -93,18 +93,18 @@ Prefer HTTPS even on a LAN (for example, Caddy with an internal CA or a DNS-chal
 TEMPO_COOKIE_SECURE=false
 ```
 
-Then restart the API. Startup logs a warning while this is set. Never use it on an internet-facing install: the session cookie would travel in clear text.
+Then `docker compose -f docker-compose.prod.yml up -d api`. Startup logs a warning while this is set. Never use it on an internet-facing install: the session cookie would travel in clear text.
 
 `http://localhost` works without this. Browsers accept `Secure` cookies on localhost.
 
 ## Settings
 
-| Setting | Env var | Default | Notes |
-|---|---|---|---|
-| `Cookie:Secure` | `Cookie__Secure` or `TEMPO_COOKIE_SECURE` (Compose `.env`) | unset | Unset: always `Secure` in Production; elsewhere `Secure` follows the request scheme. `true` / `false` forces it. Any other value fails startup. |
-| `Cookie:Domain` | `Cookie__Domain` | unset (host-only) | Leave unset. Set it only to share the session across subdomains (e.g. `example.com` for both `tempo.example.com` and `www.example.com`). Never set an IP address. |
-| `Tempo:Proxy:TrustedNetworks` | `Tempo__Proxy__TrustedNetworks` | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` | Comma-separated CIDR list of peers whose forwarded headers are honored. Narrow it (e.g. to your Compose subnet) if untrusted hosts can reach the API port directly. Invalid entries fail startup. |
-| `CORS:AllowedOrigins` | `CORS__AllowedOrigins` | `http://localhost:3000` | Not needed for the default path; the command center is same-origin `/api` and the daily driver is native. Set it only when a browser on another origin calls the API directly, e.g. `https://tempo.example.com`. |
+Four API keys govern this page. Defaults, allowed values, and env var forms are in the [Configuration reference](../getting-started/configuration.md#session-cookie-proxy-cors):
+
+- `Cookie:Secure` (`TEMPO_COOKIE_SECURE` in `.env`): leave unset behind HTTPS.
+- `Cookie:Domain`: leave unset unless the session must span subdomains. Never an IP.
+- `Tempo:Proxy:TrustedNetworks`: loopback and private ranges by default; narrow it (e.g. to your Compose subnet) if untrusted hosts can reach the API port directly.
+- `CORS:AllowedOrigins`: only for a browser on another origin calling the API directly.
 
 ## Troubleshooting login
 

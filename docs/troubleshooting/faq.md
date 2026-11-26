@@ -1,154 +1,128 @@
 # Frequently Asked Questions
 
-Common questions about Tempo.
-
 ## General
 
 ### What is Tempo?
 
-Tempo is a self-hostable running tracker that serves as a privacy-first alternative to Strava. It allows you to track your workouts while keeping all data on your own infrastructure.
+A self-hosted running tracker and privacy-first alternative to Strava. The WebUI (command center) handles import, settings, analytics, and the Workout overview; the [iOS app](https://apps.apple.com/us/app/tempo-self-hosted-running/id6763753229) is the daily driver.
 
 ### Is Tempo free?
 
-Yes, Tempo is open source and free to use. It's licensed under the MIT License.
+Yes. Open source under the MIT License. You pay only for whatever hardware or hosting you run it on.
 
-### Do I need to pay for hosting?
+### Is it multi-user?
 
-No, you can host Tempo on your own infrastructure. You only need to pay for your own server/hosting if you choose to use cloud services.
-
-### Can I use Tempo without technical knowledge?
-
-Yes! The Docker Compose quick start makes it easy to get started. However, some technical knowledge helps for production deployment and troubleshooting.
+No. Registration is open only until the first account exists.
 
 ## Installation
 
 ### What are the system requirements?
 
-- **Minimum**: 1 CPU core, 2GB RAM, 10GB storage
-- **Recommended**: 2+ CPU cores, 4GB+ RAM, 50GB+ storage
+- **Minimum:** 1 CPU core, 2 GB RAM, 10 GB storage
+- **Recommended:** 2+ cores, 4 GB+ RAM, 50 GB+ storage (raw files, time series, and media grow with your library)
 
 ### Do I need Docker?
 
-Docker Compose is the easiest way to run Tempo, but you can also run services individually if you prefer.
+Docker Compose is the supported path. You can run the API (.NET 10), frontend (Next.js), and PostgreSQL 16 separately; see [Developer setup](../developers/setup.md).
 
-### Can I run Tempo on Windows/Mac/Linux?
+### How do I update Tempo?
 
-Yes, Tempo runs on all platforms that support Docker. The backend is .NET (cross-platform), and the frontend is Next.js (Node.js).
+Follow the [upgrade steps](../deployment/docker.md#updating): back up, pin the **same** release tag for api and frontend, don't restart during a Strava import or Tempo restore (it is marked `interrupted` and won't resume), `pull` + `up -d`, then check the API log for `Startup backfills: all 8 complete; none run`. If it warns that backfills haven't completed, run `docker compose exec api dotnet Tempo.Api.dll backfill` once. Migrations run automatically.
 
-### How long does installation take?
+## Importing
 
-With Docker Compose, installation takes just a few minutes. Most of the time is spent downloading images.
+### What file formats are supported?
 
-## Features
+- **Import page:** `.gpx`, `.fit`, `.fit.gz`
+- **Strava archive ZIP:** `activities.csv` plus GPX/FIT/FIT.GZ files (Settings → Migrate / restore, or onboarding)
+- **Tempo export ZIP:** restore under Settings → Migrate / restore
 
-### What file formats does Tempo support?
+CSV and TCX files are not accepted on their own.
 
-Tempo supports:
-- GPX (`.gpx`)
-- FIT (`.fit`, `.fit.gz`)
-- Strava CSV (`.csv`)
+### Does Tempo sync with my watch?
+
+Not directly. Options:
+
+- **intervals.icu** — connect Garmin (or others) to intervals.icu, then [connect intervals.icu in Settings](../user-guide/settings.md#intervalsicu). New runs import about every 15 minutes.
+- **iOS app** — imports Apple Health workouts.
+- **Manual** — upload FIT/GPX on the Import page.
 
 ### Can I import from Strava?
 
-Yes! You can:
-- Import individual GPX files from Strava on the Import page (file upload only)
-- Bulk import your entire Strava history using a Strava data export ([first-run onboarding](../getting-started/onboarding.md), or Settings → Migrate / restore)
+Yes: single GPX files on the Import page, or your whole history from a Strava data export ZIP ([Bulk Import](../user-guide/bulk-import.md)). Only `Run` activities are imported.
+
+### I skipped Strava during onboarding. Can I import later?
+
+Yes. **Settings → Data Management → Migrate / restore → Import Strava archive**.
+
+### What happens if I import the same run twice?
+
+It is matched on start time, distance (within 1 m), and elapsed time (within 1 s). If the stored copy lacks raw file data it is updated; otherwise it is skipped.
+
+### Why is my import slow?
+
+Each Workout gets geometry, weather (an Open-Meteo call), zones, Relative Effort, and Best efforts. Archives with hundreds of runs take minutes; restores also run a repair pass.
+
+## Onboarding
 
 ### What is first-run onboarding?
 
-After registration, Tempo guides you through optional Tempo restore, essential settings (units and heart rate zones), and an optional Strava archive. App routes stay gated until setup finishes. See [First-run onboarding](../getting-started/onboarding.md).
+After registration, a wizard offers an optional Tempo restore, essential settings (units and heart-rate zones, optional default shoe), and an optional Strava archive. App routes are gated until it finishes. See [First-run onboarding](../getting-started/onboarding.md).
 
 ### Will upgrading force me through onboarding again?
 
-No. Existing accounts are backfilled as already completed when onboarding ships. There is no “run setup again” entry in Settings.
+No. Existing accounts were marked complete when onboarding shipped. There is no "run setup again" in Settings.
 
-### I skipped Strava during onboarding. Can I import a Strava ZIP later?
+### Why am I stuck on the onboarding screen?
 
-Yes. Open **Settings → Data Management → Migrate / restore → Import Strava archive**. Day-to-day GPX/FIT files stay on the Import page.
-
-### Does Tempo sync with my devices?
-
-Tempo doesn't automatically sync with devices. You need to export files from your device and import them into Tempo.
-
-### Can I export my data from Tempo?
-
-Yes. Use **Settings → Export** to download a ZIP of workouts, routes, splits, time series, media, shoes, settings, and best efforts. Restore a previous export under **Settings → Migrate / restore**. See the [Settings export/import](../user-guide/settings.md#export--import) guide and [Backup and Restore](../deployment/backup-restore.md). You can also access PostgreSQL and the `media/` directory directly.
-
-### Does Tempo work offline?
-
-Yes! Once installed, Tempo runs entirely on your infrastructure and doesn't require internet connectivity (except for weather data, which is optional).
+Every app route redirects there until onboarding completes. Finish restore or essentials (and answer the Strava question), or use **Skip for now** after a failed Strava job. Logout is available from the onboarding shell.
 
 ## Data and Privacy
 
 ### Where is my data stored?
 
-All data is stored locally on your infrastructure:
-- Database: PostgreSQL (in Docker volume or your PostgreSQL instance)
-- Media files: Filesystem in `media/` directory
+- **Database:** PostgreSQL (Docker volume or your own instance) — Workouts, raw files, time series, settings
+- **Media and import staging:** `MediaStorage:RootPath` (`./media` mounted at `/app/media` in Compose)
 
 ### Does Tempo send data to external services?
 
-Tempo only contacts external services for:
-- Weather data (Open-Meteo API) - based on workout location and time
-- No other data is sent externally
+Only:
 
-### Can I backup my data?
+- **Open-Meteo** — workout start location and hour, for weather at import
+- **CARTO** — map tiles, requested by your browser
+- **intervals.icu** — only if you connect it; Tempo calls it with your API key
 
-Yes! See the [Backup and Restore](../deployment/backup-restore.md) guide for instructions.
+### Can I export my data?
 
-### How do I migrate to a new server?
+Yes. **Settings → Export → Export All Data** downloads a ZIP with Workouts (including raw files), routes, splits and device laps, time series, media, shoes, and settings. Best efforts, the intervals.icu connection, API keys, and the password are not included. Restore under **Settings → Migrate / restore**. See [Export](../user-guide/settings.md#export-import) and [Backup and Restore](../deployment/backup-restore.md).
 
-1. Backup database and media files
-2. Install Tempo on new server
-3. Restore database and media files
-4. Update configuration if needed
+### How do I move to a new server?
 
-## Technical
+Either export and restore through Settings, or copy the database and media directory (see [Backup and Restore](../deployment/backup-restore.md)). Keep the same `JWT_SECRET_KEY`, or you will need to reconnect intervals.icu and regenerate the API key.
 
-### What database does Tempo use?
+### Does Tempo work offline?
 
-PostgreSQL 16. The database runs in Docker or can be a separate PostgreSQL instance.
+Yes, except weather lookup, map tiles, and intervals.icu sync.
 
-### Can I use a different database?
+## Workouts
 
-No, Tempo is designed for PostgreSQL and uses PostgreSQL-specific features (JSONB, etc.).
+### Why don't I see a route?
 
-### How do I update Tempo?
+The file has no GPS (treadmill or indoor). Such Workouts still import if they have distance.
 
-Follow the [upgrade steps](../deployment/docker.md#updating): back up, pin the **same** release tag for api and frontend, don't restart during a Strava import or Tempo restore (it is cancelled and won't resume), `pull` + `up -d`, then check the API log for `Startup backfills: all 8 complete; none run`. If it warns that backfills haven't completed, run `docker compose exec api dotnet Tempo.Api.dll backfill` once. Migrations run automatically.
+### Why is weather missing?
 
-### Can I customize Tempo?
+Weather needs a GPS point and Open-Meteo access at import time. See [No weather on a Workout](common-issues.md#no-weather-on-a-workout).
 
-Yes! Tempo is open source. You can modify the code to suit your needs.
+### Why does the Duration differ from Strava or Garmin?
 
-### How do I contribute?
+Tempo stores elapsed, timer, and moving time separately. The Workout overview shows timer time when it differs from elapsed; analytics sums use elapsed. See [Metrics](../user-guide/viewing-workouts.md#metrics).
 
-See the [Contributing Guide](../developers/contributing.md) for details.
+### What is the difference between RPE and Relative Effort?
 
-## Troubleshooting
+**RPE** is your 1–10 rating (or the FIT `workout_rpe`). **Relative Effort** is calculated from heart rate and zones. See [Relative Effort](../user-guide/analytics.md#relative-effort).
 
-### Why can't I register?
-
-Registration is only available when no users exist. After the first user is created, registration is locked for security.
-
-### Why am I stuck on the setup / onboarding screen?
-
-Until onboarding completes, every app route redirects to the wizard. Finish restore or essentials (and answer the Strava question), or use **Skip for now** after a failed Strava job. Logout is available from the onboarding shell. See [First-run onboarding](../getting-started/onboarding.md).
-
-### Why is my import slow?
-
-Large files take longer to process. Very large imports (hundreds of workouts) may take several minutes.
-
-### Why don't I see my route on the map?
-
-Routes require GPS data in the workout file. Some files may not contain GPS coordinates.
-
-### Why is weather data missing?
-
-Weather data requires:
-- Valid location (latitude/longitude) in workout
-- Valid timestamp
-- Internet connectivity (for API call)
+## Account
 
 ### How do I reset my password?
 
@@ -168,31 +142,14 @@ Production Compose file: add `-f docker-compose.prod.yml`. If the API container 
 
 Forgot the username: omit `--username` when there is exactly one account (the command prints the name it reset). Last resort: `SELECT "Username" FROM "Users";` — do not hand-write a BCrypt hash.
 
-If the session expires immediately after a successful login, that is a cookie/HTTPS issue, not a forgotten passphrase. See [Authentication Problems](common-issues.md#authentication-problems).
+If the session expires immediately after a successful login, that is a cookie/HTTPS issue, not a forgotten passphrase. See [Login succeeds but you are immediately logged out](common-issues.md#login-succeeds-but-you-are-immediately-logged-out).
+
+### How do tools like tempo-cli authenticate?
+
+With an API key from **Settings → Account → API key**. See [API key](../user-guide/settings.md#api-key).
 
 ## Support
 
-### Where can I get help?
-
-- [Discord Community](https://discord.gg/9Svd99npyj)
-- [GitHub Issues](https://github.com/trevordavies095/tempo/issues)
+- [Discord](https://discord.gg/9Svd99npyj)
+- [GitHub Issues](https://github.com/trevordavies095/tempo/issues) — for bugs, include steps to reproduce, expected vs actual, and the **Settings → System Information** block. Feature requests go here too.
 - [Documentation](../index.md)
-
-### How do I report a bug?
-
-Create an issue on [GitHub](https://github.com/trevordavies095/tempo/issues) with:
-- Description of the bug
-- Steps to reproduce
-- Expected vs actual behavior
-- Environment details
-
-### Can I request a feature?
-
-Yes! Create a feature request on [GitHub Issues](https://github.com/trevordavies095/tempo/issues).
-
-## Next Steps
-
-- [Check common issues](common-issues.md)
-- [Get help from the community](https://discord.gg/9Svd99npyj)
-- [Review the documentation](../index.md)
-

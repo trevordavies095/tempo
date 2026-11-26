@@ -1,153 +1,84 @@
 # Production Setup
 
-Configure Tempo for production deployment with best practices.
+What to check and tune after a production Compose install is running: a go-live checklist, large uploads, health checks, logging, resources. Install and upgrade steps are in [Docker Deployment](docker.md); every setting is in [Configuration](../getting-started/configuration.md).
 
-## Overview
+## Checklist
 
-This guide covers production configuration, environment variables, and deployment considerations.
+Already handled by `docker-compose.prod.yml`:
 
-## Environment Variables
+- [x] `JWT_SECRET_KEY` and `POSTGRES_PASSWORD` required from `.env`
+- [x] Postgres and API not published on the host; command center on `127.0.0.1:3004` only
+- [x] Image tags pinned to a release
+- [x] Health checks and `restart: unless-stopped`
 
-Set secrets in `.env` (copy from `.env.example`). Production Compose fails closed if they are missing or empty — see [Docker Deployment](docker.md).
+Yours:
 
-### Required Configuration
+- [ ] HTTPS reverse proxy with one upstream to `127.0.0.1:3004` ([Reverse Proxy](reverse-proxy.md))
+- [ ] Firewall exposes only the proxy (80/443)
+- [ ] `.env` backed up (losing `JWT_SECRET_KEY` breaks stored integration secrets; see [Rotating the JWT secret](../getting-started/configuration.md#rotating-the-jwt-secret))
+- [ ] `CARTO_BASEMAPS_API_KEY` set, if maps should not be watermarked
+- [ ] `./media` on a disk with room for media plus a 500 MB import staging file
+- [ ] Database and media backups scheduled and a restore tested ([Backup and Restore](backup-restore.md))
+- [ ] `/api/ready` monitored
+- [ ] Host and image updates applied ([Updating](docker.md#updating))
 
-#### JWT Secret Key
+CORS is not needed on this path: the command center calls same-origin `/api`, and the daily driver is a native app. Set `CORS__AllowedOrigins` only if a browser on another origin calls the API directly.
 
-**CRITICAL**: Must be set to a secure random value in `.env` as `JWT_SECRET_KEY`.
+## Large uploads
 
-```bash
-# Generate a secure key
-openssl rand -base64 32
-```
+ZIP archives (Strava exports, Tempo exports) are limited to 500 MB. The command center uploads them in 512 KiB chunks over `/api`, then the import job processes them in the background (poll and cancel), so a default proxy body limit works for the UI.
 
-```bash
-# In .env
-JWT_SECRET_KEY=your-generated-secret-key-here
-```
+Whole-ZIP adapters (`POST /workouts/import/bulk`, `POST /workouts/import/export`) and other direct posts send the full body in one request. For those, your proxy needs:
 
-#### Database password
+- Body size limit of at least 500 MB
+- Read/send timeouts of 10–30 minutes, depending on upload speed
 
-**CRITICAL**: Set `POSTGRES_PASSWORD` in `.env` (same value for Postgres and the API connection string). Do not use `;`. Existing volumes must use the password already in the cluster; editing `.env` alone does not rotate it.
+The API side is already set (Kestrel and multipart limits 500 MB, no minimum data rate, 10-minute keep-alive) and not configurable.
 
-```bash
-# In .env
-POSTGRES_PASSWORD=your-secure-password
-```
+Smoke test: upload a large Strava or Tempo export at Settings → Data Management → **Migrate / restore** and watch upload progress, then processing progress.
 
-### CORS (usually not needed)
+## Monitoring and Logging
 
-The command center talks same-origin `/api` through the Next rewrite. The daily driver is native. Production Compose does **not** set `CORS__AllowedOrigins`. Only configure CORS if you intentionally expose the API to a browser on another origin.
-
-### Media Storage
-
-Defaults live in the API image / `appsettings.json`. Compose mounts media at `/app/media`.
-
-### CARTO Basemaps (Maps)
-
-Workout maps require a free CARTO API key. Set in `.env` (gitignored):
+### Health checks
 
 ```bash
-CARTO_BASEMAPS_API_KEY=your-key-here
+curl -f https://tempo.example.com/api/ready
+docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001/ready
 ```
 
-Compose passes this to the API as `CartoBasemaps__ApiKey`. Request a key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey). Restart the API and hard-refresh the browser after updating.
+Use `/ready` (`200` when Postgres answers within 2 s, else `503`). `/api/health` is liveness only. Public `/health` (no `/api`) is the command center process. Compose already health-checks the API on `/ready` and the frontend on its `/health`.
 
-### JWT issuer / expiry
+### Logging
 
-Issuer, audience, and expiration defaults are in the API image. Override with `JWT__*` env vars only if you need non-defaults.
-
-## Production Checklist
-
-### Security
-
-- [x] JWT secret required from `.env` (`JWT_SECRET_KEY`) — done by production Compose
-- [x] Database password required from `.env` (`POSTGRES_PASSWORD`) — done by production Compose (choose a strong value; existing volumes must match the cluster)
-- [ ] HTTPS configured (required for secure cookies)
-- [x] Postgres and API not published on the host — done by production Compose (command center is `127.0.0.1:3004` only)
-- [x] Image tags pinned in Compose (not `latest` as the contract) — done by production Compose
-- [ ] Firewall rules configured (expose the reverse proxy, not Compose ports)
-- [ ] Regular security updates applied
-
-### Configuration
-
-- [ ] `.env` filled from `.env.example`
-- [ ] Media directory (`./media`) writable
-- [ ] CARTO basemaps API key set (`CARTO_BASEMAPS_API_KEY` in `.env`) if maps should not show the watermark
-- [ ] Reverse proxy pointed at `127.0.0.1:3004`
-- [x] Health checks enabled — done by production Compose
-
-### Data Management
-
-- [ ] Backup strategy in place
-- [ ] Media directory included in backups
-- [ ] Database backup automated
-- [ ] Sufficient disk space allocated
-
-### Monitoring
-
-- [ ] Ready check reachable via the public origin (`/api/ready`) or `docker compose exec`
-- [ ] Logs configured and monitored
-- [ ] Resource usage monitored
-
-## Reverse Proxy Setup
-
-Point **one** upstream at the command center on `127.0.0.1:3004`; `/api` is rewritten inside the frontend container to the API on the Compose network. Caddy, nginx, and Traefik examples, the session cookie contract, and the plain-HTTP LAN exception live in **[Reverse Proxy and Login Cookies](reverse-proxy.md)**.
-
-- If you still need Bruno/curl on the host API port, uncomment `127.0.0.1:5001:5001` in `docker-compose.prod.yml` (loopback only)
-- Upgrading from a split `/` + `/api`→`:5001` proxy: merge to the one-upstream shape or temporarily keep the loopback API publish
-
-## Large File Upload Requirements
-
-Tempo supports ZIP archives up to 500MB (Strava exports, Tempo exports). The **command center** uploads those archives in **512 KiB** chunks over `/api`, so a default reverse-proxy body limit is usually enough for the UI path. Processing runs as a background import job (poll + cancel), not as one long multipart request.
-
-**Whole-ZIP adapters** (`POST /workouts/import/bulk`, `POST /workouts/import/export`) and direct posts to the API still send the full body in one request. Prefer the public origin’s `/api` path, or uncomment loopback `:5001` for host tooling.
-
-### Settings for whole-ZIP / direct API uploads
-
-- **Maximum body size**: 500MB minimum
-- **Read timeout**: 10-30 minutes (depending on expected upload speed)
-- **Write timeout**: 10-30 minutes
-- **Connect timeout**: 10 minutes
-
-These limits are already configured in the API (`Program.cs`) for Kestrel and form options.
-
-### Testing Large Uploads
-
-After configuration, smoke-test through the command center:
-1. Export a large archive from Strava (typically 50–200MB), or use a Tempo Settings export with media
-2. Strava or Tempo restore: **Settings** → Data Management → **Migrate / restore** (or first-run onboarding)
-3. Confirm upload progress then import/restore progress; optional: retry with Bruno/curl against the public origin `/api` (or loopback `:5001` if enabled)
-
-## SSL/TLS Configuration
-
-### Let's Encrypt (Certbot)
+Production Compose uses logging profile `standard` (Tempo Information; no EF SQL or per-request framework noise). The API logs `Logging profile: standard` at startup. Profiles: [Logging profiles](../getting-started/configuration.md#logging-profiles).
 
 ```bash
-# Install Certbot
-sudo apt-get install certbot python3-certbot-nginx
-
-# Obtain certificate
-sudo certbot --nginx -d yourdomain.com
-
-# Auto-renewal
-sudo certbot renew --dry-run
+docker compose -f docker-compose.prod.yml logs -f api
+docker compose -f docker-compose.prod.yml logs -f frontend
 ```
 
-### Self-Signed Certificate (Development Only)
+Capturing a debug log for an import or query bug:
+
+1. Set `TEMPO_LOGGING_PROFILE=debug` in `.env`; `docker compose -f docker-compose.prod.yml up -d api`.
+2. Reproduce once.
+3. Save `docker compose -f docker-compose.prod.yml logs api` (include the `Logging profile: debug` line).
+4. Remove the setting (or set `standard`) and `up -d api` again.
+
+Do not tune `Logging:LogLevel` or Serilog overrides; the profile is the interface.
+
+#### Postgres checkpoints
+
+Official Compose runs Postgres with `log_checkpoints=off`; the API `debug` profile does not change that. For WAL debugging, add `-c log_checkpoints=on` to the `postgres` service `command`.
+
+### Resources
 
 ```bash
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout key.pem -out cert.pem
+docker stats
 ```
 
-**Note**: Self-signed certificates are not recommended for production.
+## Resource limits
 
-## Performance Optimization
-
-### Resource Limits
-
-Configure Docker resource limits:
+Compose does not set limits. To add them, per service:
 
 ```yaml
 deploy:
@@ -155,77 +86,12 @@ deploy:
     limits:
       cpus: '2'
       memory: 4G
-    reservations:
-      cpus: '1'
-      memory: 2G
 ```
 
-### Database Optimization
-
-- Configure PostgreSQL shared_buffers
-- Set appropriate max_connections
-- Enable query logging for optimization
-- Regular VACUUM and ANALYZE
-
-### Media Storage
-
-- Use fast storage for media directory
-- Consider object storage for large deployments
-- Implement cleanup for old media files
-
-## Monitoring and Logging
-
-### Health Checks
-
-Prefer readiness (`/ready`) so a green check means Postgres is reachable. Via the public origin:
-
-```bash
-curl -f https://your.domain/api/ready
-```
-
-Or inside the Compose network:
-
-```bash
-docker compose -f docker-compose.prod.yml exec api curl -f http://localhost:5001/ready
-```
-
-`GET /api/health` is API liveness only — it can return `200` while Postgres is down. Public `https://your.domain/health` (no `/api`) is the **command center** process pulse; do not use it as the API check.
-
-### Logging
-
-Production Compose defaults to logging profile **`standard`**: Tempo Information (imports, backfills, auth, media) stays readable; EF SQL and per-request framework noise stay off. The API logs `Logging profile: standard` (or `debug`) once at startup. See [Logging profiles](../getting-started/configuration.md#logging-profiles) for the env key (`Tempo:Logging:Profile` / `TEMPO_LOGGING_PROFILE`).
-
-View container logs:
-
-```bash
-docker compose -f docker-compose.prod.yml logs -f api
-docker compose -f docker-compose.prod.yml logs -f frontend
-```
-
-#### Capturing a debug dump (Import / query bugs)
-
-1. In `.env`, set `TEMPO_LOGGING_PROFILE=debug` and restart the API.
-2. Reproduce the problem once.
-3. Attach `docker compose -f docker-compose.prod.yml logs api` (include the startup `Logging profile: debug` line).
-4. Set `TEMPO_LOGGING_PROFILE=standard` (or remove it) and restart the API.
-
-Do not tune `Logging:LogLevel` or Serilog category overrides — the named profile is the operator interface. Profile `debug` is not Serilog level Debug.
-
-#### Postgres checkpoints
-
-Official Compose runs Postgres with `log_checkpoints=off`. Setting the API profile to `debug` does **not** turn checkpoints on. For WAL debugging only, add `-c log_checkpoints=on` to the Postgres service yourself (non-Compose installs follow their own Postgres config).
-
-### Resource Monitoring
-
-Monitor resource usage:
-
-```bash
-docker stats
-```
+Backfills after an upgrade and large imports are the CPU, disk, and WAL peaks.
 
 ## Next Steps
 
-- [Review security best practices](security.md)
-- [Set up backup and restore procedures](backup-restore.md)
-- [Configure reverse proxy](reverse-proxy.md)
-
+- [Security](security.md)
+- [Backup and Restore](backup-restore.md)
+- [Reverse Proxy](reverse-proxy.md)

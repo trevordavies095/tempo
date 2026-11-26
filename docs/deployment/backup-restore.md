@@ -1,366 +1,160 @@
 # Backup and Restore
 
-Procedures for backing up and restoring Tempo data.
+How to back up and restore a production Compose install, either at the host level (database dump + media + `.env`) or with the in-app Tempo export ZIP. Commands assume you are in the directory holding `docker-compose.prod.yml`; for the development stack, drop `-f docker-compose.prod.yml`.
 
-## Overview
+## What to back up
 
-Tempo stores data in two locations:
-1. **Database** - PostgreSQL database with workout data, settings, and metadata
-2. **Media Files** - Filesystem storage for photos and videos
+| Item | Where | Notes |
+|---|---|---|
+| Database | Volume `postgres_data`, database `tempo`, user `postgres`, service `postgres` | Workouts, settings, shoes, account, API keys, Intervals.icu connection, best efforts. |
+| Media | `./media` next to the Compose file (`/app/media` in the API container) | WorkoutMedia files, one directory per Workout id. `./media/imports/` is transient import job staging; skip it. |
+| `.env` | Compose directory | `JWT_SECRET_KEY` must match the database: stored Intervals.icu and API key secrets are encrypted with keys derived from it. `POSTGRES_PASSWORD` must match the volume. |
 
-Both must be backed up for a complete backup.
+## Choosing a method
 
-Tempo also provides a **Data Export** feature that creates a user-friendly backup in a portable ZIP format. This can be used as an alternative or supplement to database backups.
+| | Host backup (`pg_dump` + media + `.env`) | Tempo export ZIP |
+|---|---|---|
+| Made from | Shell on the host | Settings → Data Management → **Export All Data** |
+| Contains | Everything | Settings, shoes, Workouts (routes, splits, time series, raw GPX/FIT/CSV files), media |
+| Not included | Nothing | Account and password, Tempo API keys, Intervals.icu connection, best efforts (recomputed on restore) |
+| Restore | Replaces the database | Merges into an existing install, skipping duplicates |
+| Automate | Yes (cron) | No (manual download) |
+| Use for | Disaster recovery, host moves | Portable copy, moving between installs, first-run restore |
 
-## Backup Procedures
+Do both: scheduled host backups, plus an occasional export ZIP.
 
-### Data Export as Backup
+## Host backup
 
-Tempo's export feature provides a user-friendly way to backup your data directly from the web interface. This method is ideal for:
+### Database
 
-- **User-level backups** - No database access required
-- **Portable backups** - Single ZIP file contains everything
-- **Quick backups** - Simple one-click export from Settings page
-- **Migration** - Easy to move data between instances
-
-#### Using the Export Feature
-
-1. Log into Tempo
-2. Navigate to Settings
-3. Find the **Export** section under Data Management
-4. Click "Export All Data"
-5. Wait for the download to complete
-
-The export includes:
-- All workouts with complete data
-- All media files (photos and videos)
-- All shoes and settings
-- Best efforts and calculated data
-- Raw workout files (GPX, FIT, CSV)
-
-#### Export vs. Database Backup
-
-| Feature | Data Export | Database Backup |
-|---------|-------------|-----------------|
-| **Ease of Use** | User-friendly, web interface | Requires database access |
-| **Portability** | Single ZIP file | SQL dump + media files |
-| **Completeness** | All data included | All data included |
-| **Format** | Structured JSON + binary files | SQL + filesystem files |
-| **Restore** | Import feature (user-friendly) | Direct database restore |
-| **Automation** | Manual only | Can be automated |
-
-**Recommendation**: Use both methods for comprehensive backup strategy:
-- **Data Export** - Regular user-level backups, easy to create and store, can be restored via import feature
-- **Database Backup** - System-level backups, can be automated, faster restore for large datasets
-
-### Database Backup
-
-#### Using Docker
+`pg_dump` inside the `postgres` container (local socket; no password needed):
 
 ```bash
-# Backup database (service name postgres; password from .env)
-docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
-  pg_dump -U postgres tempo > backup-$(date +%Y%m%d-%H%M%S).sql
-
-# Or with compression
-docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
-  pg_dump -U postgres tempo | gzip > backup-$(date +%Y%m%d-%H%M%S).sql.gz
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  pg_dump -U postgres -d tempo | gzip > "tempo-db-$(date +%Y%m%d-%H%M%S).sql.gz"
 ```
 
-#### Using PostgreSQL Client
+The dump is plain SQL. It is consistent while Tempo is running.
 
-Postgres is not published on the host by default. Prefer the Compose `exec` path above, or uncomment a loopback publish / use `docker compose port` if you must connect from the host.
-### Media Files Backup
-
-#### Using tar
+### Media
 
 ```bash
-# Backup media directory
-tar -czf media-backup-$(date +%Y%m%d-%H%M%S).tar.gz ./media
+tar -czf "tempo-media-$(date +%Y%m%d-%H%M%S).tar.gz" --exclude='media/imports' media
 ```
 
-#### Using rsync
+Or incrementally: `rsync -a --delete --exclude=imports/ ./media/ /backup/tempo/media/`.
+
+### Script and schedule
 
 ```bash
-# Backup media directory
-rsync -av ./media/ /backup/location/media/
-```
-
-### Complete Backup Script
-
-Create a backup script that backs up both:
-
-```bash
-#!/bin/bash
-BACKUP_DIR="/backup/tempo"
+#!/usr/bin/env bash
+# /opt/tempo/backup.sh — run from cron; keeps 30 days
+set -euo pipefail
+cd /opt/tempo                       # directory with docker-compose.prod.yml, .env, media/
+BACKUP_DIR=/backup/tempo
 DATE=$(date +%Y%m%d-%H%M%S)
-# Load POSTGRES_PASSWORD from the deployment .env
-set -a
-# shellcheck disable=SC1091
-source .env
-set +a
-
-# Create backup directory
 mkdir -p "$BACKUP_DIR"
 
-# Backup database
-docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
-  pg_dump -U postgres tempo | gzip > "$BACKUP_DIR/db-$DATE.sql.gz"
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  pg_dump -U postgres -d tempo | gzip > "$BACKUP_DIR/db-$DATE.sql.gz"
+tar -czf "$BACKUP_DIR/media-$DATE.tar.gz" --exclude='media/imports' media
+cp .env "$BACKUP_DIR/env-$DATE"
+chmod 600 "$BACKUP_DIR/env-$DATE"
 
-# Backup media
-tar -czf "$BACKUP_DIR/media-$DATE.tar.gz" ./media
-
-# Keep only last 30 days of backups
-find "$BACKUP_DIR" -name "*.gz" -mtime +30 -delete
-
-echo "Backup completed: $DATE"
+find "$BACKUP_DIR" -type f -mtime +30 -delete
 ```
-
-## Automated Backups
-
-### Cron Job
-
-Add to crontab for daily backups:
 
 ```bash
-# Edit crontab
-crontab -e
-
-# Add daily backup at 2 AM
-0 2 * * * /path/to/backup-script.sh
+# crontab -e — daily at 02:00
+0 2 * * * /opt/tempo/backup.sh >> /var/log/tempo-backup.log 2>&1
 ```
 
-### Systemd Timer
+The backups contain secrets and personal data. Encrypt before moving off-host, e.g. `gpg --symmetric --cipher-algo AES256 db-….sql.gz`.
 
-Create a systemd service and timer for automated backups.
+## Host restore
 
-## Restore Procedures
+Restores replace the current database. Use the `.env` (at least `JWT_SECRET_KEY`) from the same backup.
 
-### Data Import as Restore
+1. Stop the app, leave Postgres running:
+   ```bash
+   docker compose -f docker-compose.prod.yml stop api frontend
+   ```
+   On a new host, start only the database first: `docker compose -f docker-compose.prod.yml up -d postgres`.
+2. Recreate an empty database and load the dump:
+   ```bash
+   docker compose -f docker-compose.prod.yml exec -T postgres dropdb -U postgres --if-exists tempo
+   docker compose -f docker-compose.prod.yml exec -T postgres createdb -U postgres tempo
+   gunzip -c tempo-db-YYYYMMDD-HHMMSS.sql.gz | docker compose -f docker-compose.prod.yml exec -T postgres \
+     psql -U postgres -d tempo -v ON_ERROR_STOP=1 -q
+   ```
+   Load into an empty database: the API creates the schema on start, so restoring over a migrated database fails on existing objects.
+3. Restore media:
+   ```bash
+   tar -xzf tempo-media-YYYYMMDD-HHMMSS.tar.gz     # recreates ./media
+   ```
+4. Start:
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+   Migrations bring an older dump up to the running version. Check `/api/ready` and the `Startup backfills` log line ([Updating](docker.md#updating)).
 
-Tempo's import feature provides a user-friendly way to restore data from an export ZIP file. This method is ideal for:
+## Tempo export and restore
 
-- **User-level restore** - No database access required
-- **Selective restore** - Can import into existing instance with duplicate detection
-- **Cross-instance migration** - Easy to move data between Tempo instances
-- **Quick restore** - Simple drag-and-drop interface from Settings page
+### Export
 
-#### Using the Import Feature
+Settings → Data Management → **Export** → **Export All Data** downloads a ZIP:
 
-On a **fresh install**, you can restore a Tempo export during [first-run onboarding](../getting-started/onboarding.md). After setup (or on an existing instance):
+```
+manifest.json            format version 1.0.0, Tempo version, counts
+README.txt
+data/                    settings, shoes, workouts, routes, splits, time-series, media-metadata (JSON)
+workouts/<id>/raw/       original GPX / FIT / CSV, when stored
+workouts/<id>/media/     photos and videos
+```
 
-1. Log into Tempo
-2. Navigate to Settings
-3. Under Data Management, expand **Migrate / restore**
-4. In **Restore Tempo export**, click or drag and drop your export ZIP file
-5. Watch upload progress, then restore progress (`processed` / `total`)
-6. When finished, review the import summary
+### Restore
 
-You can cancel while uploading or restoring; data already restored stays. At most one import job runs at a time across Tempo restore and Strava bulk import (both under Migrate / restore). See [Settings export/import](../user-guide/settings.md#export--import) for details.
+- **New install:** register, then use the **Restore from Tempo export** step of [onboarding](../getting-started/onboarding.md).
+- **Existing install:** Settings → Data Management → **Migrate / restore** → **Restore Tempo export**, then drop the ZIP.
 
-The import will:
-- Restore all workouts, media, shoes, and settings
-- Preserve GUIDs and timestamps from the export
-- Automatically skip duplicates
-- Provide detailed statistics and error reporting
+The ZIP (up to 500 MB) uploads in chunks and is processed as a background import job: progress shows upload, then `processed` / `total`. You can cancel; data already restored stays. Only one import job (Tempo restore or Strava bulk import) runs at a time.
 
-**Note**: Import supports export format version 1.0.0. Files up to 500MB are supported.
+Behavior:
 
-#### Import vs. Database Restore
+- Keeps the export's ids and timestamps.
+- Skips Workouts and shoes that already exist (same id, or same start time, distance, and elapsed time for Workouts).
+- Overwrites UserSettings when the export has them.
+- Recomputes derived data (best efforts and other backfills) before the job reports **Completed**.
+- Accepts export format version `1.0.0` only.
 
-| Feature | Data Import | Database Restore |
-|---------|-------------|------------------|
-| **Ease of Use** | User-friendly, web interface | Requires database access |
-| **Selective Restore** | Can import into existing data | Replaces entire database |
-| **Duplicate Handling** | Automatic duplicate detection | No duplicate handling |
-| **Cross-Instance** | Easy migration between instances | Requires database compatibility |
-| **Speed** | Slower for very large datasets | Faster for large datasets |
-| **Automation** | Manual only | Can be automated |
+Details: [Settings → Export / Import](../user-guide/settings.md#export-import).
 
-**Recommendation**: 
-- Use **Data Import** for user-level restores, migrations, and selective restores
-- Use **Database Restore** for complete system restores and automated backup strategies
+## Testing restores
 
-### Database Restore
-
-#### Using Docker
+Restore the latest dump into a scratch database next to the live one:
 
 ```bash
-# Restore database
-docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
-  psql -U postgres tempo < backup.sql
-
-# Or from compressed backup
-gunzip -c backup.sql.gz | docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
-  psql -U postgres tempo
+docker compose -f docker-compose.prod.yml exec -T postgres createdb -U postgres tempo_restore_test
+gunzip -c tempo-db-YYYYMMDD-HHMMSS.sql.gz | docker compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U postgres -d tempo_restore_test -v ON_ERROR_STOP=1 -q
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U postgres -d tempo_restore_test -c 'SELECT count(*) FROM "Workouts";'
+docker compose -f docker-compose.prod.yml exec -T postgres dropdb -U postgres tempo_restore_test
 ```
 
-#### Using PostgreSQL Client
-
-Prefer the Compose `exec` path above; the database is not published on the host by default.
-**Important**: Restore to an empty database or drop existing database first.
-
-### Media Files Restore
-
-#### Using tar
-
-```bash
-# Extract media backup
-tar -xzf media-backup.tar.gz -C ./
-```
-
-#### Using rsync
-
-```bash
-# Restore media directory
-rsync -av /backup/location/media/ ./media/
-```
-
-### Complete Restore
-
-1. Stop Tempo services
-2. Restore database
-3. Restore media files
-4. Verify file permissions
-5. Start Tempo services
-6. Verify data integrity
-
-## Backup Verification
-
-### Verify Database Backup
-
-```bash
-# Check backup file
-pg_restore --list backup.sql | head -20
-
-# Test restore to temporary database
-createdb tempo_test
-pg_restore -d tempo_test backup.sql
-```
-
-### Verify Media Backup
-
-```bash
-# List contents
-tar -tzf media-backup.tar.gz | head -20
-
-# Check file count
-tar -tzf media-backup.tar.gz | wc -l
-```
-
-## Backup Storage
-
-### Local Storage
-
-- Store backups on separate disk
-- Use different physical location if possible
-- Encrypt sensitive backups
-
-### Remote Storage
-
-- Cloud storage (S3, Google Cloud Storage, etc.)
-- Remote server via rsync/SSH
-- Network-attached storage (NAS)
-
-### Encryption
-
-Encrypt backups before storing:
-
-```bash
-# Encrypt backup
-gpg --symmetric --cipher-algo AES256 backup.sql.gz
-
-# Decrypt backup
-gpg --decrypt backup.sql.gz.gpg > backup.sql.gz
-```
-
-## Retention Policy
-
-### Recommended Retention
-
-- **Daily backups**: Keep 7 days
-- **Weekly backups**: Keep 4 weeks
-- **Monthly backups**: Keep 12 months
-- **Yearly backups**: Keep indefinitely
-
-### Cleanup Script
-
-```bash
-#!/bin/bash
-BACKUP_DIR="/backup/tempo"
-
-# Remove backups older than 30 days
-find "$BACKUP_DIR" -name "*.sql.gz" -mtime +30 -delete
-find "$BACKUP_DIR" -name "*.tar.gz" -mtime +30 -delete
-```
-
-## Disaster Recovery
-
-### Recovery Plan
-
-1. **Assess damage**: Determine what data is lost
-2. **Stop services**: Prevent further data loss
-3. **Restore from backup**: Use most recent backup
-4. **Verify integrity**: Check data completeness
-5. **Resume services**: Start Tempo services
-6. **Monitor**: Watch for issues
-
-### Testing Restores
-
-Regularly test restore procedures:
-
-- Test database restore to temporary database
-- Verify media files restore correctly
-- Test complete restore procedure
-- Document any issues
-
-## Best Practices
-
-### Backup Frequency
-
-- **Active use**: Daily backups recommended
-- **Light use**: Weekly backups may suffice
-- **Critical data**: Consider multiple daily backups
-
-### Backup Location
-
-- Store backups off-site
-- Use multiple backup locations
-- Test backup accessibility regularly
-
-### Documentation
-
-- Document backup procedures
-- Keep restore procedures accessible
-- Update procedures as needed
-- Train team members
+Check the media archive: `tar -tzf tempo-media-….tar.gz | wc -l`. Periodically do a full restore onto a spare host.
 
 ## Troubleshooting
 
-### Backup Fails
-
-- Check disk space
-- Verify database is accessible
-- Check file permissions
-- Review error messages
-
-### Restore Fails
-
-- Verify backup file integrity
-- Check database connection
-- Ensure sufficient disk space
-- Review error messages
-
-### Data Mismatch
-
-- Verify backup date matches restore date
-- Check for missing media files
-- Verify database schema matches
-- Review migration history
+| Symptom | Cause |
+|---|---|
+| `psql` errors like `relation … already exists` | Database was not empty. Drop and recreate it (step 2), with `api` stopped. |
+| `dropdb` fails: database is being accessed | `api` is still running; `stop api frontend` first. |
+| After restore: Intervals.icu sync fails, API keys cannot be revealed | `JWT_SECRET_KEY` differs from the backup's. Restore the old `.env`, or reconnect Intervals.icu and create new API keys. |
+| Photos missing | `./media` not restored, or restored to a directory other than the one next to the Compose file. |
+| Export restore rejected | Not a Tempo export, a format version other than `1.0.0`, or over 500 MB. |
 
 ## Next Steps
 
-- [Set up automated backups](backup-restore.md#automated-backups)
-- [Test restore procedures](backup-restore.md#testing-restores)
-- [Configure backup storage](backup-restore.md#backup-storage)
-
+- [Docker Deployment](docker.md)
+- [Security](security.md)

@@ -1,283 +1,165 @@
 # Common Issues
 
-Detailed solutions for common Tempo problems.
+Each entry: **symptom → cause → fix**. Quoted strings are the exact UI or log text. Read API logs with `docker compose logs -f api` (add `-f docker-compose.prod.yml` for production).
 
-## Installation Issues
+## Installation and Startup
 
-### Docker Containers Not Starting
+### Containers exit or never become healthy
 
-**Symptoms:**
-- Containers exit immediately
-- `docker-compose ps` shows exited containers
+- **Cause:** missing required env, database not ready, or a port in use.
+- **Fix:**
+  1. `docker compose logs api postgres`.
+  2. Production Compose refuses to start with `Set JWT_SECRET_KEY in .env (copy .env.example)` or `Set POSTGRES_PASSWORD in .env …`. Fill in `.env`.
+  3. API exits with `JWT:SecretKey must be changed from the default placeholder value.` Set a real random key.
+  4. `curl http://localhost:5001/ready` returns `503` until Postgres answers within 2 s; `/health` only checks the process.
 
-**Solutions:**
-1. Check logs: `docker-compose logs`
-2. Verify Docker is running: `docker ps`
-3. Check disk space: `df -h`
-4. Verify ports are not in use: `netstat -tuln | grep -E '3000|5001|5432'`
-5. Check Docker Compose version: `docker-compose --version`
+### Port is already allocated
 
-### Port Conflicts
+- **Cause:** something else holds 3000/5001/5432 (dev Compose) or 3004 (prod Compose, bound to `127.0.0.1`).
+- **Fix:** `lsof -i :3000` to find it, stop it, or change the host side of the `ports:` mapping (`"3001:3000"`).
 
-**Symptoms:**
-- Error: "port is already allocated"
-- Services can't bind to ports
+### Database connection or migration errors
 
-**Solutions:**
-1. Find process using port:
-   ```bash
-   # Linux/macOS
-   lsof -i :3000
-   # Or
-   netstat -tuln | grep 3000
-   ```
-2. Change ports in `docker-compose.yml`:
-   ```yaml
-   ports:
-     - "3001:3000"  # Change external port
-   ```
-3. Stop conflicting services
+- **Cause:** wrong `ConnectionStrings__DefaultConnection`, Postgres down, or a schema the migrator cannot reconcile.
+- **Fix:** `docker compose ps postgres`; check the password in `.env` matches the one the volume was initialized with (changing `POSTGRES_PASSWORD` later does not change an existing database's password). Migrations run on startup; manually: `dotnet tool restore` at the repo root, then `cd api && dotnet ef database update`. PostgreSQL 16.
 
-### Database Connection Errors
+### Startup warns that backfills have not completed
 
-**Symptoms:**
-- API fails to start
-- "Connection refused" errors
-- Database migration failures
+- **Log:** `Startup backfills: N of 8 have not completed on this library (...)`.
+- **Cause:** an upgrade skipped versions, or a restore was cut short.
+- **Fix:** `docker compose exec api dotnet Tempo.Api.dll backfill` once. See [Startup backfills](../getting-started/configuration.md#startup-backfills).
 
-**Solutions:**
-1. Verify PostgreSQL is running:
-   ```bash
-   docker-compose ps postgres
-   # Or
-   pg_isready -h localhost
-   ```
-2. Check connection string in `appsettings.json`
-3. Verify database exists: `docker exec tempo-postgres psql -U postgres -l`
-4. Check network connectivity between services
-5. Verify credentials match
+## Login and Sessions
 
-## Import Issues
+### "Invalid username or password"
 
-### File Format Not Recognized
+- **Cause:** wrong credentials (the API returned 401).
+- **Fix:** if the password is lost, use the host-only reset: [How do I reset my password?](faq.md#how-do-i-reset-my-password). Do not `docker compose down -v` or hand-hash BCrypt.
 
-**Symptoms:**
-- Error: "Unsupported file format"
-- Import fails immediately
+### Login succeeds but you are immediately logged out
 
-**Solutions:**
-1. Verify file extension is correct (`.gpx`, `.fit`, `.fit.gz`, `.csv`)
-2. Check file isn't corrupted
-3. Verify file contains valid workout data
-4. Try opening file in another application to verify
+- **Log:** `Auth cookie is Secure but this request arrived over plain HTTP; the browser will drop it and the session will not stick.`
+- **Cause:** serving over plain HTTP, or a proxy not sending `X-Forwarded-Proto`.
+- **Fix:** serve over HTTPS behind a proxy that forwards the scheme, or on a trusted LAN set `TEMPO_COOKIE_SECURE=false`. Leave `Cookie__Domain` unset unless you share sessions across subdomains. See [Reverse Proxy and Login Cookies](../deployment/reverse-proxy.md#troubleshooting-login).
 
-### Import Fails
+### Everyone is signed out after a restart
 
-**Symptoms:**
-- Import starts but fails
-- Error messages in logs
-- No workout created
+- **Cause:** `JWT__SecretKey` changed. This also makes the stored intervals.icu key and API-key reveal unreadable.
+- **Fix:** keep the same `JWT_SECRET_KEY` across moves and restores. If it already changed, log in again, replace the intervals.icu key, and regenerate the API key if you need to see it.
 
-**Solutions:**
-1. Check API logs: `docker-compose logs api`
-2. Verify file size is within limits (50MB single, 500MB bulk)
-3. Check disk space: `df -h`
-4. Verify file contains GPS data (required for routes)
-5. Check database is accessible
+### "Registration is disabled. An account already exists."
 
-### Missing Data in Imported Workouts
+- **Cause:** Tempo is single-user; registration closes after the first account.
+- **Fix:** log in with that account, or reset its password from the host.
 
-**Symptoms:**
-- Some metrics missing
-- No route displayed
-- Missing heart rate data
+### Every page redirects to onboarding
 
-**Solutions:**
-1. Check source file contains the data
-2. Some devices don't record all metrics
-3. Weather data requires location and time
-4. Elevation depends on GPS accuracy
-5. Heart rate requires HR monitor
+- **Cause:** `User.OnboardingCompleted` is false; app routes are gated until setup finishes.
+- **Fix:** finish restore or essentials and answer the Strava question, or **Skip for now** after a failed Strava job. See [First-run onboarding](../getting-started/onboarding.md). Late ZIPs go under Settings → Migrate / restore.
 
-### Bulk Import Problems
+### CORS errors in the browser console
 
-**Symptoms:**
-- ZIP file rejected
-- Some workouts not imported
-- Import takes too long / progress looks stuck
-- Cannot start because another import is active
+- **Cause:** a browser on another origin is calling the API directly. The command center uses same-origin `/api` and the iOS app is native, so neither needs CORS.
+- **Fix:** add that exact origin (scheme, host, port) to `CORS__AllowedOrigins` (comma-separated) and restart the API.
 
-**Solutions:**
-1. Verify ZIP structure matches requirements:
-   - `activities.csv` in root
-   - Workout files in `activities/` folder
-2. Check file size (max 500MB)
-3. Verify CSV references correct file paths
-4. Only "Run" activities are imported
-5. Duplicates are automatically skipped
-6. Watch upload progress, then `processed` / `total`; refresh Settings → Migrate / restore to resume an in-progress Strava job
-7. Cancel keeps workouts already imported; re-upload the same ZIP to continue (duplicates skip)
-8. If a Tempo restore is running, finish or cancel that job first (only one import job at a time)
+## Single-File Import
 
-## Performance Issues
+| Symptom (UI `Error: …`) | Cause | Fix |
+|---|---|---|
+| `File must be a GPX or FIT file (.gpx, .fit, or .fit.gz)` | Other extension (CSV, TCX, ZIP) | Export GPX/FIT. ZIPs go under Settings → Migrate / restore. |
+| `No track points found in GPX file`, `GPX file must contain at least 2 track points`, `GPX file must contain timestamps` | GPX route/course, not a recorded activity | Export the recorded activity. |
+| `Not a valid FIT file`, `Error parsing FIT file: …` | Corrupt or non-activity FIT | Re-copy from the device. |
+| `FIT file contains no GPS data and no distance information` | Manual or strength entry | Nothing to import. |
+| Import "succeeds" but shows the old Workout | Duplicate (start time, distance within 1 m, elapsed within 1 s) | Expected: it was skipped or updated. |
 
-### Slow Imports
+API log lines: `Error parsing workout file`, `Error persisting workout`, `Skipped duplicate workout (already has complete raw data): …`. See [Importing Workouts](../user-guide/importing-workouts.md#troubleshooting).
 
-**Symptoms:**
-- Import or restore takes many minutes
-- Progress counters update slowly
+## Strava Bulk Import and Tempo Restore
 
-**Solutions:**
-1. Large archives process activity-by-activity (or item-by-item) in a background job — long runtimes are normal
-2. Confirm progress is still moving (`processed` / `total`); refresh the page to reattach
-3. Check server resources: `docker stats`
-4. Verify sufficient disk space
-5. Check database performance
-6. For Bruno/curl whole-ZIP posts, ensure proxy body size/timeouts allow the full upload; the command center uses 512 KiB chunks instead
+| Symptom | Cause | Fix |
+|---|---|---|
+| `File must be a ZIP file` | Not a `.zip` name | Upload the ZIP itself. |
+| `File exceeds the 500MB limit` | Over 500,000,000 bytes | Strava: split the archive. Tempo: restore the database and media directly ([Backup and Restore](../deployment/backup-restore.md)). |
+| `ZIP file must contain activities.csv in the root` | Strava ZIP re-zipped with a parent folder | Zip the contents. |
+| `Import failed: manifest.json not found in export ZIP` | Not a Tempo export | Use the file from Export All Data. |
+| `A Tempo export restore is already in progress…` / `A Strava import is already in progress…` | One import job at a time | Finish or cancel the other job. |
+| Error `interrupted` | API restarted during the job; jobs do not resume | Re-upload; duplicates skip. |
+| Error `cancelled` | **Cancel import** | Re-upload to continue. |
+| Fewer Workouts than in Strava | Only `Activity Type` = `Run` rows are imported; missing files error | Check **View error details**. |
+| Progress looks stuck | Large archives process one activity at a time; server polled every second | Watch `processed/total`; refresh Settings to reattach. Check `docker stats`. |
+| Chunk errors such as `Chunks must be uploaded sequentially` | Two tabs uploading, or a hand-rolled client | Upload from one tab. Scripts can use `POST /workouts/import/bulk` with the whole ZIP. |
 
-### Slow Page Loads
+Details: [Bulk Import](../user-guide/bulk-import.md), [Migrate / restore](../user-guide/settings.md#migrate--restore).
 
-**Symptoms:**
-- Dashboard loads slowly
-- Activities list is slow
-- Maps take time to render
+## Workout Data
 
-**Solutions:**
-1. Check database indexes are created
-2. Verify sufficient server resources
-3. Check network latency
-4. Clear browser cache
-5. Check for large media files
+### No map on a Workout
 
-### High Resource Usage
+- **Cause:** the file has no GPS (treadmill, indoor). Crop and similar runs also need a route.
+- **Fix:** none; expected.
 
-**Symptoms:**
-- High CPU usage
-- High memory usage
-- Server becomes unresponsive
+### Map tiles show "API key required"
 
-**Solutions:**
-1. Monitor resources: `docker stats`
-2. Check for memory leaks
-3. Limit container resources in Docker
-4. Optimize database queries
-5. Consider scaling resources
+- **Cause:** CARTO basemaps need a key.
+- **Fix:** set `CARTO_BASEMAPS_API_KEY` in `.env`, restart the API, hard-refresh. See [CARTO Basemaps](../getting-started/configuration.md#carto-basemaps-maps).
 
-## Configuration Issues
+### No weather on a Workout
 
-### Settings Not Saving
+- **Cause:** no GPS point (weather uses the first one), or Open-Meteo had no data for that hour or was unreachable. Weather is fetched once, at import.
+- **Log:** `Failed to fetch weather from Open-Meteo API`, `Could not find matching hour in Open-Meteo response`, `Open-Meteo response missing hourly data`.
+- **Fix:** check the API container can reach `archive-api.open-meteo.com`.
 
-**Symptoms:**
-- Changes don't persist
-- Settings revert after refresh
+### No Relative Effort or zone bar
 
-**Solutions:**
-1. Verify you're logged in
-2. Check browser console for errors
-3. Verify API is accessible
-4. Check API logs for errors
-5. Clear browser cache and cookies
+- **Cause:** no heart-rate data, or zones changed and you chose **Keep Existing Unchanged**.
+- **Fix:** Settings → Data Recalculation → **Recalculate Relative Effort**. Per-Workout API: `POST /workouts/{id}/recalculate-effort` returns `Heart rate zones not configured. Please configure heart rate zones in settings first.` if no zones exist.
 
-### Authentication Problems
+### Splits are in the wrong unit
 
-**Symptoms:**
-- Can't log in
-- Session expires immediately
-- Registration fails
-- Redirected to onboarding / cannot open Dashboard or Settings
+- **Cause:** units changed after import; existing splits are not rebuilt automatically.
+- **Fix:** Settings → Data Recalculation → **Recalculate Splits**. Device laps are not affected.
 
-Forgot the passphrase is a different failure from a cookie that will not stick. If you cannot complete login because the password is gone, use the host-only reset command — see [How do I reset my password?](faq.md#how-do-i-reset-my-password). Do not `docker compose down -v` or hand-hash BCrypt.
+### Best efforts missing or stale
 
-If login returns 200 but the session expires immediately (or the cookie never appears), it's a cookie/proxy problem. Start with [Reverse Proxy and Login Cookies](../deployment/reverse-proxy.md#troubleshooting-login).
+- **Cause:** a restore's repair pass is still running, or an upgrade backfill has not run.
+- **Fix:** wait for the restore job to finish, or click the refresh button on the Dashboard's Best Efforts card.
 
-**Solutions:**
-1. Check the API logs for `Auth cookie is Secure but this request arrived over plain HTTP`. If it's there, serve Tempo over HTTPS, or set `TEMPO_COOKIE_SECURE=false` on a trusted LAN
-2. Unset `Cookie__Domain` unless you deliberately share the session across subdomains
-3. Clear browser cookies for the site
-4. Verify the JWT secret key is configured (production)
-5. Check API logs for authentication errors
-6. If you are on first-run setup: complete [onboarding](../getting-started/onboarding.md) (or **Skip for now** after a failed Strava import). Existing upgraded accounts should already be marked complete and not see the wizard
-7. Late Strava or Tempo ZIP migrates live under Settings → Migrate / restore, not the Import page
+## intervals.icu Sync
 
-### CORS Errors
+| Symptom (card **Last error**) | Cause | Fix |
+|---|---|---|
+| `intervals.icu rejected the API key` (sync disabled) | Key revoked or wrong | Fix in intervals.icu, then **Re-enable**, or **Replace key**. |
+| `Could not reach intervals.icu. Try again.` (on connect) | Network or intervals.icu down | Retry; check outbound HTTPS from the API container. |
+| `Could not list intervals.icu activities.` | Transient API error or rate limit | Next tick retries (every 15 min). |
+| `Could not decrypt the stored API key.` | `JWT__SecretKey` changed | **Replace key**. |
+| `N activities failed to persist` | Intake errors for some files | API log: `intervals.icu activity {ActivityId} persist failed: {Error}`. |
+| A run never appears | Not a `Run`-type activity, no FIT/GPX original, or older than the sync window (2 days before the last success, max 14 days) | Upload the file manually. |
 
-**Symptoms:**
-- Browser console shows CORS errors
-- API requests fail
-- "Origin not allowed" errors
+See [intervals.icu](../user-guide/settings.md#intervalsicu).
 
-The default path (command center via same-origin `/api`, daily driver native) never needs CORS. These errors mean a browser on another origin is calling the API directly.
+## Media
 
-**Solutions:**
-1. Verify `CORS__AllowedOrigins` includes that exact origin (e.g. `https://tempo.example.com`)
-2. In Docker, use double underscores: `CORS__AllowedOrigins`
-3. Restart API container after changing CORS
-4. Check for typos in origin URLs
-5. Verify protocol matches (http vs https)
+| Symptom | Cause | Fix |
+|---|---|---|
+| `No files were successfully uploaded` | Over 50 MB, unsupported type (e.g. HEIC), or the media directory is not writable | API log names the reason (`Media file exceeds size limit`, `Unsupported media file type`, `Error uploading media file`). Compress/convert, raise `MediaStorage__MaxFileSizeBytes`, or fix the volume. |
+| Broken thumbnail | File missing on disk | Restore the media directory, or delete the item (logs `Media file not found on filesystem (orphaned record)`). |
 
-## Database Issues
+See [Media](../user-guide/media.md).
 
-### Migration Errors
+## Performance
 
-**Symptoms:**
-- API fails to start
-- Migration errors in logs
-- Database schema mismatches
+### Slow pages
 
-**Solutions:**
-1. Migrations run automatically on startup
-2. For manual migration: `dotnet tool restore` at the repo root, then `cd api && dotnet ef database update`
-3. Migrations are idempotent (safe to run multiple times)
-4. Check database connection
-5. Verify PostgreSQL version (16 required)
+- **Cause:** undersized host, or Postgres starved of memory.
+- **Fix:** `docker stats`; give the database more RAM; run `VACUUM ANALYZE`. Long Workouts load up to 20,000 time-series samples in pages.
 
-### Database Performance
+### High CPU during import
 
-**Symptoms:**
-- Slow queries
-- High database CPU
-- Timeout errors
-
-**Solutions:**
-1. Check database indexes are created
-2. Run `VACUUM ANALYZE` on database
-3. Check for missing indexes
-4. Monitor query performance
-5. Consider database optimization
-
-## Media Issues
-
-### Media Upload Fails
-
-**Symptoms:**
-- Upload fails immediately
-- Error messages
-- Files not saved
-
-**Solutions:**
-1. Check file size (max 50MB)
-2. Verify file format is supported
-3. Check disk space: `df -h`
-4. Verify media directory is writable
-5. Check API logs for errors
-
-### Media Not Displaying
-
-**Symptoms:**
-- Media files don't appear
-- Broken image links
-- Videos won't play
-
-**Solutions:**
-1. Refresh the page
-2. Check file exists in `media/` directory
-3. Verify file permissions
-4. Check browser console for errors
-5. Verify MIME type is correct
+- **Cause:** imports compute geometry, weather, zones, and Best efforts per Workout; restores also run every backfill.
+- **Fix:** expected while a job runs. Avoid restarting the API mid-job (it marks the job `interrupted`).
 
 ## Next Steps
 
-- [Check the FAQ](faq.md) for more answers
-- [Get help from the community](https://discord.gg/9Svd99npyj)
-- [Report an issue](https://github.com/trevordavies095/tempo/issues)
-
+- [FAQ](faq.md)
+- [Discord](https://discord.gg/9Svd99npyj)
+- [Report an issue](https://github.com/trevordavies095/tempo/issues) (include the Settings → System Information block)

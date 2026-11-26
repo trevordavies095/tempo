@@ -1,106 +1,50 @@
 # Adding Media to Workouts
 
-Enhance your workouts by adding photos and videos.
+Attach photos and videos to a Workout on its Workout overview. Strava bulk import also copies the photos listed in the export's CSV `Media` column.
 
-## Overview
+## Supported Types and Limits
 
-Tempo allows you to attach photos and videos to your workouts. This is useful for:
-- Capturing scenery during your run
-- Documenting special events or milestones
-- Creating visual memories of your activities
+| Kind | Extensions |
+|---|---|
+| Images | `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp` |
+| Videos | `.mp4`, `.mov`, `.avi` |
 
-## Supported Media Types
+- Max 50 MB per file (`MediaStorage:MaxFileSizeBytes`, default `52428800`). See [Configuration](../getting-started/configuration.md#storage-and-processing).
+- Any number of files per Workout; several per upload.
 
-- **Images**: JPEG, PNG, GIF, WebP
-- **Videos**: MP4, MOV, AVI (common video formats)
+## Uploading
 
-## File Size Limits
+1. Open the Workout overview.
+2. In the left card, click **Add Media** and pick one or more files. Files of other types are skipped with an alert.
+3. Remove any from the list with ×, then click **Upload N file(s)**.
 
-- Maximum file size: 50MB per file (configurable)
-- Multiple files can be attached to a single workout
-- Total storage depends on your available disk space
+Each file is validated separately. If some fail, the rest are saved. If none succeed, the request returns `400` with `No files were successfully uploaded` and a per-file `Failed to process file`.
 
-## Adding Media
+## Viewing and Deleting
 
-### Step 1: Navigate to Workout
+- Thumbnails appear under **Add Media**; videos show a video thumbnail.
+- Click one to open the viewer. ← / → move between items (wrapping), Esc closes.
+- Delete from the trash icon on a hovered thumbnail, the viewer's delete button, or Delete/Backspace in the viewer. Each asks for confirmation. The file is removed from disk.
 
-1. Go to the activities list
-2. Click on the workout you want to add media to
-3. This opens Workout overview
+Deleting a Workout deletes its media files too.
 
-### Step 2: Upload Media
+## Storage
 
-1. Find the "Media" section on Workout overview
-2. Click "Add Media" or drag and drop files
-3. Select one or more files from your computer
-4. Wait for upload to complete
+- Files live under `MediaStorage:RootPath` (`./media` relative to the API working directory; `/app/media` in Compose, mounted from `./media`), in one folder per Workout: `{RootPath}/{workoutId}/{filename}`.
+- Filenames are sanitized; a name that already exists in that folder gets a GUID suffix.
+- Metadata (filename, MIME type, size, path) is in the `WorkoutMedia` table.
+- Media is included in **Settings → Export** and restored by **Restore Tempo export**. For filesystem backups, include the media directory. See [Backup and Restore](../deployment/backup-restore.md).
 
-### Step 3: View Media
-
-Once uploaded, media files appear on Workout overview:
-- Thumbnails for images
-- Video players for video files
-- Click to view full size or play videos
-
-## Managing Media
-
-### View Media
-
-- Click on any media thumbnail to view full size
-- Videos can be played directly in the browser
-- Use navigation arrows to browse through multiple files
-
-### Delete Media
-
-To remove media from a workout:
-1. Open Workout overview
-2. Find the media you want to delete
-3. Click the delete button
-4. Confirm deletion
-
-**Note**: Deleting media permanently removes the file from storage.
-
-## Media Storage
-
-Media files are stored:
-- On the filesystem in the `media/` directory
-- Organized by workout GUID: `media/{workoutId}/filename.ext`
-- Files are referenced in the database for quick access
-
-## Best Practices
-
-- **File Sizes**: Compress large images before uploading to save storage space
-- **Naming**: Media files are automatically renamed to prevent conflicts
-- **Backup**: Include the `media/` directory in your backups
-- **Organization**: Add media immediately after a workout for better organization
+**Implementation:** `frontend/components/WorkoutOverviewMedia.tsx`, `MediaUpload.tsx`, `WorkoutMediaGallery.tsx`, `MediaModal.tsx`; `api/Services/MediaService.cs`; `POST/GET /workouts/{id}/media`, `GET/DELETE /workouts/{id}/media/{mediaId}` in `api/Endpoints/WorkoutsEndpoints.cs`.
 
 ## Troubleshooting
 
-### Upload Fails
-
-If media upload fails:
-- Check file size (must be under 50MB)
-- Verify file format is supported
-- Ensure sufficient disk space is available
-- Check API logs for specific errors
-
-### Media Not Displaying
-
-If media doesn't appear:
-- Refresh the page
-- Check that the file uploaded successfully
-- Verify file format is supported
-- Check browser console for errors
-
-### Storage Issues
-
-If you run out of storage:
-- Delete unused media files
-- Increase available disk space
-- Configure a different media storage path (see [Configuration](../getting-started/configuration.md))
+| Symptom | Cause | Fix |
+|---|---|---|
+| `No files were successfully uploaded` | Every file failed. The API log says which: `Media file exceeds size limit: {FileName} ({Size} bytes)`, `Unsupported media file type: {FileName}`, or `Error uploading media file: {FileName}` (with the exception, e.g. directory not writable or disk full) | Compress the file or raise `MediaStorage__MaxFileSizeBytes`; convert HEIC to JPEG; check the media volume mount and `df -h`. |
+| Thumbnail broken | File missing on disk (orphaned record) | Restore the media directory from backup, or delete the item. Deleting logs `Media file not found on filesystem (orphaned record)`. |
 
 ## Next Steps
 
-- [View your workouts](viewing-workouts.md) with media
-- [Configure settings](settings.md) for your preferences
-
+- [View your workouts](viewing-workouts.md)
+- [Configure settings](settings.md)

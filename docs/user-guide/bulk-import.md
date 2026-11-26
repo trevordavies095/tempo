@@ -1,154 +1,108 @@
 # Bulk Import from Strava
 
-Import your entire Strava history at once using a Strava data export ZIP file.
+Import your Strava history from a Strava data export ZIP.
 
-## Overview
+Strava import is offered during [first-run onboarding](../getting-started/onboarding.md). After setup it lives under **Settings → Data Management → Migrate / restore → Import Strava archive**. Day-to-day GPX/FIT files stay on the [Import](importing-workouts.md) page.
 
-The bulk import feature allows you to import multiple workouts from a Strava data export. This is useful when:
-- Migrating from Strava to Tempo
-- Importing your complete workout history
-- Catching up after you skipped Strava during first-run onboarding
+## Requesting Your Strava Export
 
-First-run Strava import is also offered during **onboarding**. After setup, use **Settings → Migrate / restore**. Day-to-day GPX/FIT files stay on the [Import](importing-workouts.md) page.
+1. In Strava, go to **Settings → My Account → Download or Delete Your Account**.
+2. Click **Request Archive**.
+3. Download the ZIP from the email Strava sends (this can take hours).
 
-## Requesting Your Strava Data Export
+Upload the ZIP as downloaded; it already has the right layout.
 
-1. Log in to Strava
-2. Go to **Settings** → **My Account** → **Download or Delete Your Account**
-3. Click **Request Archive**
-4. Wait for Strava to prepare your export (this may take several hours or days)
-5. Download the ZIP file when it's ready
-
-## ZIP File Structure Requirements
-
-Your Strava export ZIP file must have the following structure:
+## ZIP Layout {#zip-file-structure-requirements}
 
 ```
-your-strava-export.zip
-├── activities.csv          # Required: CSV file with activity metadata
-└── activities/            # Folder containing workout files
-    ├── 1234567890.gpx     # GPX files (supported)
-    ├── 1234567891.fit.gz  # Gzipped FIT files (supported)
-    └── ...
+export.zip
+├── activities.csv         # Required, at the root
+├── activities/
+│   ├── 1234567890.gpx
+│   ├── 1234567891.fit.gz
+│   └── ...
+└── media/                 # Optional; photos referenced by the CSV Media column
 ```
 
-### Requirements
+- `activities.csv` must be at the root, or the job fails with `ZIP file must contain activities.csv in the root`.
+- Each row's `Filename` column points at its file inside the ZIP. `.gpx`, `.fit`, and `.fit.gz` are imported; other formats (e.g. `.tcx`) error with `Unsupported file format. Only .gpx and .fit/.fit.gz files are supported.`
+- Only rows whose `Activity Type` is exactly `Run` are processed. Other types (Ride, Walk, Trail Run, Virtual Run, …) are dropped before counting and do not appear in the summary.
 
-- `activities.csv` must be in the root of the ZIP file
-- Workout files (`.gpx` or `.fit.gz`) should be in the `activities/` folder
-- The CSV `Filename` column should reference the file path (e.g., `activities/1234567890.gpx`)
-- Only "Run" activities are imported (other activity types are skipped)
+From each CSV row Tempo also takes:
 
-## Import Process
+- **Activity Name** → Workout name (on an existing Workout, only if its name is empty)
+- **Activity Description** and **Activity Private Note** → notes
+- **Media** → photos/videos copied into the Workout's media (same type and 50 MB limits as [Media](media.md))
+- Strava's weather columns, used before falling back to Open-Meteo
 
-### Step 1: Prepare Your ZIP File
+Each file then goes through the same [Workout intake](importing-workouts.md#import-process) as a single-file import, with source `strava_import`.
 
-If your Strava export doesn't match the required structure:
+## Running the Import
 
-1. Extract the ZIP file
-2. Verify the structure matches the requirements above
-3. Re-zip if needed to match the structure
+1. Expand **Migrate / restore** and find **Import Strava archive** (or reach the Strava step in onboarding).
+2. Click or drop the ZIP (max 500 MB) and click **Import Strava Export**.
+3. The button shows `Uploading N%...`, then `Importing processed/total...`.
+4. **Cancel import** stops the job. Workouts already imported stay.
 
-### Step 2: Access Bulk Import
+The ZIP uploads as an [Import job](#how-it-works) in 512 KiB chunks, so there is no single 500 MB request through your proxy. The current unit preference is sent with the job and saved to UserSettings when it starts.
 
-During **[first-run onboarding](../getting-started/onboarding.md)**, choose Strava import after essentials.
+Refreshing Settings reattaches to an in-progress Strava job.
 
-After setup:
+### Summary
 
-1. Log in to Tempo
-2. Navigate to **Settings**
-3. Under **Data Management**, expand **Migrate / restore**
-4. Find **Import Strava archive**
+When the job completes:
 
-### Step 3: Upload ZIP File
+- **Total processed** — number of `Run` rows
+- **Successfully imported** — new Workouts
+- **Updated with new data** — existing Workouts that gained raw file data (see [Duplicates](#duplicates))
+- **Skipped (already complete)** — duplicates with complete raw data
+- **Errors** — per-file messages under **View error details** (e.g. `File not found in ZIP archive`)
 
-1. Click "Choose File" or drag and drop your ZIP file
-2. Select your Strava export ZIP file
-3. Files up to 500MB are supported
+If you set a default shoe, new Workouts are assigned to it (unless it is retired).
 
-### Step 4: Wait for Processing
+## One Import at a Time
 
-Bulk import processing may take several minutes depending on:
-- Number of workouts in the export
-- File sizes
-- Server performance
+Only one import job runs at a time, across Strava bulk import and [Tempo export restore](settings.md#migrate--restore). If a restore is active, the Strava card shows `A Tempo export restore is already in progress. Finish or cancel it before starting a Strava import.` and will not start.
 
-You'll see upload progress, then import progress (`processed` / `total`). You can cancel while the job is active; workouts already imported stay. Refreshing Settings resumes an in-progress Strava job under Migrate / restore.
+## Duplicates
 
-**Note**: If you've set a default shoe in Settings, all imported workouts will automatically be assigned to that shoe. You can change or remove shoe assignments later from each Workout's overview.
+Same rule as single-file import: start time (exact), distance (within 1 m), and elapsed time (within 1 s).
 
-### One import at a time
-
-Tempo runs at most one import job at a time across Strava bulk import and [Tempo export restore](settings.md#migrate--restore). If a Tempo restore is already running, Migrate / restore shows a message and will not start a Strava import until that job finishes or is cancelled. Tempo backups use Settings export — not this Strava bulk flow.
-
-### Step 5: Review Import Summary
-
-After processing completes, you'll see a summary showing:
-- Number of workouts imported
-- Number of workouts skipped (non-run activities or duplicates)
-- Any errors encountered
-
-## Duplicate Detection
-
-Tempo matches workouts on:
-- Start time (`StartedAt`)
-- Distance (`DistanceM`)
-- Duration (`DurationS`)
-
-If a match already exists:
-- **Updated** when the stored Workout is missing raw file bytes or its FIT/GPX JSON is incomplete. Tempo backfills bytes/JSON, rebuilds splits, and fills an empty route or time series. Distance, duration, and elevation on a Workout that already has complete raw data are not rewritten.
+- **Updated** when the stored Workout is missing raw file bytes or its FIT/GPX JSON is incomplete. Tempo backfills bytes/JSON, rebuilds splits, and fills an empty route or time series. Distance, duration, and elevation are not rewritten.
 - **Skipped** when raw bytes and JSON are already complete.
 
-Strava name and media from the export can still attach after created, updated, or skipped.
+Media from the CSV still attaches after created, updated, or skipped (files already attached by name are not duplicated). Re-uploading the same ZIP after a cancel or failure is safe.
 
-## Supported Activity Types
+## How It Works
 
-Only "Run" activities are imported. Other activity types (cycling, swimming, etc.) are automatically skipped.
+1. `POST /workouts/import/jobs` with `kind: strava_bulk`, filename, byte size. Returns `409` with the active job if one is running.
+2. `PUT /workouts/import/jobs/{id}/chunks/{index}?total=N` for each 512 KiB chunk, in order.
+3. `POST /workouts/import/jobs/{id}/complete` assembles the archive under `MediaStorage:RootPath/imports/<job id>/` and queues it.
+4. The background worker extracts the ZIP, parses the CSV, and runs each `Run` row through Workout intake, updating `processed`/`total`.
+5. The command center polls `GET /workouts/import/jobs/{id}` every second until `completed` or `failed`.
 
-## File Size Limits
+A job still receiving chunks with no chunk for 15 minutes is replaced by the next upload. Restarting the API marks a queued or running job `failed` with `interrupted`; it does not resume. Re-upload the ZIP.
 
-- Maximum ZIP file size: 500MB
-- Individual workout files within the ZIP: No specific limit, but very large files may take longer to process
+`POST /workouts/import/bulk` accepts a whole ZIP in one request (for scripts) and creates the same job.
+
+**Implementation:** `frontend/components/BulkImport.tsx`, `frontend/hooks/useImportJobSession.ts`, `frontend/lib/api.ts` (`importStravaExportChunked`), `api/Services/ImportJobService.cs`, `api/Services/ImportJobWorker.cs`, `api/Services/StravaBulkImportOrchestrator.cs`, `api/Services/BulkImportService.cs`, `api/Services/StravaCsvParserService.cs`, `api/Models/ImportJob.cs` (`ImportJobLimits`).
 
 ## Troubleshooting
 
-### Import Fails
+| Symptom | Cause | Fix |
+|---|---|---|
+| `File must be a ZIP file` | Filename does not end in `.zip` | Upload the ZIP Strava sent. |
+| `File exceeds the 500MB limit` | Archive over 500,000,000 bytes | Remove `media/` or split the archive: keep `activities.csv` at the root of each part with only the rows whose files it contains. |
+| `ZIP file must contain activities.csv in the root` | Re-zipped with an extra top-level folder | Zip the contents, not the folder. |
+| Fewer Workouts than in Strava | Non-`Run` types are dropped; rows with missing files error | Check **View error details**. |
+| `File not found in ZIP archive` | CSV `Filename` points at a file not in the ZIP | Use the unmodified Strava export. |
+| Error `interrupted` | API restarted during the job | Re-upload; duplicates skip. |
+| Error `cancelled` | You clicked **Cancel import** | Re-upload to continue. |
+| Strava card says a Tempo restore is in progress | One-job rule | Finish or cancel the restore first. |
 
-If bulk import fails:
-- Verify the ZIP file structure matches requirements
-- Check that `activities.csv` exists in the root
-- Ensure workout files are in the `activities/` folder
-- Verify file size is under 500MB
-- Check API logs for specific error messages
-
-### Missing Workouts
-
-If some workouts aren't imported:
-- Check the import summary for skipped workouts
-- Verify the CSV `Filename` column matches actual file paths
-- Ensure workout files exist in the ZIP
-- Non-run activities are automatically skipped
-
-### Processing Takes Too Long
-
-If processing seems stuck:
-- Large exports can take 10+ minutes
-- Check API logs for progress
-- Verify server has sufficient resources
-- Consider splitting very large exports into smaller ZIP files
-
-### Cannot Start / Message About Tempo Restore
-
-- Finish or cancel the Tempo export restore in [Settings → Migrate / restore](settings.md#migrate--restore) first
-- Only one import job can run at a time (Strava bulk or Tempo restore)
-
-### Partial Import After Cancel
-
-- Already imported workouts remain
-- Re-upload the same ZIP; duplicates skip and incomplete workouts can update
+Large archives take minutes to tens of minutes; progress moves one activity at a time. API logs show `Found N run activities to process` at the start and `Import job {JobId} failed` on failure.
 
 ## Next Steps
 
 - [View your imported workouts](viewing-workouts.md)
-- [Configure settings](settings.md) for your preferences (including Tempo backup restore)
-- [Add media](media.md) to enhance your workouts
+- [Settings](settings.md), including Tempo backup and restore

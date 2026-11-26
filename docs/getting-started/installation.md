@@ -1,71 +1,48 @@
 # Installation
 
-This guide covers different installation methods for Tempo.
+Run the API and frontend from source, for development or to run Tempo without the app containers. To try Tempo with Docker, use [Quick Start](quick-start.md); to deploy a server, use [Docker Deployment](../deployment/docker.md). Contributor workflow (tests, OpenAPI, linting) is in [Developer Setup](../developers/setup.md).
 
-## Installation Methods
-
-### Docker Compose (Recommended)
-
-The easiest way to run Tempo is with Docker Compose. See the [Quick Start Guide](quick-start.md) for detailed instructions.
-
-### Local Development Setup
-
-For development or if you prefer to run services individually:
-
-#### Prerequisites
+## Prerequisites
 
 - .NET 10 SDK
-- Node.js 18+ and npm
-- PostgreSQL 16 (or use Docker Compose for database only)
+- Node.js 20.9+ and npm (Next.js 16 minimum; the frontend image uses Node 20)
+- PostgreSQL 16, or Docker to run only the database
 
-#### Step 1: Start PostgreSQL
+## 1. Database
 
-If you don't have PostgreSQL installed locally, you can use Docker Compose to run only the database:
-
-```bash
-docker-compose up -d postgres
-```
-
-Or install PostgreSQL locally and create a database:
+Run only the Postgres service from the development Compose file (publishes `5432`, user/password `postgres`, database `tempo`):
 
 ```bash
-createdb tempo
+docker compose up -d postgres
 ```
 
-#### Step 2: Configure Backend
+Or use your own PostgreSQL 16 and create a `tempo` database (`createdb tempo`).
 
-Update `api/appsettings.json` with your database connection string:
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres"
-  }
-}
-```
-
-#### Step 3: Run Database Migrations
-
-Restore local .NET tools at the repo root (pins `dotnet-ef` to match EF Core 10), then apply migrations:
+The API's default connection string (`api/appsettings.json`) is `Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres`, which matches the Compose database. For any other database, override it rather than editing the file:
 
 ```bash
-dotnet tool restore
-cd api
-dotnet ef database update
+export ConnectionStrings__DefaultConnection='Host=localhost;Port=5432;Database=tempo;Username=me;Password=secret'
 ```
 
-#### Step 4: Start Backend
+## 2. API
+
+From the repository root:
 
 ```bash
+dotnet tool restore      # once per clone; pins dotnet-ef and the Swagger CLI
 cd api
 dotnet watch run
 ```
 
-The API will run at `http://localhost:5001`. Swagger UI is available at `/swagger` in Development mode.
+- Listens on `http://localhost:5001` as `Development` (`api/Properties/launchSettings.json`).
+- Applies migrations on start. `dotnet ef database update` is only needed to migrate without starting the API.
+- Uses the local-only JWT key from `api/appsettings.Development.json`.
+- Swagger UI: `http://localhost:5001/swagger`.
+- Media goes to `api/media/` (`MediaStorage:RootPath` defaults to `./media`, relative to the working directory).
 
-#### Step 5: Start Frontend
+## 3. Frontend
 
-In a new terminal:
+In a second terminal:
 
 ```bash
 cd frontend
@@ -73,40 +50,29 @@ npm install
 npm run dev
 ```
 
-The frontend will run at `http://localhost:3000`.
+Open `http://localhost:3000`. The dev server rewrites `/api/*` to `http://localhost:5001` (`frontend/next.config.ts`). Then [register and complete onboarding](quick-start.md#3-register).
 
-## Production Deployment
+## Ports
 
-For production deployment, see the [Production Deployment Guide](../deployment/production.md).
+| Service | Port |
+|---|---|
+| Command center (frontend) | `3000` |
+| API | `5001` |
+| PostgreSQL | `5432` |
 
-## System Requirements
+## System requirements
 
-### Minimum Requirements
+Rough guidance, not measured limits. Storage grows with media and stored raw workout files.
 
-- **CPU**: 1 core
-- **RAM**: 2GB
-- **Storage**: 10GB (varies based on workout data)
-- **OS**: Linux, macOS, or Windows
+| | Minimum | Recommended |
+|---|---|---|
+| CPU | 1 core | 2+ cores |
+| RAM | 2 GB | 4 GB+ |
+| Disk | 10 GB | 50 GB+ |
 
-### Recommended Requirements
-
-- **CPU**: 2+ cores
-- **RAM**: 4GB+
-- **Storage**: 50GB+ (for media files and database)
-- **OS**: Linux (for production)
-
-## Port Requirements
-
-Default ports used by Tempo:
-
-- **Frontend**: 3000
-- **API**: 5001
-- **PostgreSQL**: 5432
-
-You can change these ports in `docker-compose.yml` if needed.
+Import jobs stage the uploaded ZIP (up to 500 MB) under the media directory while they run, so keep at least that much free space there.
 
 ## Next Steps
 
-- [Configure Tempo](configuration.md) for your environment
+- [Configuration](configuration.md) reference
 - [Import your first workout](../user-guide/importing-workouts.md)
-

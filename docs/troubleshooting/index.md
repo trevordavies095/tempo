@@ -1,71 +1,35 @@
 # Troubleshooting
 
-Common issues and solutions for Tempo.
+- **[Common Issues](common-issues.md)** — symptom → cause → fix, with the exact UI and log strings
+- **[FAQ](faq.md)** — how Tempo behaves and why
 
-## Overview
+Feature pages carry their own troubleshooting tables: [Importing Workouts](../user-guide/importing-workouts.md#troubleshooting), [Bulk Import](../user-guide/bulk-import.md#troubleshooting), [Migrate / restore](../user-guide/settings.md#migrate--restore), [Media](../user-guide/media.md#troubleshooting).
 
-This section covers common problems and their solutions. If you don't find your issue here, check the [FAQ](faq.md) or [Common Issues](common-issues.md) pages.
+## First Checks
 
-## Quick Links
+1. **API logs:** `docker compose logs -f api` (add `-f docker-compose.prod.yml` in production). Errors from intake, import jobs, weather, and intervals.icu are logged here.
+2. **Readiness:** `GET /ready` returns 200 when Postgres answers within 2 s, else 503. `GET /health` only checks that the API process is up.
+3. **Browser:** the UI shows API errors as `Error: <message>`; the network tab has the JSON `{ "error": "…" }` body.
+4. **Version:** Settings → System Information has a copyable block (version, commit, logging profile, image tags).
+5. **More logging:** set `TEMPO_LOGGING_PROFILE=debug` (see [Logging profiles](../getting-started/configuration.md#logging-profiles)).
 
-- [Common Issues](common-issues.md) - Detailed solutions for frequent problems
-- [FAQ](faq.md) - Frequently asked questions
+## Where to Look
 
-## Getting Help
+| Area | Common Issues section |
+|---|---|
+| Containers, ports, database, backfills | [Installation and Startup](common-issues.md#installation-and-startup) |
+| Login, cookies, onboarding, CORS | [Login and Sessions](common-issues.md#login-and-sessions) |
+| GPX/FIT uploads | [Single-File Import](common-issues.md#single-file-import) |
+| Strava ZIP, Tempo restore | [Strava Bulk Import and Tempo Restore](common-issues.md#strava-bulk-import-and-tempo-restore) |
+| Maps, weather, Relative Effort, splits, Best efforts | [Workout Data](common-issues.md#workout-data) |
+| intervals.icu | [intervals.icu Sync](common-issues.md#intervalsicu-sync) |
+| Photos and videos | [Media](common-issues.md#media) |
 
-If you can't resolve your issue:
+## Reporting an Issue
 
-1. Check the [Common Issues](common-issues.md) page
-2. Review the [FAQ](faq.md)
-3. Search existing [GitHub Issues](https://github.com/trevordavies095/tempo/issues)
-4. Ask for help on [Discord](https://discord.gg/9Svd99npyj)
-5. Create a new GitHub issue with details
+Search [GitHub Issues](https://github.com/trevordavies095/tempo/issues) or ask on [Discord](https://discord.gg/9Svd99npyj). A new issue should include:
 
-## Reporting Issues
-
-When reporting an issue, include:
-
-- Description of the problem
-- Steps to reproduce
-- Expected behavior
-- Actual behavior
-- Environment details (OS, Docker version, etc.)
-- Error messages or logs
-- Screenshots if applicable
-
-## Common Problem Areas
-
-### Installation Issues
-
-- Docker not starting
-- Port conflicts
-- Database connection problems
-- Missing dependencies
-
-### Import Issues
-
-- File format not recognized
-- Import fails
-- Missing data in imported workouts
-- Bulk import problems
-
-### Performance Issues
-
-- Slow imports
-- Slow page loads
-- High resource usage
-- Database performance
-
-### Configuration Issues
-
-- Settings not saving
-- Authentication problems
-- CORS errors
-- Environment variable issues
-
-## Next Steps
-
-- [Review common issues](common-issues.md)
-- [Check the FAQ](faq.md)
-- [Get help from the community](https://discord.gg/9Svd99npyj)
-
+- What you did, what you expected, what happened
+- The Settings → System Information block
+- Relevant API log lines and the UI error text
+- Deployment details (Compose file, reverse proxy, HTTPS or plain HTTP)

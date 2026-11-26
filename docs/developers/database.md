@@ -1,343 +1,332 @@
 # Database Schema
 
-Complete reference for the Tempo database schema.
+What lives in PostgreSQL 16, how the schema changes, and how upgrade backfills fill derived data on existing libraries.
 
-## Overview
+**Source of truth.** This page summarises; the code decides. When they disagree, trust:
 
-Tempo uses PostgreSQL 16 with JSONB fields for flexible storage of raw workout data. The schema follows a hybrid approach: core statistics in dedicated columns, raw file data in JSONB.
+- `api/Data/TempoDbContext.cs`: `DbSet`s, relationships, delete rules, indexes, check constraints
+- `api/Models/*.cs`: columns, max lengths, column types, per-property comments
+- `api/Migrations/TempoDbContextModelSnapshot.cs`: the schema EF believes exists (types as Npgsql maps them)
+- `api/Migrations/*.cs`: raw-SQL objects the model does not describe (see [Objects outside the model](#objects-outside-the-model))
+
+Domain terms (elapsed / timer / moving time, device lap, external identity) are defined in `CONTEXT.md`.
+
+## Storage approach
+
+- Core stats in typed columns for filtering and sorting; raw source payloads in `jsonb` for reprocessing.
+- The original uploaded file is kept in `Workouts.RawFileData` (`bytea`) with `RawFileName` / `RawFileType`, so backfills can reparse it.
+- Media and staged import archives live on the filesystem; the database holds paths and metadata only.
+- Timestamps are `timestamp with time zone`, written as UTC.
+- No table has a FK to `Users`: an instance is one athlete. `Users` exists for login and API keys.
+
+## Entity relationships
+
+```mermaid
+erDiagram
+    Workout ||--o| WorkoutRoute : "cascade"
+    Workout ||--o{ WorkoutSplit : "cascade"
+    Workout ||--o{ WorkoutTimeSeries : "cascade"
+    Workout ||--o{ WorkoutMedia : "cascade"
+    Workout ||--o{ WorkoutBestEffort : "cascade"
+    Workout ||--o{ WorkoutExternalIdentity : "cascade"
+    Shoe |o--o{ Workout : "ShoeId, set null"
+    Shoe |o--o{ UserSettings : "DefaultShoeId, set null"
+    User ||--o{ ApiKey : "cascade"
+```
+
+Standalone (no FKs): `ImportJob`, `IntervalsIcuConnection`, `CompletedBackfill`.
+
+Deleting a Workout cascades to every child table. Deleting a Shoe nulls `Workouts.ShoeId` and `UserSettings.DefaultShoeId`. Deleting a User cascades to its API keys.
 
 ## Entities
 
-### Workout
+Table names are the `DbSet` names in `TempoDbContext`.
 
-Core workout entity with statistics and metadata.
+### Workout (`Workouts`)
 
-**Columns:**
-- `Id` (Guid, Primary Key)
-- `ActivityName` (string, nullable)
-- `StartedAt` (DateTime)
-- `DurationS` (int) - Total elapsed time (wall clock, including pauses)
-- `TimerTimeS` (int, nullable) - FIT timer time (`total_timer_time`); Garmin’s primary duration when present
-- `SplitHeartRateBackfill` (string, nullable) - startup split-HR idle cursor (`no_overlap`); not a runner-facing metric; omitted from GET and Tempo ZIP export
-- `DistanceM` (double)
-- `ElevationGainM` (double, nullable)
-- `ElevationLossM` (double, nullable)
-- `MinElevationM` (double, nullable)
-- `MaxElevationM` (double, nullable)
-- `AvgHeartRateBpm` (int, nullable)
-- `MaxHeartRateBpm` (int, nullable)
-- `RelativeEffort` (double, nullable)
-- `Source` (string, nullable) - Device or source identifier
-- `RunType` (string, nullable)
-- `Device` (string, nullable)
-- `ShoeId` (Guid, nullable, Foreign Key to Shoe) - Assigned running shoe
-- `RawGpxData` (JSONB, nullable) - Raw GPX XML data
-- `RawFitData` (JSONB, nullable) - Raw FIT file data
-- `RawStravaData` (JSONB, nullable) - Raw Strava CSV data
-- `RawHealthKitData` (JSONB, nullable) - Schema-versioned HealthKit import payload from tempo-ios
-- `HealthKitUuid` (Guid, nullable, unique) - HKWorkout UUID for HealthKit import idempotency; null for file imports
-- `Weather` (JSONB, nullable) - Weather data from Open-Meteo API
+One recorded run. PK `Id` (uuid).
 
-**Indexes:**
-- `StartedAt`
-- Composite index on `(StartedAt, DistanceM, DurationS)` for duplicate detection
-- Unique index on `HealthKitUuid` (multiple NULLs allowed)
-- `Source`
-- `RunType`
-- `ShoeId` - Foreign key index for efficient shoe queries
-- GIN indexes on JSONB fields: `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, `Weather`
+Columns whose meaning is not obvious from the name:
 
-### Workout external identity
+| Column | Meaning |
+| --- | --- |
+| `DurationS` | **Elapsed time**: wall clock start to finish, pauses included. Used by duplicate detection. |
+| `TimerTimeS` | **Timer time**: FIT `total_timer_time`, device running, pauses excluded. Null when the source has none. |
+| `MovingTimeS` | **Moving time**: by speed threshold, when the source provides it. Not timer time. |
+| `AvgPaceS` | Seconds per km, regardless of unit preference. |
+| `ElevGainM`, `ElevLossM`, `MinElevM`, `MaxElevM` | Elevation in metres (note the `Elev` prefix). |
+| `AvgCadenceRpm`, `MaxCadenceRpm` | Steps/min, both feet. The `Rpm` suffix is historical. |
+| `Rpe` | Rate of Perceived Exertion 1–10. Athlete-set, or from FIT `workout_rpe` when null. Not Relative Effort. |
+| `RelativeEffort` | Integer score from HR zones. |
+| `ZoneSecondsZ1`…`ZoneSecondsZ5` | Whole seconds in each HR zone, computed with the zones in effect at the time. Null when there is no HR series. |
+| `ZoneSecondsComputedAt` | When zone seconds were last computed (stamped even when the result is null). Null = not yet; the zone-seconds backfill picks it up. |
+| `BestEffortsComputedAt` | Same idea for `WorkoutBestEfforts` rows. |
+| `SplitHeartRateBackfill` | Split-HR backfill cursor; only value written is `no_overlap`. Not a metric. |
+| `Source` | Ingest provenance (`gpx_import`, `fit_import`, `strava_import`, `healthkit`). Not the external-identity source. |
+| `HealthKitUuid` | `HKWorkout.uuid` from tempo-ios; null for file imports. |
+| `Weather` | `jsonb`: Open-Meteo response plus any device/Strava weather. |
+| `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData` | `jsonb` raw payloads. Several backfills also write idempotency markers into `RawFitData` (see [Backfills](#upgrade-backfills)). |
 
-A `(source, externalId)` row linking a Workout to one upstream system for intake idempotency. Not `Workout.Source` (ingest provenance such as `gpx_import` / `fit_import` / `healthkit`). HealthKit remains on `Workout.HealthKitUuid` until a later move; this table is not written with `healthkit` rows yet.
+Other columns: `StartedAt`, `DistanceM`, speed (`MaxSpeedMps`, `AvgSpeedMps`), HR (`Min/Avg/MaxHeartRateBpm`, `smallint`), power (`Avg/MaxPowerWatts`), `Calories`, `Name`, `RunType`, `Notes`, `Device`, `ShoeId`, `CreatedAt`.
 
-**Columns:**
-- `Id` (Guid, Primary Key)
-- `WorkoutId` (Guid, Foreign Key to Workout, cascade delete)
-- `Source` (string, max 50) — upstream that minted the id (e.g. `intervals_icu`)
-- `ExternalId` (string, max 128) — opaque token, trimmed, case-sensitive
-- `CreatedAt` (DateTime UTC) — when the row was attached; not a sync cursor
+`[JsonIgnore]` on the zone-seconds columns, both `*ComputedAt` stamps and `SplitHeartRateBackfill` keeps them out of API JSON and the Tempo ZIP export.
 
-**Indexes:**
-- Unique composite on `(Source, ExternalId)` — one Workout owns a given upstream id
-- Unique composite on `(WorkoutId, Source)` — one id per upstream per Workout
+Indexes:
 
-**Relationship:**
-- Many-to-one with `Workout` (cascade delete)
+- `StartedAt`; `Source`; `RunType`; `ShoeId`
+- `(StartedAt, DistanceM, DurationS)`: duplicate detection
+- `HealthKitUuid` unique (multiple NULLs allowed)
+- GIN on `RawGpxData`, `RawFitData`, `RawStravaData`, `RawHealthKitData`, `Weather`
 
-### Intervals.icu connection
+### WorkoutRoute (`WorkoutRoutes`)
 
-Instance-level 0-or-1 row for a personal intervals.icu API key. Application-enforced single row (same idea as UserSettings). Not exported in a Tempo ZIP.
+0..1 per Workout. PK `Id`; `WorkoutId` has a unique index.
 
-**Columns:**
-- `Id` (Guid, Primary Key)
-- `ApiKeyCiphertext` (bytea) — AES-GCM blob (nonce + tag + ciphertext). Never returned on GET.
-- `Enabled` (bool) — live sync flag (poller is a later slice)
-- `ConnectedAt` (DateTime UTC) — sync origin floor; set on first persist
-- `LastSuccessfulSyncAt` (DateTime UTC, nullable)
-- `LastSyncAttemptAt` (DateTime UTC, nullable)
-- `LastError` (string, max 500, nullable) — safe message, no key material
-- `CreatedAt` / `UpdatedAt` (DateTime UTC)
+- `RouteGeoJson` (`jsonb`, required): full GeoJSON LineString.
+- `PreviewGeoJson` (`jsonb`, nullable): Douglas-Peucker simplification (≤ 100 points). Null = not computed yet; `[]` = sentinel for empty or unparseable source geometry.
 
-**Relationship:**
-- Standalone (no FK to Workout)
+### WorkoutSplit (`WorkoutSplits`)
 
-### WorkoutRoute
+Segments of a Workout. `Kind` (check constraint `CK_WorkoutSplits_Kind`):
 
-One-to-one relationship storing route coordinates as GeoJSON LineString.
+- `distance`: km or mile splits per `UserSettings.UnitPreference`.
+- `device_lap`: ranges the device recorded (FIT laps when 2+ are kept, or HealthKit laps).
 
-**Columns:**
-- `WorkoutId` (Guid, Primary Key, Foreign Key to Workout)
-- `Coordinates` (JSONB) - GeoJSON LineString format
+Key columns:
 
-**Relationship:**
-- One-to-one with `Workout`
+- `Idx`: 0-based within its kind; unique index `(WorkoutId, Kind, Idx)`.
+- `StartElapsedS` / `EndElapsedS`: wall elapsed seconds from `Workout.StartedAt` (same clock as `WorkoutTimeSeries.ElapsedSeconds`). Windows are `[Start, End)`; the last segment includes its end.
+- `StartDistanceM`: device-distance cursor at segment start when a distance stream exists; null for Haversine-derived distance splits.
+- `PaceS`: seconds per km.
+- `AvgHeartRateBpm`: time-weighted average from the time series; null when no HR samples fall in the window.
+- `Intensity`, `Trigger`, `StepIndex`: FIT lap `intensity`, `lap_trigger` (snake_case) and `wkt_step_index`. Null for distance splits and for HealthKit laps.
 
-### WorkoutSplit
+Write rules:
 
-Segment rows for a Workout (`Kind`: `distance` or `device_lap`). Distance rows are km/mile per UserSettings; device_lap rows are device ranges when present (FIT import copies LapMesg into `device_lap` when 2+ kept; startup `DeviceLapBackfillWorker` fills older FIT library rows from `RawFitData.laps` or reparsed bytes, stamped with `lapsBackfill`).
+- Display list (`GET /workouts/{id}`, list `splitsCount`): all `device_lap` rows if any exist, otherwise the `distance` rows.
+- Unit-preference recalc rewrites `distance` rows only; `device_lap` rows survive.
+- Crop deletes every kind, then writes new `distance` rows.
 
-**Columns:**
-- `Id` (Guid, Primary Key)
-- `WorkoutId` (Guid, Foreign Key to Workout)
-- `Kind` (string, max 32) - `distance` | `device_lap` (check constraint; default `distance`)
-- `Idx` (int) - Index within kind (0-based; same Idx may exist on both kinds)
-- `DistanceM` (double)
-- `DurationS` (int)
-- `PaceS` (double) - seconds per kilometer
-- `StartElapsedS` (int) - wall elapsed from Workout.StartedAt at segment start
-- `EndElapsedS` (int) - wall elapsed at segment end; windows are `[Start, End)` (last inclusive)
-- `StartDistanceM` (double, nullable) - device-distance cursor at start when DistM stream exists; null for Haversine distance splits
-- `AvgHeartRateBpm` (byte, nullable) - time-weighted average from WorkoutTimeSeries; null when the split has no HR samples
-- `Intensity` (string, max 32, nullable) - FIT lap intensity, snake_case (`active`, `rest`, `warmup`, `cooldown`, `recovery`, `interval`, `other`); `device_lap` from FIT only
-- `Trigger` (string, max 32, nullable) - FIT `lap_trigger`, snake_case (`manual`, `distance`, `position_start`, …); `device_lap` from FIT only
-- `StepIndex` (int, nullable) - FIT `wkt_step_index` for structured workouts; `device_lap` from FIT only
+### WorkoutTimeSeries (`WorkoutTimeSeries`)
 
-**Indexes:**
-- Unique composite index on `(WorkoutId, Kind, Idx)`
+Per-sample data for charts and analysis. Index `(WorkoutId, ElapsedSeconds)`.
 
-**API / write paths:**
-- `GET /workouts/{id}` and crop responses return the **display list**: all `device_lap` rows if any exist, otherwise all `distance` rows (ordered by `Idx`)
-- List `splitsCount` matches that display-list rule
-- Unit-preference **recalc** deletes and rewrites `distance` only; `device_lap` rows are preserved
-- **Crop** deletes all kinds for the workout, then writes new `distance` rows for the remaining slice
-- Tempo **export** dumps every split row (both kinds) with the new columns; restore copies rows and does not rebuild splits via track geometry
+- `ElapsedSeconds` (int): wall elapsed seconds from `Workout.StartedAt`.
+- `DistanceM`: cumulative distance.
+- `CadenceRpm`: steps/min, both feet (historical name).
+- Also `HeartRateBpm`, `PowerWatts`, `SpeedMps`, `GradePercent`, `ElevationM`, `TemperatureC`, `VerticalSpeedMps`; all nullable. There is no stored pace column.
 
-**Relationship:**
-- Many-to-one with `Workout`
+### WorkoutMedia (`WorkoutMedia`)
 
-### WorkoutTimeSeries
+Photo or video metadata; the file is on disk. Index `WorkoutId`.
 
-Time-series data (heart rate, pace, elevation over time).
+- `Filename` (original name), `FilePath` (on-disk path under the media root), `MimeType`, `FileSizeBytes`, `Caption`, `CreatedAt`.
 
-**Columns:**
-- `Id` (Guid, Primary Key)
-- `WorkoutId` (Guid, Foreign Key to Workout)
-- `ElapsedSeconds` (double)
-- `HeartRateBpm` (int, nullable)
-- `PaceSecondsPerKm` (double, nullable)
-- `ElevationM` (double, nullable)
+### WorkoutBestEffort (`WorkoutBestEfforts`)
 
-**Indexes:**
-- Composite index on `(WorkoutId, ElapsedSeconds)` for time-series queries
+A Workout's fastest time over one standard distance (any segment within it). All-time and windowed bests are derived from these rows.
 
-**Relationship:**
-- Many-to-one with `Workout`
+- `Distance` (name, e.g. `5K`), `DistanceM`, `TimeS`.
+- Unique `(WorkoutId, Distance)`; index `(Distance, TimeS)` for fastest-per-distance queries.
 
-### WorkoutMedia
+Replaces the old `BestEfforts` table, dropped by migration `DropBestEffortsTable`.
 
-Photos and videos attached to workouts.
+### WorkoutExternalIdentity (`WorkoutExternalIdentities`)
 
-**Columns:**
-- `Id` (Guid, Primary Key)
-- `WorkoutId` (Guid, Foreign Key to Workout)
-- `FileName` (string)
-- `MimeType` (string)
-- `FileSizeBytes` (long)
-- `UploadedAt` (DateTime)
+A `(Source, ExternalId)` pair linking a Workout to one upstream system, for intake idempotency.
 
-**Relationship:**
-- Many-to-one with `Workout`
+- `Source` (max 50): upstream token from `WorkoutExternalSource`; currently only `intervals_icu`. Not `Workout.Source`.
+- `ExternalId` (max 128): opaque, case-sensitive.
+- `CreatedAt`: when attached; not a sync cursor.
+- Unique `(Source, ExternalId)`: one Workout owns a given upstream id. Unique `(WorkoutId, Source)`: one id per upstream per Workout.
 
-### User
+HealthKit idempotency still uses `Workouts.HealthKitUuid`, not this table.
 
-User accounts for authentication.
+### Shoe (`Shoes`)
 
-**Columns:**
-- `Id` (Guid, Primary Key)
-- `Username` (string, unique)
-- `PasswordHash` (string) - BCrypt hashed password
-- `CreatedAt` (DateTime)
-- `OnboardingCompleted` (bool) - `true` after first-run onboarding finishes. New registrations default to `false`. The EF migration that adds this column backfills existing user rows to `true` so upgrades are not forced through the wizard.
+- `Brand`, `Model` (max 100 each), `InitialMileageM` (nullable), `IsRetired`, `CreatedAt`, `UpdatedAt`.
+- No indexes beyond the PK. Referenced by `Workouts.ShoeId` and `UserSettings.DefaultShoeId` (both set null on delete).
 
-**Indexes:**
-- Unique index on `Username`
+### UserSettings (`UserSettings`)
 
-### UserSettings
+One-row table (see [One-row tables](#one-row-tables)). Read with `SingletonRows.SingleRowAsync` (`api/Data/SingletonRows.cs`).
 
-Single-row table for user preferences.
+- `CalculationMethod`: `HeartRateCalculationMethod` enum stored as `integer` (`0` AgeBased, `1` Karvonen, `2` Custom).
+- `Age`, `RestingHeartRateBpm`, `MaxHeartRateBpm`: inputs for the method.
+- `Zone1MinBpm` … `Zone5MaxBpm`: the five zones as ten integer columns (no JSON).
+- `ThresholdPaceS` (s/km), `ThresholdHeartRateBpm`: athlete-set, nullable.
+- `UnitPreference`: `metric` or `imperial` (nullable; default metric).
+- `DefaultShoeId`: shoe auto-assigned to new workouts; indexed.
+- `CreatedAt`, `UpdatedAt`.
 
-**Columns:**
-- `Id` (Guid, Primary Key) - Always the same GUID (single-row pattern)
-- `HeartRateZoneMethod` (string) - "AgeBased", "Karvonen", or "Custom"
-- `Age` (int, nullable)
-- `RestingHeartRate` (int, nullable)
-- `CustomZones` (JSONB, nullable) - Custom zone boundaries
-- `UnitPreference` (string) - "metric" or "imperial"
-- `DefaultShoeId` (Guid, nullable, Foreign Key to Shoe) - Default shoe for automatic assignment to new workouts
+### User (`Users`)
 
-**Indexes:**
-- Unique index on `Id` (ensures single row)
+- `Username` (max 50, unique), `PasswordHash` (BCrypt), `CreatedAt`, `LastLoginAt`.
+- `SessionVersion`: incremented on password change; outstanding JWTs carry it as `sess_ver` and stop validating.
+- `OnboardingCompleted`: new registrations write `false`. Its migration added the column with default `true`, so users that existed at upgrade skip the wizard.
 
-**Relationship:**
-- Many-to-one with `Shoe` (via `DefaultShoeId`)
+### ApiKey (`ApiKeys`)
 
-### Shoe
+Personal API keys. FK `UserId`, cascade delete.
 
-Running shoe entity for tracking shoe mileage.
+- `KeyHash` (authenticates), `KeyPrefix` (max 64, lookup), `Label`, `CreatedAt`, `RevokedAt`.
+- `KeyCiphertext` (`bytea`, nullable): AES-GCM copy of the plaintext so Settings can reveal it. Null on keys created before reveal existed; those still authenticate via `KeyHash`.
+- Indexes: `UserId`; unique `IX_ApiKeys_UserId_Active` on `UserId` filtered `RevokedAt IS NULL` (one active key per user); `KeyPrefix` filtered `RevokedAt IS NULL`.
 
-**Columns:**
-- `Id` (Guid, Primary Key)
-- `Brand` (string, max 100 chars) - Shoe manufacturer
-- `Model` (string, max 100 chars) - Shoe model name
-- `InitialMileageM` (double, nullable) - Initial mileage in meters when shoe was added
-- `CreatedAt` (DateTime)
-- `UpdatedAt` (DateTime)
+### ImportJob (`ImportJobs`)
 
-**Indexes:**
-- No specific indexes (relatively small table, queries typically by Id)
+Background ZIP import: `Kind` `strava_bulk` (Strava export) or `tempo_export` (Tempo restore). Index `Status`.
 
-**Relationship:**
-- One-to-many with `Workout` (via `Workout.ShoeId`)
-- One-to-many with `UserSettings` (via `UserSettings.DefaultShoeId`)
+- `Status`: `receiving` | `queued` | `running` | `completed` | `failed`. At most one job is active (`receiving` / `queued` / `running`); the application enforces this, not a constraint.
+- `ByteSize` (declared size), `BytesReceived` (chunks assembled), `LastChunkAt` (a `receiving` job idle 15 minutes is stale and can be replaced).
+- `Processed` / `Total`, `Successful` / `Skipped` / `Updated` / `Errors`: progress and flat counters.
+- `ErrorDetailsJson` (`text`): Strava per-file `[{ filename, error }]`. `ResultJson` (`text`): Tempo `{ statistics, warnings, errors }`. Both are JSON in `text`, not `jsonb`.
+- `ErrorMessage`: job-level message; cancel and interrupt both end `failed`, with `cancelled` / `interrupted`.
+- `UnitPreference` (optional, `strava_bulk`), `ArchivePath` (staged ZIP under `media/imports/{jobId}/`), `CancelRequested`, `CreatedAt` / `StartedAt` / `FinishedAt`.
 
-### ImportJob
+The staged archive is deleted on a terminal status or startup interrupt; the row stays for a late GET.
 
-Background import for Strava bulk ZIP (`strava_bulk`) or Tempo export restore (`tempo_export`). At most one row may be in `receiving`, `queued`, or `running` at a time.
+### IntervalsIcuConnection (`IntervalsIcuConnections`)
 
-**Columns:**
-- `Id` (Guid, Primary Key)
-- `Kind` (string) - `strava_bulk` or `tempo_export`
-- `Status` (string) - `receiving` | `queued` | `running` | `completed` | `failed`
-- `Filename` (string)
-- `ByteSize` (long) - Declared ZIP size at create
-- `BytesReceived` (long) - Bytes assembled from chunks
-- `Processed` / `Total` (int) - Progress while running
-- `Successful` / `Skipped` / `Updated` / `Errors` (int) - Flat counters (Tempo rollups nested stats into these)
-- `ErrorDetailsJson` (string, nullable) - Strava per-file `{ filename, error }` array
-- `ResultJson` (string, nullable) - Tempo `{ statistics, warnings, errors }` payload
-- `ErrorMessage` (string, nullable) - Job-level message (`cancelled`, `interrupted`, bad archive, etc.)
-- `UnitPreference` (string, nullable) - Optional for `strava_bulk`; applied when the worker starts
-- `ArchivePath` (string, nullable) - Staged ZIP under `media/imports/{jobId}/`
-- `CancelRequested` (bool)
-- `LastChunkAt` (DateTime, nullable) - Used for 15-minute stale `receiving` replacement
-- `CreatedAt` / `StartedAt` / `FinishedAt` (DateTime)
+One-row table for the instance's intervals.icu link. Not exported in a Tempo ZIP.
 
-**Notes:**
-- Staged archive directory is deleted on terminal status or startup interrupt; the row remains for a late GET
-- Cancel and interrupt end as `failed` with a distinct `ErrorMessage`
+- `ApiKeyCiphertext` (`bytea`, required): AES-GCM blob. Never returned by the API.
+- `Enabled`: live sync on/off.
+- `ConnectedAt`: sync origin floor, set on first persist.
+- `LastSuccessfulSyncAt`, `LastSyncAttemptAt`, `LastError` (max 500, no key material), `CreatedAt`, `UpdatedAt`.
 
-## Relationships
+### CompletedBackfill (`CompletedBackfills`)
 
-```
-Workout (1) ── (1) WorkoutRoute
-Workout (1) ── (N) WorkoutSplit
-Workout (1) ── (N) WorkoutTimeSeries
-Workout (1) ── (N) WorkoutMedia
-Workout (N) ── (1) Shoe (via ShoeId, nullable)
-UserSettings (1) ── (1) Shoe (via DefaultShoeId, nullable)
-ImportJob (standalone; no FK to Workout)
-IntervalsIcuConnection (standalone; no FK)
-```
+One row per upgrade backfill that finished with nothing left to do. PK `Name` (max 100), `Version`, `CompletedAt`. Instance-local: not exported, and cleared by a Tempo ZIP restore. See [Upgrade backfills](#upgrade-backfills).
+
+## Objects outside the model
+
+Raw SQL in migrations creates objects that `TempoDbContext` and the snapshot do not describe. EF will not recreate them, and `migrations add` will not notice if they go missing.
+
+- `IX_UserSettings_Singleton` and `IX_IntervalsIcuConnections_Singleton`: unique indexes on the constant `(true)`, from `EnforceSingletonRows`.
+- `IX_WorkoutRoutes_RouteGeoJson_GIN` (GIN on `RouteGeoJson`) is defined in `20260103165130_AddGinIndexToWorkoutRouteGeoJson.cs`, but that file has no `.Designer.cs` and so no `[Migration]` attribute. EF does not discover it, so it is never applied and the index is not created.
+
+### One-row tables
+
+`UserSettings` and `IntervalsIcuConnections` hold at most one row. Postgres enforces this with the singleton indexes above. `EnforceSingletonRows` first deleted extra rows, keeping the most recently updated (ties: lowest `Id`). `DatabaseMigrationHelper` logs a warning with the row counts before that migration runs. Read both tables through `SingletonRows.SingleRowAsync`, which orders the same way.
 
 ## Migrations
 
-Database migrations are managed using Entity Framework Core migrations:
+### Startup
 
-Restore local .NET tools at the repo root first (`dotnet tool restore`) so `dotnet-ef` matches EF Core 10.
+The API migrates on every start, before it serves requests (`Program.cs`, skipped when `ASPNETCORE_ENVIRONMENT=Testing`). The `backfill` command runs the same step first. `DatabaseMigrationHelper.ApplyMigrations` does this, in order:
 
-### Creating Migrations
+1. `CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory"` (covers databases built with `EnsureCreated()`).
+2. Drops leftover `Coach*` tables and their history rows from experimental `feat/ai-coach` images. There is no opt-out, and a failure stops startup.
+3. **History sync**: for each table in `TableToMigrationMap` and each `(table, column)` in `ColumnToMigrationMap` that already exists, inserts the matching migration id into history if it is missing. This lets a schema built outside migrations be adopted without "already exists" errors.
+4. Warns if `EnforceSingletonRows` is pending and would delete rows.
+5. `db.Database.Migrate()`. A failure is logged and rethrown, so the API does not start.
+
+Errors in steps 1, 3 and 4 are logged as warnings and migration continues.
+
+Watch out:
+
+- **The maps are hand-maintained.** A migration is marked applied when *any* mapped object exists. Only map an object if its existence proves the whole migration ran. If a migration adds several columns, map every one of them, or none, to the same id. Never map a table or column that a later migration also touches.
+- New migrations do not need a map entry. Only add one when installs may already have the object without a history row.
+- Prefer idempotent raw `migrationBuilder.Sql` (`IF NOT EXISTS`, `DO $$ … $$`): databases adopted through history sync may already hold some objects.
+- Every migration needs its `.Designer.cs` (the `[DbContext]` / `[Migration]` attributes). Without one, EF silently ignores the file (see the route GIN index above).
+
+### Add a migration
+
+`dotnet-ef` 10.0.0 is pinned in `.config/dotnet-tools.json` at the repo root. Run it from `api/`.
 
 ```bash
+# once per clone, at the repo root
 dotnet tool restore
+
 cd api
-dotnet ef migrations add MigrationName
+# 1. Change api/Models/*.cs and/or TempoDbContext.OnModelCreating
+# 2. Scaffold (writes <timestamp>_Name.cs, .Designer.cs, and updates the snapshot)
+dotnet ef migrations add AddSomething
+# 3. Review all three files; commit them together
 ```
 
-### Applying Migrations
+`migrations add` needs no database. It builds the context through `Data/TempoDbContextFactory.cs` (design-time factory, no web host or JWT config).
 
-Migrations run automatically on API startup. To manually apply:
+### Apply a migration manually
+
+Usually unnecessary: starting the API applies pending migrations. The design-time factory's connection string points at database **`tempo_ef_design`**, not `tempo`, so pass `--connection` to target your dev database:
 
 ```bash
-dotnet tool restore
 cd api
-dotnet ef database update
+dotnet ef database update \
+  --connection 'Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres'
+
+# roll back to an earlier migration (Down methods may not restore deleted data)
+dotnet ef database update PreviousMigrationName \
+  --connection 'Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres'
 ```
 
-### Migration History
+Integration tests build a template database with `DatabaseMigrationHelper.ApplyMigrations` and clone it per test (`api/Tempo.Api.Tests/Infrastructure/PostgresTestFixture.cs`), so a broken migration fails the suite.
 
-The `__EFMigrationsHistory` table tracks applied migrations. The `DatabaseMigrationHelper` ensures idempotent migrations by:
-- Creating the history table if missing
-- Detecting existing tables/columns
-- Marking migrations as applied if objects already exist
+## Upgrade backfills
 
-## Indexing Strategy
+Backfills fill derived data on workouts imported before a feature existed. They are defined in `StartupBackfills.All` (`api/Services/StartupBackfills.cs`) and run in this order:
 
-### Performance Indexes
+| Name | Service | Picks up |
+| --- | --- | --- |
+| `workout route preview` | `RoutePreviewBackfillService` | `WorkoutRoutes.PreviewGeoJson IS NULL` |
+| `split heart rate` | `SplitHeartRateBackfillService` | splits with no `AvgHeartRateBpm`, HR samples present, no `SplitHeartRateBackfill` cursor |
+| `FIT cadence` | `CadenceBackfillService` | FIT rows with stored bytes, `RawFitData` without `cadenceUnit = spm` or a `cadenceBackfill` marker |
+| `timer time` | `TimerTimeBackfillService` | `TimerTimeS IS NULL`, `RawFitData` without a `timerTimeBackfill` marker |
+| `device lap` | `DeviceLapBackfillService` | FIT rows without `device_lap` splits / a `lapsBackfill` marker; then lap annotations (`lapAnnotationsBackfill`) |
+| `zone seconds` | `ZoneSecondsBackfillService` | `ZoneSecondsComputedAt IS NULL` (waits until HR zones are configured) |
+| `best effort` | `BestEffortBackfillService` | `BestEffortsComputedAt IS NULL` |
+| `device name` | `DeviceNameBackfillService` | FIT rows whose `Device` is a brand-only or `Product N` legacy name |
 
-- **Workout.StartedAt** - Fast date range queries
-- **Workout composite (StartedAt, DistanceM, DurationS)** - Duplicate detection
-- **Workout.HealthKitUuid** (unique) - HealthKit import idempotency
-- **WorkoutExternalIdentities** unique `(Source, ExternalId)` and unique `(WorkoutId, Source)`
-- **WorkoutSplit (WorkoutId, Idx)** - Efficient split queries
-- **WorkoutTimeSeries (WorkoutId, ElapsedSeconds)** - Time-series queries
+Each service is idempotent: it marks every row it visits (a column, a `*ComputedAt` stamp, or a marker key in `RawFitData`) so later runs skip it.
 
-### JSONB Indexes
+### Completion tracking
 
-GIN indexes on JSONB fields enable efficient JSON queries:
-- `RawGpxData`
-- `RawFitData`
-- `RawStravaData`
-- `RawHealthKitData`
-- `Weather`
+`BackfillPass.RunAsync` runs each backfill. If a run processes rows, it runs once more. A run that processes `0` rows records `(Name, Version)` in `CompletedBackfills`. A backfill that throws, is cancelled, or still has work after two runs is not recorded and stays pending.
 
-## Data Storage Patterns
+A backfill is pending when it has no `CompletedBackfills` row, or its recorded `Version` differs from the definition.
 
-### Hybrid Storage
+When backfills run, controlled by `Tempo:Backfills:OnStartup` (`TEMPO_BACKFILLS_ON_STARTUP` in Compose):
 
-- **Core Stats**: Dedicated columns for efficient querying and indexing
-- **Raw Data**: JSONB fields for flexibility and future extensibility
+- `skip` (default): runs none. After migrations, `StartupBackfills.CheckAsync` makes one query. If nothing is pending it logs that and returns. If something is pending and there are no workouts, it records all pending backfills complete. If something is pending and workouts exist, it warns with the catch-up command.
+- `run`: a `BackfillRunner` hosted service runs the pending backfills once in the background. It never blocks `/ready`.
+- `force`: same, but runs all of them.
+- An unknown value fails startup.
 
-### Media Storage
+Other entry points:
 
-Media files are stored on the filesystem, not in the database:
-- Workout media: `media/{workoutId}/filename.ext`
-- Import-job staging: `media/imports/{jobId}/archive.zip` (deleted when the job finishes or is interrupted)
-- Database stores workout media metadata only (filename, MIME type, size, upload date)
+- `dotnet Tempo.Api.dll backfill [--force]` (`api/Commands/BackfillCommand.cs`; in Docker, `docker compose exec api dotnet Tempo.Api.dll backfill`). Migrates, runs pending backfills (or all with `--force`), and exits `0` only when every backfill is recorded complete.
+- A Tempo ZIP restore that imported workouts (`ImportJobWorker`) clears `CompletedBackfills`, then runs every backfill before the job reports done.
 
-## Backup and Restore
+### Add a backfill
 
-### Database Backup
+The pattern, from the existing services:
+
+1. Add `XxxBackfillService` in `api/Services/`. Give it `Task<int> RunAsync(CancellationToken)` that returns the number of rows it processed. Select candidates by a persisted "not yet done" predicate, and mark every visited row, including ones with nothing to fill, so it cannot be selected again. Process in bounded batches (existing services use `BatchSize = 200`; HR-heavy ones load one workout at a time).
+2. If the marker needs a new column, add it with a migration. Mark it `[JsonIgnore]` if it is not runner-facing, so it stays out of the API and export.
+3. Register it with `builder.Services.AddScoped<XxxBackfillService>()` in `Program.cs`.
+4. Append `new("xxx", 1, (sp, ct) => sp.GetRequiredService<XxxBackfillService>().RunAsync(ct))` to `StartupBackfills.All`. The name must match the service's `"<name> backfill: N of N"` log line.
+5. When you change an existing backfill's logic, bump its `Version` so installs that recorded it complete run it again.
+
+## Media on disk
+
+- Workout media: `{MediaStorage:RootPath}/{workoutId}/…`. `WorkoutMedia.FilePath` stores the path.
+- Import staging: `{root}/imports/{jobId}/` (deleted when the job finishes or is interrupted).
+
+## Backup and restore
+
+Both Compose files name the database service `postgres`, with database `tempo` and user `postgres`.
 
 ```bash
-docker exec tempo-postgres pg_dump -U postgres tempo > backup.sql
+docker compose exec -T postgres pg_dump -U postgres tempo > backup.sql
+docker compose exec -T postgres psql -U postgres tempo < backup.sql
 ```
 
-### Database Restore
+A complete backup is the database dump plus the media directory (`./media`). A Tempo ZIP export is the portable alternative: it omits instance-local tables such as `CompletedBackfills` and `IntervalsIcuConnections`.
 
-```bash
-docker exec -i tempo-postgres psql -U postgres tempo < backup.sql
-```
-
-### Complete Backup
-
-For a complete backup, save both:
-1. Database dump (as shown above)
-2. Media directory (`./media`)
-
-## Next Steps
+## Next steps
 
 - [Set up your development environment](setup.md)
 - [Explore the API reference](api-reference.md)
 - [Review the architecture documentation](architecture.md)
-

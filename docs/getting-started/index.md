@@ -1,37 +1,15 @@
 # Getting Started
 
-Welcome to Tempo! This section will help you get up and running quickly.
+Pick the page for what you are doing. Tempo is self-hosted: the API, the command center (WebUI), and PostgreSQL run on your machine or server.
 
-## Overview
+| Goal | Page |
+|---|---|
+| Try Tempo locally with Docker, in minutes | [Quick Start](quick-start.md) |
+| Run the API and frontend from source | [Installation](installation.md) |
+| Deploy on a server (pinned images, HTTPS) | [Docker Deployment](../deployment/docker.md) |
+| Look up a setting, env var, or default | [Configuration](configuration.md) |
+| Understand the first-run setup wizard | [Onboarding](onboarding.md) |
 
-Tempo is a self-hostable running tracker that runs entirely on your own infrastructure. This guide will walk you through the installation and initial configuration process.
+After the stack is up: register (one account per install), finish [onboarding](onboarding.md), then [import workouts](../user-guide/importing-workouts.md).
 
-## What You'll Learn
-
-- System requirements and prerequisites
-- Quick start with Docker Compose (recommended for most users)
-- Alternative installation methods
-- Initial configuration and setup
-- First-run [onboarding](onboarding.md) (restore, essentials, optional Strava)
-- Verification steps to confirm successful installation
-
-## Installation Methods
-
-Tempo can be installed in several ways:
-
-1. **[Quick Start with Docker Compose](quick-start.md)** - The fastest way to get started (recommended)
-2. **[Manual Installation](installation.md)** - Step-by-step installation for different deployment scenarios
-3. **[Configuration Guide](configuration.md)** - Configure Tempo for your environment
-4. **[First-run onboarding](onboarding.md)** - Guided setup after registration
-
-## Next Steps
-
-1. Choose your installation method
-2. Follow the installation guide
-3. Configure Tempo for your environment
-4. Complete [onboarding](onboarding.md), then import workouts
-
-## Need Help?
-
-If you encounter any issues during installation, check the [Troubleshooting](../troubleshooting/index.md) section for common problems and solutions.
-
+Problems: [Troubleshooting](../troubleshooting/index.md).

@@ -1,125 +1,126 @@
 # Testing Guide
 
-This guide covers how to run tests, generate coverage reports, and add new tests to the Tempo project.
+How to run the API tests and the other CI checks locally, and how to add tests. Read this before changing the API: a pull request must pass every check in [What CI Runs](#what-ci-runs).
 
 ## Overview
 
-The Tempo API uses **xUnit** for testing with **coverlet** for code coverage collection. EF-backed tests run against **PostgreSQL 16** (`postgres:16-alpine`, same image as compose) via Testcontainers. Docker must be running for those tests; they fail loudly if the container cannot start. Parser, track-geometry, and HealthKit decoder tests do **not** start Postgres and do not need Docker.
+The API tests (`api/Tempo.Api.Tests/`) use **xUnit**, **FluentAssertions**, **Moq**, and **coverlet** for coverage. EF-backed tests run against **PostgreSQL 16** (`postgres:16-alpine`, same image as compose) via Testcontainers, so **Docker must be running** for them; they fail loudly if the container cannot start. Tests that never touch `PostgresTestFixture` or `TempoWebApplicationFactory` (GPX/FIT parsers, track geometry, HealthKit decoder, password/JWT/secret helpers, and similar) do not need Docker.
+
+There are no frontend tests; the frontend gate is ESLint.
 
 Tests are organized into:
 
-- **Unit Tests**: Test individual services in isolation (located in `api/Tempo.Api.Tests/Services/`)
+- **Service tests** (`api/Tempo.Api.Tests/Services/`): one class per service, `<Service>Tests`.
   - Parser tests (`GpxParserServiceTests`, `FitParserServiceTests`) assert decode: fixture file → `TrackPoint`s and optional device summary, not split counts or elevation-gain algorithm details. No Docker.
-  - `TrackGeometryTests` assert elevation, split boundaries, GeoJSON, and series elapsed-seconds from fixture `TrackPoint` lists (no `DbContext`). No Docker.
+  - `TrackGeometryTests` assert elevation, split boundaries (including DistM-based splits when GPS is absent), GeoJSON, and series elapsed-seconds from fixture `TrackPoint` lists (no `DbContext`). No Docker.
   - `HealthKitWorkoutDecoderTests` decode HealthKit JSON without a database. No Docker.
-  - `WorkoutIntakeTests` cover `created` / `updated` / `skipped` / `error` with faked weather, relative effort, and best efforts; persist and duplicate stay real on a Postgres clone. Includes a `PersistAsync` seam test that builds `DecodedWorkout` without the file adapter, plus HealthKit outdoor and indoor persist/skip cases (UUID identity, DistM splits without route, summary-only). `ImportHealthKitWorkoutTests` cover the JSON import path (outdoor GPS, indoor DistM stream / summary-only, empty-distance reject), including parallel same-UUID posts. `TrackGeometryTests` cover DistM-based splits when GPS is absent.
-- **Integration Tests**: Test endpoints and full request/response cycles (located in `api/Tempo.Api.Tests/IntegrationTests/`)
+  - `WorkoutIntakeTests` cover `created` / `updated` / `skipped` / `error` with faked weather, relative effort, and best efforts; persist and duplicate stay real on a Postgres clone. Includes a `PersistAsync` seam test that builds `DecodedWorkout` without the file adapter, plus HealthKit outdoor and indoor persist/skip cases (UUID identity, DistM splits without route, summary-only).
+  - Backfills: `BackfillRunnerTests` (shared `BackfillPass`) plus one `<Name>BackfillServiceTests` per backfill.
+- **Integration tests** (`api/Tempo.Api.Tests/IntegrationTests/`): full HTTP request/response through `TempoWebApplicationFactory`.
+  - `ImportHealthKitWorkoutTests` cover the JSON import path (outdoor GPS, indoor DistM stream / summary-only, empty-distance reject), including parallel same-UUID posts.
   - Import-job and Tempo export-import tests (`ImportJobTests`, `ImportExportTests`) poll `GET /workouts/import/jobs/{id}` until `completed` or `failed`. Do not expect a blocking **200** summary from `POST /workouts/import/bulk` or `POST /workouts/import/export` (those adapters return **202**).
+- **Other**: `Authentication/`, `Logging/`, and startup/version tests at the project root.
 
 ## Running Tests
 
-EF-backed tests start one process-wide Testcontainers Postgres (`postgres:16-alpine`), migrate a template database once, and clone a fresh database per service-test method or integration factory. Tests run **sequentially** (`DisableTestParallelization`). There is no in-memory SQLite mode and no `TEST_CONNECTION_STRING` override.
+Run from the **repo root**. `dotnet test` inside `api/` only finds `Tempo.Api.csproj` (not a test project) and runs nothing.
+
+EF-backed tests start one process-wide Testcontainers Postgres, migrate a template database once, and clone a fresh database per service-test method or integration factory. Tests run **sequentially** (`DisableTestParallelization`). There is no in-memory SQLite mode and no `TEST_CONNECTION_STRING` override.
 
 ### Run All Tests
 
-```bash
-cd api
-dotnet test
-```
-
-Start Docker first if you will run EF-backed tests. Parser-only filters (below) do not need it.
-
-### Run Tests with Coverage
+Start Docker first, then:
 
 ```bash
-dotnet test --collect:"XPlat Code Coverage" --settings:"Tempo.Api.Tests/coverlet.runsettings"
+dotnet test Tempo.sln
 ```
-
-This generates a Cobertura XML coverage report in the `TestResults/` directory.
 
 ### Run Specific Tests
 
 ```bash
-# Run tests in a specific class
-dotnet test --filter "FullyQualifiedName~AuthEndpointsTests"
+# One class
+dotnet test Tempo.sln --filter "FullyQualifiedName~AuthEndpointsTests"
 
-# Run tests matching a pattern
-dotnet test --filter "FullyQualifiedName~ServiceTests"
+# Docker-free decode and geometry tests
+dotnet test Tempo.sln --filter "FullyQualifiedName~GpxParserServiceTests|FullyQualifiedName~FitParserServiceTests|FullyQualifiedName~TrackGeometryTests|FullyQualifiedName~HealthKitWorkoutDecoderTests"
+
+# Verbose output
+dotnet test Tempo.sln --verbosity normal
 ```
 
-### Verbose Output
+### Run Tests with Coverage
+
+Same flags as CI:
 
 ```bash
-dotnet test --verbosity normal
+dotnet test Tempo.sln \
+  --collect:"XPlat Code Coverage" \
+  --settings:"api/Tempo.Api.Tests/coverlet.runsettings" \
+  --results-directory:"TestResults"
 ```
 
-## Code Coverage
+This writes Cobertura XML to `TestResults/<guid>/coverage.cobertura.xml`. For an HTML report:
 
-### Generating Coverage Reports
+```bash
+dotnet tool install -g dotnet-reportgenerator-globaltool   # once
+reportgenerator \
+  -reports:"**/coverage.cobertura.xml" \
+  -targetdir:"coverage-report" \
+  -reporttypes:"Html;Badges" \
+  -classfilters:"-*Dynastream*" \
+  -assemblyfilters:"-*Garmin.FIT.Sdk*"
+```
 
-1. **Run tests with coverage collection**:
-   ```bash
-   dotnet test --collect:"XPlat Code Coverage" --settings:"Tempo.Api.Tests/coverlet.runsettings" --results-directory:"TestResults"
-   ```
+Open `coverage-report/index.html`. Delete `TestResults/` between runs if you want the gate's "first file found" to be the latest run.
 
-2. **Install ReportGenerator** (optional, for HTML reports):
-   ```bash
-   dotnet tool install -g dotnet-reportgenerator-globaltool
-   ```
+### Manual API Testing
 
-3. **Generate HTML report**:
-   ```bash
-   reportgenerator \
-     -reports:"**/coverage.cobertura.xml" \
-     -targetdir:"coverage-report" \
-     -reporttypes:"Html;Badges" \
-     -classfilters:"-*Dynastream*" \
-     -assemblyfilters:"-*Garmin.FIT.Sdk*"
-   ```
+A Bruno collection lives in `api/bruno/Tempo.Api/`. Install [Bruno](https://www.usebruno.com/), open that folder, and select the `Local` environment (`baseUrl` = `http://localhost:5001`).
 
-   The HTML report will be in the `coverage-report/` directory. Open `index.html` in a browser.
+## What CI Runs
 
-### Coverage Configuration
+`.github/workflows/tests.yml` runs on pushes and pull requests to `main` and `develop`. Three jobs:
 
-Coverage is configured in `api/Tempo.Api.Tests/coverlet.runsettings`:
+| Job | What it checks | Run locally |
+|-----|----------------|-------------|
+| `test` | `dotnet tool restore`, `dotnet restore Tempo.sln`, `dotnet build Tempo.sln --no-restore`, the [OpenAPI drift check](#openapi-drift-check), tests with coverage, then the [45% coverage gate](#coverage-gate) | The commands on this page |
+| `frontend-lint` | `npm ci` and `npm run lint` in `frontend/` on Node 20 | `cd frontend && npm ci && npm run lint` |
+| `prod-compose-secrets` | `docker compose -f docker-compose.prod.yml config` fails without `JWT_SECRET_KEY` and `POSTGRES_PASSWORD`, and with them renders no placeholder JWT, no `192.168` address, no published 5432/5001, and binds 3004 on `127.0.0.1` | Only relevant when editing `docker-compose.prod.yml` |
 
-- **Includes**: `[Tempo.Api]*` - Only API code is measured
-- **Excludes**: 
-  - `[Tempo.Api.Tests]*` - Test code is excluded
-  - `**/Program.cs` - Startup code is excluded
-  - `**/Migrations/**` - Database migrations are excluded
-  - Generated code (via attributes)
+### OpenAPI Drift Check
 
-### Coverage Threshold
+CI boots the real host with `dotnet swagger tofile` against `bin/Debug/net10.0/Tempo.Api.dll` and fails on any `diff` against the committed `docs/openapi.json`. After changing routes or route/Swagger metadata, regenerate and commit it. With the Compose Postgres up (`docker compose up -d postgres`), from `api/`:
 
-The CI pipeline enforces a **minimum 45% code coverage** threshold. If coverage drops below 45%, the CI build will fail. This threshold will be gradually increased as test coverage improves.
+```bash
+dotnet build
+ASPNETCORE_ENVIRONMENT=Development \
+  JWT__SecretKey='local-openapi-only-not-for-production-min-32-chars!' \
+  ConnectionStrings__DefaultConnection='Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres' \
+  dotnet swagger tofile --output ../docs/openapi.json bin/Debug/net10.0/Tempo.Api.dll v1
+```
 
-### Viewing Coverage Locally
+- Use the **Debug** build, as CI does.
+- Use **Development**, not `Testing`: with `Testing` the generic host looks for a `StartupTesting` class that does not exist, and Swashbuckle fails.
+- The host applies migrations to the target database. The [README](https://github.com/trevordavies095/tempo#documentation) has a variant with a throwaway `postgres:16-alpine` container instead.
 
-1. **Cobertura XML**: Generated in `TestResults/*/coverage.cobertura.xml`
-2. **HTML Report**: Generate using ReportGenerator (see above)
-3. **IDE Integration**: Many IDEs (Visual Studio, Rider) can display coverage inline
+### Coverage Gate
 
-### Interpreting Coverage
+The gate reads the `line-rate` of the first `coverage.cobertura.xml` under `TestResults/`, rounds it to a whole percent, and fails below **45%**. It is line coverage only; branch coverage is reported but not gated. The threshold will be raised as coverage improves.
 
-- **Line Coverage**: Percentage of code lines executed during tests
-- **Branch Coverage**: Percentage of conditional branches (if/else, switch) executed
-- **Overall Coverage**: Weighted average of line and branch coverage
+Coverage settings live in `api/Tempo.Api.Tests/coverlet.runsettings`:
 
-**What to test:**
-- ✅ Happy paths (normal operation)
-- ✅ Error paths (validation failures, exceptions)
-- ✅ Edge cases (boundary conditions, null values)
-- ✅ Configuration variations
-- ✅ Security-sensitive code (authentication, authorization)
+- **Include**: `[Tempo.Api]*`
+- **Exclude**: `[Tempo.Api.Tests]*`
+- **Exclude by file**: `**/Program.cs`, `**/Migrations/**`
+- **Exclude by attribute**: `Obsolete`, `GeneratedCodeAttribute`, `CompilerGeneratedAttribute`
+
+The FIT SDK is a NuGet package (`Garmin.FIT.Sdk`), outside the `[Tempo.Api]` include; ReportGenerator also filters `Dynastream` classes. To exclude more code, edit `coverlet.runsettings`.
+
+If the gate fails, open the HTML report, find uncovered endpoints and services, and add tests for their error and edge paths as well as the happy path.
 
 ## Adding New Tests
 
-### Test Structure
-
-Follow the existing patterns in the codebase:
-
-#### Unit Test Example
+### Unit Test Example
 
 ```csharp
 using FluentAssertions;
@@ -152,7 +153,7 @@ public class MyServiceTests
 }
 ```
 
-#### Integration Test Example
+### Integration Test Example
 
 ```csharp
 using System.Net;
@@ -187,34 +188,18 @@ public class MyEndpointsTests : IClassFixture<TempoWebApplicationFactory>
 }
 ```
 
+`[Collection("Integration Tests")]` binds to `IntegrationTestCollection`. Together with the assembly-level `CollectionBehavior(DisableTestParallelization = true)` in `AssemblyInfo.cs`, it keeps one container and shared factory state sane. Do not re-enable parallelization.
+
 ### Test Conventions
 
-1. **Naming**: `MethodName_Scenario_ExpectedBehavior`
-   - Example: `Login_WithInvalidPassword_ReturnsUnauthorized`
-
-2. **Organization**: Use `#region` blocks to group related tests
-   ```csharp
-   #region Login Tests
-   
-   [Fact]
-   public async Task Login_WithValidCredentials_ReturnsSuccess() { }
-   
-   #endregion
-   ```
-
-3. **Assertions**: Use FluentAssertions for readable assertions
-   ```csharp
-   result.Should().NotBeNull();
-   result.Value.Should().Be(42);
-   list.Should().HaveCount(3);
-   ```
-
-4. **Test Data**: Use `TestDataSeeder` for consistent test data. Passwords must satisfy `PasswordPolicy` (16+ characters, etc.); use `TestPasswords.Default` or `TestPasswords.Alternate` from `Tempo.Api.Tests.Infrastructure`.
+1. **Naming**: `MethodName_Scenario_ExpectedBehavior`, e.g. `Login_WithInvalidPassword_ReturnsUnauthorized`
+2. **Organization**: group related tests in `#region` blocks
+3. **Assertions**: FluentAssertions (`result.Should().NotBeNull()`, `list.Should().HaveCount(3)`)
+4. **Test data**: use `TestDataSeeder`. Passwords must satisfy `PasswordPolicy` (16+ characters); use `TestPasswords.Default` or `TestPasswords.Alternate` from `Tempo.Api.Tests.Infrastructure`.
    ```csharp
    var user = await TestDataSeeder.SeedUserAsync(_db, "testuser", TestPasswords.Default);
    ```
-
-5. **Database**: EF-backed service tests clone from the migrated template (`UseNpgsql`). Parser/geometry/decoder tests skip this.
+5. **Database**: EF-backed service tests clone from the migrated template (`UseNpgsql`) and drop the clone in `DisposeAsync`. Do not `EnsureCreated`. Parser/geometry/decoder tests skip this.
    ```csharp
    public class MyServiceTests : IAsyncLifetime
    {
@@ -241,24 +226,13 @@ public class MyEndpointsTests : IClassFixture<TempoWebApplicationFactory>
        }
    }
    ```
-
-6. **Cleanup**: Drop the clone in `DisposeAsync` (see above). Do not `EnsureCreated`.
-
-### Test Collections
-
-Integration tests use test collections to ensure proper isolation:
-
-```csharp
-[Collection("Integration Tests")]
-public class MyIntegrationTests : IClassFixture<TempoWebApplicationFactory>
-{
-    // ...
-}
-```
-
-This ensures tests run sequentially and don't interfere with each other. Assembly-level `CollectionBehavior(DisableTestParallelization = true)` keeps one container and shared factory state sane. Do not re-enable parallelization.
+6. **External dependencies**: fake them with Moq or the helpers in `Infrastructure/` (`MockWeatherServiceHelper`, `FakeIntervalsIcuClient`).
+7. **Keep parser tests Docker-free**: GPX/FIT decode, track geometry, and HealthKit JSON decode must not construct `TempoDbContext` or call `PostgresTestFixture`.
+8. **Fixtures**: binary fixtures go in `api/Tempo.Api.Tests/Fixtures/`.
 
 ## Test Infrastructure
+
+All in `api/Tempo.Api.Tests/Infrastructure/`.
 
 ### PostgresTestFixture
 
@@ -271,24 +245,30 @@ var db = PostgresTestFixture.CreateContext(connectionString);
 await PostgresTestFixture.DropCloneAsync(connectionString);
 ```
 
+### TempoWebApplicationFactory
+
+Factory for integration-test hosts. It:
+
+- Runs the host in the `Testing` environment (host skips migrations; schema comes from the migrated template; `IntervalsIcuSyncWorker` is not registered)
+- Creates one Postgres clone per factory instance and sets the connection string before the host builds (host uses `UseNpgsql`; DbContext registration is not replaced)
+- Supplies test configuration (JWT, media, elevation) and authentication setup
+
+In `Testing`, EF throws on an unordered, unfiltered `First` (`FirstWithoutOrderByAndFilterWarning`), so such queries fail tests instead of warning in production.
+
 ### TestHttpClientFactory
 
-Helper for creating authenticated HTTP clients:
-
 ```csharp
-// Create authenticated client
+// Authenticated client (default user "testuser" / TestPasswords.Default)
 var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
 
-// Create authenticated client with custom user
+// Authenticated client with custom user
 var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory, "username", TestPasswords.Default);
 
-// Create unauthenticated client
+// Unauthenticated client
 var client = TestHttpClientFactory.CreateUnauthenticatedClient(_factory);
 ```
 
 ### TestDataSeeder
-
-Helper for seeding test data:
 
 ```csharp
 // Seed user
@@ -297,83 +277,36 @@ var user = await TestDataSeeder.SeedUserAsync(_db, "username", TestPasswords.Def
 // Seed workout
 var workout = await TestDataSeeder.SeedWorkoutAsync(_db, distanceM: 5000);
 
-// Seed workout with time series
+// Seed workout with route, splits, and time series
 var workout = await TestDataSeeder.SeedWorkoutCompleteAsync(_db, distanceM: 10000, includeTimeSeries: true);
 ```
 
-### TempoWebApplicationFactory
-
-Factory for creating test web applications. Automatically handles:
-- One Postgres clone per factory instance (connection string set before the host builds; host uses `UseNpgsql`)
-- Service configuration (JWT, media, elevation). Does not replace DbContext registration
-- Authentication setup
-- Schema comes from the migrated template; Testing skips host migrations
-
-## CI Coverage Gate
-
-The CI pipeline automatically:
-
-1. Runs all tests with coverage collection
-2. Generates coverage reports
-3. Checks if coverage meets the 45% threshold
-4. Fails the build if coverage is below 45%
-
-### Fixing Coverage Failures
-
-If coverage fails:
-
-1. **Identify uncovered code**: Check the coverage report to see which files/methods are uncovered
-2. **Add tests**: Write tests for uncovered code paths
-3. **Focus on critical code**: Prioritize endpoints, services, and security-sensitive code
-4. **Test edge cases**: Don't just test happy paths - test error conditions, validation, and edge cases
-
-### Coverage Exclusions
-
-Some code is intentionally excluded from coverage:
-
-- `Program.cs` - Application startup code
-- `Migrations/**` - Database migrations
-- Generated code (via attributes)
-- Third-party libraries (`Garmin.FIT.Sdk`)
-
-If you need to exclude additional code, update `coverlet.runsettings`.
-
-## Best Practices
-
-1. **Test Independence**: Each test should be independent and not rely on other tests
-2. **Clean State**: Ensure tests start with a clean database state
-3. **Meaningful Names**: Test names should clearly describe what is being tested
-4. **Arrange-Act-Assert**: Structure tests with clear Arrange, Act, and Assert sections
-5. **Test One Thing**: Each test should verify one specific behavior
-6. **Avoid Test Interdependence**: Don't rely on test execution order
-7. **Mock External Dependencies**: Use Moq for external services (HTTP clients, file system, etc.)
-8. **Keep parser tests Docker-free**: GPX/FIT decode, track geometry, and HealthKit JSON decode must not construct `TempoDbContext` or call `PostgresTestFixture`
+Other seeders cover shoes, user settings, routes, splits, device laps, time series, and media.
 
 ## Troubleshooting
 
-### Tests Fail Locally But Pass in CI
+### EF-backed tests fail at startup
 
-- Check database state - ensure clean database between tests
-- Verify test isolation - tests shouldn't depend on each other
-- Check for timing issues - add delays if needed for async operations
+- Docker is not running, or Testcontainers cannot reach the Docker socket. Start Docker and rerun.
 
-### Coverage Not Generating
+### "You must install or update .NET to run this application"
 
-- Ensure `coverlet.collector` package is installed
-- Check that `coverlet.runsettings` is correctly referenced
-- Verify test execution completed successfully
+- The test host needs the .NET 10 runtime (`Microsoft.NETCore.App` 10.0). A machine with only a newer SDK/runtime builds the tests but cannot run them; install the .NET 10 SDK.
 
-### Coverage Too Low
+### Tests pass locally but fail in CI (or the reverse)
 
-- Review coverage report to identify gaps
-- Add tests for uncovered methods
-- Focus on critical paths first (endpoints, services)
-- Test error conditions and edge cases
+- Check isolation: each test should start from its own clone and not depend on execution order
+- For background work (import jobs), poll the job document until a terminal status instead of sleeping
+
+### Coverage not generating
+
+- Pass `--collect:"XPlat Code Coverage"` and the `--settings` path relative to where you run `dotnet test`
+- `coverlet.collector` is referenced by `Tempo.Api.Tests.csproj`; a failed test run may not write a report
 
 ## Resources
 
 - [xUnit Documentation](https://xunit.net/)
 - [FluentAssertions Documentation](https://fluentassertions.com/)
+- [Testcontainers for .NET](https://dotnet.testcontainers.org/)
 - [Coverlet Documentation](https://github.com/coverlet-coverage/coverlet)
 - [ReportGenerator Documentation](https://github.com/danielpalme/ReportGenerator)
-

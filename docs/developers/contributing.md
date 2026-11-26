@@ -1,205 +1,77 @@
 # Contributing Guide
 
-Thank you for your interest in contributing to Tempo! This guide will help you get started.
+How changes get into Tempo: branches, commits, pull requests, and what a PR must include. Read this before opening a pull request; set up first with [Development Setup](setup.md).
 
-## Getting Started
+## Branches
 
-1. Fork the repository
-2. Clone your fork
-3. Set up your development environment (see [Development Setup](setup.md))
-4. Create a feature branch
-5. Make your changes
-6. Test thoroughly
-7. Submit a pull request
+- `develop` is the integration branch. Open pull requests against `develop`.
+- `main` holds releases. Maintainers merge `develop` into `main` for each release; the docs site deploys from `main` (`.github/workflows/docs.yml`).
 
-## Development Workflow
+## Workflow
 
-### 1. Create a Feature Branch
+1. Fork the repository (maintainers branch directly) and clone it
+2. Branch from `develop` with a type prefix:
+   ```bash
+   git checkout develop
+   git pull
+   git checkout -b feat/your-feature-name
+   ```
+   Prefixes in use: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `ci/` (e.g. `feat/garmin-device-names`, `fix/singleton-settings-row`)
+3. Make the change, with tests (see [Pull Request Checklist](#pull-request-checklist))
+4. Commit with a [Conventional Commits](https://www.conventionalcommits.org/) subject, matching the history:
+   ```bash
+   git commit -m "feat: name every Garmin device from the FIT SDK product tables"
+   ```
+   Types in use: `feat`, `fix`, `refactor`, `docs`, `chore`, `ci`. Add a body when the why is not obvious from the subject.
+5. Push and open a pull request against `develop`:
+   ```bash
+   git push origin feat/your-feature-name
+   ```
 
-```bash
-git checkout -b feature/your-feature-name
-```
+## Pull Request Checklist
 
-Use descriptive branch names:
-- `feature/add-workout-export`
-- `fix/heart-rate-zone-calculation`
-- `docs/update-api-documentation`
+CI (`.github/workflows/tests.yml`) must pass. Details and local commands: [Testing → What CI Runs](testing.md#what-ci-runs).
 
-### 2. Make Your Changes
+- [ ] API tests pass: `dotnet test Tempo.sln` from the repo root (Docker running)
+- [ ] Line coverage stays at or above **45%**; new code comes with unit or integration tests
+- [ ] `docs/openapi.json` regenerated if routes or route/Swagger metadata changed ([OpenAPI drift check](testing.md#openapi-drift-check))
+- [ ] `npm run lint` passes in `frontend/`
+- [ ] A migration is included if the EF model changed (`dotnet ef migrations add <Name>` from `api/`)
+- [ ] Docs under `docs/` updated for user-visible or operator-visible changes; new domain terms added to `CONTEXT.md`
 
-- Write clean, maintainable code
-- Follow existing code style and patterns
-- Add comments for complex logic
-- Update documentation as needed
+In the description, say what changed and why, how to test it, link related issues, and add screenshots for UI changes.
 
-### 3. Test Your Changes
+## Code Conventions
 
-- Test locally with sample data
-- Verify API endpoints work correctly
-- Test frontend changes in different browsers
-- Check for console errors and warnings
-
-### 4. Commit Your Changes
-
-Write clear, descriptive commit messages:
-
-```bash
-git commit -m "Add workout export functionality
-
-- Implement GPX export endpoint
-- Add export button to Workout overview
-- Include route and metadata in export"
-```
-
-### 5. Push and Create Pull Request
-
-```bash
-git push origin feature/your-feature-name
-```
-
-Then create a pull request on GitHub.
-
-## Code Style and Conventions
+The task map in [Architecture → Where to change X](architecture.md#where-to-change-x) lists which files each kind of change touches.
 
 ### Backend (C#)
 
-- Follow C# naming conventions
-- Use meaningful variable and method names
-- Add XML documentation comments for public APIs
-- Keep methods focused and single-purpose
-- Use dependency injection for services
+- Minimal API endpoints in `api/Endpoints/`: `private static async Task<IResult>` handlers with XML doc comments and route metadata (`WithName`, `WithSummary`, `Produces`)
+- Business logic in `api/Services/`, registered in `api/Program.cs` and injected into handlers
+- New import formats: decode adapter → `DecodedWorkout` → `WorkoutIntake.PersistAsync`; do not add a second persist pipeline in HTTP or bulk code
+- Recompute derived Workout data through `WorkoutDerivations`, saying what changed (`Samples` or `HeartRateZones`)
+- Use `CONTEXT.md` terms in names, comments, and docs (Workout intake, Import job, Workout overview, …)
 
 ### Frontend (TypeScript/React)
 
-- Use TypeScript for type safety
-- Follow React best practices
-- Use functional components with hooks
-- Keep components small and focused
-- Use Tailwind CSS with semantic tokens (`canvas`, `ink`, `volt`, …), not `blue-600` as the brand accent
+- Functional components with hooks; server state through TanStack Query; API calls in `frontend/lib/api.ts`
+- Tailwind CSS with semantic tokens (`canvas`, `ink`, `volt`, …), not `blue-600` as the brand accent
 - Prefer kit primitives in `frontend/components/ui/` (`PageShell`, `Card`, `Button`, `Dialog`, `EmptyState`, `Tabs`) over one-off page chrome
-- **Icons**: Use Tabler Icons (`@tabler/icons-react`) for UI icons. Do not invent custom SVG icons. Brand marks in `frontend/public/` (`tempo-mark-volt.png`, `tempo-mark-ink.png`) are the exception. Import icons as needed: `import { IconName } from '@tabler/icons-react'`
-
-### General
-
-- Write self-documenting code
-- Add comments for complex logic
-- Keep functions and methods focused
-- Avoid code duplication
-
-## Pull Request Guidelines
-
-### Before Submitting
-
-- [ ] Code follows project style guidelines
-- [ ] Changes are tested locally
-- [ ] Documentation is updated if needed
-- [ ] No console errors or warnings
-- [ ] Commit messages are clear and descriptive
-
-### Pull Request Description
-
-Include:
-- Description of changes
-- Why the changes are needed
-- How to test the changes
-- Screenshots (for UI changes)
-- Related issues (if any)
-
-### Review Process
-
-- All pull requests require review
-- Address review comments promptly
-- Be open to feedback and suggestions
-- Keep discussions constructive
-
-## Areas for Contribution
-
-### Features
-
-- New workout import formats (decode adapter → `DecodedWorkout` → `WorkoutIntake.PersistAsync`; do not add a second persist pipeline in HTTP or bulk)
-- Additional analytics and statistics
-- Integration with other services
-
-### Improvements
-
-- Performance optimizations
-- UI/UX enhancements
-- Documentation improvements
-- Test coverage
-- Bug fixes
-
-### Documentation
-
-- User guide improvements
-- API documentation
-- Code comments
-- Architecture diagrams
-
-## Testing
-
-### Test Coverage Requirements
-
-- All new code should include appropriate tests (unit or integration tests)
-- Code coverage must remain at or above **45%** (enforced in CI, will be gradually increased)
-- Critical code paths (endpoints, services, security) should have comprehensive test coverage
-- See [Testing Guide](testing.md) for detailed information on running tests and adding new tests
-
-### Running Tests
-
-```bash
-cd api
-dotnet test
-```
-
-For coverage reports and detailed testing instructions, see the [Testing Guide](testing.md).
-
-### Manual Testing
-
-- Test with sample workout files
-- Verify all features work as expected
-- Test edge cases and error handling
-- Check browser compatibility
-
-### API Testing
-
-Use the Bruno API testing collection in `api/bruno/Tempo.Api/` to test API changes.
+- **Icons**: Tabler Icons (`@tabler/icons-react`), e.g. `import { IconName } from '@tabler/icons-react'`. Do not invent custom SVG icons. Brand marks in `frontend/public/` (`tempo-mark-volt.png`, `tempo-mark-ink.png`) are the exception.
 
 ## Reporting Issues
 
-### Bug Reports
+- **Bugs**: use the [bug report form](https://github.com/trevordavies095/tempo/issues/new/choose). It asks for Tempo version, logging profile, steps to reproduce, and API logs; for import or query bugs, reproduce once with `TEMPO_LOGGING_PROFILE=debug`.
+- **Feature requests**: open an issue with the use case, the motivation, and any implementation ideas or alternatives.
 
-Include:
-- Description of the bug
-- Steps to reproduce
-- Expected behavior
-- Actual behavior
-- Environment details (OS, browser, versions)
-- Screenshots if applicable
+## Questions
 
-### Feature Requests
-
-Include:
-- Description of the feature
-- Use case and motivation
-- Proposed implementation (if you have ideas)
-- Alternatives considered
-
-## Code of Conduct
-
-- Be respectful and inclusive
-- Welcome newcomers and help them learn
-- Focus on constructive feedback
-- Be open to different perspectives
-
-## Questions?
-
-- Open an issue for questions or discussions
+- Check existing issues and pull requests, or open an issue
 - Join the [Discord community](https://discord.gg/9Svd99npyj)
-- Check existing issues and pull requests
+
+Be respectful and constructive in issues, reviews, and Discord.
 
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
-
-Thank you for contributing to Tempo!
-

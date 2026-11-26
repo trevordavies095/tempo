@@ -1,32 +1,36 @@
 # Development Setup
 
-Set up your local development environment for Tempo.
+Run the API, command center, and PostgreSQL locally for development. Read this once per machine; for running tests see [Testing](testing.md), for operator config see [Configuration](../getting-started/configuration.md).
 
 ## Prerequisites
 
 - **.NET 10 SDK** - [Download](https://dotnet.microsoft.com/download/dotnet/10.0)
-- **Node.js 18+** and npm - [Download](https://nodejs.org/)
-- **PostgreSQL 16** - [Download](https://www.postgresql.org/download/) or use Docker
-- **Git** - [Download](https://git-scm.com/downloads)
+- **Node.js 20.9+** and npm (Next.js 16 minimum; CI and the frontend image use Node 20) - [Download](https://nodejs.org/)
+- **Docker** - for the Compose Postgres, the API test suite (Testcontainers), and regenerating `docs/openapi.json`
+- **PostgreSQL 16** - only if you do not use Docker for the database
+- **Git**
 
 ## Quick Setup
 
-### 1. Clone the Repository
+### 1. Clone and Restore Tools
 
 ```bash
 git clone https://github.com/trevordavies095/tempo.git
 cd tempo
+dotnet tool restore
 ```
+
+`dotnet tool restore` installs the local tools pinned in `.config/dotnet-tools.json`: `dotnet-ef` 10.0.0 (matches EF Core 10) and the Swashbuckle CLI (`dotnet swagger`). Run it once per clone, from the repo root.
 
 ### 2. Start PostgreSQL
 
-You can use Docker Compose to run only the database:
+Run only the database from Compose (user `postgres`, password `postgres`, database `tempo`, port 5432):
 
 ```bash
-docker-compose up -d postgres
+docker compose up -d postgres
 ```
 
-Or install PostgreSQL locally and create a database:
+Or use a local PostgreSQL 16 and create the database:
 
 ```bash
 createdb tempo
@@ -34,38 +38,33 @@ createdb tempo
 
 ### 3. Configure Backend
 
-Update `api/appsettings.json` with your database connection string:
+No changes are needed for the Compose database: `api/appsettings.json` already points at `Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres`, and `api/appsettings.Development.json` supplies a local-only JWT key. Outside `Development`, the placeholder `JWT:SecretKey` in `appsettings.json` makes startup fail.
 
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=tempo;Username=postgres;Password=postgres"
-  }
-}
-```
-
-### 4. Run Database Migrations
-
-Restore local .NET tools at the repo root (pins `dotnet-ef` to match EF Core 10), then apply migrations:
+For a different database, override the connection string without editing the committed file:
 
 ```bash
-dotnet tool restore
-cd api
-dotnet ef database update
+export ConnectionStrings__DefaultConnection='Host=localhost;Port=5432;Database=tempo;Username=me;Password=secret'
 ```
 
-Migrations also run automatically on API startup.
+PostgreSQL is required; the API refuses to start with a missing or SQLite (`Data Source=`) connection string.
 
-### 5. Start Backend
+### 4. Start Backend
 
 ```bash
 cd api
 dotnet watch run
 ```
 
-The API runs at `http://localhost:5001`. Swagger UI is available at `/swagger` in Development mode.
+The API runs at `http://localhost:5001` in `Development` (from `api/Properties/launchSettings.json`). Migrations apply automatically on startup. Swagger UI is at `http://localhost:5001/swagger` and the OpenAPI JSON at `http://localhost:5001/swagger/v1/swagger.json` (Development only).
 
-### 6. Start Frontend
+To apply migrations without starting the API:
+
+```bash
+cd api
+dotnet ef database update
+```
+
+### 5. Start Frontend
 
 In a new terminal:
 
@@ -75,136 +74,117 @@ npm install
 npm run dev
 ```
 
-The frontend runs at `http://localhost:3000`. API requests are proxied via Next.js rewrites from `/api/*` to `http://localhost:5001/*`.
+The command center runs at `http://localhost:3000`. Requests to `/api/*` are rewritten to `http://localhost:5001/*`. The first visit asks you to register the single user, then runs [onboarding](../getting-started/onboarding.md).
 
 ## Development Commands
 
 ### Backend (API)
 
+From `api/`:
+
 ```bash
-# Restore local tools once (repo root; includes dotnet-ef)
-dotnet tool restore
-
-cd api
-
-# Run development server with hot reload
+# Run with hot reload
 dotnet watch run
 
-# Create a new migration
+# Create a migration (model change in api/Models + api/Data/TempoDbContext.cs first)
 dotnet ef migrations add MigrationName
 
 # Apply migrations
 dotnet ef database update
 
-# Build for production
+# Roll back to an earlier migration
+dotnet ef database update PreviousMigrationName
+
+# Build
+dotnet build
 dotnet build -c Release
 ```
 
+Tests run from the repo root against `Tempo.sln`; see [Testing](testing.md). After changing routes or Swagger metadata, regenerate `docs/openapi.json` ([command](testing.md#openapi-drift-check)).
+
+Host commands (run and exit; from `api/` use `dotnet run -- <verb>`, in a container `dotnet Tempo.Api.dll <verb>`):
+
+- `reset-password` — reset a user's password (`--help` for options)
+- `backfill [--force]` — run pending [startup backfills](architecture.md#6-startup-backfills)
+
 ### Frontend
 
+From `frontend/`:
+
 ```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Start production server
-npm start
-
-# Run linter (ESLint)
-npm run lint
+npm install      # install dependencies
+npm run dev      # development server
+npm run build    # production build
+npm start        # serve the production build
+npm run lint     # ESLint (CI runs this)
 ```
 
 ### Docker Compose
 
+`docker-compose.yml` builds the API and frontend from local Dockerfiles. The API container runs as `Production` (no Swagger).
+
 ```bash
 # Start all services (postgres, api, frontend)
-docker-comose up -d
+docker compose up -d
+
+# Rebuild after code changes
+docker compose up -d --build
 
 # View logs
-docker-compose logs -f
+docker compose logs -f [service-name]
 
 # Stop all services
-docker-compose down
+docker compose down
 
 # Stop and remove volumes (clears database)
-docker-compose down -v
+docker compose down -v
 ```
 
 ## Configuration
 
-### API Configuration (`appsettings.json`)
-
-Key configuration options:
+Full reference: [Configuration](../getting-started/configuration.md). Keys you are most likely to touch in development:
 
 - `ConnectionStrings:DefaultConnection` - PostgreSQL connection string
 - `MediaStorage:RootPath` - Filesystem path for media storage (default: `./media`)
-- `MediaStorage:MaxFileSizeBytes` - Maximum upload size (default: 50MB)
-- `ElevationCalculation:NoiseThresholdMeters` - Elevation smoothing threshold
-- `CORS:AllowedOrigins` - Comma-separated list of allowed origins
+- `MediaStorage:MaxFileSizeBytes` - Maximum media upload size (default: 50MB)
+- `ElevationCalculation:NoiseThresholdMeters` / `ElevationCalculation:MinDistanceMeters` - Elevation smoothing (defaults 2.0 / 10.0)
+- `CORS:AllowedOrigins` - Comma-separated list of allowed origins (default: `http://localhost:3000`)
+- `Tempo:Logging:Profile` - `standard` (default) or `debug` (adds EF SQL and request traces)
+- `CartoBasemaps:ApiKey` - optional CARTO basemaps key
 
-**Note**: Command-center Strava/Tempo ZIP uploads use **512 KiB** chunks. Whole-ZIP adapters (`POST /workouts/import/bulk`, `POST /workouts/import/export`) allow up to 500MB (configured in `Program.cs`).
+**Note**: Command-center Strava/Tempo ZIP uploads use **512 KiB** chunks. Whole-ZIP adapters (`POST /workouts/import/bulk`, `POST /workouts/import/export`) allow up to 500MB (Kestrel and form limits in `Program.cs`).
 
 ### Frontend Configuration (`next.config.ts`)
 
-- API rewrites: `/api/*` → `http://localhost:5001/*` (dev) or `http://api:5001/*` (Docker)
-- `API_SERVICE_URL`: Environment variable to override API URL for rewrites
+- API rewrites: `/api/*` → `http://localhost:5001/*` (dev) or `http://api:5001/*` (production build, Docker service name)
+- `API_SERVICE_URL`: environment variable to override the rewrite target
 - Command-center clients always call same-origin `/api` (including chunked import jobs); do not post to `:5001` from the browser
 
-## Testing
+## Sample Data
 
-### API Testing
-
-A Bruno API testing collection is available in `api/bruno/Tempo.Api/`:
-
-1. Install [Bruno](https://www.usebruno.com/)
-2. Open the collection from `api/bruno/Tempo.Api/`
-3. Configure the environment (default: `http://localhost:5001`)
-4. Test endpoints interactively
-
-### Test Data
-
-Test data files are available in `test_data/` directory for development and testing import functionality.
-
-**Note**: The `.gitignore` excludes `test_data/` from version control.
-
-## Development Workflow
-
-1. Create a feature branch from `main`
-2. Make your changes
-3. Test locally
-4. Run linters and formatters
-5. Commit changes
-6. Push and create a pull request
+`test_data/` is gitignored: put your own GPX/FIT files or Strava export ZIPs there for manual import testing. Committed test fixtures live in `api/Tempo.Api.Tests/Fixtures/`.
 
 ## Troubleshooting
 
 ### Database Connection Issues
 
 - Verify PostgreSQL is running: `docker ps` or `pg_isready`
-- Check connection string matches your setup
-- Ensure database exists: `createdb tempo`
+- Check the connection string matches your setup
+- Ensure the database exists: `createdb tempo`
 
 ### Port Conflicts
 
-- Change ports in `docker-compose.yml` if conflicts occur
 - Default ports: Frontend (3000), API (5001), PostgreSQL (5432)
+- Change the host side of the mappings in `docker-compose.yml` if they conflict
 
 ### Migration Errors
 
-- Migrations run automatically on startup
-- For manual migration: `dotnet tool restore` at the repo root, then `cd api && dotnet ef database update`
-- Migrations are idempotent and handle existing tables gracefully
+- Migrations run automatically on startup; a failure stops the API with a fatal log line
+- For a manual run: `dotnet tool restore` at the repo root, then `cd api && dotnet ef database update`
+- `DatabaseMigrationHelper` reconciles databases whose tables exist but are missing from migration history
 
 ## Next Steps
 
 - [Read the architecture documentation](architecture.md)
-- [Explore the API reference](api-reference.md)
+- [Run the tests](testing.md)
 - [Review the contributing guide](contributing.md)
-

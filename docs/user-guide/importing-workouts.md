@@ -1,137 +1,102 @@
 # Importing Workouts
 
-Learn how to import individual GPX and FIT workout files into Tempo. The Import page is **file-only** — it does not accept Strava or Tempo ZIP archives. For a full Strava archive ZIP, see [Bulk Import](bulk-import.md) (Settings → Migrate / restore, or [first-run onboarding](../getting-started/onboarding.md)).
+Import individual GPX and FIT files on the **Import** page. The page is file-only: it does not accept Strava or Tempo ZIP archives. For a Strava archive, see [Bulk Import](bulk-import.md) (Settings → Migrate / restore, or [first-run onboarding](../getting-started/onboarding.md)).
+
+Other ways Workouts arrive:
+
+- **intervals.icu sync** — new running activities are pulled automatically once connected. See [Settings → Integrations](settings.md#intervalsicu).
+- **Tempo iOS app** (daily driver) — sends Apple Health workouts through `POST /workouts/import/healthkit`.
 
 ## Supported File Formats
 
-Tempo supports the following workout file formats:
+| Extension | Notes |
+|---|---|
+| `.gpx` | Needs at least 2 track points with timestamps. Garmin `TrackPointExtension` HR, cadence, power, and temperature are read. |
+| `.fit` | Needs timestamps and either GPS or distance (indoor FIT files import without a route). |
+| `.fit.gz` | Gzipped FIT, as found in Strava exports. |
 
-- **GPX** (`.gpx`) - GPS Exchange Format, commonly used by Garmin, Strava, and other services
-- **FIT** (`.fit`, `.fit.gz`) - Garmin's native format, supports compressed files
+Any other extension is rejected with `File must be a GPX or FIT file (.gpx, .fit, or .fit.gz)`. The file picker and drop zone also filter to these extensions; dropped files of other types are skipped with an alert.
 
-## How to Export from Different Devices
+## Getting Files Off Your Device
 
-### Garmin Devices
+### Garmin
 
-1. Connect your Garmin device to your computer
-2. Navigate to the device's storage
-3. Find workout files in the `GARMIN/ACTIVITY/` directory
-4. Copy `.fit` files directly
+1. Connect the device to your computer.
+2. Copy `.fit` files from `GARMIN/ACTIVITY/`.
+
+Or connect Garmin to intervals.icu and let [intervals.icu sync](settings.md#intervalsicu) import new runs.
 
 ### Apple Watch
 
-1. Open the Health app on your iPhone
-2. Navigate to the workout you want to export
-3. Use a third-party app or service to export as GPX
-4. Alternatively, use the Health app's export feature if available
+Use the Tempo iOS app, which imports Apple Health workouts directly. Alternatively, export GPX with a third-party app.
 
 ### Strava
 
-1. Go to the activity page on Strava
-2. Click the three-dot menu (⋮)
-3. Select "Export GPX"
-4. Download the GPX file
-
-For your full Strava history as a ZIP, use [Bulk Import](bulk-import.md).
+On an activity page, open the ⋮ menu and choose **Export GPX** (or **Export Original** for the device's FIT file). For your full history as a ZIP, use [Bulk Import](bulk-import.md).
 
 ## Import Process
 
-### Step 1: Access the Import Page
+1. Open **Import** from the navigation bar.
+2. Click the drop zone or drag files onto it. Multiple files are supported; remove any from the list with ×.
+3. Click **Import N file(s)**.
 
-1. Log in to Tempo (and finish [onboarding](../getting-started/onboarding.md) if prompted)
-2. Navigate to the Import page from the main navigation (GPX/FIT uploads only)
+All selected files go up in one request and are processed one after another. The browser's current unit preference is sent with the upload and saved to UserSettings.
 
-### Step 2: Upload Your File
+For each file, Tempo:
 
-You can import workouts in two ways:
+- Detects the format from the extension and parses it
+- Checks for a duplicate (see below)
+- Builds the route, distance splits, device laps (FIT), and time series from the track points, and calculates elevation gain
+- Sets average/max heart rate, cadence, and power from the samples when the file has them (max speed only when the summary lacks it)
+- Reads RPE from the FIT session `workout_rpe` (Borg CR10 × 10 → 1–10) when present
+- Attaches weather (Strava or FIT weather if present, otherwise Open-Meteo for the first GPS point and start hour); skipped when there is no GPS
+- Assigns your default shoe, unless it is retired
+- Sets run type to **Easy Run**
+- Calculates time in heart-rate zones, Relative Effort, and Best efforts
 
-**Drag and Drop:**
-- Drag your workout file onto the import area
-- Drop the file to start the upload
+### Results
 
-**File Selection:**
-- Click the import area or "Choose File" button
-- Select your workout file from the file picker
+- **One file:** "Workout Imported Successfully!" with distance, duration, average pace, elevation gain, and a **View workout details →** link to the Workout overview. A failed file shows `Error: <message>`.
+- **Several files:** "Import Complete!" with Total processed, Successfully imported, Updated, Skipped (duplicates), and Errors (expand **View error details** for per-file messages).
 
-### Step 3: Wait for Processing
+The page does not redirect; follow the link or open the Dashboard.
 
-Tempo will:
-- Detect the file format automatically
-- Parse the workout data
-- Calculate statistics (distance, pace, elevation, etc.)
-- Fetch weather data based on location and time
-- Generate splits and time-series data
-- Assign your default shoe (if you have one set in Settings)
+## What Gets Stored
 
-**Note**: If you've set a default shoe in Settings, new workouts will automatically be assigned to that shoe. You can change or remove the shoe assignment later from Workout overview.
+- **Route** — GeoJSON LineString (when the file has GPS)
+- **Stats** — distance, elapsed time, timer time (FIT `total_timer_time`), moving time when the source provides it, average pace, elevation gain, calories, HR, cadence, power
+- **Time series** — heart rate, pace/speed, elevation, cadence, power, temperature; FIT also adds grade and vertical speed
+- **Splits** — 1 km or 1 mile, per your unit preference
+- **Device laps** — FIT `lap` messages when the file has 2 or more kept laps, with intensity (warm-up, active, rest, …)
+- **Weather**, **device name** (Garmin products are named from the FIT SDK product tables), and the **original file bytes** plus parsed raw JSON for later reprocessing
 
-### Step 4: View Your Workout
-
-Once processing is complete, you'll be redirected to Workout overview where you can:
-- View the route on an interactive map
-- See detailed statistics
-- Review splits
-- Analyze time-series data (heart rate, pace, elevation)
-
-## Import Multiple Files
-
-You can import multiple files at once:
-
-1. Select multiple files using Ctrl+Click (Windows/Linux) or Cmd+Click (macOS)
-2. Or drag and drop multiple files onto the import area
-3. All files will be processed sequentially
-
-## What Gets Imported
-
-For each workout, Tempo imports:
-
-- **Route data** - GPS coordinates for map visualization
-- **Statistics** - Distance, duration, pace, elevation gain/loss
-- **Time-series data** - Heart rate, pace, elevation, cadence, power, temperature over time (when available)
-- **Additional FIT metrics** - Speed, grade, and vertical speed from FIT files (when available)
-- **Splits** - Distance-based splits (km or mile, based on your unit preference)
-- **Weather data** - Automatic weather conditions for the workout
-- **Metadata** - Activity name, date, time, device information
-
-**Sensor Data Support:**
-- FIT files: Extracts heart rate, cadence, power, temperature, speed, grade, and vertical speed from RecordMesg messages. Running cadence is stored as steps per minute (both feet); FIT strides/min are converted on import. On upgrade, existing FIT workouts that still have the original file are rewritten the same way; FIT rows that only have JSON (no file) may keep the older strides/min values.
-- GPX files: Extracts heart rate, cadence, power, and temperature from TrackPointExtension elements (Garmin format). Cadence is already steps/min and is stored as given.
-- Backward compatible: Files without sensor data are imported successfully with available metrics
+Cadence is stored as steps per minute. FIT stride cadence is doubled on import; GPX cadence is stored as given.
 
 ## Duplicates
 
-Single-file import uses the same duplicate rule as Strava bulk. Tempo matches on start time, distance, and duration.
+Before the stats check, Tempo matches on identity: HealthKit UUID (iOS app) and Workout external identity (e.g. intervals.icu activity id). Then it matches on start time (exact), distance (within 1 m), and elapsed time (within 1 s). Strava bulk import uses the same rule.
 
-- **Updated** if the existing Workout is missing raw file bytes or its FIT/GPX JSON is incomplete (backfill bytes/JSON; rebuild splits; fill empty route or time series). Distance, duration, and elevation are not rewritten when raw data is already complete.
+- **Updated** when the existing Workout is missing raw file bytes or its FIT/GPX JSON is incomplete. Tempo backfills the bytes and JSON, rebuilds splits, and fills an empty route or time series. Distance, duration, and elevation are not rewritten.
 - **Skipped** when raw bytes and JSON are already complete.
 
 ## Troubleshooting
 
-### File Not Supported
+| Symptom | Cause | Fix |
+|---|---|---|
+| `File must be a GPX or FIT file (.gpx, .fit, or .fit.gz)` | Wrong extension | Rename or re-export as GPX/FIT. CSV is only read inside a Strava ZIP. |
+| `No track points found in GPX file` / `GPX file must contain at least 2 track points` / `GPX file must contain timestamps` | GPX is a route or planned course, not a recorded activity | Export the recorded activity instead. |
+| `Not a valid FIT file` / `Error parsing FIT file: …` | Corrupt or non-activity FIT | Re-copy from the device; check the file opens elsewhere. |
+| `FIT file contains no GPS data and no distance information` | Manual or strength activity | Nothing to import as a run. |
+| `File is empty` | Zero-byte upload | Re-copy the file. |
+| No map | File has no GPS (treadmill, indoor) | Expected. Weather is also skipped. |
+| No heart rate, cadence, or power | The device did not record it | Expected. |
 
-If your file format isn't recognized:
-- Ensure the file extension is correct (`.gpx`, `.fit`, `.fit.gz`, or `.csv`)
-- Check that the file isn't corrupted
-- Verify the file contains valid workout data
+API logs (`docker compose logs api`) carry `Error parsing workout file` or `Error persisting workout` with the exception.
 
-### Import Fails
-
-If import fails:
-- Check the file size (very large files may take longer)
-- Ensure you have sufficient disk space
-- Check the API logs for error messages
-- Verify the file contains GPS data (required for route visualization)
-
-### Missing Data
-
-If some data is missing:
-- Some devices may not record all metrics (e.g., heart rate)
-- Weather data requires location and time information
-- Elevation data depends on GPS accuracy
+**Implementation:** `frontend/app/import/page.tsx`, `frontend/components/FileUpload.tsx`, `api/Endpoints/WorkoutsEndpoints.cs` (`ImportWorkout`), `api/Services/WorkoutIntake.cs` (`ProcessAsync` / `PersistAsync` / `HandleDuplicateAsync`), `api/Services/GpxParserService.cs`, `api/Services/FitParserService.cs`, `api/Services/WorkoutQueryService.cs` (`FindDuplicateWorkoutAsync`).
 
 ## Next Steps
 
-- [Learn about bulk import](bulk-import.md) for importing many workouts at once
-- [View your workouts](viewing-workouts.md) to explore imported data
-- [Add media](media.md) to enhance your workouts
-
+- [Bulk import](bulk-import.md) a Strava archive
+- [View your workouts](viewing-workouts.md)
+- [Add media](media.md)

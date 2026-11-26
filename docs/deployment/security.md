@@ -1,251 +1,92 @@
-# Security Best Practices
+# Security
 
-Security considerations and hardening for Tempo deployments.
+What Tempo enforces, what production Compose already does, and what is left to you. Setting names and defaults: [Configuration](../getting-started/configuration.md).
 
-## Overview
+## Secrets
 
-This guide covers security best practices for deploying Tempo in production.
+### JWT secret (`JWT_SECRET_KEY`)
 
-## Critical Security Requirements
+- Required by production Compose. The API refuses to start without `JWT:SecretKey` or with the shipped placeholder.
+- Generate with `openssl rand -base64 32` (at least 32 bytes). Keep it in the gitignored `.env` or a secrets manager.
+- It signs sessions **and** derives the keys that encrypt the stored intervals.icu API key and Tempo API key plaintext. Rotate it only on purpose (suspected leak): rotation signs everyone out and requires reconnecting Intervals.icu ([details](../getting-started/configuration.md#rotating-the-jwt-secret)). Back it up with your data.
 
-### JWT Secret Key
+### Database password (`POSTGRES_PASSWORD`)
 
-**MUST** be set in production via `.env` as `JWT_SECRET_KEY` (production Compose fails closed if missing). The API also rejects the historical placeholder string at startup.
+- Required by production Compose; no default in the file. Use a long random value without `;`.
+- Applied only when the volume is first created; existing volumes keep their password ([Docker Deployment](docker.md#2-fill-in-env)).
+- Postgres is not published on the host. The development `docker-compose.yml` publishes it on `5432` with password `postgres`; never use that file on a network.
 
-- Generate a secure random key: `openssl rand -base64 32`
-- Minimum 32 characters
-- Store in gitignored `.env` (or a secrets manager)
-- Never commit to version control
-- Rotate periodically
+## HTTPS and the session cookie
 
-### HTTPS
+The session is an `authToken` cookie: `HttpOnly`, `SameSite=Lax`, and in Production always `Secure`, so it only works over HTTPS (or `http://localhost`). Terminate TLS at a reverse proxy pointed at `127.0.0.1:3004` ([Reverse Proxy](reverse-proxy.md)).
 
-**REQUIRED** for production deployments. The session cookie is `HttpOnly` and, in Production, always `Secure`, so browsers only send it over HTTPS. See [Reverse Proxy and Login Cookies](reverse-proxy.md).
+`TEMPO_COOKIE_SECURE=false` exists only for plain HTTP on a trusted LAN. Never on an internet-facing install.
 
-`TEMPO_COOKIE_SECURE=false` exists only for plain HTTP on a trusted LAN. Never set it on an internet-facing install.
+Forwarded headers (`X-Forwarded-For`, `X-Forwarded-Proto`) are honored one hop deep and only from `Tempo:Proxy:TrustedNetworks` (loopback and private ranges by default). Narrow it if untrusted hosts can reach the API port.
 
-- Use valid SSL/TLS certificates
-- Configure reverse proxy (Nginx, Traefik, etc.)
-- Redirect HTTP to HTTPS
-- Use strong cipher suites
+## Accounts
 
-### Database Security
+### Password requirements
 
-- Set `POSTGRES_PASSWORD` in `.env` (required by production Compose; no default in the file)
-- Use strong passwords (minimum 16 characters); existing volumes must match the password already in the cluster
-- Restrict database access to the application (Compose does not publish Postgres by default)
-- Use connection encryption if accessing remotely
-- Regular security updates
-
-## Authentication Security
-
-### Password Requirements
-
-Tempo enforces NIST/CISA-aligned rules for **new** passwords (registration and password change):
+New passwords (registration and password change):
 
 - **Length**: 16–64 characters
-- **Encoding**: UTF-8 length must not exceed 72 bytes (bcrypt limit)
-- **Complexity**: No mandatory mixed case, digits, or symbols—prefer memorable passphrases
-- **Additional checks**: common-password blocklist; password must not contain the username (when the username is at least 3 characters); no single character repeated five or more times in a row
+- **Encoding**: at most 72 bytes UTF-8 (bcrypt limit)
+- **Complexity**: no mandatory mixed case, digits, or symbols; passphrases encouraged
+- **Rejected**: common passwords; passwords containing the username (when it is at least 3 characters); any character repeated five or more times in a row
 
-Existing credentials remain valid until the user sets a new password. BCrypt hashing is already implemented.
+Existing passwords stay valid until changed. Passwords are stored as BCrypt hashes.
 
-### JWT Configuration
+### Single user
 
-- Set appropriate expiration (default: 7 days)
-- Use secure random secret key
-- Configure issuer and audience
-- Store tokens in httpOnly cookies (already implemented)
+- Registration works only while no user exists; after the first account it is locked.
+- Sessions last 7 days, or 30 with "Remember me" (`JWT:ExpirationDays`, `JWT:RememberMeExpirationDays`).
+- Tempo API keys (Settings) authenticate as `Authorization: Bearer …` and cannot reach session-only routes.
+- A forgotten passphrase is reset on the host only with `reset-password` ([Password recovery](docker.md#password-recovery)). There is no HTTP or email reset, and it cannot add a second account.
 
-### Registration Lock
+## Network
 
-- Registration is automatically locked after first user
-- Prevents unauthorized account creation
-- Single-user deployment pattern
-- Forgotten passphrase: host-only `reset-password` on the API process (Docker `exec` or `dotnet Tempo.Api.dll reset-password`). Not a public HTTP route, not email, and not a way to add a second account. See [How do I reset my password?](../troubleshooting/faq.md#how-do-i-reset-my-password).
+- Expose only the reverse proxy (80/443). Production Compose publishes only `127.0.0.1:3004`.
+- If you uncomment the loopback API publish (`127.0.0.1:5001:5001`), keep it on loopback.
+- CORS is not needed on the default path (same-origin `/api`, native daily driver), and production Compose does not set `CORS__AllowedOrigins`. If you set it, list exact origins only.
 
-## Network Security
+## Uploads
 
-### Firewall Configuration
+- Media: 50 MB per file by default (`MediaStorage:MaxFileSizeBytes`); extensions `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.mp4`, `.mov`, `.avi`.
+- ZIP archives (import jobs): 500 MB.
+- Files are stored under the media directory, outside any web root, and served only through authenticated API routes.
 
-- Expose the reverse proxy (80/443), not Compose service ports
-- Production Compose publishes only `127.0.0.1:3004` by default (Postgres and API stay on the Compose network)
-- Use firewall rules to restrict access
-- Consider VPN for administrative access
-- Block unnecessary network traffic
+## Outbound connections
 
-### CORS Configuration
+Tempo keeps your data on your host but makes these outbound requests:
 
-The default production path does not need CORS: the command center is same-origin `/api`, and the daily driver is native. Production Compose does not set `CORS__AllowedOrigins`.
+- **Open-Meteo** (`archive-api.open-meteo.com`), from the API: a Workout's start location and time, to fetch weather on import.
+- **CARTO** (`basemaps.cartocdn.com`), from the browser: map tiles, with your CARTO key if set.
+- **intervals.icu**, from the API: only when you connect Intervals.icu in Settings.
 
-Only configure CORS if you intentionally expose the API to a browser on another origin:
+## Security headers
 
-```yaml
-CORS__AllowedOrigins: "https://yourdomain.com"
-```
-
-- Only include trusted domains
-- Don't use wildcards in production
-- Test CORS configuration thoroughly
-
-### Reverse Proxy
-
-Use a reverse proxy (Nginx, Traefik) to:
-- Terminate SSL/TLS
-- Hide internal service ports
-- Add security headers
-- Implement rate limiting
-- Use **one** upstream to `127.0.0.1:3004` (see [Reverse Proxy and Login Cookies](reverse-proxy.md))
-- Forwarded headers are honored only from loopback and private ranges (`Tempo__Proxy__TrustedNetworks`); narrow the list if untrusted hosts can reach the API port
-
-## Application Security
-
-### Input Validation
-
-- All file uploads are validated (size, MIME type)
-- File paths are sanitized
-- SQL injection prevented by Entity Framework parameterization
-- XSS protection via React's built-in escaping
-
-### File Upload Security
-
-- Maximum file size limits (50MB default, 500MB for bulk import)
-- MIME type validation
-- File extension validation
-- Storage outside web root
-
-### Error Handling
-
-- Don't expose sensitive information in error messages
-- Log errors securely
-- Use generic error messages for users
-- Detailed errors only in development mode
-
-## Data Security
-
-### Data Encryption
-
-- Use HTTPS for data in transit
-- Consider database encryption at rest
-- Encrypt backups
-- Secure media file storage
-
-### Backup Security
-
-- Encrypt backup files
-- Store backups securely
-- Limit backup access
-- Test restore procedures
-
-### Data Privacy
-
-- All data stored locally (no cloud sync)
-- User controls all data
-- No third-party data sharing
-- GDPR considerations for EU users
-
-## Container Security
-
-### Image Security
-
-- Use official base images
-- Keep images updated
-- Scan images for vulnerabilities
-- Use specific version tags (not `latest`)
-
-### Container Configuration
-
-- Run containers as non-root user (if possible)
-- Limit container capabilities
-- Use read-only filesystems where possible
-- Implement resource limits
-
-### Secrets Management
-
-- Use Docker secrets or environment variables
-- Never hardcode secrets
-- Rotate secrets regularly
-- Use secrets management tools (HashiCorp Vault, etc.)
-
-## Monitoring and Auditing
-
-### Logging
-
-- Log authentication events
-- Log security-relevant actions
-- Monitor for suspicious activity
-- Retain logs appropriately
-
-### Monitoring
-
-- Monitor failed login attempts
-- Track unusual API usage
-- Monitor resource usage
-- Set up alerts for anomalies
-
-### Regular Updates
-
-- Keep dependencies updated
-- Apply security patches promptly
-- Monitor security advisories
-- Test updates in staging first
-
-## Security Headers
-
-Configure security headers in reverse proxy:
+Add at the proxy, for example nginx:
 
 ```nginx
 add_header X-Frame-Options "SAMEORIGIN" always;
 add_header X-Content-Type-Options "nosniff" always;
-add_header X-XSS-Protection "1; mode=block" always;
 add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-add_header Content-Security-Policy "default-src 'self'" always;
 ```
 
-## Checklist
+A strict `Content-Security-Policy: default-src 'self'` breaks the command center: Next.js uses inline scripts and maps load tiles from `basemaps.cartocdn.com`. Test any CSP before enforcing it (start with `Content-Security-Policy-Report-Only`).
 
-### Pre-Deployment
+## Containers
 
-- [x] JWT secret key configured via `.env` (`JWT_SECRET_KEY`) — done by production Compose
-- [x] Database password configured via `.env` (`POSTGRES_PASSWORD`) — done by production Compose
-- [ ] HTTPS configured
-- [x] Postgres/API unpublished; command center loopback only — done by production Compose
-- [ ] CORS only if you expose the API to a browser on another origin (not required by default)
-- [ ] Firewall rules set
-- [ ] Reverse proxy configured (one upstream to `127.0.0.1:3004`)
-- [ ] Security headers added
+- Pin release tags (`vX.Y.Z`), not `latest`; update with [Updating](docker.md#updating).
+- The API and frontend images run as root and write `./media` as root.
+- Back up and protect `.env`, database dumps, and export ZIPs: they contain everything ([Backup and Restore](backup-restore.md)). Encrypt them off-host.
 
-### Ongoing
+## Reporting security issues
 
-- [ ] Regular security updates
-- [ ] Monitor logs for suspicious activity
-- [ ] Review access logs
-- [ ] Test backup and restore
-- [ ] Rotate secrets periodically
-- [ ] Review and update dependencies
-
-## Incident Response
-
-If a security issue is discovered:
-
-1. Assess the severity
-2. Contain the issue
-3. Notify affected users if necessary
-4. Apply fixes
-5. Review and improve security measures
-6. Document the incident
-
-## Reporting Security Issues
-
-Report security vulnerabilities responsibly:
-
-- Email: [security contact if available]
-- GitHub: Create a private security advisory
-- Do not disclose publicly until fixed
+Open a private security advisory on [GitHub](https://github.com/trevordavies095/tempo/security/advisories/new). Do not disclose publicly until fixed.
 
 ## Next Steps
 
-- [Review production setup](production.md)
-- [Set up monitoring](production.md#monitoring-and-logging)
-- [Configure backups](backup-restore.md)
-
+- [Production Setup](production.md)
+- [Backup and Restore](backup-restore.md)
