@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ComposedChart, ReferenceArea } from 'recharts';
 import { getRelativeEffortStats } from '@/lib/api';
+import { browserTimezoneOffsetMinutes } from '@/lib/localCalendar';
 import { calculateYAxisTicks, calculateYAxisMax } from '@/utils/chartUtils';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -84,8 +85,7 @@ function DayTick({
 }
 
 export default function RelativeEffortGraph() {
-  // Get timezone offset in minutes (negative for timezones ahead of UTC)
-  const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
+  const timezoneOffsetMinutes = browserTimezoneOffsetMinutes();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['relativeEffortStats', timezoneOffsetMinutes],

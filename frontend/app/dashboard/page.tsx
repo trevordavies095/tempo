@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
+import { formatLocalDate } from '@/lib/localCalendar';
 import WeeklyRecapCard from '@/components/WeeklyRecapCard';
 import RelativeEffortGraph from '@/components/RelativeEffortGraph';
 import BestEffortsChart from '@/components/BestEffortsChart';
@@ -74,8 +75,8 @@ function DashboardPageContent() {
     const now = new Date();
     const sevenDaysAgo = new Date(now);
     sevenDaysAgo.setDate(now.getDate() - 7);
-    queryParams.startDate = sevenDaysAgo.toISOString().split('T')[0];
-    queryParams.endDate = now.toISOString().split('T')[0];
+    queryParams.startDate = formatLocalDate(sevenDaysAgo);
+    queryParams.endDate = formatLocalDate(now);
   }
 
   const { data, isLoading, isError, error } = useQuery({

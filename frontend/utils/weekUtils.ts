@@ -6,6 +6,8 @@
  * Week 1 starts 51 weeks before week 52.
  */
 
+import { parseLocalDate } from '@/lib/localCalendar';
+
 export interface WeekRange {
   weekStart: string; // ISO date string (YYYY-MM-DD)
   weekEnd: string;   // ISO date string (YYYY-MM-DD)
@@ -53,7 +55,8 @@ export function calculateWeekNumber(weekStartDate: Date): number | null {
   
   // Calculate which week number (1-52) the given week is
   const diffTime = weekStartDate.getTime() - week1Start.getTime();
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  // Round, not floor: a DST change makes local midnights 23 or 25 hours apart
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
   const weekNum = Math.floor(diffDays / 7) + 1;
   
   // Clamp to valid range
@@ -68,11 +71,14 @@ export function calculateWeekNumber(weekStartDate: Date): number | null {
  * Generates an interval string (YYYYWW) and year offset for a given week.
  * Used for creating URL hash parameters.
  * 
- * @param weekStart - ISO date string of the week start
+ * @param weekStart - local `yyyy-MM-dd` date of the week start
  * @returns Object with interval string and yearOffset, or null if invalid
  */
 export function generateIntervalFromWeek(weekStart: string): { interval: string; yearOffset: number } | null {
-  const weekStartDate = new Date(weekStart);
+  const weekStartDate = parseLocalDate(weekStart);
+  if (!weekStartDate) {
+    return null;
+  }
   const year = weekStartDate.getFullYear();
   
   const weekNum = calculateWeekNumber(weekStartDate);

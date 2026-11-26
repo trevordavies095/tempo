@@ -7,6 +7,7 @@ import { getYearlyWeeklyStats, getAvailablePeriods } from '@/lib/api';
 import { formatDistance } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import { formatDateRange } from '@/utils/dateUtils';
+import { browserTimezoneOffsetMinutes, parseLocalDate } from '@/lib/localCalendar';
 import PeriodSelector from '@/components/PeriodSelector';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -24,7 +25,7 @@ export default function YearlyWeeklyChart({
   selectedWeek,
   onWeekSelect,
 }: YearlyWeeklyChartProps) {
-  const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
+  const timezoneOffsetMinutes = browserTimezoneOffsetMinutes();
   const { unitPreference, isHydrated } = useSettings();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
@@ -59,14 +60,14 @@ export default function YearlyWeeklyChart({
   const weeklyData = weeklyDataResponse?.weeks || [];
   const chartData = weeklyData.map((week) => {
     const distance = convertDistance(week.distanceM);
-    const weekStartDate = new Date(week.weekStart);
+    const weekStartDate = parseLocalDate(week.weekStart) ?? new Date(week.weekStart);
     const month = weekStartDate.toLocaleDateString('en-US', { month: 'short' });
     const weekNum = week.weekNumber;
     
     // Create label: show month for first week of each month, otherwise just week number
     const isFirstWeekOfMonth = weekNum === 1 || 
       (weeklyData[weekNum - 2] && 
-       new Date(weeklyData[weekNum - 2].weekStart).getMonth() !== weekStartDate.getMonth());
+       parseLocalDate(weeklyData[weekNum - 2].weekStart)?.getMonth() !== weekStartDate.getMonth());
     
     return {
       weekNumber: weekNum,

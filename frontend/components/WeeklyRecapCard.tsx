@@ -9,15 +9,9 @@ import { useSettings, type UnitPreference } from '@/lib/settings';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { HeartRateZoneTimeBar, type ZoneTime } from '@/components/HeartRateZoneTimeBar';
+import { browserTimezoneOffsetMinutes, parseLocalDate } from '@/lib/localCalendar';
 
 const METERS_PER_MILE = 1609.344;
-
-/** Parses a `yyyy-MM-dd` date as a local calendar date (no UTC shift). */
-function parseLocalDate(value: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-}
 
 /** "Nov 2 – 8" within one month, "Oct 27 – Nov 2" across months. */
 function formatWeekRange(weekStart: string, weekEnd: string): string | null {
@@ -181,8 +175,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 /** Dashboard Weekly Recap: this week's four tiles against the trailing average, daily bars, runs by type and zone time. */
 export default function WeeklyRecapCard() {
-  // Get timezone offset in minutes (negative for timezones ahead of UTC)
-  const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
+  const timezoneOffsetMinutes = browserTimezoneOffsetMinutes();
   const { unitPreference } = useSettings();
 
   const recapQuery = useQuery({
