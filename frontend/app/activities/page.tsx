@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
+import { type WorkoutsListParams } from '@/lib/api';
+import { workoutQueries } from '@/lib/queries';
 import { useSettings } from '@/lib/settings';
 import Pagination from '@/components/Pagination';
 import ActivitiesFilters from '@/components/ActivitiesFilters';
@@ -51,10 +52,7 @@ function ActivitiesPageContent() {
     sortOrder,
   };
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['workouts', 'activities', params],
-    queryFn: () => getWorkouts(params),
-  });
+  const { data, isLoading, isError, error } = useQuery(workoutQueries.list(params));
 
 
   return (

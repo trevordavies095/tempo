@@ -8,7 +8,7 @@ import {
   type ExportImportResponse,
   type ImportJob,
 } from '@/lib/api';
-import { invalidateWorkoutQueries } from '@/lib/queryUtils';
+import { invalidateAfter } from '@/lib/queries';
 import { useFileDrop } from '@/hooks/useFileDrop';
 import { useImportJobSession } from '@/hooks/useImportJobSession';
 import { useSettings } from '@/lib/settings';
@@ -29,10 +29,7 @@ export function TempoExportImport(props: TempoExportImportProps = {}) {
 
   const onCompleted = useCallback(
     async (job: ImportJob) => {
-      invalidateWorkoutQueries(queryClient);
-      queryClient.invalidateQueries({ queryKey: ['heart-rate-zones'] });
-      queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
-      queryClient.invalidateQueries({ queryKey: ['thresholds'] });
+      invalidateAfter(queryClient, { kind: 'restoreCompleted' });
       try {
         const unitPref = await getUnitPreference();
         setUnitPreference(unitPref.unitPreference);

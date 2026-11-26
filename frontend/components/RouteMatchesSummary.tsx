@@ -2,8 +2,9 @@
 
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { workoutQueries } from '@/lib/queries';
 import { useRouter, usePathname } from 'next/navigation';
-import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
+import { type SimilarRoute, type WorkoutDetail } from '@/lib/api';
 import { formatDate } from '@/lib/format';
 import { routeTimeDelta, type RouteDelta } from '@/lib/routeDelta';
 import { IconChevronRight } from '@tabler/icons-react';
@@ -99,12 +100,7 @@ export function RouteMatchesSummary({ workoutId, currentWorkout }: RouteMatchesS
   const pathname = usePathname();
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['similar-routes', workoutId],
-    queryFn: () => getSimilarRoutes(workoutId),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime in v4)
-    retry: 1,
-    refetchOnWindowFocus: false,
+    ...workoutQueries.similarRoutes(workoutId),
     enabled: !!workoutId && !!currentWorkout.route,
   });
 

@@ -1,8 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { workoutQueries } from '@/lib/queries';
 import Link from 'next/link';
-import { getSimilarRoutes, type WorkoutDetail } from '@/lib/api';
+import { type WorkoutDetail } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDate, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import { IconArrowUp, IconArrowDown } from '@tabler/icons-react';
@@ -25,12 +26,7 @@ export function SimilarRoutesSection({ workoutId, currentWorkout }: SimilarRoute
   const { unitPreference } = useSettings();
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['similar-routes', workoutId],
-    queryFn: () => getSimilarRoutes(workoutId),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime in v4)
-    retry: 1,
-    refetchOnWindowFocus: false,
+    ...workoutQueries.similarRoutes(workoutId),
     enabled: !!workoutId && !!currentWorkout.route,
   });
 

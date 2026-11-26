@@ -2,7 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getBestEfforts, recalculateBestEfforts } from '@/lib/api';
+import { recalculateBestEfforts } from '@/lib/api';
+import { invalidateAfter, statsQueries } from '@/lib/queries';
 import { IconRefresh } from '@tabler/icons-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -53,15 +54,12 @@ export default function BestEffortsChart() {
   const [showRecalculateConfirm, setShowRecalculateConfirm] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['bestEfforts'],
-    queryFn: () => getBestEfforts(),
-  });
+  const { data, isLoading, isError, error } = useQuery(statsQueries.bestEfforts());
 
   const recalculateMutation = useMutation({
     mutationFn: recalculateBestEfforts,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bestEfforts'] });
+      invalidateAfter(queryClient, { kind: 'bestEffortsRecalculated' });
       setShowRecalculateConfirm(false);
     },
   });

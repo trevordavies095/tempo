@@ -35,7 +35,7 @@ CI (`.github/workflows/tests.yml`) must pass. Details and local commands: [Testi
 - [ ] API tests pass: `dotnet test Tempo.sln` from the repo root (Docker running)
 - [ ] Line coverage stays at or above **45%**; new code comes with unit or integration tests
 - [ ] `docs/openapi.json` regenerated if routes or route/Swagger metadata changed ([OpenAPI drift check](testing.md#openapi-drift-check))
-- [ ] `npm run lint` passes in `frontend/`
+- [ ] `npm run lint` and `npm test` pass in `frontend/`
 - [ ] A migration is included if the EF model changed (`dotnet ef migrations add <Name>` from `api/`)
 - [ ] Docs under `docs/` updated for user-visible or operator-visible changes; new domain terms added to `CONTEXT.md`
 

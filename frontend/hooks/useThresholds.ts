@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getThresholds, updateThresholds, type ThresholdSettings } from '@/lib/api';
-
-const THRESHOLDS_KEY = ['thresholds'];
+import { updateThresholds, type ThresholdSettings } from '@/lib/api';
+import { settingsQueries } from '@/lib/queries';
 
 /**
  * Loads the athlete's threshold pace and heart rate, and saves replacements
@@ -9,15 +8,12 @@ const THRESHOLDS_KEY = ['thresholds'];
 export function useThresholds() {
   const queryClient = useQueryClient();
 
-  const query = useQuery({
-    queryKey: THRESHOLDS_KEY,
-    queryFn: getThresholds,
-  });
+  const query = useQuery(settingsQueries.thresholds());
 
   const mutation = useMutation({
     mutationFn: (thresholds: ThresholdSettings) => updateThresholds(thresholds),
     onSuccess: (saved) => {
-      queryClient.setQueryData(THRESHOLDS_KEY, saved);
+      queryClient.setQueryData(settingsQueries.thresholds().queryKey, saved);
     },
   });
 

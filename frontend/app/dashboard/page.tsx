@@ -3,7 +3,8 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
-import { getWorkouts, type WorkoutsListParams } from '@/lib/api';
+import { type WorkoutsListParams } from '@/lib/api';
+import { workoutQueries } from '@/lib/queries';
 import { formatLocalDate } from '@/lib/localCalendar';
 import WeeklyRecapCard from '@/components/WeeklyRecapCard';
 import RelativeEffortGraph from '@/components/RelativeEffortGraph';
@@ -79,10 +80,7 @@ function DashboardPageContent() {
     queryParams.endDate = formatLocalDate(now);
   }
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['workouts', queryParams],
-    queryFn: () => getWorkouts(queryParams),
-  });
+  const { data, isLoading, isError, error } = useQuery(workoutQueries.list(queryParams));
 
   const subtitle = !data || data.items.length === 0
     ? selectedWeek

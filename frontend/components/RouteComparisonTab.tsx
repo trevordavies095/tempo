@@ -2,10 +2,11 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { workoutQueries } from '@/lib/queries';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ComposedChart, Scatter, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts';
-import { getSimilarRoutes, type SimilarRoute, type WorkoutDetail } from '@/lib/api';
+import { type SimilarRoute, type WorkoutDetail } from '@/lib/api';
 import { formatDistance, formatDuration, formatPace, formatDate, formatElevation } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import { routePaceDelta, routeTimeDelta, thisRunTimeDifferenceS } from '@/lib/routeDelta';
@@ -183,12 +184,7 @@ export function RouteComparisonTab({ workoutId, currentWorkout }: RouteCompariso
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['similar-routes', workoutId],
-    queryFn: () => getSimilarRoutes(workoutId),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime in v4)
-    retry: 1,
-    refetchOnWindowFocus: false,
+    ...workoutQueries.similarRoutes(workoutId),
     enabled: !!workoutId && !!currentWorkout.route,
   });
 

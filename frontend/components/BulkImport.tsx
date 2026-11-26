@@ -8,7 +8,7 @@ import {
   type ImportJob,
 } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
-import { invalidateWorkoutQueries } from '@/lib/queryUtils';
+import { invalidateAfter } from '@/lib/queries';
 import { useFileDrop } from '@/hooks/useFileDrop';
 import { useImportJobSession } from '@/hooks/useImportJobSession';
 import { IconUpload } from '@tabler/icons-react';
@@ -28,7 +28,7 @@ export function BulkImport(props: BulkImportProps = {}) {
 
   const onCompleted = useCallback(
     async (job: ImportJob) => {
-      invalidateWorkoutQueries(queryClient);
+      invalidateAfter(queryClient, { kind: 'workoutsImported' });
       setImportResult(importJobToBulkResponse(job));
       setSelectedFile(null);
       await onJobCompleted?.(job);

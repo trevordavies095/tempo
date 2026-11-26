@@ -1,9 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { workoutQueries } from '@/lib/queries';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { getWorkout, getSimilarRoutes } from '@/lib/api';
 import WorkoutDetailHeader from '@/components/WorkoutDetailHeader';
 import { ActivityDetailTabs } from '@/components/ActivityDetailTabs';
 import { RouteComparisonTab } from '@/components/RouteComparisonTab';
@@ -16,18 +16,10 @@ function WorkoutOverviewPageContent() {
   const params = useParams();
   const id = params.id as string;
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['workout', id],
-    queryFn: () => getWorkout(id),
-  });
+  const { data, isLoading, isError, error } = useQuery(workoutQueries.detail(id));
 
   const { data: similarRoutes, isLoading: isLoadingSimilarRoutes } = useQuery({
-    queryKey: ['similar-routes', id],
-    queryFn: () => getSimilarRoutes(id),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    retry: 1,
-    refetchOnWindowFocus: false,
+    ...workoutQueries.similarRoutes(id),
     enabled: !!id && !!data?.route,
   });
 

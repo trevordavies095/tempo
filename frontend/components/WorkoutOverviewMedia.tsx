@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getWorkoutMedia, type WorkoutMedia } from '@/lib/api';
+import { type WorkoutMedia } from '@/lib/api';
+import { invalidateAfter, workoutQueries } from '@/lib/queries';
 import { WorkoutMediaGallery } from '@/components/WorkoutMediaGallery';
 import { MediaModal } from '@/components/MediaModal';
 import { MediaUpload } from '@/components/MediaUpload';
@@ -13,14 +14,13 @@ export function WorkoutOverviewMedia({ workoutId }: { workoutId: string }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const { data: media, isLoading: isLoadingMedia, isError: isMediaError } = useQuery({
-    queryKey: ['workout-media', workoutId],
-    queryFn: () => getWorkoutMedia(workoutId),
+    ...workoutQueries.media(workoutId),
     enabled: !!workoutId,
     retry: false,
   });
 
   const invalidateMedia = () => {
-    queryClient.invalidateQueries({ queryKey: ['workout-media', workoutId] });
+    invalidateAfter(queryClient, { kind: 'workoutMediaChanged', workoutId });
   };
 
   return (

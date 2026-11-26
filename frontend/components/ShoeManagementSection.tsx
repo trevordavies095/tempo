@@ -3,12 +3,11 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { invalidateAfter, shoeQueries } from '@/lib/queries';
 import {
-  getShoes,
   createShoe,
   updateShoe,
   deleteShoe,
-  getDefaultShoe,
   setDefaultShoe,
   type Shoe,
   type CreateShoeRequest,
@@ -53,20 +52,14 @@ export function ShoeManagementSection() {
     }
   };
 
-  const { data: shoes, isLoading } = useQuery({
-    queryKey: ['shoes', 'active'],
-    queryFn: () => getShoes({ status: 'active' }),
-  });
+  const { data: shoes, isLoading } = useQuery(shoeQueries.list('active'));
 
-  const { data: defaultShoe } = useQuery({
-    queryKey: ['default-shoe'],
-    queryFn: getDefaultShoe,
-  });
+  const { data: defaultShoe } = useQuery(shoeQueries.defaultShoe());
 
   const createMutation = useMutation({
     mutationFn: createShoe,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shoes'] });
+      invalidateAfter(queryClient, { kind: 'shoesChanged' });
       setIsCreating(false);
       setNewShoe({ brand: '', model: '', initialMileageM: null });
       setNewShoeInitialMileageInput('');
@@ -84,8 +77,7 @@ export function ShoeManagementSection() {
       resetEditForm?: boolean;
     }) => updateShoe(id, data),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['shoes'] });
-      queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
+      invalidateAfter(queryClient, { kind: 'shoesChanged' });
       if (variables.resetEditForm !== false) {
         setEditingId(null);
         setEditShoe({ brand: '', model: '', initialMileageM: null });
@@ -97,16 +89,14 @@ export function ShoeManagementSection() {
   const deleteMutation = useMutation({
     mutationFn: deleteShoe,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shoes'] });
-      queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
-      queryClient.invalidateQueries({ queryKey: ['workout'] });
+      invalidateAfter(queryClient, { kind: 'shoesChanged' });
     },
   });
 
   const setDefaultMutation = useMutation({
     mutationFn: setDefaultShoe,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
+      invalidateAfter(queryClient, { kind: 'defaultShoeChanged' });
     },
   });
 

@@ -3,11 +3,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
-import { getYearlyWeeklyStats, getAvailablePeriods } from '@/lib/api';
+import { statsQueries } from '@/lib/queries';
 import { formatDistance } from '@/lib/format';
 import { useSettings } from '@/lib/settings';
 import { formatDateRange } from '@/utils/dateUtils';
-import { browserTimezoneOffsetMinutes, parseLocalDate } from '@/lib/localCalendar';
+import { parseLocalDate } from '@/lib/localCalendar';
 import PeriodSelector from '@/components/PeriodSelector';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -25,14 +25,12 @@ export default function YearlyWeeklyChart({
   selectedWeek,
   onWeekSelect,
 }: YearlyWeeklyChartProps) {
-  const timezoneOffsetMinutes = browserTimezoneOffsetMinutes();
   const { unitPreference, isHydrated } = useSettings();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  const { data: availablePeriods, isLoading: isLoadingPeriods, isError: isErrorPeriods } = useQuery({
-    queryKey: ['availablePeriods', timezoneOffsetMinutes],
-    queryFn: () => getAvailablePeriods(timezoneOffsetMinutes),
-  });
+  const { data: availablePeriods, isLoading: isLoadingPeriods, isError: isErrorPeriods } = useQuery(
+    statsQueries.availablePeriods()
+  );
 
   // Set default period to most recent if not set
   useEffect(() => {
@@ -41,12 +39,10 @@ export default function YearlyWeeklyChart({
     }
   }, [availablePeriods, selectedPeriodEndDate, onPeriodChange]);
 
-  const { data: weeklyDataResponse, isLoading, isError, error } = useQuery({
-    queryKey: ['yearlyWeeklyStats', selectedPeriodEndDate, timezoneOffsetMinutes],
-    queryFn: () => getYearlyWeeklyStats(selectedPeriodEndDate || undefined, timezoneOffsetMinutes),
-    // Allow query to run even when selectedPeriodEndDate is null (backend will use default)
-    enabled: true,
-  });
+  // Runs even when selectedPeriodEndDate is null (backend uses the default period)
+  const { data: weeklyDataResponse, isLoading, isError, error } = useQuery(
+    statsQueries.yearlyWeekly(selectedPeriodEndDate)
+  );
 
   // Convert distance to user's preferred unit
   const convertDistance = (distanceM: number) => {
