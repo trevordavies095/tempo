@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getShoes, type Shoe } from '@/lib/api';
+import { type Shoe } from '@/lib/api';
+import { shoeQueries } from '@/lib/queries';
 
 interface ShoeSelectorProps {
   value: string | null;
@@ -13,10 +14,7 @@ interface ShoeSelectorProps {
 }
 
 export function ShoeSelector({ value, onChange, showMileage = false, className = '', assignedShoe = null }: ShoeSelectorProps) {
-  const { data: shoes, isLoading } = useQuery({
-    queryKey: ['shoes', 'active'],
-    queryFn: () => getShoes({ status: 'active' }),
-  });
+  const { data: shoes, isLoading } = useQuery(shoeQueries.list('active'));
 
   if (isLoading) {
     return (

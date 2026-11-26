@@ -5,7 +5,7 @@ import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { importWorkoutFile, type WorkoutImportResponse, type WorkoutImportSummaryResponse } from '@/lib/api';
 import { useSettings } from '@/lib/settings';
-import { invalidateWorkoutQueries } from '@/lib/queryUtils';
+import { invalidateAfter } from '@/lib/queries';
 import { useFileDrop } from '@/hooks/useFileDrop';
 import { formatDistance, formatDuration, formatPace, formatElevation } from '@/lib/format';
 import { IconUpload, IconX } from '@tabler/icons-react';
@@ -20,7 +20,7 @@ export function FileUpload() {
   const mutation = useMutation({
     mutationFn: (files: File[]) => importWorkoutFile(files, unitPreference),
     onSuccess: (data) => {
-      invalidateWorkoutQueries(queryClient);
+      invalidateAfter(queryClient, { kind: 'workoutsImported' });
       setImportResult(data);
       setSelectedFiles([]);
     },

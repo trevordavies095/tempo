@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { updateWorkout, deleteWorkout, cropWorkout } from '@/lib/api';
-import { invalidateWorkoutQueries } from '@/lib/queryUtils';
+import { invalidateAfter } from '@/lib/queries';
 
 export function useWorkoutMutations(workoutId: string) {
   const router = useRouter();
@@ -16,15 +16,16 @@ export function useWorkoutMutations(workoutId: string) {
       rpe?: number | null;
     }) => updateWorkout(workoutId, updates),
     onSuccess: () => {
-      invalidateWorkoutQueries(queryClient, workoutId);
+      invalidateAfter(queryClient, { kind: 'workoutEdited', workoutId });
     },
   });
 
   const deleteWorkoutMutation = useMutation({
     mutationFn: () => deleteWorkout(workoutId),
     onSuccess: () => {
-      invalidateWorkoutQueries(queryClient, workoutId);
+      // Leave first so the deleted Workout's own reads aren't refetched
       router.push('/dashboard');
+      invalidateAfter(queryClient, { kind: 'workoutDeleted', workoutId });
     },
   });
 
@@ -32,7 +33,7 @@ export function useWorkoutMutations(workoutId: string) {
     mutationFn: ({ startTrimSeconds, endTrimSeconds }: { startTrimSeconds: number; endTrimSeconds: number }) =>
       cropWorkout(workoutId, startTrimSeconds, endTrimSeconds),
     onSuccess: () => {
-      invalidateWorkoutQueries(queryClient, workoutId);
+      invalidateAfter(queryClient, { kind: 'workoutCropped', workoutId });
     },
   });
 

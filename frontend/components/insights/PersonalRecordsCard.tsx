@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getBestEfforts } from '@/lib/api';
+import { statsQueries } from '@/lib/queries';
 import { useSettings } from '@/lib/settings';
 import {
   BEST_EFFORTS_RANGES,
@@ -23,17 +23,13 @@ export function PersonalRecordsCard({ className }: { className?: string }) {
   const requests = useMemo(() => bestEffortsRangeRequests(range), [range]);
 
   // Request (1): the list. A failure here is the card's error state.
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['bestEfforts', 'list', requests.list],
-    queryFn: () => getBestEfforts(requests.list),
-  });
+  const { data, isLoading, isError, error, refetch } = useQuery(statsQueries.bestEfforts(requests.list));
 
   // Request (2), ranged choices only, in parallel with (1): PRs set since the start, for New and "Was".
   // A failure here is silent; the list shows without badges.
   const prsParams = requests.prs;
   const prs = useQuery({
-    queryKey: ['bestEfforts', 'prs', prsParams],
-    queryFn: () => getBestEfforts(prsParams ?? {}),
+    ...statsQueries.bestEffortPrs(prsParams ?? {}),
     enabled: prsParams != null,
   });
   const prRows = prsParams != null && prs.isSuccess ? prs.data.distances : null;

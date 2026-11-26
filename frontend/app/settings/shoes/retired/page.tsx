@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getShoes, updateShoe } from '@/lib/api';
+import { updateShoe } from '@/lib/api';
+import { invalidateAfter, shoeQueries } from '@/lib/queries';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
@@ -11,16 +12,12 @@ import { EmptyState } from '@/components/ui/EmptyState';
 
 function RetiredShoesContent() {
   const queryClient = useQueryClient();
-  const { data: shoes, isLoading } = useQuery({
-    queryKey: ['shoes', 'retired'],
-    queryFn: () => getShoes({ status: 'retired' }),
-  });
+  const { data: shoes, isLoading } = useQuery(shoeQueries.list('retired'));
 
   const unretireMutation = useMutation({
     mutationFn: (id: string) => updateShoe(id, { isRetired: false }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shoes'] });
-      queryClient.invalidateQueries({ queryKey: ['default-shoe'] });
+      invalidateAfter(queryClient, { kind: 'shoesChanged' });
     },
   });
 

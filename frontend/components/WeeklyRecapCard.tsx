@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getWeeklyRecap, getWeeklyStats, getYearlyStats, type WeeklyRecapResponse } from '@/lib/api';
+import { type WeeklyRecapResponse } from '@/lib/api';
+import { statsQueries } from '@/lib/queries';
 import { formatDistance, formatDuration, formatElevation } from '@/lib/format';
 import { runsByTypeFullLine, runsByTypeLine } from '@/lib/runTypes';
 import { recapThroughWeekday, recapWeekTrend, type RecapTrend, type RecapWeek } from '@/lib/weeklyRecap';
@@ -9,7 +10,7 @@ import { useSettings, type UnitPreference } from '@/lib/settings';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { HeartRateZoneTimeBar, type ZoneTime } from '@/components/HeartRateZoneTimeBar';
-import { browserTimezoneOffsetMinutes, parseLocalDate } from '@/lib/localCalendar';
+import { parseLocalDate } from '@/lib/localCalendar';
 
 const METERS_PER_MILE = 1609.344;
 
@@ -175,23 +176,11 @@ function errorMessage(error: unknown, fallback: string): string {
 
 /** Dashboard Weekly Recap: this week's four tiles against the trailing average, daily bars, runs by type and zone time. */
 export default function WeeklyRecapCard() {
-  const timezoneOffsetMinutes = browserTimezoneOffsetMinutes();
   const { unitPreference } = useSettings();
 
-  const recapQuery = useQuery({
-    queryKey: ['weeklyRecap', timezoneOffsetMinutes],
-    queryFn: () => getWeeklyRecap(timezoneOffsetMinutes),
-  });
-
-  const weeklyQuery = useQuery({
-    queryKey: ['weeklyStats', timezoneOffsetMinutes],
-    queryFn: () => getWeeklyStats(timezoneOffsetMinutes),
-  });
-
-  const { data: yearlyData } = useQuery({
-    queryKey: ['yearlyStats', timezoneOffsetMinutes],
-    queryFn: () => getYearlyStats(timezoneOffsetMinutes),
-  });
+  const recapQuery = useQuery(statsQueries.weeklyRecap());
+  const weeklyQuery = useQuery(statsQueries.weekly());
+  const { data: yearlyData } = useQuery(statsQueries.yearly());
 
   const recap = recapQuery.data;
   const weekStart = recap?.weekStart ?? weeklyQuery.data?.weekStart;

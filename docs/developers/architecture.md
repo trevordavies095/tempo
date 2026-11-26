@@ -235,6 +235,7 @@ Details: [API Reference](api-reference.md#authentication), [Security](../deploym
 | Change derived Workout data | `WorkoutDerivations` (callers pass what changed, not which steps to run) | If existing Workouts need it, add a backfill (next row) |
 | Add a startup backfill | A `*BackfillService` with `Task<int> RunAsync(CancellationToken)` returning rows processed (0 = done); `AddScoped` it in `Program.cs`; append a `BackfillDefinition` to `StartupBackfills.All` | Bump that entry's `Version` when its logic changes so installs rerun it; test in `api/Tempo.Api.Tests/Services/` |
 | Add a frontend page | `frontend/app/<route>/page.tsx` wrapped in `<AuthGuard>` and `PageShell`; nav link in `frontend/components/Navbar.tsx` | `npm run lint` |
+| Add a server read or a mutation (frontend) | Read: a builder in `frontend/lib/queries.ts`, used as `useQuery(workoutQueries.detail(id))`. Mutation: call `invalidateAfter(queryClient, change)` with the `DataChange` that happened, never `invalidateQueries` with hand-picked keys | Add or update the change's row in `frontend/lib/queries.test.ts`; `npm test` |
 | Add a config key | Read it in `api/Program.cs` (or the service); default in `api/appsettings.json`; env var in `docker-compose.yml` / `docker-compose.prod.yml` | Document in [Configuration](../getting-started/configuration.md) |
 | Add a domain term | `CONTEXT.md` | Use the term in code and docs |
 

@@ -26,6 +26,7 @@ dotnet test Tempo.sln
 # Frontend (from frontend/): http://localhost:3000
 npm run dev
 npm run lint
+npm test            # Vitest unit tests
 
 # Docs site
 mkdocs serve        # pip install -r requirements.txt first
@@ -35,7 +36,7 @@ mkdocs serve        # pip install -r requirements.txt first
 
 - **Routes or Swagger metadata changed** → regenerate `docs/openapi.json` with the command in `docs/developers/testing.md` (OpenAPI Drift Check), against `bin/Debug/net10.0/Tempo.Api.dll` and `ASPNETCORE_ENVIRONMENT=Development` (`Testing` breaks Swashbuckle).
 - **API change** → `dotnet test Tempo.sln`; CI enforces 45% line coverage.
-- **Frontend change** → `npm run lint`.
+- **Frontend change** → `npm run lint` and `npm test`. A new read or mutation goes through `frontend/lib/queries.ts` (`invalidateAfter` with what changed).
 - **User-visible behavior changed** → update the matching page under `docs/` and add a line to `CHANGELOG.md`.
 
 ## Gotchas

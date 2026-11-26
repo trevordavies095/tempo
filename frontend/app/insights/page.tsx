@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getInsights } from '@/lib/api';
+import { statsQueries } from '@/lib/queries';
 import { useSettings } from '@/lib/settings';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
@@ -56,10 +56,7 @@ function UnlockInsightsCard({
 
 function InsightsPageContent() {
   const { unitPreference } = useSettings();
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ['insights'],
-    queryFn: getInsights,
-  });
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery(statsQueries.insights());
 
   return (
     <PageShell density="overview" title="Insights">

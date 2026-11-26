@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   connectIntervalsIcu,
   disconnectIntervalsIcu,
@@ -9,6 +10,7 @@ import {
   syncIntervalsIcu,
   type IntervalsIcuConnectionStatus,
 } from '@/lib/api';
+import { invalidateAfter } from '@/lib/queries';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 
@@ -61,6 +63,7 @@ function formatTimestamp(value: string | null): string {
 }
 
 export function IntervalsIcuSection() {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<IntervalsIcuConnectionStatus | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -134,7 +137,12 @@ export function IntervalsIcuSection() {
         return;
       }
 
-      setStatus(await waitForSyncTick(previous));
+      const latest = await waitForSyncTick(previous);
+      setStatus(latest);
+      if (latest.lastSuccessfulSyncAt !== previous.lastSuccessfulSyncAt) {
+        // The tick may have imported Workouts
+        invalidateAfter(queryClient, { kind: 'workoutsImported' });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to request sync');
     } finally {

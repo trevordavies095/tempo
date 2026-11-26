@@ -12,7 +12,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { getWorkoutTimeSeries, type WorkoutTimeSeriesSample } from '@/lib/api';
+import { type WorkoutTimeSeriesSample } from '@/lib/api';
+import { workoutQueries } from '@/lib/queries';
 import { formatDuration, formatElevation, formatPace } from '@/lib/format';
 import { useSettings, type UnitPreference } from '@/lib/settings';
 import type { WorkoutHighlight } from '@/lib/workoutHighlight';
@@ -371,11 +372,7 @@ export function WorkoutTimeSeriesCharts({
   const tokens = useChartTokens();
   const primary = tokens.isDark ? tokens.volt : tokens.ink;
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['workout-time-series', workoutId],
-    queryFn: () => getWorkoutTimeSeries(workoutId),
-    staleTime: 5 * 60 * 1000,
-  });
+  const { data, isLoading, isError, error } = useQuery(workoutQueries.timeSeries(workoutId));
 
   const points = useMemo(
     () => downsample(buildChartPoints(data ?? [], unitPreference), CHART_POINT_CAP),

@@ -1,7 +1,6 @@
 'use client';
 
 import { 
-  getHeartRateZones, 
   updateHeartRateZones,
   recalculateAllRelativeEffort,
   getQualifyingWorkoutCount,
@@ -23,10 +22,10 @@ import { ExportImportSection } from '@/components/ExportImportSection';
 import { IntervalsIcuSection } from '@/components/IntervalsIcuSection';
 import { ApiKeySection } from '@/components/ApiKeySection';
 import ThresholdsSection from '@/components/ThresholdsSection';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useHeartRateZones } from '@/hooks/useHeartRateZones';
-import { invalidateWorkoutQueries } from '@/lib/queryUtils';
+import { invalidateAfter, settingsQueries } from '@/lib/queries';
 import { AuthGuard } from '@/components/AuthGuard';
 import { PageShell } from '@/components/ui/PageShell';
 import { Card } from '@/components/ui/Card';
@@ -49,8 +48,6 @@ const fieldClass =
 
 function SettingsPageContent() {
   const queryClient = useQueryClient();
-  const [hrZones, setHrZones] = useState<HeartRateZoneSettings | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -105,20 +102,8 @@ function SettingsPageContent() {
     }
   };
 
-  // Load heart rate zones on mount
-  useEffect(() => {
-    const loadHrZones = async () => {
-      try {
-        const settings = await getHeartRateZones();
-        setHrZones(settings);
-      } catch (error) {
-        console.error('Failed to load heart rate zones:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadHrZones();
-  }, []);
+  // A query (not mount-only state) so a restore that replaces the zones refreshes this form
+  const { data: hrZones = null, isLoading } = useQuery(settingsQueries.heartRateZones());
 
   const {
     calculationMethod,
@@ -150,8 +135,8 @@ function SettingsPageContent() {
           : undefined,
       };
 
-      const updated = await updateHeartRateZones(request);
-      setHrZones(updated);
+      const updated: HeartRateZoneSettings = await updateHeartRateZones(request);
+      queryClient.setQueryData(settingsQueries.heartRateZones().queryKey, updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
       
@@ -209,8 +194,7 @@ function SettingsPageContent() {
       setRecalcWorkoutCount(response.totalQualifyingWorkouts);
       setRecalcSuccess(true);
       
-      // Invalidate all workout queries to refresh the UI
-      invalidateWorkoutQueries(queryClient);
+      invalidateAfter(queryClient, { kind: 'workoutsRecalculated' });
       
       setTimeout(() => {
         setRecalcSuccess(false);
@@ -235,8 +219,7 @@ function SettingsPageContent() {
       setRecalcWorkoutCount(response.totalQualifyingWorkouts);
       setRecalcSuccess(true);
       
-      // Invalidate all workout queries to refresh the UI
-      invalidateWorkoutQueries(queryClient);
+      invalidateAfter(queryClient, { kind: 'workoutsRecalculated' });
       
       setTimeout(() => {
         setRecalcSuccess(false);
@@ -279,8 +262,7 @@ function SettingsPageContent() {
       setRecalcSplitsWorkoutCount(response.totalWorkouts);
       setRecalcSplitsSuccess(true);
       
-      // Invalidate all workout queries to refresh the UI
-      invalidateWorkoutQueries(queryClient);
+      invalidateAfter(queryClient, { kind: 'workoutsRecalculated' });
       
       setTimeout(() => {
         setRecalcSplitsSuccess(false);

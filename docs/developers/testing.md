@@ -6,7 +6,7 @@ How to run the API tests and the other CI checks locally, and how to add tests. 
 
 The API tests (`api/Tempo.Api.Tests/`) use **xUnit**, **FluentAssertions**, **Moq**, and **coverlet** for coverage. EF-backed tests run against **PostgreSQL 16** (`postgres:16-alpine`, same image as compose) via Testcontainers, so **Docker must be running** for them; they fail loudly if the container cannot start. Tests that never touch `PostgresTestFixture` or `TempoWebApplicationFactory` (GPX/FIT parsers, track geometry, HealthKit decoder, password/JWT/secret helpers, and similar) do not need Docker.
 
-There are no frontend tests; the frontend gate is ESLint.
+Frontend unit tests use **Vitest** (`frontend/**/*.test.ts`, Node environment, `TZ=America/New_York` so local-date bugs show up): `cd frontend && npm test`. They cover pure modules such as `lib/queries.ts` (which cached reads each data change refreshes) and `lib/localCalendar.ts`. There are no component or browser tests; the other frontend gate is ESLint.
 
 Tests are organized into:
 
@@ -84,7 +84,7 @@ A Bruno collection lives in `api/bruno/Tempo.Api/`. Install [Bruno](https://www.
 | Job | What it checks | Run locally |
 |-----|----------------|-------------|
 | `test` | `dotnet tool restore`, `dotnet restore Tempo.sln`, `dotnet build Tempo.sln --no-restore`, the [OpenAPI drift check](#openapi-drift-check), tests with coverage, then the [45% coverage gate](#coverage-gate) | The commands on this page |
-| `frontend-lint` | `npm ci` and `npm run lint` in `frontend/` on Node 20 | `cd frontend && npm ci && npm run lint` |
+| `frontend-lint` | `npm ci`, `npm run lint` and `npm test` in `frontend/` on Node 20 | `cd frontend && npm ci && npm run lint && npm test` |
 | `prod-compose-secrets` | `docker compose -f docker-compose.prod.yml config` fails without `JWT_SECRET_KEY` and `POSTGRES_PASSWORD`, and with them renders no placeholder JWT, no `192.168` address, no published 5432/5001, and binds 3004 on `127.0.0.1` | Only relevant when editing `docker-compose.prod.yml` |
 
 ### OpenAPI Drift Check

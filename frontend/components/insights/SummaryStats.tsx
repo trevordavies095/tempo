@@ -2,7 +2,8 @@
 
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getBestEfforts, type InsightsMetadata } from '@/lib/api';
+import { type InsightsMetadata } from '@/lib/api';
+import { statsQueries } from '@/lib/queries';
 import { bestEffortsRangeRequests } from '@/lib/bestEffortsRange';
 import { formatDate } from '@/lib/format';
 import { Card } from '@/components/ui/Card';
@@ -27,10 +28,7 @@ function Stat({ label, value, detail }: { label: string; value: string; detail?:
 export function SummaryStats({ metadata }: { metadata: InsightsMetadata }) {
   // Same request (and query key) as the Personal Records card's "This year" badges, so it is shared.
   const prsParams = useMemo(() => bestEffortsRangeRequests('thisYear').prs ?? {}, []);
-  const prs = useQuery({
-    queryKey: ['bestEfforts', 'prs', prsParams],
-    queryFn: () => getBestEfforts(prsParams),
-  });
+  const prs = useQuery(statsQueries.bestEffortPrs(prsParams));
   const year = new Date().getFullYear();
 
   return (

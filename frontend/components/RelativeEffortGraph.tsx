@@ -2,8 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ComposedChart, ReferenceArea } from 'recharts';
-import { getRelativeEffortStats } from '@/lib/api';
-import { browserTimezoneOffsetMinutes } from '@/lib/localCalendar';
+import { statsQueries } from '@/lib/queries';
 import { calculateYAxisTicks, calculateYAxisMax } from '@/utils/chartUtils';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -85,12 +84,7 @@ function DayTick({
 }
 
 export default function RelativeEffortGraph() {
-  const timezoneOffsetMinutes = browserTimezoneOffsetMinutes();
-
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['relativeEffortStats', timezoneOffsetMinutes],
-    queryFn: () => getRelativeEffortStats(timezoneOffsetMinutes),
-  });
+  const { data, isLoading, isError, error } = useQuery(statsQueries.relativeEffort());
 
   // Calculate current day of week (0=Monday, 6=Sunday)
   const now = new Date();
