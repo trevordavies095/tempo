@@ -40,6 +40,10 @@ _Avoid_: elapsed time, moving time, DurationS (as this clock)
 Time spent moving by a speed threshold, when the source provides it. Stored as `Workout.MovingTimeS`. Not timer time.
 _Avoid_: timer time, elapsed time
 
+**Local calendar**:
+The client's calendar frame from `timezoneOffsetMinutes` (minutes east of UTC; omitted means UTC). Turns local `yyyy-MM-dd` days and Monday–Sunday weeks into inclusive UTC windows over `Workout.StartedAt`, and UTC timestamps back into local days. `LocalCalendar` in the API, `lib/localCalendar.ts` in the command center. A fixed offset; DST is not modeled.
+_Avoid_: timezone helper, UTC date (when the user's day is meant)
+
 **TrackPoint**:
 An in-memory sample on a Workout path. Latitude and longitude are optional (indoor samples). Optional elevation, time, sensors (HR, cadence, power, temperature), and motion (speed, distance, grade, vertical speed). Not a table.
 _Avoid_: GpxPoint, GPS track, polyline (as this type)

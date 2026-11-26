@@ -347,6 +347,34 @@ public class ListWorkoutsTests : IClassFixture<TempoWebApplicationFactory>
         result.TotalCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task ListWorkouts_DateFilterCoversTheLocalDay_WhenTimezoneOffsetSpecified()
+    {
+        // Arrange: 21:30 on June 15 in EDT (UTC-4) is 01:30 June 16 UTC
+        await EnsureCleanDatabaseAsync();
+        var client = await TestHttpClientFactory.CreateAuthenticatedClientAsync(_factory);
+
+        using (var scope = _factory.Server.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TempoDbContext>();
+            await TestDataSeeder.SeedWorkoutAsync(db, startedAt: new DateTime(2024, 6, 16, 1, 30, 0, DateTimeKind.Utc), name: "Evening run");
+            await TestDataSeeder.SeedWorkoutAsync(db, startedAt: new DateTime(2024, 6, 15, 3, 0, 0, DateTimeKind.Utc), name: "Previous evening");
+        }
+
+        // Act
+        var local = await client.GetAsync("/workouts?startDate=2024-06-15&endDate=2024-06-15&timezoneOffsetMinutes=-240");
+        var utc = await client.GetAsync("/workouts?startDate=2024-06-15&endDate=2024-06-15");
+
+        // Assert: the local day holds only the evening run; without an offset days stay UTC
+        var localResult = await local.Content.ReadFromJsonAsync<JsonElement>();
+        localResult.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("name").GetString())
+            .Should().Equal("Evening run");
+
+        var utcResult = await utc.Content.ReadFromJsonAsync<JsonElement>();
+        utcResult.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("name").GetString())
+            .Should().Equal("Previous evening");
+    }
+
     #endregion
 
     #region Distance Filter Tests

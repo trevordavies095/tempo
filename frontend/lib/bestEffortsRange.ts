@@ -1,4 +1,5 @@
 import type { BestEffortItem, BestEffortsParams } from '@/lib/api';
+import { formatLocalDate } from '@/lib/localCalendar';
 
 /**
  * Personal Records range on the Insights page. The rules match the iOS app (parity tickets 18 and 28,
@@ -15,7 +16,8 @@ import type { BestEffortItem, BestEffortsParams } from '@/lib/api';
  * `[from, since − 1]`, which is empty when both are the same date.
  *
  * Start dates: Jan 1 of the current local year; local today − 90 days. Written as `yyyy-MM-dd` and
- * compared inclusively by the server against each Workout's UTC start date.
+ * compared inclusively by the server against each Workout's local start date (`getBestEfforts` sends the
+ * browser's timezone offset).
  */
 export type BestEffortsRange = 'allTime' | 'thisYear' | 'last90Days';
 
@@ -36,14 +38,6 @@ export interface BestEffortsRangeRequests {
 /** One table row: the list effort, with previous fields only when it is a PR set in the range. */
 export interface PersonalRecordRow extends BestEffortItem {
   isNew: boolean;
-}
-
-/** Local calendar date as `yyyy-MM-dd` (no UTC conversion, so Jan 1 stays Jan 1). */
-export function formatLocalDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = (date.getMonth() + 1).toString().padStart(2, '0');
-  const d = date.getDate().toString().padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
 
 /** Start date of a ranged choice, or null for All time. `today` is injectable for determinism. */

@@ -1175,7 +1175,7 @@
           {
             "name": "from",
             "in": "query",
-            "description": "Optional first workout date to include (yyyy-MM-dd, UTC, inclusive)",
+            "description": "Optional first workout date to include (yyyy-MM-dd, local, inclusive)",
             "schema": {
               "type": "string"
             }
@@ -1183,7 +1183,7 @@
           {
             "name": "to",
             "in": "query",
-            "description": "Optional last workout date to include (yyyy-MM-dd, UTC, inclusive)",
+            "description": "Optional last workout date to include (yyyy-MM-dd, local, inclusive)",
             "schema": {
               "type": "string"
             }
@@ -1191,9 +1191,18 @@
           {
             "name": "since",
             "in": "query",
-            "description": "Optional date (yyyy-MM-dd, UTC): return only PRs set on or after it, with previousTimeS, previousWorkoutId and previousWorkoutDate",
+            "description": "Optional date (yyyy-MM-dd, local): return only PRs set on or after it, with previousTimeS, previousWorkoutId and previousWorkoutDate",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "timezoneOffsetMinutes",
+            "in": "query",
+            "description": "Timezone offset in minutes (negative for timezones behind UTC), same as other stats endpoints. Sets the local day that from, to and since cover; omitted means UTC days.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
             }
           }
         ],
@@ -1516,7 +1525,7 @@
           "Workouts"
         ],
         "summary": "List workouts with pagination and filtering",
-        "description": "Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,\nand run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.\nItem `route` is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.\nItem `media` is `{ id, mimeType }` ordered by createdAt (empty array when none).\n`splitsCount` is a SQL COUNT; split rows are not loaded.\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.",
+        "description": "Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,\nand run type. Supports dynamic sorting by various fields. startDate and endDate are whole local days\n(midnight to end of day in the timezoneOffsetMinutes frame), converted to UTC for database queries.\nItem `route` is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.\nItem `media` is `{ id, mimeType }` ordered by createdAt (empty array when none).\n`splitsCount` is a SQL COUNT; split rows are not loaded.\n`timerTimeS` is FIT total timer time when known (null for non-FIT or missing Session); distinct from\n`durationS` (elapsed) and `movingTimeS`.",
         "operationId": "ListWorkouts",
         "parameters": [
           {
@@ -1617,6 +1626,15 @@
             "description": "Sort order: \"asc\" or \"desc\" (default: \"desc\" for startedAt)",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "timezoneOffsetMinutes",
+            "in": "query",
+            "description": "Timezone offset in minutes (negative for timezones behind UTC), same as the stats endpoints. Sets the local day that startDate and endDate cover; omitted means UTC days.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
             }
           }
         ],
@@ -2735,7 +2753,8 @@
           },
           "workoutDate": {
             "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "description": "Start date (yyyy-MM-dd) of the workout the effort was set in, in the request's\n`timezoneOffsetMinutes` frame (UTC when omitted)."
           },
           "previousTimeS": {
             "type": "integer",
@@ -2750,7 +2769,7 @@
           },
           "previousWorkoutDate": {
             "type": "string",
-            "description": "UTC start date (yyyy-MM-dd) of the workout the previous best was set in, the same form as `workoutDate`;\nnull whenever `previousTimeS` is.",
+            "description": "Start date (yyyy-MM-dd) of the workout the previous best was set in, the same form as `workoutDate`;\nnull whenever `previousTimeS` is.",
             "nullable": true
           }
         },

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { formatLocalDate } from '@/lib/localCalendar';
 
 export type DatePreset = 'all' | 'last7' | 'last30' | 'custom';
 
@@ -10,14 +11,6 @@ export const DATE_PRESET_OPTIONS: ReadonlyArray<{ value: DatePreset; label: stri
   { value: 'custom', label: 'Custom Range…' },
 ];
 
-/** Local calendar date as YYYY-MM-DD. */
-export function toLocalIsoDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
 /** Inclusive start/end dates for a rolling preset ending today (local calendar). */
 export function presetDateRange(
   preset: 'last7' | 'last30',
@@ -25,7 +18,7 @@ export function presetDateRange(
 ): { startDate: string; endDate: string } {
   const days = preset === 'last7' ? 6 : 29;
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - days);
-  return { startDate: toLocalIsoDate(start), endDate: toLocalIsoDate(today) };
+  return { startDate: formatLocalDate(start), endDate: formatLocalDate(today) };
 }
 
 export type SortColumn = 'startedAt' | 'name' | 'durationS' | 'distanceM' | 'elevGainM' | 'relativeEffort';

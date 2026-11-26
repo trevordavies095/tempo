@@ -34,6 +34,10 @@ public class BestEffortDistanceDocument
     [JsonPropertyName("workoutId")]
     public string WorkoutId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Start date (yyyy-MM-dd) of the workout the effort was set in, in the request's
+    /// <c>timezoneOffsetMinutes</c> frame (UTC when omitted).
+    /// </summary>
     [Required]
     [JsonPropertyName("workoutDate")]
     public string WorkoutDate { get; set; } = string.Empty;
@@ -52,7 +56,7 @@ public class BestEffortDistanceDocument
     public string? PreviousWorkoutId { get; set; }
 
     /// <summary>
-    /// UTC start date (yyyy-MM-dd) of the workout the previous best was set in, the same form as <c>workoutDate</c>;
+    /// Start date (yyyy-MM-dd) of the workout the previous best was set in, the same form as <c>workoutDate</c>;
     /// null whenever <c>previousTimeS</c> is.
     /// </summary>
     [JsonPropertyName("previousWorkoutDate")]

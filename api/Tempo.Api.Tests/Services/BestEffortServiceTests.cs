@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Services;
+using Tempo.Api.Utils;
 using Tempo.Api.Tests.Infrastructure;
 using Xunit;
 
@@ -625,6 +626,40 @@ public class BestEffortServiceTests : IAsyncLifetime
         var result = await _service.GetBestEffortPrsAsync(_db, Since, to: new DateOnly(2026, 10, 1));
 
         result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetBestEffortsAsync_WithCalendar_FiltersAndDatesByLocalDay()
+    {
+        // 22:00 on Oct 28 in EST (UTC-5) is 03:00 Oct 29 UTC
+        var evening = await TestDataSeeder.SeedWorkoutAsync(
+            _db, startedAt: new DateTime(2026, 10, 29, 3, 0, 0, DateTimeKind.Utc), distanceM: 10000);
+        await SeedWorkoutBestEffortAsync(evening, "5K", 1250);
+        var day = new DateOnly(2026, 10, 28);
+
+        var local = await _service.GetBestEffortsAsync(_db, day, day, new LocalCalendar(-300));
+        var utc = await _service.GetBestEffortsAsync(_db, day, day);
+
+        var fiveK = local.Should().ContainSingle().Which;
+        fiveK.WorkoutId.Should().Be(evening.Id.ToString());
+        fiveK.WorkoutDate.Should().Be("2026-10-28");
+        utc.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetBestEffortPrsAsync_WithCalendar_JudgesSinceByLocalDay()
+    {
+        await SeedDatedEffortAsync(new DateOnly(2026, 9, 1), "5K", 1300);
+        // 21:00 on Oct 25 in EST is 02:00 Oct 26 UTC: before since locally, on since in UTC
+        var evening = await TestDataSeeder.SeedWorkoutAsync(
+            _db, startedAt: new DateTime(2026, 10, 26, 2, 0, 0, DateTimeKind.Utc), distanceM: 10000);
+        await SeedWorkoutBestEffortAsync(evening, "5K", 1250);
+
+        var local = await _service.GetBestEffortPrsAsync(_db, Since, calendar: new LocalCalendar(-300));
+        var utc = await _service.GetBestEffortPrsAsync(_db, Since);
+
+        local.Should().BeEmpty();
+        utc.Should().ContainSingle().Which.WorkoutDate.Should().Be("2026-10-26");
     }
 
     private async Task<Workout> SeedDatedEffortAsync(DateOnly date, string distance, int timeS)

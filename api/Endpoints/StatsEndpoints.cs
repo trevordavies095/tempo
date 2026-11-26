@@ -5,6 +5,7 @@ using Tempo.Api.Data;
 using Tempo.Api.Models;
 using Tempo.Api.Models.Responses;
 using Tempo.Api.Services;
+using Tempo.Api.Utils;
 
 namespace Tempo.Api.Endpoints;
 
@@ -25,8 +26,6 @@ public static class StatsEndpoints
         int LongestRunDurationS,
         long[]? ZoneSeconds);
 
-    private sealed record UtcRange(DateTime StartUtc, DateTime EndUtc);
-
     private sealed record WeeklyRecapUtcContext(
         DateTime ReferenceLocalDate,
         DateTime WeekStartLocal,
@@ -45,25 +44,13 @@ public static class StatsEndpoints
         int? timezoneOffsetMinutes,
         DateTime? referenceLocalDate)
     {
-        DateTime localAnchorDate;
-        if (referenceLocalDate.HasValue)
-        {
-            localAnchorDate = referenceLocalDate.Value.Date;
-        }
-        else
-        {
-            var localNow = timezoneOffsetMinutes.HasValue
-                ? utcNow.AddMinutes(timezoneOffsetMinutes.Value)
-                : utcNow;
-            localAnchorDate = localNow.Date;
-        }
+        var calendar = new LocalCalendar(timezoneOffsetMinutes);
+        var localAnchorDate = referenceLocalDate?.Date ?? calendar.Today(utcNow);
 
-        var daysSinceMonday = ((int)localAnchorDate.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        var weekStartLocal = localAnchorDate.AddDays(-daysSinceMonday);
+        var weekStartLocal = LocalCalendar.WeekStart(localAnchorDate);
         var weekEndLocal = weekStartLocal.AddDays(7).AddTicks(-1);
 
-        var weekStartUtc = LocalDateRangeStartToUtc(weekStartLocal, timezoneOffsetMinutes);
-        var weekEndUtc = LocalDateRangeEndToUtc(weekEndLocal, timezoneOffsetMinutes);
+        var (weekStartUtc, weekEndUtc) = calendar.Week(weekStartLocal);
 
         var currentEndUtc = utcNow < weekEndUtc ? utcNow : weekEndUtc;
         UtcRange currentRange;
@@ -76,23 +63,9 @@ public static class StatsEndpoints
             currentRange = new UtcRange(weekStartUtc, currentEndUtc);
         }
 
-        var previousWeekStartLocal = weekStartLocal.AddDays(-7);
-        var previousWeekEndLocal = previousWeekStartLocal.AddDays(7).AddTicks(-1);
-        var previousWeekRange = new UtcRange(
-            LocalDateRangeStartToUtc(previousWeekStartLocal, timezoneOffsetMinutes),
-            LocalDateRangeEndToUtc(previousWeekEndLocal, timezoneOffsetMinutes));
-
-        UtcRange TrailingWeek(int offsetFromCurrentWeekStart)
-        {
-            var start = weekStartLocal.AddDays(-7 * offsetFromCurrentWeekStart);
-            var end = start.AddDays(7).AddTicks(-1);
-            return new UtcRange(
-                LocalDateRangeStartToUtc(start, timezoneOffsetMinutes),
-                LocalDateRangeEndToUtc(end, timezoneOffsetMinutes));
-        }
-
-        var trailing2 = TrailingWeek(2);
-        var trailing3 = TrailingWeek(3);
+        var previousWeekRange = calendar.Week(weekStartLocal.AddDays(-7));
+        var trailing2 = calendar.Week(weekStartLocal.AddDays(-14));
+        var trailing3 = calendar.Week(weekStartLocal.AddDays(-21));
 
         var currentWeekIsPartial = utcNow < weekEndUtc && utcNow >= weekStartUtc;
 
@@ -129,21 +102,6 @@ public static class StatsEndpoints
 
         referenceLocalDate = parsed.Date;
         return true;
-    }
-
-    private static DateTime LocalDateRangeStartToUtc(DateTime localDateMidnight, int? timezoneOffsetMinutes)
-    {
-        var d = localDateMidnight.Date;
-        return timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(d.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(d, DateTimeKind.Utc);
-    }
-
-    private static DateTime LocalDateRangeEndToUtc(DateTime localEndInclusive, int? timezoneOffsetMinutes)
-    {
-        return timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(localEndInclusive.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(localEndInclusive, DateTimeKind.Utc);
     }
 
     private static async Task<BucketAggregates> GetBucketAggregatesAsync(
@@ -379,26 +337,17 @@ public static class StatsEndpoints
     /// Calculate daily totals (in miles) from a list of workouts, grouped by day of week (Monday=0, Sunday=6).
     /// </summary>
     /// <param name="workouts">List of workouts to process</param>
-    /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC)</param>
+    /// <param name="calendar">Local frame that decides which day each workout falls on</param>
     /// <returns>Array of 7 doubles representing daily miles (Monday through Sunday)</returns>
-    private static double[] CalculateDailyTotals(List<Workout> workouts, int? timezoneOffsetMinutes)
+    private static double[] CalculateDailyTotals(List<Workout> workouts, LocalCalendar calendar)
     {
         var dailyTotals = new double[7]; // M T W T F S S
 
         foreach (var workout in workouts)
         {
-            // Convert UTC to local timezone
-            // timezoneOffsetMinutes is already negative (from -getTimezoneOffset()), so add it directly
-            var localTime = timezoneOffsetMinutes.HasValue
-                ? workout.StartedAt.AddMinutes(timezoneOffsetMinutes.Value)
-                : workout.StartedAt;
-
-            // Get day of week (0=Monday, 6=Sunday)
-            var dayOfWeek = ((int)localTime.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-            
-            // Convert meters to miles and add to daily total
+            // Convert meters to miles and add to the workout's local day
             var miles = workout.DistanceM / 1609.344;
-            dailyTotals[dayOfWeek] += miles;
+            dailyTotals[calendar.MondayIndex(workout.StartedAt)] += miles;
         }
 
         return dailyTotals;
@@ -432,17 +381,17 @@ public static class StatsEndpoints
         var ctx = BuildWeeklyRecapUtcContext(DateTime.UtcNow, timezoneOffsetMinutes, referenceLocalDate);
 
         // Full Mon–Sun window for the selected week
+        var calendar = new LocalCalendar(timezoneOffsetMinutes);
         var weekStart = ctx.WeekStartLocal;
         var weekEnd = ctx.WeekEndLocal;
-        var weekStartUtc = LocalDateRangeStartToUtc(weekStart, timezoneOffsetMinutes);
-        var weekEndUtc = LocalDateRangeEndToUtc(weekEnd, timezoneOffsetMinutes);
+        var (weekStartUtc, weekEndUtc) = calendar.Week(weekStart);
 
         var workouts = await db.Workouts
             .Where(w => w.StartedAt >= weekStartUtc && w.StartedAt <= weekEndUtc)
             .AsNoTracking()
             .ToListAsync();
 
-        var dailyTotals = CalculateDailyTotals(workouts, timezoneOffsetMinutes);
+        var dailyTotals = CalculateDailyTotals(workouts, calendar);
 
         // Previous week: the complete week immediately preceding the selected week
         var previousWeekStart = weekStart.AddDays(-7);
@@ -454,7 +403,7 @@ public static class StatsEndpoints
             .AsNoTracking()
             .ToListAsync();
 
-        var previousWeekDailyTotals = CalculateDailyTotals(previousWeekWorkouts, timezoneOffsetMinutes);
+        var previousWeekDailyTotals = CalculateDailyTotals(previousWeekWorkouts, calendar);
 
         // Format week labels using invariant culture for consistency
         var currentWeekLabel = $"{weekStart.ToString("MMM d", CultureInfo.InvariantCulture)} - {weekEnd.ToString("MMM d", CultureInfo.InvariantCulture)}";
@@ -507,10 +456,10 @@ public static class StatsEndpoints
         var ctx = BuildWeeklyRecapUtcContext(utcNow, timezoneOffsetMinutes, referenceLocalDate);
 
         // Full Mon–Sun window (not week-to-date CurrentRange) so the cumulative chart always has 7 day slots.
+        var calendar = new LocalCalendar(timezoneOffsetMinutes);
         var weekStart = ctx.WeekStartLocal;
         var weekEnd = ctx.WeekEndLocal;
-        var weekStartUtc = LocalDateRangeStartToUtc(weekStart, timezoneOffsetMinutes);
-        var weekEndUtc = LocalDateRangeEndToUtc(weekEnd, timezoneOffsetMinutes);
+        var (weekStartUtc, weekEndUtc) = calendar.Week(weekStart);
 
         // Query workouts for the current week with relative effort
         var currentWeekWorkouts = await db.Workouts
@@ -527,14 +476,7 @@ public static class StatsEndpoints
                 continue;
             }
 
-            // Convert UTC to local timezone
-            var localTime = timezoneOffsetMinutes.HasValue
-                ? workout.StartedAt.AddMinutes(timezoneOffsetMinutes.Value)
-                : workout.StartedAt;
-
-            // Get day of week (0=Monday, 6=Sunday)
-            var dayOfWeek = ((int)localTime.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-            dailyEffort[dayOfWeek] += workout.RelativeEffort.Value;
+            dailyEffort[calendar.MondayIndex(workout.StartedAt)] += workout.RelativeEffort.Value;
         }
 
         // Calculate cumulative values (Monday = day 1, Tuesday = day 1 + day 2, etc.)
@@ -679,9 +621,10 @@ public static class StatsEndpoints
     /// </summary>
     /// <param name="db">Database context</param>
     /// <param name="bestEffortService">Best effort service</param>
-    /// <param name="from">Optional first workout date to include (yyyy-MM-dd, UTC, inclusive)</param>
-    /// <param name="to">Optional last workout date to include (yyyy-MM-dd, UTC, inclusive)</param>
-    /// <param name="since">Optional date (yyyy-MM-dd, UTC): return only PRs set on or after it, with previousTimeS, previousWorkoutId and previousWorkoutDate</param>
+    /// <param name="from">Optional first workout date to include (yyyy-MM-dd, local, inclusive)</param>
+    /// <param name="to">Optional last workout date to include (yyyy-MM-dd, local, inclusive)</param>
+    /// <param name="since">Optional date (yyyy-MM-dd, local): return only PRs set on or after it, with previousTimeS, previousWorkoutId and previousWorkoutDate</param>
+    /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC), same as other stats endpoints. Sets the local day that from, to and since cover; omitted means UTC days.</param>
     /// <returns>List of best effort times for each standard distance</returns>
     /// <remarks>
     /// Returns the fastest time achieved for each standard running distance (400m through Marathon).
@@ -696,7 +639,8 @@ public static class StatsEndpoints
         BestEffortService bestEffortService,
         [FromQuery] string? from = null,
         [FromQuery] string? to = null,
-        [FromQuery] string? since = null)
+        [FromQuery] string? since = null,
+        [FromQuery] int? timezoneOffsetMinutes = null)
     {
         if (!TryParseBestEffortDate(from, out var fromDate))
         {
@@ -717,9 +661,10 @@ public static class StatsEndpoints
 
         try
         {
+            var calendar = new LocalCalendar(timezoneOffsetMinutes);
             var bestEfforts = sinceDate is { } sinceValue
-                ? await bestEffortService.GetBestEffortPrsAsync(db, sinceValue, fromDate, toDate)
-                : await bestEffortService.GetBestEffortsAsync(db, fromDate, toDate);
+                ? await bestEffortService.GetBestEffortPrsAsync(db, sinceValue, fromDate, toDate, calendar)
+                : await bestEffortService.GetBestEffortsAsync(db, fromDate, toDate, calendar);
             return Results.Ok(new BestEffortsDocument
             {
                 Distances = bestEfforts.Select(b => new BestEffortDistanceDocument
@@ -810,35 +755,13 @@ public static class StatsEndpoints
         ILogger<Program> logger,
         [FromQuery] int? timezoneOffsetMinutes = null)
     {
-        // Get current date in the specified timezone
-        var now = DateTime.UtcNow;
-        if (timezoneOffsetMinutes.HasValue)
-        {
-            now = now.AddMinutes(timezoneOffsetMinutes.Value);
-        }
-
-        var currentYear = now.Year;
+        var calendar = new LocalCalendar(timezoneOffsetMinutes);
+        var currentYear = calendar.Today(DateTime.UtcNow).Year;
         var previousYear = currentYear - 1;
 
-        // Calculate year boundaries in local timezone
-        var currentYearStart = new DateTime(currentYear, 1, 1, 0, 0, 0);
-        var currentYearEnd = new DateTime(currentYear, 12, 31, 23, 59, 59, 999);
-        var previousYearStart = new DateTime(previousYear, 1, 1, 0, 0, 0);
-        var previousYearEnd = new DateTime(previousYear, 12, 31, 23, 59, 59, 999);
-
-        // Convert to UTC for database queries
-        var currentYearStartUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(currentYearStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(currentYearStart, DateTimeKind.Utc);
-        var currentYearEndUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(currentYearEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(currentYearEnd, DateTimeKind.Utc);
-        var previousYearStartUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(previousYearStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(previousYearStart, DateTimeKind.Utc);
-        var previousYearEndUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(previousYearEnd.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(previousYearEnd, DateTimeKind.Utc);
+        // Local calendar years as UTC windows
+        var (currentYearStartUtc, currentYearEndUtc) = calendar.Days(new DateTime(currentYear, 1, 1), new DateTime(currentYear, 12, 31));
+        var (previousYearStartUtc, previousYearEndUtc) = calendar.Days(new DateTime(previousYear, 1, 1), new DateTime(previousYear, 12, 31));
 
         // Query and sum distances for current year
         var currentYearDistanceM = await db.Workouts
@@ -884,20 +807,13 @@ public static class StatsEndpoints
         [FromQuery] string? periodEndDate = null,
         [FromQuery] int? timezoneOffsetMinutes = null)
     {
-        // Get current date in the specified timezone
-        // Frontend sends timezoneOffsetMinutes as -getTimezoneOffset() (negative for timezones behind UTC)
-        // To convert UTC to local: UTC + offset (since offset is already negative)
-        var now = DateTime.UtcNow;
-        if (timezoneOffsetMinutes.HasValue)
-        {
-            now = now.AddMinutes(timezoneOffsetMinutes.Value);
-        }
+        var calendar = new LocalCalendar(timezoneOffsetMinutes);
 
         // Compute period bounds
         // If periodEndDate not provided, default to today (last 12 months ending today)
         // This ensures alignment with /stats/available-periods
         DateTime periodEnd;
-        var today = now.Date;
+        var today = calendar.Today(DateTime.UtcNow);
         if (!string.IsNullOrEmpty(periodEndDate) && DateTime.TryParse(periodEndDate, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsedEndDate))
         {
             periodEnd = parsedEndDate.Date;
@@ -916,12 +832,7 @@ public static class StatsEndpoints
         var totalDays = (periodEnd - periodStart).Days + 1;
 
         // Convert period bounds to UTC for database queries
-        var periodStartUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(periodStart.AddMinutes(-timezoneOffsetMinutes.Value), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(periodStart, DateTimeKind.Utc);
-        var periodEndUtc = timezoneOffsetMinutes.HasValue
-            ? DateTime.SpecifyKind(periodEnd.AddMinutes(-timezoneOffsetMinutes.Value).AddDays(1).AddTicks(-1), DateTimeKind.Utc)
-            : DateTime.SpecifyKind(periodEnd.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+        var (periodStartUtc, periodEndUtc) = calendar.Days(periodStart, periodEnd);
 
         // Get all workouts in the period
         var workouts = await db.Workouts
@@ -939,13 +850,7 @@ public static class StatsEndpoints
         // Group workouts by week index
         foreach (var workout in workouts)
         {
-            // Convert workout date to local timezone for calculation
-            var workoutDate = workout.StartedAt;
-            if (timezoneOffsetMinutes.HasValue)
-            {
-                workoutDate = workoutDate.AddMinutes(timezoneOffsetMinutes.Value);
-            }
-            var workoutDateOnly = workoutDate.Date;
+            var workoutDateOnly = calendar.LocalDate(workout.StartedAt);
 
             // Calculate dayIndex (0-based integer number of days from periodStart)
             var dayIndex = (workoutDateOnly - periodStart).Days;
@@ -1016,32 +921,11 @@ public static class StatsEndpoints
         ILogger<Program> logger,
         [FromQuery] int? timezoneOffsetMinutes = null)
     {
-        // Get current date in the specified timezone
-        // We need to get today's date in the local timezone, not UTC
-        // The date should be the calendar date in the user's timezone, not UTC
-        // Frontend sends timezoneOffsetMinutes as -getTimezoneOffset() (negative for timezones behind UTC)
-        // For example, EST (UTC-5) sends -300, PST (UTC-8) sends -480
-        // To convert UTC to local: UTC + offset (since offset is already negative)
+        // Today's calendar date in the user's timezone, not UTC
+        var calendar = new LocalCalendar(timezoneOffsetMinutes);
         var nowUtc = DateTime.UtcNow;
-        DateTime today;
-        if (timezoneOffsetMinutes.HasValue)
-        {
-            // Convert UTC to local time by adding the offset
-            // timezoneOffsetMinutes is already negative for timezones behind UTC (e.g., EST = -300)
-            // So we add the negative number, which subtracts time (correct conversion)
-            var localDateTime = nowUtc.AddMinutes(timezoneOffsetMinutes.Value);
-            // Get just the date part (midnight of that day in local time)
-            today = localDateTime.Date;
-        }
-        else
-        {
-            // No timezone offset provided, use UTC date
-            today = nowUtc.Date;
-        }
-        
-        // Ensure today is a date at midnight (no time component)
-        today = today.Date;
-        
+        var today = calendar.Today(nowUtc);
+
         // Log the calculated today date for debugging
         logger.LogDebug("Calculated today's date: {Today} (UTC now: {UtcNow}, timezone offset: {Offset})", 
             today.ToString("yyyy-MM-dd"), nowUtc.ToString("yyyy-MM-dd HH:mm:ss"), 
@@ -1053,15 +937,7 @@ public static class StatsEndpoints
             .OrderBy(w => w.StartedAt)
             .FirstOrDefaultAsync();
 
-        DateTime? firstWorkoutDate = null;
-        if (firstWorkout != null)
-        {
-            firstWorkoutDate = firstWorkout.StartedAt;
-            if (timezoneOffsetMinutes.HasValue)
-            {
-                firstWorkoutDate = firstWorkoutDate.Value.AddMinutes(timezoneOffsetMinutes.Value);
-            }
-        }
+        DateTime? firstWorkoutDate = firstWorkout != null ? calendar.LocalDate(firstWorkout.StartedAt) : null;
 
         // Generate consecutive 1-year periods going backwards from today
         // Current period: End = today (inclusive), Start = today.AddYears(-1).AddDays(1) (last 12 months ending today)
@@ -1210,7 +1086,7 @@ public static class StatsEndpoints
             .Produces<ErrorResponse>(400)
             .WithSummary("Get best efforts")
             .WithDescription("Returns the fastest time achieved for each standard running distance (400m through Marathon). Best efforts are calculated from any segment within any workout. " +
-                "Optional from and to (yyyy-MM-dd, inclusive, compared against the workout's UTC start date) limit results to workouts in that range; distances with no effort in range are omitted. " +
+                "Optional from and to (yyyy-MM-dd, inclusive local days in the timezoneOffsetMinutes frame; UTC days when the offset is omitted) limit results to workouts in that range; distances with no effort in range are omitted. " +
                 "Optional since (yyyy-MM-dd) returns only PRs set on or after that date: per distance, the latest effort that beat every earlier-dated effort (from on, when given), with previousTimeS the best before since (null when first ever) and previousWorkoutId/previousWorkoutDate the workout it was set in. The three previous fields are null together, and always null without since. " +
                 "Ties go to the earliest workout. A malformed date or from after to returns 400.");
 

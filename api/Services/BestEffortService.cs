@@ -42,23 +42,25 @@ public class BestEffortService : IBestEffortService
 
     /// <summary>
     /// Fastest per-workout best effort for each distance, optionally limited to workouts started within
-    /// [<paramref name="from"/>, <paramref name="to"/>] (inclusive UTC dates). Ties go to the earliest workout.
-    /// Distances with no effort in range are omitted.
+    /// [<paramref name="from"/>, <paramref name="to"/>] (inclusive local dates in <paramref name="calendar"/>;
+    /// UTC when omitted). <see cref="BestEffortResult.WorkoutDate"/> is the workout's local date in the same frame.
+    /// Ties go to the earliest workout. Distances with no effort in range are omitted.
     /// </summary>
     public async Task<List<BestEffortResult>> GetBestEffortsAsync(
         TempoDbContext db,
         DateOnly? from = null,
-        DateOnly? to = null)
+        DateOnly? to = null,
+        LocalCalendar calendar = default)
     {
         var efforts = db.WorkoutBestEfforts.AsNoTracking().AsQueryable();
         if (from is { } fromDate)
         {
-            var fromUtc = fromDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            var fromUtc = calendar.StartOfDayUtc(fromDate.ToDateTime(TimeOnly.MinValue));
             efforts = efforts.Where(wbe => wbe.Workout.StartedAt >= fromUtc);
         }
         if (to is { } toDate)
         {
-            var toExclusiveUtc = toDate.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            var toExclusiveUtc = calendar.StartOfDayUtc(toDate.AddDays(1).ToDateTime(TimeOnly.MinValue));
             efforts = efforts.Where(wbe => wbe.Workout.StartedAt < toExclusiveUtc);
         }
 
@@ -86,7 +88,7 @@ public class BestEffortService : IBestEffortService
                 DistanceM = be.DistanceM,
                 TimeS = be.TimeS,
                 WorkoutId = be.WorkoutId.ToString(),
-                WorkoutDate = be.StartedAt.ToString("yyyy-MM-dd")
+                WorkoutDate = calendar.LocalDate(be.StartedAt).ToString("yyyy-MM-dd")
             })
             .ToList();
     }
@@ -97,16 +99,17 @@ public class BestEffortService : IBestEffortService
     /// given). That is the latest PR in the range, since each PR is faster than the last. Ties are not PRs.
     /// <see cref="BestEffortResult.PreviousTimeS"/> is the best before since, or null when there was none;
     /// <see cref="BestEffortResult.PreviousWorkoutId"/> and <see cref="BestEffortResult.PreviousWorkoutDate"/> name
-    /// the workout it was set in.
+    /// the workout it was set in. Dates are local days in <paramref name="calendar"/> (UTC when omitted).
     /// </summary>
     public async Task<List<BestEffortResult>> GetBestEffortPrsAsync(
         TempoDbContext db,
         DateOnly since,
         DateOnly? from = null,
-        DateOnly? to = null)
+        DateOnly? to = null,
+        LocalCalendar calendar = default)
     {
         var postFrom = from is { } fromDate && fromDate > since ? fromDate : since;
-        var bestsSince = await GetBestEffortsAsync(db, postFrom, to);
+        var bestsSince = await GetBestEffortsAsync(db, postFrom, to, calendar);
         if (bestsSince.Count == 0)
         {
             return bestsSince;
@@ -114,7 +117,7 @@ public class BestEffortService : IBestEffortService
 
         var bestsBefore = since == DateOnly.MinValue
             ? []
-            : await GetBestEffortsAsync(db, from, since.AddDays(-1));
+            : await GetBestEffortsAsync(db, from, since.AddDays(-1), calendar);
         var previousByDistance = bestsBefore.ToDictionary(b => b.Distance);
 
         var prs = new List<BestEffortResult>();

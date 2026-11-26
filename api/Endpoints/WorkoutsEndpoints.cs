@@ -166,10 +166,12 @@ public static class WorkoutsEndpoints
     /// <param name="runType">Filter by run type (exact match; one of the values in the runType enum)</param>
     /// <param name="sortBy">Sort field: "name", "duration", "distance", "elevation", "relativeeffort", or default "startedAt"</param>
     /// <param name="sortOrder">Sort order: "asc" or "desc" (default: "desc" for startedAt)</param>
+    /// <param name="timezoneOffsetMinutes">Timezone offset in minutes (negative for timezones behind UTC), same as the stats endpoints. Sets the local day that startDate and endDate cover; omitted means UTC days.</param>
     /// <returns>Paginated list of workouts with metadata</returns>
     /// <remarks>
     /// Returns a paginated list of workouts with optional filtering by date range, distance, keyword search,
-    /// and run type. Supports dynamic sorting by various fields. Dates are normalized to UTC for database queries.
+    /// and run type. Supports dynamic sorting by various fields. startDate and endDate are whole local days
+    /// (midnight to end of day in the timezoneOffsetMinutes frame), converted to UTC for database queries.
     /// Item <c>route</c> is a ≤ 100-point GeoJSON LineString preview when stored; otherwise the full route.
     /// Item <c>media</c> is <c>{ id, mimeType }</c> ordered by createdAt (empty array when none).
     /// <c>splitsCount</c> is a SQL COUNT; split rows are not loaded.
@@ -188,8 +190,11 @@ public static class WorkoutsEndpoints
         [FromQuery] string? keyword = null,
         [FromQuery] string? runType = null,
         [FromQuery] string? sortBy = null,
-        [FromQuery] string? sortOrder = null)
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] int? timezoneOffsetMinutes = null)
     {
+        var calendar = new LocalCalendar(timezoneOffsetMinutes);
+
         // Validate pagination parameters
         if (page < 1) page = 1;
         if (pageSize < 1) pageSize = 20;
@@ -198,7 +203,7 @@ public static class WorkoutsEndpoints
         // No default date filter - callers should explicitly pass date ranges if needed
         // This allows the activities page to show all activities by default
 
-        // Normalize dates to UTC for PostgreSQL compatibility
+        // Read each filter date as a calendar day, then query that whole local day in UTC
         if (startDate.HasValue)
         {
             var start = startDate.Value;
@@ -210,7 +215,7 @@ public static class WorkoutsEndpoints
             {
                 start = start.ToUniversalTime();
             }
-            startDate = start.Date; // Ensure start of day
+            startDate = calendar.StartOfDayUtc(start);
         }
 
         if (endDate.HasValue)
@@ -224,7 +229,7 @@ public static class WorkoutsEndpoints
             {
                 end = end.ToUniversalTime();
             }
-            endDate = end.Date.AddDays(1).AddTicks(-1); // End of day (23:59:59.999)
+            endDate = calendar.EndOfDayUtc(end);
         }
 
         // Build query (splitsCount is a SQL COUNT projection; do not Include split rows)

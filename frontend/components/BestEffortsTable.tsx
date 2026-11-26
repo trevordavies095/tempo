@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { BestEffortItem } from '@/lib/api';
+import { parseLocalDate } from '@/lib/localCalendar';
 import type { UnitPreference } from '@/lib/settings';
 import { formatPace } from '@/lib/format';
 
@@ -17,9 +18,9 @@ export function formatEffortTime(seconds: number): string {
 
 /** `yyyy-MM-dd` as a short local date ("Aug 3, 2025") without a UTC shift. */
 function formatShortDate(value: string): string {
-  const [y, m, d] = value.split('-').map(Number);
-  if (!y || !m || !d) return value;
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+  const date = parseLocalDate(value);
+  if (!date) return value;
+  return date.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

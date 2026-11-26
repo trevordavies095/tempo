@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Date filters use your local day** - The Activities and dashboard date filters, and the Insights Personal Records ranges (This year, custom), cut days at UTC midnight, so an evening run west of UTC (for example 9 pm in New York) was filtered as the next day. `GET /workouts` and `GET /stats/best-efforts` now take the same optional `timezoneOffsetMinutes` as the other stats endpoints, and the command center sends it. With an offset, best-effort `workoutDate` / `previousWorkoutDate` are local dates too. Without one, both endpoints keep UTC days, so existing clients see no change. **Daily driver:** the iOS app keeps UTC days on these two endpoints until it sends the offset ([tempo-ios-app#89](https://github.com/trevordavies095/tempo-ios-app/issues/89)).
+- **52-week chart dates** - Week labels and month ticks on the dashboard 52-week chart showed a day early west of UTC, because API dates (`yyyy-MM-dd`) were read as UTC midnight. The dashboard's default 7-day workout list also used UTC dates. Week numbers in the chart link no longer slip by a week across a daylight-saving change.
+
+### Changed
+- **One local calendar module** - Stats endpoints, the Workouts date filter and best efforts share one `LocalCalendar` for local days, Monday-start weeks and their UTC windows, in place of 16 inline offset conversions and an unused `TimezoneHelper`. The command center has a matching `lib/localCalendar.ts` for parsing and formatting `yyyy-MM-dd` and the browser offset, replacing five copies.
+
 ## [2.12.0] - 2026-11-19
 
 ### Added

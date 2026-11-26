@@ -210,7 +210,8 @@ Response: `{ items, totalCount, page, pageSize, totalPages }`. The same envelope
 | --- | --- |
 | `page` | Default 1. Values < 1 become 1. A page past `totalPages` returns **404** `{ "error": "Page not found" }` (an empty library returns page 1 with no items). |
 | `pageSize` | Default 20, clamped to 100. |
-| `startDate`, `endDate` | Dates, compared in UTC: `startDate` from 00:00, `endDate` through 23:59:59.999. No `timezoneOffsetMinutes` here. |
+| `startDate`, `endDate` | Whole local days: `startDate` from 00:00, `endDate` through the end of the day, in the `timezoneOffsetMinutes` frame (see below). Without the offset they are UTC days, so an evening run west of UTC falls on the next day. |
+| `timezoneOffsetMinutes` | Minutes east of UTC, as for the stats endpoints. Only affects `startDate` and `endDate`. |
 | `minDistanceM`, `maxDistanceM` | Inclusive, meters. |
 | `keyword` | Case-insensitive substring of name, device, or source. |
 | `runType` | Exact match on a run type (see [Update](#update-workout)); unknown values return an empty page. |
@@ -363,7 +364,7 @@ Streams `application/zip` as `tempo-export-{yyyyMMdd-HHmmss}.zip`: settings, sho
 
 ### `timezoneOffsetMinutes` and `referenceDate`
 
-Calendar-bucketed stats (`weekly-recap`, `weekly`, `relative-effort`, `yearly`, `yearly-weekly`, `available-periods`) take `timezoneOffsetMinutes`: minutes **east** of UTC, i.e. `-new Date().getTimezoneOffset()` in JavaScript (UTC−5 → `-300`, UTC+2 → `120`). Omitted means UTC. Weeks run Monday–Sunday in that frame.
+Calendar-bucketed stats (`weekly-recap`, `weekly`, `relative-effort`, `yearly`, `yearly-weekly`, `available-periods`), `best-efforts` date ranges, and the `GET /workouts` date filter take `timezoneOffsetMinutes`: minutes **east** of UTC, i.e. `-new Date().getTimezoneOffset()` in JavaScript (UTC−5 → `-300`, UTC+2 → `120`). Omitted means UTC. Weeks run Monday–Sunday in that frame.
 
 `weekly-recap`, `weekly`, and `relative-effort` also take `referenceDate` (`yyyy-MM-dd`, local calendar date) to select which week is "current"; default is today. A malformed value is **400** `{ "error": "Invalid referenceDate; use yyyy-MM-dd." }`.
 
@@ -375,7 +376,7 @@ The recommended weekly summary for clients. `metrics` holds `runs`, `distanceM`,
 
 ### Best efforts: `GET /stats/best-efforts`
 
-Fastest time per standard distance (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, Half-Marathon, 30K, Marathon) over any segment of any Workout. Ties go to the earliest Workout. All dates are `yyyy-MM-dd` against the Workout's UTC start date; a malformed date or `from` after `to` is **400** `{ error }`.
+Fastest time per standard distance (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, Half-Marathon, 30K, Marathon) over any segment of any Workout. Ties go to the earliest Workout. All dates are `yyyy-MM-dd` local days in the `timezoneOffsetMinutes` frame (UTC days when omitted), and `workoutDate` / `previousWorkoutDate` are the Workout's start date in the same frame; a malformed date or `from` after `to` is **400** `{ error }`.
 
 - `from`, `to`: inclusive window (for example a training block). Distances with no effort in range are omitted.
 - `since`: only distances where an effort on or after `since` beat every earlier effort (equal times are not PRs). The row is the latest such PR; `previousTimeS`, `previousWorkoutId`, `previousWorkoutDate` describe the best before `since` (all `null` the first time a distance is run). Combine with `from` for season bests. Without `since` the three `previous…` fields are always `null`.

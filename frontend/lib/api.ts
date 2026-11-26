@@ -1,4 +1,5 @@
 import type { WeatherData } from './weather';
+import { browserTimezoneOffsetMinutes } from './localCalendar';
 
 const API_BASE_URL = '/api';
 
@@ -297,6 +298,10 @@ function buildQueryParams(params?: WorkoutsListParams): URLSearchParams {
   }
   if (params?.endDate) {
     searchParams.set('endDate', params.endDate);
+  }
+  if (params?.startDate || params?.endDate) {
+    // Date filters are local days; the server needs the offset to find their UTC bounds
+    searchParams.set('timezoneOffsetMinutes', browserTimezoneOffsetMinutes().toString());
   }
   if (params?.minDistanceM !== undefined) {
     searchParams.set('minDistanceM', params.minDistanceM.toString());
@@ -946,7 +951,7 @@ export interface BestEffortsResponse {
   distances: BestEffortItem[];
 }
 
-/** Optional range for best efforts; all dates are inclusive `yyyy-MM-dd`. */
+/** Optional range for best efforts; all dates are inclusive local `yyyy-MM-dd` days. */
 export interface BestEffortsParams {
   from?: string;
   to?: string;
@@ -958,6 +963,9 @@ export async function getBestEfforts(params: BestEffortsParams = {}): Promise<Be
   if (params.from) searchParams.set('from', params.from);
   if (params.to) searchParams.set('to', params.to);
   if (params.since) searchParams.set('since', params.since);
+  if (params.from || params.to || params.since) {
+    searchParams.set('timezoneOffsetMinutes', browserTimezoneOffsetMinutes().toString());
+  }
 
   const queryString = searchParams.toString();
   const url = `${API_BASE_URL}/stats/best-efforts${queryString ? `?${queryString}` : ''}`;
